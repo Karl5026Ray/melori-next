@@ -2,6 +2,7 @@
 
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
+import { formatTime } from "@/lib/format";
 
 function PlayPauseIcon({ playing }: { playing: boolean }) {
   if (playing) {
@@ -19,64 +20,167 @@ function PlayPauseIcon({ playing }: { playing: boolean }) {
   );
 }
 
+function PrevIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+      <path d="M7 6h2v12H7zM20 6v12l-9-6z" />
+    </svg>
+  );
+}
+
+function NextIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+      <path d="M15 6h2v12h-2zM4 6v12l9-6z" />
+    </svg>
+  );
+}
+
+function VolumeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M5 9v6h4l5 5V4L9 9H5z" />
+    </svg>
+  );
+}
+
 export default function AudioPlayer() {
-  const { current, isPlaying, isLoading, progress, error, togglePlay, seek } =
-    usePlayer();
+  const {
+    current,
+    isPlaying,
+    isLoading,
+    currentTime,
+    duration,
+    volume,
+    error,
+    hasNext,
+    hasPrev,
+    togglePlay,
+    next,
+    prev,
+    seek,
+    setVolume,
+  } = usePlayer();
+
+  const fraction = duration > 0 ? currentTime / duration : 0;
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur">
-      {/* Progress bar */}
-      <div
-        className="h-1 w-full bg-brand-muted cursor-pointer"
-        onClick={(e) => {
-          if (!current) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          seek((e.clientX - rect.left) / rect.width);
-        }}
-      >
-        <div
-          className="h-full bg-brand-primary transition-[width] duration-150"
-          style={{ width: `${Math.round(progress * 100)}%` }}
-        />
-      </div>
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex flex-col gap-1.5">
+        {/* Top row: track info + controls */}
+        <div className="flex items-center gap-3">
+          {/* Track info */}
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            {current ? (
+              <>
+                <CoverImage
+                  src={current.coverUrl}
+                  alt={current.title}
+                  className="h-11 w-11 shrink-0"
+                  rounded="rounded"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-text-primary">
+                    {current.title}
+                  </p>
+                  <p className="truncate text-xs text-text-secondary">
+                    {error ?? current.artistName ?? "MELORI MUSIC"}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <span className="text-sm text-text-secondary">
+                Select a track to start listening
+              </span>
+            )}
+          </div>
 
-      <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center gap-4">
-        <button
-          type="button"
-          onClick={togglePlay}
-          disabled={!current}
-          aria-label={isPlaying ? "Pause" : "Play"}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark disabled:opacity-40"
-        >
-          {isLoading ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-          ) : (
-            <PlayPauseIcon playing={isPlaying} />
-          )}
-        </button>
+          {/* Transport controls */}
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={prev}
+              disabled={!current || !hasPrev}
+              aria-label="Previous track"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary disabled:opacity-30"
+            >
+              <PrevIcon />
+            </button>
 
-        {current ? (
-          <div className="flex min-w-0 items-center gap-3">
-            <CoverImage
-              src={current.coverUrl}
-              alt={current.title}
-              className="h-10 w-10 shrink-0"
-              rounded="rounded"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-text-primary">
-                {current.title}
-              </p>
-              <p className="truncate text-xs text-text-secondary">
-                {error ?? current.artistName ?? "MELORI MUSIC"}
-              </p>
+            <button
+              type="button"
+              onClick={togglePlay}
+              disabled={!current}
+              aria-label={isPlaying ? "Pause" : "Play"}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark disabled:opacity-40"
+            >
+              {isLoading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <PlayPauseIcon playing={isPlaying} />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={next}
+              disabled={!current || !hasNext}
+              aria-label="Next track"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary disabled:opacity-30"
+            >
+              <NextIcon />
+            </button>
+
+            {/* Volume — hidden on very small screens */}
+            <div className="ml-1 hidden items-center gap-2 sm:flex">
+              <span className="text-text-secondary">
+                <VolumeIcon />
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                aria-label="Volume"
+                className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-brand-muted"
+                style={{ accentColor: "#ff5500" }}
+              />
             </div>
           </div>
-        ) : (
-          <span className="text-sm text-text-secondary">
-            Select a track to start listening
+        </div>
+
+        {/* Bottom row: seekable progress bar with times */}
+        <div className="flex items-center gap-2">
+          <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-text-secondary">
+            {formatTime(currentTime)}
           </span>
-        )}
+          <button
+            type="button"
+            aria-label="Seek"
+            disabled={!current || duration <= 0}
+            onClick={(e) => {
+              if (!current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              seek((e.clientX - rect.left) / rect.width);
+            }}
+            className="group relative h-3 flex-1 cursor-pointer"
+          >
+            <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-brand-muted" />
+            <span
+              className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-brand-primary"
+              style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+            />
+            <span
+              className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-primary opacity-0 transition-opacity group-hover:opacity-100"
+              style={{ left: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+            />
+          </button>
+          <span className="w-9 shrink-0 text-[11px] tabular-nums text-text-secondary">
+            {formatTime(duration)}
+          </span>
+        </div>
       </div>
     </div>
   );

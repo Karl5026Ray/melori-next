@@ -1,6 +1,7 @@
 "use client";
 
-import { usePlayer } from "@/components/player/PlayerProvider";
+import { useMemo } from "react";
+import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatDuration } from "@/lib/format";
 import type { Track } from "@/types";
 
@@ -15,7 +16,19 @@ export default function TrackList({
   artistName,
   coverUrl,
 }: TrackListProps) {
-  const { current, isPlaying, playTrack } = usePlayer();
+  const { current, isPlaying, playQueue } = usePlayer();
+
+  // The whole album becomes the player queue; clicking a row starts there.
+  const queue = useMemo<PlayerTrack[]>(
+    () =>
+      tracks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        artistName,
+        coverUrl,
+      })),
+    [tracks, artistName, coverUrl],
+  );
 
   if (tracks.length === 0) {
     return <p className="text-text-secondary">No tracks available yet.</p>;
@@ -33,14 +46,7 @@ export default function TrackList({
           >
             <button
               type="button"
-              onClick={() =>
-                playTrack({
-                  id: track.id,
-                  title: track.title,
-                  artistName,
-                  coverUrl,
-                })
-              }
+              onClick={() => playQueue(queue, index)}
               aria-label={showPause ? `Pause ${track.title}` : `Play ${track.title}`}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-text-secondary transition-colors hover:border-brand-primary hover:text-brand-primary"
             >

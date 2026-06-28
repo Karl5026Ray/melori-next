@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
@@ -6,6 +7,31 @@ import { getReleaseBySlug } from "@/lib/data";
 import { formatPrice } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const data = await getReleaseBySlug(params.slug).catch(() => null);
+  if (!data) return { title: "Release not found" };
+
+  const { release, artist } = data;
+  const byline = artist ? ` by ${artist.name}` : "";
+  const description =
+    release.description ??
+    `Listen to ${release.title}${byline} on MELORI Music.`;
+  const images = release.cover_art_url
+    ? [release.cover_art_url]
+    : undefined;
+
+  return {
+    title: release.title,
+    description,
+    openGraph: { title: release.title, description, type: "music.album", images },
+    twitter: { title: release.title, description, images },
+  };
+}
 
 export default async function AlbumDetailPage({
   params,
@@ -18,7 +44,7 @@ export default async function AlbumDetailPage({
   const { release, artist, tracks } = data;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
+    <article className="max-w-6xl mx-auto px-6 py-12">
       <div className="flex flex-col gap-8 md:flex-row">
         {/* Cover + meta */}
         <div className="w-full max-w-xs shrink-0">
@@ -61,6 +87,6 @@ export default async function AlbumDetailPage({
           />
         </div>
       </div>
-    </div>
+    </article>
   );
 }

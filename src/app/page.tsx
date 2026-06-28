@@ -2,9 +2,26 @@ import Image from "next/image";
 import Link from "next/link";
 import ReleaseCard from "@/components/ReleaseCard";
 import ArtistCard from "@/components/ArtistCard";
+import type { Metadata } from "next";
 import { getReleases, getArtists } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
+
+const description =
+  "Stream freely, support directly, create endlessly. Discover independent music and artists on MELORI Music.";
+
+export const metadata: Metadata = {
+  title: { absolute: "MELORI MUSIC — Independent Music Platform" },
+  description,
+  openGraph: {
+    title: "MELORI MUSIC — Independent Music Platform",
+    description,
+  },
+  twitter: {
+    title: "MELORI MUSIC — Independent Music Platform",
+    description,
+  },
+};
 
 export default async function HomePage() {
   const [releases, artists] = await Promise.all([

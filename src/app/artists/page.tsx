@@ -1,11 +1,17 @@
+import type { Metadata } from "next";
 import ArtistCard from "@/components/ArtistCard";
 import { getArtists } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = {
-  title: "Artists — MELORI MUSIC",
-  description: "Discover independent artists on MELORI Music.",
+const description =
+  "Discover the independent artists releasing music on MELORI Music.";
+
+export const metadata: Metadata = {
+  title: "Artists",
+  description,
+  openGraph: { title: "Artists", description },
+  twitter: { title: "Artists", description },
 };
 
 export default async function ArtistsPage() {

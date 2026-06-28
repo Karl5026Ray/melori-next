@@ -1,11 +1,17 @@
+import type { Metadata } from "next";
 import MusicCatalog from "@/components/MusicCatalog";
 import { getReleases } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = {
-  title: "Music — MELORI MUSIC",
-  description: "Browse the full MELORI music catalog.",
+const description =
+  "Browse every release on MELORI Music — singles, EPs, and albums from independent artists.";
+
+export const metadata: Metadata = {
+  title: "Music Catalog",
+  description,
+  openGraph: { title: "Music Catalog", description },
+  twitter: { title: "Music Catalog", description },
 };
 
 export default async function MusicPage() {

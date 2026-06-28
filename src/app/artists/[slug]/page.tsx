@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import ReleaseCard from "@/components/ReleaseCard";
@@ -5,6 +6,32 @@ import { getArtistBySlug } from "@/lib/data";
 import type { ReleaseListItem } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const data = await getArtistBySlug(params.slug).catch(() => null);
+  if (!data) return { title: "Artist not found" };
+
+  const { artist, releases } = data;
+  const description =
+    artist.bio ?? `Discover music by ${artist.name} on MELORI Music.`;
+  const cover =
+    artist.cover_image_url ??
+    artist.avatar_url ??
+    releases.find((r) => r.cover_art_url)?.cover_art_url ??
+    null;
+  const images = cover ? [cover] : undefined;
+
+  return {
+    title: artist.name,
+    description,
+    openGraph: { title: artist.name, description, type: "profile", images },
+    twitter: { title: artist.name, description, images },
+  };
+}
 
 export default async function ArtistDetailPage({
   params,
@@ -30,7 +57,7 @@ export default async function ArtistDetailPage({
   }));
 
   return (
-    <div>
+    <article>
       {/* Cover banner */}
       <div className="relative h-48 w-full overflow-hidden bg-brand-surface sm:h-64">
         <CoverImage
@@ -82,6 +109,6 @@ export default async function ArtistDetailPage({
           )}
         </section>
       </div>
-    </div>
+    </article>
   );
 }

@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
 import PlayerProvider from "@/components/player/PlayerProvider";
+import { SITE_URL } from "@/lib/site";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -13,8 +14,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://melorimusic.org"),
-  title: "MELORI MUSIC",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "MELORI MUSIC",
+    template: "%s · MELORI MUSIC",
+  },
   description:
     "Independent music from Karl Ray, KAEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.",
   icons: {
@@ -22,10 +26,17 @@ export const metadata: Metadata = {
     apple: "/favicon.png",
   },
   openGraph: {
+    siteName: "MELORI MUSIC",
     title: "MELORI MUSIC",
     description: "Stream freely. Support directly. Create endlessly.",
     images: ["/images/og-image.png"],
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MELORI MUSIC",
+    description: "Stream freely. Support directly. Create endlessly.",
+    images: ["/images/og-image.png"],
   },
 };
 

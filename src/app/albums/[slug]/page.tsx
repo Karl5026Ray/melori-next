@@ -1,0 +1,66 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import CoverImage from "@/components/CoverImage";
+import TrackList from "@/components/TrackList";
+import { getReleaseBySlug } from "@/lib/data";
+import { formatPrice } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
+
+export default async function AlbumDetailPage({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  const data = await getReleaseBySlug(params.slug).catch(() => null);
+  if (!data) notFound();
+
+  const { release, artist, tracks } = data;
+
+  return (
+    <div className="max-w-6xl mx-auto px-6 py-12">
+      <div className="flex flex-col gap-8 md:flex-row">
+        {/* Cover + meta */}
+        <div className="w-full max-w-xs shrink-0">
+          <CoverImage
+            src={release.cover_art_url}
+            alt={release.title}
+            className="aspect-square w-full"
+          />
+          <h1 className="mt-4 text-2xl font-bold">{release.title}</h1>
+          {artist && (
+            <Link
+              href={`/artists/${artist.slug}`}
+              className="mt-1 inline-block text-text-secondary transition-colors hover:text-brand-primary"
+            >
+              {artist.name}
+            </Link>
+          )}
+          <div className="mt-3 flex items-center gap-3 text-sm">
+            <span className="uppercase tracking-wide text-text-secondary">
+              {release.release_type}
+            </span>
+            <span className="font-semibold text-brand-primary">
+              {formatPrice(release.price)}
+            </span>
+          </div>
+          {release.description && (
+            <p className="mt-4 text-sm text-text-secondary">
+              {release.description}
+            </p>
+          )}
+        </div>
+
+        {/* Tracklist */}
+        <div className="min-w-0 flex-1">
+          <h2 className="mb-4 text-xl font-bold">Tracks</h2>
+          <TrackList
+            tracks={tracks}
+            artistName={artist?.name ?? null}
+            coverUrl={release.cover_art_url}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

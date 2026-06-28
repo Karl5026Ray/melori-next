@@ -22,6 +22,7 @@ const config: Config = {
           secondary: "#b2b2b2",
         },
         "brand-border": "#2d2d2d",
+        "input-border": "#383838",
       },
       fontFamily: {
         sans: ["var(--font-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],

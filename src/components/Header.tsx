@@ -11,8 +11,8 @@ const navLinks = [
 export default function Header() {
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+        <Link href="/" className="flex items-center gap-2 shrink-0">
           <Image
             src="/logo/logo.png"
             alt="MELORI Music"
@@ -20,9 +20,11 @@ export default function Header() {
             height={36}
             priority
           />
-          <span className="font-bold tracking-wide">MELORI MUSIC</span>
+          <span className="hidden sm:inline font-bold tracking-wide">
+            MELORI MUSIC
+          </span>
         </Link>
-        <nav className="flex items-center gap-6 text-sm">
+        <nav className="flex items-center gap-4 sm:gap-6 text-sm">
           {navLinks.map((link) => (
             <Link
               key={link.label}

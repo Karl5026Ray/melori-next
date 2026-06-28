@@ -32,3 +32,5 @@ See `.env.local.example` and BUILD SPEC Section 6. Set real values in the Vercel
 - [ ] Step 6: Data migration
 - [ ] Step 7: SEO & meta
 - [ ] Step 8: Testing
+
+<!-- ci: verify Vercel auto-deploy 2026-06-28T01:31:40Z -->

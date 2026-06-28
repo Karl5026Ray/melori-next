@@ -57,6 +57,9 @@ export default function PlayerProvider({
   const loadedIdRef = useRef<number | null>(null);
   // Holds the latest auto-advance behavior for the (once-bound) "ended" event.
   const advanceRef = useRef<() => void>(() => {});
+  // True while playback is halted by an explicit user pause. Guards against a
+  // late "ended" event (e.g. pausing right at the tail) silently auto-advancing.
+  const userPausedRef = useRef(false);
 
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -184,7 +187,10 @@ export default function PlayerProvider({
         audio.src = data.url;
         audio.volume = volume;
         loadedIdRef.current = track.id;
-        if (shouldPlay) await audio.play();
+        if (shouldPlay) {
+          userPausedRef.current = false;
+          await audio.play();
+        }
       } catch {
         setError("Unable to play this track.");
         setIsPlaying(false);
@@ -220,8 +226,10 @@ export default function PlayerProvider({
       return;
     }
     if (audio.paused) {
+      userPausedRef.current = false;
       void audio.play().catch(() => undefined);
     } else {
+      userPausedRef.current = true;
       audio.pause();
     }
   }, [current, loadAndPlay]);
@@ -269,11 +277,14 @@ export default function PlayerProvider({
   // Keep the "ended" auto-advance handler pointing at the latest queue/index.
   useEffect(() => {
     advanceRef.current = () => {
+      // A user-initiated pause must never be overridden by auto-advance.
+      if (userPausedRef.current) return;
       if (index + 1 < queue.length) {
         activateIndex(queue, index + 1, true);
       } else {
+        // Last track finished: stop cleanly but keep it shown, paused at its
+        // end. Do NOT reset progress or clear `current` (no placeholder wipe).
         setIsPlaying(false);
-        setCurrentTime(0);
       }
     };
   }, [index, queue, activateIndex]);

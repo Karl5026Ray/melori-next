@@ -12,6 +12,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // runtime environment on every cold start, so it always reflects the current
 // Vercel configuration. A fresh client is created per request — no module-level
 // memoization — so we never reuse a client bound to a stale value.
+//
+// We also force `cache: "no-store"` on the client's fetch. supabase-js runs its
+// queries through fetch, which Next.js wraps with its Data Cache; inside a Server
+// Component a route-level `dynamic = "force-dynamic"` does NOT reliably stop those
+// query results from being served stale. Route Handlers bypass that cache — which
+// is why /api/artists returned fresh rows while the /artists page rendered a stale
+// snapshot (old "Kael R" name, taken before the 4th artist was published). Reading
+// no-store keeps every server-side query live.
 export function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -23,5 +31,8 @@ export function getSupabaseAdmin(): SupabaseClient {
 
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    },
   });
 }

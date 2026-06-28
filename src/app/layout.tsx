@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: "%s · MELORI MUSIC",
   },
   description:
-    "Independent music from Karl Ray, KAEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.",
+    "Independent music from Karl Ray, KAIEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.",
   icons: {
     icon: "/favicon.png",
     apple: "/favicon.png",

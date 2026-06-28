@@ -16,10 +16,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: "MELORI MUSIC — Independent Music Platform",
     description,
+    images: ["/images/og-image.png"],
   },
   twitter: {
+    card: "summary_large_image",
     title: "MELORI MUSIC — Independent Music Platform",
     description,
+    images: ["/images/og-image.png"],
   },
 };
 

@@ -10,8 +10,17 @@ const description =
 export const metadata: Metadata = {
   title: "Music Catalog",
   description,
-  openGraph: { title: "Music Catalog", description },
-  twitter: { title: "Music Catalog", description },
+  openGraph: {
+    title: "Music Catalog",
+    description,
+    images: ["/images/og-image.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Music Catalog",
+    description,
+    images: ["/images/og-image.png"],
+  },
 };
 
 export default async function MusicPage() {

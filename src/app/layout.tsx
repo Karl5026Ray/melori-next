@@ -29,7 +29,14 @@ export const metadata: Metadata = {
     siteName: "MELORI MUSIC",
     title: "MELORI MUSIC",
     description: "Stream freely. Support directly. Create endlessly.",
-    images: ["/images/og-image.png"],
+    images: [
+      {
+        url: "/images/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "MELORI MUSIC",
+      },
+    ],
     type: "website",
   },
   twitter: {

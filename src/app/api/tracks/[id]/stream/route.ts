@@ -8,7 +8,9 @@ export const revalidate = 0;
 const EXPIRES_IN = 3600;
 
 // GET /api/tracks/[id]/stream — a short-lived signed URL for the track's audio file
-// in the private `audio-files` bucket. tracks.audio_url holds the bucket-relative path.
+// in the private `audio-files` bucket. Prefers the full-length `audio_url`; when
+// that is absent, falls back to the 30s `preview_url` clip. Both are bucket-relative
+// paths in the same private `audio-files` bucket and are signed identically.
 export async function GET(
   _request: Request,
   { params }: { params: { id: string } },
@@ -22,19 +24,21 @@ export async function GET(
 
     const { data: track, error } = await supabaseAdmin
       .from("tracks")
-      .select("id, audio_url, is_published")
+      .select("id, audio_url, preview_url, is_published")
       .eq("id", id)
       .eq("is_published", true)
       .maybeSingle();
 
     if (error) throw error;
-    if (!track || !track.audio_url) {
+
+    const sourcePath = track?.audio_url ?? track?.preview_url ?? null;
+    if (!track || !sourcePath) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const { data: signed, error: signError } = await supabaseAdmin.storage
       .from("audio-files")
-      .createSignedUrl(track.audio_url, EXPIRES_IN);
+      .createSignedUrl(sourcePath, EXPIRES_IN);
 
     if (signError) throw signError;
     if (!signed?.signedUrl) {

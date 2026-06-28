@@ -39,6 +39,7 @@ export default function TrackList({
       {tracks.map((track, index) => {
         const isCurrent = current?.id === track.id;
         const showPause = isCurrent && isPlaying;
+        const isPlayable = Boolean(track.audio_url || track.preview_url);
         return (
           <li
             key={track.id}
@@ -47,8 +48,15 @@ export default function TrackList({
             <button
               type="button"
               onClick={() => playQueue(queue, index)}
-              aria-label={showPause ? `Pause ${track.title}` : `Play ${track.title}`}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-text-secondary transition-colors hover:border-brand-primary hover:text-brand-primary"
+              disabled={!isPlayable}
+              aria-label={
+                !isPlayable
+                  ? `${track.title} (no preview available)`
+                  : showPause
+                    ? `Pause ${track.title}`
+                    : `Play ${track.title}`
+              }
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-text-secondary transition-colors hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-brand-border disabled:hover:text-text-secondary"
             >
               {showPause ? (
                 <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">

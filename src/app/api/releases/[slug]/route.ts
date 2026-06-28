@@ -35,7 +35,7 @@ export async function GET(
     const { data: tracks, error: tracksError } = await supabaseAdmin
       .from("tracks")
       .select(
-        "id, title, release_id, track_number, duration_seconds, preview_url, price, is_published, created_at",
+        "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at",
       )
       .eq("release_id", release.id)
       .eq("is_published", true)

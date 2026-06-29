@@ -22,6 +22,18 @@ const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
     return [
+      // ── Stripe success_url backwards-compat: VPS still sends Stripe a
+      // success_url ending in .html (download-success.html, membership-success.html).
+      // Next.js routes are extensionless. Rewrite the .html variants to the
+      // real routes so old Stripe sessions keep working without a VPS change.
+      {
+        source: '/download-success.html',
+        destination: '/download-success',
+      },
+      {
+        source: '/membership-success.html',
+        destination: '/membership-success',
+      },
       // ── Members / auth (sign-in, sign-up, sessions, password reset, profile)
       {
         source: '/api/members/:path*',

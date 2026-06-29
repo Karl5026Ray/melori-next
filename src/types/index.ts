@@ -36,6 +36,7 @@ export interface Release {
   is_published: boolean;
   created_at: string;
   updated_at: string;
+  vps_release_id: number | null;
 }
 
 export interface Track {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import BuyButton from "@/components/BuyButton";
 import CoverImage from "@/components/CoverImage";
 import TrackList from "@/components/TrackList";
 import { getReleaseBySlug } from "@/lib/data";
@@ -70,6 +71,12 @@ export default async function AlbumDetailPage({
               {formatPrice(release.price)}
             </span>
           </div>
+          {release.vps_release_id != null && (
+            <BuyButton
+              vpsReleaseId={release.vps_release_id}
+              price={release.price}
+            />
+          )}
           {release.description && (
             <p className="mt-4 text-sm text-text-secondary">
               {release.description}

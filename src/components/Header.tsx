@@ -10,6 +10,7 @@ const navLinks = [
   { label: "Videos", href: "/video" },
   { label: "Mission", href: "/mission" },
   { label: "Membership", href: "/membership" },
+  { label: "Donate", href: "/donate" },
 ];
 
 export default function Header() {

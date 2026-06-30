@@ -101,35 +101,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured video */}
-      {featuredVideo && (
-        <section className="max-w-5xl mx-auto px-6 py-12">
-          <div className="mb-6 flex items-end justify-between">
-            <h2 className="text-2xl font-bold">Featured Video</h2>
-            <Link
-              href="/video"
-              className="text-sm text-text-secondary hover:text-brand-primary transition-colors"
-            >
-              View all
-            </Link>
-          </div>
-          <div
-            className="relative w-full overflow-hidden rounded-lg bg-black"
-            style={{ paddingTop: "56.25%" }}
-          >
-            <iframe
-              className="absolute inset-0 h-full w-full"
-              src={`https://www.youtube.com/embed/${featuredVideo.youtube_id}`}
-              title={featuredVideo.title}
-              loading="lazy"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
-          </div>
-          <p className="mt-3 text-sm text-text-secondary">{featuredVideo.title}</p>
-        </section>
-      )}
-
       {/* Featured releases */}
       {featuredReleases.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12">
@@ -167,6 +138,35 @@ export default async function HomePage() {
               <ArtistCard key={artist.id} artist={artist} />
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Featured video */}
+      {featuredVideo && (
+        <section className="max-w-5xl mx-auto px-6 py-12">
+          <div className="mb-6 flex items-end justify-between">
+            <h2 className="text-2xl font-bold">Featured Video</h2>
+            <Link
+              href="/video"
+              className="text-sm text-text-secondary hover:text-brand-primary transition-colors"
+            >
+              View all
+            </Link>
+          </div>
+          <div
+            className="relative w-full overflow-hidden rounded-lg bg-black"
+            style={{ paddingTop: "56.25%" }}
+          >
+            <iframe
+              className="absolute inset-0 h-full w-full"
+              src={`https://www.youtube.com/embed/${featuredVideo.youtube_id}`}
+              title={featuredVideo.title}
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
+          <p className="mt-3 text-sm text-text-secondary">{featuredVideo.title}</p>
         </section>
       )}
     </div>

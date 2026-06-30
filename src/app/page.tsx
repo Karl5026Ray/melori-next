@@ -63,7 +63,7 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
-        <div className="max-w-5xl mx-auto px-6 py-24 flex flex-col items-center text-center">
+        <div className="max-w-5xl mx-auto px-6 pt-24 pb-10 flex flex-col items-center text-center">
           <Image
             src="/logo/logo.png"
             alt="MELORI Music logo"
@@ -103,7 +103,7 @@ export default async function HomePage() {
 
       {/* Featured releases */}
       {featuredReleases.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 py-12">
+        <section className="max-w-6xl mx-auto px-6 pt-4 pb-12">
           <div className="mb-6 flex items-end justify-between">
             <h2 className="text-2xl font-bold">Featured Releases</h2>
             <Link

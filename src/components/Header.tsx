@@ -8,8 +8,8 @@ const navLinks = [
   { label: "Music", href: "/music" },
   { label: "Artists", href: "/artists" },
   { label: "Videos", href: "/video" },
-  { label: "Membership", href: "#" },
-  { label: "About", href: "#" },
+  { label: "Mission", href: "/mission" },
+  { label: "Membership", href: "/membership" },
 ];
 
 export default function Header() {

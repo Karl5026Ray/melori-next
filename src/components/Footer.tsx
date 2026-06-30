@@ -2,9 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 
 const footerLinks = [
-  { label: "Privacy", href: "#" },
-  { label: "Terms", href: "#" },
-  { label: "Support", href: "#" },
+  { label: "Mission", href: "/mission" },
+  { label: "Membership", href: "/membership" },
+  { label: "Privacy", href: "/privacy" },
+  { label: "Terms", href: "/terms" },
+  { label: "Support", href: "/support" },
 ];
 
 export default function Footer() {

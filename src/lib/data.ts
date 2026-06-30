@@ -140,7 +140,7 @@ export async function getReleaseBySlug(slug: string): Promise<{
   const { data: tracks, error: tracksError } = await supabase
     .from("tracks")
     .select(
-      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at",
+      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at, vps_track_id",
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)

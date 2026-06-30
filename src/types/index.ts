@@ -50,4 +50,5 @@ export interface Track {
   price: number | null;
   is_published: boolean;
   created_at: string;
+  vps_track_id: number | null;
 }

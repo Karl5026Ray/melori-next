@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import BuyButton from "@/components/BuyButton";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatDuration } from "@/lib/format";
 import type { Track } from "@/types";
+
+const DEFAULT_TRACK_PRICE = 0.99;
 
 interface TrackListProps {
   tracks: Track[];
@@ -85,6 +88,15 @@ export default function TrackList({
             <span className="shrink-0 text-sm text-text-secondary">
               {formatDuration(track.duration_seconds)}
             </span>
+
+            {track.vps_track_id != null && (
+              <BuyButton
+                vpsTrackId={track.vps_track_id}
+                price={track.price ?? DEFAULT_TRACK_PRICE}
+                title={track.title}
+                variant="compact"
+              />
+            )}
           </li>
         );
       })}

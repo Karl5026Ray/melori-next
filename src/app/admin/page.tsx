@@ -1,0 +1,108 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function AdminLoginPage() {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    fetch("/api/admin/session", { method: "GET" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.authenticated) {
+          router.push("/admin/dashboard");
+        } else {
+          setChecking(false);
+        }
+      })
+      .catch(() => setChecking(false));
+  }, [router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        router.push("/admin/dashboard");
+      } else {
+        setError(data.error || "Invalid password");
+        setLoading(false);
+      }
+    } catch {
+      setError("Login failed. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#c9a96e]/20 border-t-[#c9a96e] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#1a1a2e] to-[#0a0a0a] flex items-center justify-center px-6">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-3">🎵</div>
+          <h1 className="text-2xl font-bold text-white">MELORI Admin</h1>
+          <p className="text-[#888] text-sm mt-1">Authorized access only</p>
+        </div>
+
+        <form
+          onSubmit={handleLogin}
+          className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-8"
+        >
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm text-center">
+              {error}
+            </div>
+          )}
+
+          <div className="mb-6">
+            <label className="block text-sm text-[#888] mb-2">
+              Admin Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
+              placeholder="Enter password"
+              autoFocus
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !password}
+            className="w-full py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl hover:-translate-y-0.5 transition-all disabled:opacity-50"
+          >
+            {loading ? "Authenticating..." : "Sign In"}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-[#555] mt-6">
+          Unauthorized access is logged and reported.
+        </p>
+      </div>
+    </div>
+  );
+}

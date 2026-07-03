@@ -45,46 +45,6 @@ export default function MissionPage() {
       </section>
 
       <section className="border-t border-brand-border">
-        <div className="max-w-6xl mx-auto px-6 py-20">
-          <h2 className="text-3xl font-bold text-center mb-12">
-            The status quo is broken
-          </h2>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                stat: "$0.003",
-                title: "Artists earn pennies",
-                desc: "Average per-stream payout on major platforms. A million streams = $3,000. Not enough to pay rent.",
-              },
-              {
-                stat: "100%",
-                title: "Fans are data points",
-                desc: "Your listening habits are sold to advertisers. You're the product, not the customer.",
-              },
-              {
-                stat: "3",
-                title: "Gatekeepers decide",
-                desc: "Companies control 90% of global music distribution. Independent voices are buried.",
-              },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className="p-8 rounded-xl border border-brand-border bg-white/5"
-              >
-                <div className="text-3xl font-bold text-brand-primary mb-2">
-                  {item.stat}
-                </div>
-                <h3 className="text-xl font-semibold mb-3">{item.title}</h3>
-                <p className="text-text-secondary leading-relaxed">
-                  {item.desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-brand-border">
         <div className="max-w-4xl mx-auto px-6 py-20">
           <h2 className="text-3xl font-bold text-center mb-12">
             The MELORI way

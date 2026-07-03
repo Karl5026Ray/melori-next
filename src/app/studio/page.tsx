@@ -28,11 +28,11 @@ export default function StudioPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#1a1a2e] to-[#0a0a0a] text-white">
+    <main className="min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-[#0a0a0a] via-[#1a1a2e] to-[#0a0a0a] text-white">
       <div className="border-b border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
               <h1 className="text-3xl font-bold bg-gradient-to-r from-[#c9a96e] to-[#f0d99c] bg-clip-text text-transparent">
                 Artist Studio
               </h1>
@@ -52,12 +52,12 @@ export default function StudioPage() {
 
       <div className="border-b border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-1 -mb-px">
+          <nav className="flex gap-1 -mb-px overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-5 py-4 text-sm font-medium transition-all border-b-2 cursor-pointer flex items-center gap-2
+                className={`px-5 py-4 text-sm font-medium transition-all border-b-2 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0
                   ${
                     activeTab === tab.id
                       ? "border-[#c9a96e] text-[#c9a96e]"

@@ -17,6 +17,8 @@ export interface Artist {
   cover_image_url: string | null;
   is_verified: boolean;
   is_published: boolean;
+  is_featured?: boolean;
+  featured_order?: number | null;
   created_at: string;
   updated_at: string;
 }

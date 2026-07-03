@@ -24,16 +24,23 @@ export const dynamic = "force-dynamic";
 type Tier = "superfan" | "artist" | null;
 type Interval = "month" | "year" | null;
 
-// Amounts in cents. Superfan: 499 / 4999. Artist: 999 / 9999.
+// Amounts in cents. Superfan: 299 / 2999. Artist: 499 / 4999.
+// (Legacy amounts 499/4999/999/9999 kept as fallbacks so any in-flight
+// subscriptions created before the price change still classify correctly.)
 function classifyPrice(amountCents: number | null | undefined): {
   tier: Tier;
   interval: Interval;
 } {
   switch (amountCents) {
-    case 499:
+    case 299:
       return { tier: "superfan", interval: "month" };
-    case 4999:
+    case 2999:
       return { tier: "superfan", interval: "year" };
+    case 499:
+      return { tier: "artist", interval: "month" };
+    case 4999:
+      return { tier: "artist", interval: "year" };
+    // Legacy pricing fallbacks (pre July 2026):
     case 999:
       return { tier: "artist", interval: "month" };
     case 9999:

@@ -1,31 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import ReleaseCard from "@/components/ReleaseCard";
-import ArtistCard from "@/components/ArtistCard";
 import type { Metadata } from "next";
-import { getReleases, getArtists } from "@/lib/data";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
-
-interface FeaturedVideo {
-  youtube_id: string;
-  title: string;
-}
-
-async function getFeaturedVideo(): Promise<FeaturedVideo | null> {
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data } = await supabase
-      .from("videos")
-      .select("youtube_id, title")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    return (data as FeaturedVideo) ?? null;
-  } catch {
-    return null;
-  }
-}
+import { getReleases } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -49,14 +26,8 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const [releases, artists, featuredVideo] = await Promise.all([
-    getReleases().catch(() => []),
-    getArtists().catch(() => []),
-    getFeaturedVideo(),
-  ]);
-
-  const featuredReleases = releases.slice(0, 8);
-  const featuredArtists = artists.slice(0, 8);
+  const releases = await getReleases().catch(() => []);
+  const featuredReleases = releases.slice(0, 12);
 
   return (
     <div>
@@ -101,9 +72,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured releases */}
+      {/* Featured releases — top 12 */}
       {featuredReleases.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 pt-4 pb-12">
+        <section className="max-w-6xl mx-auto px-6 pt-4 pb-16">
           <div className="mb-6 flex items-end justify-between">
             <h2 className="text-2xl font-bold">Featured Releases</h2>
             <Link
@@ -118,55 +89,6 @@ export default async function HomePage() {
               <ReleaseCard key={release.id} release={release} />
             ))}
           </div>
-        </section>
-      )}
-
-      {/* Featured artists */}
-      {featuredArtists.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 py-12">
-          <div className="mb-6 flex items-end justify-between">
-            <h2 className="text-2xl font-bold">Featured Artists</h2>
-            <Link
-              href="/artists"
-              className="text-sm text-text-secondary hover:text-brand-primary transition-colors"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {featuredArtists.map((artist) => (
-              <ArtistCard key={artist.id} artist={artist} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Featured video */}
-      {featuredVideo && (
-        <section className="max-w-5xl mx-auto px-6 py-12">
-          <div className="mb-6 flex items-end justify-between">
-            <h2 className="text-2xl font-bold">Featured Video</h2>
-            <Link
-              href="/video"
-              className="text-sm text-text-secondary hover:text-brand-primary transition-colors"
-            >
-              View all
-            </Link>
-          </div>
-          <div
-            className="relative w-full overflow-hidden rounded-lg bg-black"
-            style={{ paddingTop: "56.25%" }}
-          >
-            <iframe
-              className="absolute inset-0 h-full w-full"
-              src={`https://www.youtube.com/embed/${featuredVideo.youtube_id}`}
-              title={featuredVideo.title}
-              loading="lazy"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
-          </div>
-          <p className="mt-3 text-sm text-text-secondary">{featuredVideo.title}</p>
         </section>
       )}
     </div>

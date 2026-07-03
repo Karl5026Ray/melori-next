@@ -35,7 +35,10 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const standaloneLinks: NavItem[] = [{ label: "Store", href: "/store" }];
+const standaloneLinks: NavItem[] = [
+  { label: "Featured Artist", href: "/featured-artist" },
+  { label: "Store", href: "/store" },
+];
 
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu

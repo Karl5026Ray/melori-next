@@ -84,6 +84,20 @@ export async function getArtists(): Promise<Artist[]> {
   return (data as Artist[] | null) ?? [];
 }
 
+export async function getFeaturedArtists(): Promise<Artist[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("artists")
+    .select("*")
+    .eq("is_published", true)
+    .eq("is_featured", true)
+    .order("featured_order", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return (data as Artist[] | null) ?? [];
+}
+
 export async function getArtistBySlug(
   slug: string,
 ): Promise<{ artist: Artist; releases: Release[] } | null> {

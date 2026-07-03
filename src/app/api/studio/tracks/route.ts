@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 
 // GET /api/studio/tracks — List all studio tracks
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const { data: tracks, error } = await supabase
@@ -26,6 +29,8 @@ export async function GET() {
 
 // POST /api/studio/tracks — Create new studio track
 export async function POST(req: NextRequest) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const body = await req.json();

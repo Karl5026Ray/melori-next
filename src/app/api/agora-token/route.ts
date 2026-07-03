@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RtcTokenBuilder, RtcRole } from "agora-token";
+import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID ?? "";
 const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE ?? "";
@@ -12,6 +13,11 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
+
+    // Voice/room access (vocal conversations) requires an active Superfan-or-better
+    // membership. Free users may view/listen to social content but not join voice.
+    const guard = await requireSuperfan(req);
+    if (isGuardFailure(guard)) return guard;
 
     const {
       channel,

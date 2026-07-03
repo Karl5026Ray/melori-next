@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 
 // GET /api/studio/track/[id] — Get single studio track
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const { data: track, error } = await supabase

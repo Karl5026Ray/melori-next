@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { authFetch } from "@/lib/authClient";
 
 interface ScheduledRelease {
   id: string;
@@ -16,7 +17,7 @@ export default function ReleaseScheduler() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
-    fetch("/api/studio/schedule")
+    authFetch("/api/studio/schedule")
       .then((r) => r.json())
       .then((data) => {
         setReleases(data.releases || []);

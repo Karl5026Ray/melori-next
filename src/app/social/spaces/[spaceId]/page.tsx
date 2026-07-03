@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { Space, SpaceParticipant } from "@/types/social";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import {
@@ -23,6 +24,7 @@ export default function SpaceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const canParticipate = useCanParticipate();
   const spaceId = params.spaceId as string;
 
   const [space, setSpace] = useState<Space | null>(null);
@@ -147,6 +149,13 @@ export default function SpaceDetailPage() {
 
   const toggleMute = useCallback(async () => {
     if (!user) return;
+    // Speaking is a vocal-conversation action → Superfan+ only. (The Agora token
+    // endpoint enforces this server-side; free users cannot obtain a publisher
+    // token even if this button were bypassed.)
+    if (!canParticipate) {
+      router.push("/membership");
+      return;
+    }
     const newMuted = !isMuted;
     await supabase
       .from("space_participants")
@@ -154,10 +163,15 @@ export default function SpaceDetailPage() {
       .eq("space_id", spaceId)
       .eq("user_id", user.id);
     setIsMuted(newMuted);
-  }, [user, spaceId, isMuted]);
+  }, [user, spaceId, isMuted, canParticipate, router]);
 
   const toggleHand = useCallback(async () => {
     if (!user) return;
+    // Raising a hand requests the mic (to speak) → Superfan+ only.
+    if (!canParticipate) {
+      router.push("/membership");
+      return;
+    }
     const newHand = !hasRaisedHand;
     await supabase
       .from("space_participants")
@@ -165,7 +179,7 @@ export default function SpaceDetailPage() {
       .eq("space_id", spaceId)
       .eq("user_id", user.id);
     setHasRaisedHand(newHand);
-  }, [user, spaceId, hasRaisedHand]);
+  }, [user, spaceId, hasRaisedHand, canParticipate, router]);
 
   const isHost = user?.id === space?.host_id;
 

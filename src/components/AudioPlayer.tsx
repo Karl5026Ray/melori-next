@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
@@ -53,6 +54,8 @@ export default function AudioPlayer() {
     duration,
     volume,
     error,
+    isSample,
+    sampleEnded,
     hasNext,
     hasPrev,
     togglePlay,
@@ -66,6 +69,23 @@ export default function AudioPlayer() {
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+      {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
+      {current && sampleEnded && (
+        <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-text-secondary">
+              You&apos;re hearing a 30-second preview. Become a Superfan to play
+              full songs.
+            </span>
+            <Link
+              href="/membership"
+              className="shrink-0 rounded-full bg-brand-primary px-4 py-1.5 font-semibold text-black transition-opacity hover:opacity-90"
+            >
+              Upgrade — $2.99/mo
+            </Link>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex flex-col gap-1.5">
         {/* Top row: track info + controls */}
         <div className="flex items-center gap-3">
@@ -80,8 +100,13 @@ export default function AudioPlayer() {
                   rounded="rounded"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-text-primary">
-                    {current.title}
+                  <p className="flex items-center gap-2 truncate text-sm font-medium text-text-primary">
+                    <span className="truncate">{current.title}</span>
+                    {isSample && (
+                      <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
+                        Preview
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-xs text-text-secondary">
                     {error ?? current.artistName ?? "MELORI MUSIC"}

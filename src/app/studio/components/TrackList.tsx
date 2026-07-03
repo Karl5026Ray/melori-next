@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { authFetch } from "@/lib/authClient";
 
 interface Track {
   id: string;
@@ -25,7 +26,7 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
   const [filter, setFilter] = useState<"all" | Track["status"]>("all");
 
   useEffect(() => {
-    fetch("/api/studio/tracks")
+    authFetch("/api/studio/tracks")
       .then((r) => r.json())
       .then((data) => {
         setTracks(data.tracks || []);

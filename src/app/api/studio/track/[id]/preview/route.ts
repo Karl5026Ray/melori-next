@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 
 // PATCH /api/studio/track/[id]/preview — Update preview settings
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const body = await req.json();

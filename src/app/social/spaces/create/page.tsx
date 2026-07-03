@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import {
+  useCanParticipate,
+  UpgradePrompt,
+} from "@/components/social/UpgradePrompt";
+import { authFetch } from "@/lib/authClient";
 import {
   ArrowLeft,
   Headphones,
@@ -33,10 +37,12 @@ const spaceTypes = [
 export default function CreateSpacePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
   const [type, setType] = useState("listening");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,26 +52,29 @@ export default function CreateSpacePage() {
     }
 
     setIsSubmitting(true);
+    setError("");
 
-    const { data, error } = await supabase
-      .from("spaces")
-      .insert({
-        title,
-        topic: topic || "Open Discussion",
-        type,
-        host_id: user.id,
-        status: "live",
-        agora_channel: `melori_${Date.now()}`,
-      })
-      .select()
-      .single();
+    // Server independently enforces Superfan+ on this endpoint (403 otherwise).
+    const res = await authFetch("/api/social/spaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, topic, type }),
+    });
 
-    if (!error && data) {
-      router.push(`/social/spaces/${data.id}`);
-    } else {
-      console.error("Error creating space:", error);
-      setIsSubmitting(false);
+    if (res.ok) {
+      const { space } = await res.json();
+      router.push(`/social/spaces/${space.id}`);
+      return;
     }
+
+    if (res.status === 403) {
+      router.push("/membership");
+      return;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    setError(data?.error ?? "Could not create the space. Please try again.");
+    setIsSubmitting(false);
   };
 
   return (
@@ -81,6 +90,9 @@ export default function CreateSpacePage() {
           <h2 className="text-2xl font-bold">Start a Space</h2>
         </div>
 
+        {user && !canParticipate ? (
+          <UpgradePrompt action="start a Space" />
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm text-melori-muted mb-2">
@@ -140,6 +152,12 @@ export default function CreateSpacePage() {
             </div>
           </div>
 
+          {error && (
+            <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
+              {error}
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting}
@@ -148,6 +166,7 @@ export default function CreateSpacePage() {
             {isSubmitting ? "Going Live..." : "Go Live"}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

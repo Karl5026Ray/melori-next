@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { authHeaders } from "@/lib/authClient";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -33,7 +34,7 @@ export async function fetchAgoraToken(
 ): Promise<AgoraTokenResponse> {
   const res = await fetch("/api/agora-token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ channel }),
   });
   if (!res.ok) throw new Error("Failed to fetch Agora token");

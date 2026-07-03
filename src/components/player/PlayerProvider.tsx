@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { authHeaders } from "@/lib/authClient";
 
 export interface PlayerTrack {
   id: number;
@@ -28,6 +29,10 @@ interface PlayerContextValue {
   error: string | null;
   hasNext: boolean;
   hasPrev: boolean;
+  // True while the current track is a free 30s preview (not full access).
+  isSample: boolean;
+  // True once a free preview has hit its 30s cap and playback was stopped.
+  sampleEnded: boolean;
   playQueue: (tracks: PlayerTrack[], startIndex: number) => void;
   togglePlay: () => void;
   next: () => void;
@@ -60,6 +65,8 @@ export default function PlayerProvider({
   // True while playback is halted by an explicit user pause. Guards against a
   // late "ended" event (e.g. pausing right at the tail) silently auto-advancing.
   const userPausedRef = useRef(false);
+  // Free-preview cap (seconds) for the loaded track, or null for full access.
+  const sampleLimitRef = useRef<number | null>(null);
 
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -70,6 +77,8 @@ export default function PlayerProvider({
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [isSample, setIsSample] = useState(false);
+  const [sampleEnded, setSampleEnded] = useState(false);
 
   // --- single shared <audio> element + event wiring ---
   useEffect(() => {
@@ -79,6 +88,18 @@ export default function PlayerProvider({
     const audio = audioRef.current;
 
     const onTime = () => {
+      // Hard-cap free previews at the sample limit: a free listener must not be
+      // able to hear past the 30s mark even though the audio element holds the
+      // full file. Server-side gating serves a dedicated clip when one exists.
+      const limit = sampleLimitRef.current;
+      if (limit != null && audio.currentTime >= limit) {
+        userPausedRef.current = true;
+        audio.pause();
+        audio.currentTime = limit;
+        setCurrentTime(limit);
+        setSampleEnded(true);
+        return;
+      }
       setCurrentTime(audio.currentTime);
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
@@ -176,13 +197,23 @@ export default function PlayerProvider({
       if (!audio) return;
       setError(null);
       setIsLoading(true);
+      setSampleEnded(false);
       try {
         const res = await fetch(`/api/tracks/${track.id}/stream`, {
           cache: "no-store",
+          headers: await authHeaders(),
         });
         if (!res.ok) throw new Error("stream request failed");
-        const data: { url?: string } = await res.json();
+        const data: {
+          url?: string;
+          sample?: boolean;
+          sampleSeconds?: number | null;
+        } = await res.json();
         if (!data.url) throw new Error("no stream url");
+
+        sampleLimitRef.current =
+          typeof data.sampleSeconds === "number" ? data.sampleSeconds : null;
+        setIsSample(Boolean(data.sample));
 
         audio.src = data.url;
         audio.volume = volume;
@@ -301,6 +332,8 @@ export default function PlayerProvider({
         duration,
         volume,
         error,
+        isSample,
+        sampleEnded,
         hasNext: index + 1 < queue.length,
         hasPrev: queue.length > 1 && index > 0,
         playQueue,

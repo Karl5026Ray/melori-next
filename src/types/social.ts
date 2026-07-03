@@ -11,6 +11,10 @@ export interface Profile {
   followers_count: number;
   following_count: number;
   created_at?: string;
+  // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
+  membership_tier?: string | null;
+  membership_status?: string | null;
+  membership_expires_at?: string | null;
 }
 
 export type SpaceType = "listening" | "discussion" | "creation" | "dj_set";

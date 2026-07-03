@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 
 export async function POST(req: NextRequest) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const { trackId, start, end } = await req.json();

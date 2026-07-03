@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { authFetch } from "@/lib/authClient";
 
 interface UploadState {
   file: File | null;
@@ -76,7 +77,7 @@ export default function TrackUploader() {
 
     try {
       // 1. Get signed URL for audio upload
-      const audioRes = await fetch("/api/studio/upload-url", {
+      const audioRes = await authFetch("/api/studio/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -99,7 +100,7 @@ export default function TrackUploader() {
       // 3. Upload cover art if provided
       let coverPublicUrl = null;
       if (state.coverArt) {
-        const coverRes = await fetch("/api/studio/upload-url", {
+        const coverRes = await authFetch("/api/studio/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -121,7 +122,7 @@ export default function TrackUploader() {
       setState((prev) => ({ ...prev, progress: 75 }));
 
       // 4. Create track record in Supabase
-      const trackRes = await fetch("/api/studio/tracks", {
+      const trackRes = await authFetch("/api/studio/tracks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

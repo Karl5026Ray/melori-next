@@ -2,8 +2,14 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import {
+  useCanParticipate,
+  UpgradePrompt,
+} from "@/components/social/UpgradePrompt";
+import { authFetch } from "@/lib/authClient";
 import { Message, Profile } from "@/types/social";
 import { MessageBubble } from "@/components/social/messages/MessageBubble";
 import {
@@ -19,7 +25,9 @@ import Link from "next/link";
 
 export default function ChatPage() {
   const params = useParams();
+  const router = useRouter();
   const { user } = useAuth();
+  const canParticipate = useCanParticipate();
   const conversationId = params.conversationId as string;
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -87,19 +95,25 @@ export default function ChatPage() {
     e.preventDefault();
     if (!input.trim() || !user) return;
 
-    const { error } = await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      sender_id: user.id,
-      content: input.trim(),
+    // Server independently enforces Superfan+ on this endpoint (403 otherwise).
+    const res = await authFetch("/api/social/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        content: input.trim(),
+      }),
     });
 
-    if (!error) {
+    if (res.ok) {
       setInput("");
       await supabase.channel(`typing:${conversationId}`).send({
         type: "broadcast",
         event: "typing",
         payload: { user_id: user.id, typing: false },
       });
+    } else if (res.status === 403) {
+      router.push("/membership");
     }
   };
 
@@ -187,6 +201,9 @@ export default function ChatPage() {
       </div>
 
       <div className="border-t border-melori-border p-4 bg-melori-void shrink-0">
+        {user && !canParticipate ? (
+          <UpgradePrompt action="reply" />
+        ) : (
         <form onSubmit={sendMessage} className="flex items-end gap-2">
           <button
             type="button"
@@ -213,6 +230,7 @@ export default function ChatPage() {
             <Send className="w-5 h-5" />
           </button>
         </form>
+        )}
       </div>
     </div>
   );

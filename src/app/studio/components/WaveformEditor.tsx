@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { authFetch } from "@/lib/authClient";
 
 interface WaveformEditorProps {
   trackId: string | null;
@@ -48,7 +49,7 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
       return;
     }
 
-    fetch(`/api/studio/track/${trackId}`)
+    authFetch(`/api/studio/track/${trackId}`)
       .then((r) => r.json())
       .then((data) => {
         setTrack(data);
@@ -246,7 +247,7 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
     try {
       // For now, use server-side API (FFmpeg.wasm is heavy for client)
       // In production, you'd load FFmpeg.wasm client-side
-      const response = await fetch("/api/studio/generate-preview", {
+      const response = await authFetch("/api/studio/generate-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -260,7 +261,7 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
       if (data.previewUrl) {
         setGeneratedUrl(data.previewUrl);
         // Save preview settings to track
-        await fetch(`/api/studio/track/${track.id}/preview`, {
+        await authFetch(`/api/studio/track/${track.id}/preview`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

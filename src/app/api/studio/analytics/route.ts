@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 
 // GET /api/studio/analytics — Aggregate play/revenue analytics for studio tracks.
 // Revenue splits 70/30 in the artist's favor.
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
 

@@ -70,17 +70,18 @@ export default async function ArtistDetailPage({
       </div>
 
       <div className="max-w-6xl mx-auto px-6">
-        {/* Header */}
-        <div className="-mt-16 flex flex-col items-center gap-4 sm:flex-row sm:items-end">
+        {/* Horizontal header: photo next to name across the top.
+            Stacks vertically on mobile, side-by-side from sm up. */}
+        <div className="-mt-16 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:gap-6 sm:text-left">
           <CoverImage
             src={artist.avatar_url}
             alt={artist.name}
-            className="h-32 w-32 border-4 border-brand-background"
+            className="h-32 w-32 shrink-0 border-4 border-brand-background sm:h-40 sm:w-40"
             rounded="rounded-full"
           />
-          <div className="text-center sm:pb-2 sm:text-left">
-            <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:justify-start">
-              {artist.name}
+          <div className="min-w-0 sm:pb-3">
+            <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:justify-start sm:text-4xl lg:text-5xl">
+              <span className="truncate">{artist.name}</span>
               {artist.is_verified && (
                 <span className="text-brand-primary" title="Verified">
                   ✓

@@ -4,11 +4,11 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Mission",
   description:
-    "Music is a mission, not an industry. MELORI Music restores the sacred connection between artist and listener — fair pay, real community, no gatekeepers.",
+    "Most apps treat music like inventory to sell. Melori treats artists as people building real careers — the operating system for independent musicians.",
   openGraph: {
     title: "Mission",
     description:
-      "Music is a mission, not an industry. MELORI Music restores the sacred connection between artist and listener.",
+      "Most apps treat music like inventory to sell. Melori treats artists as people building real careers.",
     images: ["/images/og-image.png"],
   },
 };
@@ -22,14 +22,17 @@ export default function MissionPage() {
           <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-full border border-brand-border text-sm text-text-secondary">
             Our Why
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-tight">
-            Music is a <span className="text-brand-primary">mission</span>,
-            <br className="hidden md:inline" /> not an industry
+          <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight">
+            Most apps treat music like inventory to sell.{" "}
+            <span className="text-brand-primary">
+              Melori treats artists as people building real careers.
+            </span>
           </h1>
           <p className="mt-6 text-lg md:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
-            MELORI Music exists to restore the sacred connection between artist
-            and listener. No middlemen taking 70%. No algorithms deciding what
-            you hear. Just music, community, and fair exchange.
+            We&apos;re not another streaming service&mdash;we&apos;re the
+            operating system for independent musicians. No middlemen taking the
+            majority of your money. No algorithms calling the shots. Just music,
+            community, and fair exchange.
           </p>
         </div>
       </section>

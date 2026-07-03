@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { authFetch } from "@/lib/authClient";
 
 interface Analytics {
   totalStreams: number;
@@ -19,7 +20,7 @@ export default function AnalyticsPanel() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
 
   useEffect(() => {
-    fetch(`/api/studio/analytics?period=${period}`)
+    authFetch(`/api/studio/analytics?period=${period}`)
       .then((r) => r.json())
       .then((data) => {
         setAnalytics(data);

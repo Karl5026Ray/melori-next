@@ -19,31 +19,23 @@ export default function MissionPage() {
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
         <div className="max-w-4xl mx-auto px-6 py-24 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-full border border-brand-border text-sm text-text-secondary">
-            Our Why
-          </div>
-          <div className="space-y-6 text-lg md:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
+          <h1 className="text-4xl md:text-5xl font-bold text-text-primary mb-8">
+            Mission Statement
+          </h1>
+          <div className="space-y-6 text-lg md:text-xl text-text-secondary max-w-3xl mx-auto leading-relaxed">
             <p>
               Melori is the creative infrastructure for independent musicians
               &mdash; not a streaming catalog, not a marketplace, but a
-              full-stack career operating system.
-            </p>
-            <p>
-              We believe artists are founders, not inventory. While the industry
-              treats music as content to be extracted, we treat musicians as
-              professionals building sustainable livelihoods. Our platform
-              combines fair monetization, live audio community, and direct
-              artist-fan relationships into one sovereign ecosystem.
-            </p>
-            <p>
-              No intermediaries siphoning the majority of your revenue. No opaque
-              algorithms dictating your visibility. No platform lock-in holding
-              your audience hostage.
-            </p>
-            <p>
-              Just transparent economics, genuine social connection, and the
-              tools to turn listeners into a community &mdash; and a community
-              into a career.
+              full-stack career operating system. We believe artists are
+              founders, not inventory: while the industry treats music as content
+              to be extracted, we treat musicians as professionals building
+              sustainable livelihoods, combining fair monetization, live audio
+              community, and direct artist-fan relationships into one sovereign
+              ecosystem. No intermediaries siphoning the majority of your
+              revenue, no opaque algorithms dictating your visibility, no
+              platform lock-in holding your audience hostage &mdash; just
+              transparent economics, genuine social connection, and the tools to
+              turn listeners into a community, and a community into a career.
             </p>
             <p className="text-2xl md:text-3xl font-bold text-text-primary pt-2">
               Melori. Build your sound. Own your future.

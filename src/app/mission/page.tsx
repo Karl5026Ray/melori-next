@@ -22,18 +22,33 @@ export default function MissionPage() {
           <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-full border border-brand-border text-sm text-text-secondary">
             Our Why
           </div>
-          <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight">
-            Most apps treat music like inventory to sell.{" "}
-            <span className="text-brand-primary">
-              Melori treats artists as people building real careers.
-            </span>
-          </h1>
-          <p className="mt-6 text-lg md:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
-            We&apos;re not another streaming service&mdash;we&apos;re the
-            operating system for independent musicians. No middlemen taking the
-            majority of your money. No algorithms calling the shots. Just music,
-            community, and fair exchange.
-          </p>
+          <div className="space-y-6 text-lg md:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
+            <p>
+              Melori is the creative infrastructure for independent musicians
+              &mdash; not a streaming catalog, not a marketplace, but a
+              full-stack career operating system.
+            </p>
+            <p>
+              We believe artists are founders, not inventory. While the industry
+              treats music as content to be extracted, we treat musicians as
+              professionals building sustainable livelihoods. Our platform
+              combines fair monetization, live audio community, and direct
+              artist-fan relationships into one sovereign ecosystem.
+            </p>
+            <p>
+              No intermediaries siphoning the majority of your revenue. No opaque
+              algorithms dictating your visibility. No platform lock-in holding
+              your audience hostage.
+            </p>
+            <p>
+              Just transparent economics, genuine social connection, and the
+              tools to turn listeners into a community &mdash; and a community
+              into a career.
+            </p>
+            <p className="text-2xl md:text-3xl font-bold text-text-primary pt-2">
+              Melori. Build your sound. Own your future.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -86,23 +101,23 @@ export default function MissionPage() {
             {[
               {
                 num: "01",
-                title: "Fair pay",
-                desc: "Artists keep their money from every sale with only a Stripe fee and taxes removed. No black-box algorithms deciding who gets paid.",
+                title: "Transparent Monetization",
+                desc: "Artists retain full proceeds from every transaction, less only standard payment processing fees and applicable taxes. No opaque distribution algorithms or intermediary gatekeeping determining compensation.",
               },
               {
                 num: "02",
-                title: "Own your platform",
-                desc: "Your profile, your fans, your data. Export anytime. We don't trap artists — we liberate them.",
+                title: "Platform Sovereignty",
+                desc: "Your audience, your data, your infrastructure. Full exportability at any time. We operate on a principle of radical portability — not vendor lock-in.",
               },
               {
                 num: "03",
-                title: "Community first",
-                desc: "Fans aren't metrics. They're the reason we exist. Direct messages, exclusive content, real connection.",
+                title: "Artist-Fan Authenticity",
+                desc: "Supporters are not aggregated data points. Direct messaging, exclusive access tiers, and unmediated engagement restore the human relationship at the center of the creative economy.",
               },
               {
                 num: "04",
-                title: "Quality over quantity",
-                desc: "Curated catalog. No filler tracks to game playlists. Every release matters because someone chose it.",
+                title: "Editorial Integrity",
+                desc: "A deliberately curated catalog. No playlist-gaming filler or volume-for-volume's-sake releases. Every title in the library reflects a deliberate curatorial decision — and therefore, genuine value.",
               },
             ].map((item) => (
               <div key={item.num} className="flex gap-6 items-start">

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import type { User } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -44,6 +46,10 @@ const standaloneLinks: NavItem[] = [
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
+  const [accountOpen, setAccountOpen] = useState(false); // desktop account menu
+  const [user, setUser] = useState<User | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   // Close desktop dropdowns on outside click / Escape.
@@ -51,10 +57,14 @@ export default function Header() {
     function onClick(e: MouseEvent) {
       if (navRef.current && !navRef.current.contains(e.target as Node)) {
         setOpenGroup(null);
+        setAccountOpen(false);
       }
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpenGroup(null);
+      if (e.key === "Escape") {
+        setOpenGroup(null);
+        setAccountOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -63,6 +73,92 @@ export default function Header() {
       document.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  // Track Supabase auth state so the header can show Log In vs. an account menu.
+  useEffect(() => {
+    let active = true;
+    let mintedAdmin = false;
+
+    async function loadProfile(u: User) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role, display_name, full_name, username")
+        .eq("id", u.id)
+        .maybeSingle();
+      if (!active) return;
+      const admin = (data as { role?: string } | null)?.role === "admin";
+      setIsAdmin(admin);
+      setDisplayName(
+        (data as { display_name?: string; full_name?: string; username?: string } | null)
+          ?.display_name ||
+          (data as { full_name?: string } | null)?.full_name ||
+          (data as { username?: string } | null)?.username ||
+          u.email ||
+          null
+      );
+
+      // Admins: silently exchange the Supabase token for the admin_session
+      // cookie so the Admin link lands straight in the dashboard.
+      if (admin && !mintedAdmin) {
+        mintedAdmin = true;
+        try {
+          const { data: sess } = await supabase.auth.getSession();
+          const token = sess.session?.access_token;
+          if (token) {
+            void fetch("/api/admin/session-from-supabase", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "include",
+            }).catch(() => {});
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    function applyUser(u: User | null) {
+      setUser(u);
+      if (u) {
+        setDisplayName(u.email ?? null);
+        void loadProfile(u);
+      } else {
+        setDisplayName(null);
+        setIsAdmin(false);
+        mintedAdmin = false;
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) applyUser(data.session?.user ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) applyUser(session?.user ?? null);
+    });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      /* ignore */
+    }
+    try {
+      await fetch("/api/admin/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      /* ignore */
+    }
+    window.location.href = "/";
+  }
 
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
@@ -141,6 +237,75 @@ export default function Header() {
             </Link>
           ))}
 
+          {user ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAccountOpen((v) => !v)}
+                aria-expanded={accountOpen}
+                className="flex max-w-[12rem] items-center gap-1 rounded-md border border-brand-border px-3 py-1.5 text-text-primary transition-colors hover:text-brand-primary"
+              >
+                <span className="truncate">{displayName ?? "Account"}</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                    accountOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden
+                >
+                  <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+                </svg>
+              </button>
+              {accountOpen && (
+                <div className="absolute right-0 mt-2 min-w-48 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
+                  <Link
+                    href="/membership"
+                    onClick={() => setAccountOpen(false)}
+                    className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                  >
+                    Membership
+                  </Link>
+                  <Link
+                    href="/social/spaces"
+                    onClick={() => setAccountOpen(false)}
+                    className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                  >
+                    MM Social
+                  </Link>
+                  {isAdmin && (
+                    <Link
+                      href="/admin/dashboard"
+                      onClick={() => setAccountOpen(false)}
+                      className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                    >
+                      Admin
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      void handleLogout();
+                    }}
+                    className="block w-full border-t border-brand-border px-4 py-2.5 text-left text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/social/auth"
+              className="rounded-md border border-brand-border px-4 py-1.5 text-text-primary transition-colors hover:text-brand-primary"
+            >
+              Log In
+            </Link>
+          )}
+
           <Link
             href="/donate"
             className="ml-1 rounded-md bg-brand-primary px-4 py-1.5 font-semibold text-black transition-opacity hover:opacity-90"
@@ -211,6 +376,55 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
+
+            {user ? (
+              <div className="border-t border-brand-border py-1">
+                <p className="truncate pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
+                  {displayName ?? "Account"}
+                </p>
+                <Link
+                  href="/membership"
+                  onClick={() => setOpen(false)}
+                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Membership
+                </Link>
+                <Link
+                  href="/social/spaces"
+                  onClick={() => setOpen(false)}
+                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  MM Social
+                </Link>
+                {isAdmin && (
+                  <Link
+                    href="/admin/dashboard"
+                    onClick={() => setOpen(false)}
+                    className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                  >
+                    Admin
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    void handleLogout();
+                  }}
+                  className="block w-full py-2.5 text-left text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/social/auth"
+                onClick={() => setOpen(false)}
+                className="my-3 rounded-md border border-brand-border px-4 py-2.5 text-center font-semibold text-text-primary transition-colors hover:text-brand-primary"
+              >
+                Log In
+              </Link>
+            )}
 
             <Link
               href="/donate"

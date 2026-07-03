@@ -23,6 +23,7 @@ const navGroups: NavGroup[] = [
     label: "Community",
     items: [
       { label: "MM Social", href: "/social/spaces" },
+      { label: "Comments", href: "/social/community" },
       { label: "Studio", href: "/studio" },
     ],
   },

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import TierGrid, { type Tier } from "./TierGrid";
+import ContactSignupForm from "@/components/ContactSignupForm";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,17 @@ export default async function MembershipPage() {
           Cancel anytime. No hidden fees. 70% of every paid membership goes
           directly to artists.
         </p>
+      </section>
+
+      <section className="max-w-2xl mx-auto px-6 pb-24">
+        <div className="mb-6 text-center">
+          <h2 className="text-3xl font-bold">Not ready to subscribe?</h2>
+          <p className="mt-2 text-text-secondary">
+            Join for free — leave your info and we&apos;ll keep you posted on new
+            music, updates, and specials.
+          </p>
+        </div>
+        <ContactSignupForm />
       </section>
     </div>
   );

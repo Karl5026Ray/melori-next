@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Radio, MessageSquare, Compass, User, Plus } from "lucide-react";
+import {
+  Radio,
+  MessagesSquare,
+  Compass,
+  User,
+  Plus,
+} from "lucide-react";
 
 const mobileItems = [
   { href: "/social/spaces", label: "Spaces", icon: Radio },
-  { href: "/social/messages", label: "Messages", icon: MessageSquare },
+  { href: "/social/community", label: "Community", icon: MessagesSquare },
   {
     href: "/social/spaces/create",
     label: "Create",

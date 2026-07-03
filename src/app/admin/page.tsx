@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
@@ -11,16 +12,47 @@ export default function AdminLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/admin/session", { method: "GET" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated) {
-          router.push("/admin/dashboard");
-        } else {
-          setChecking(false);
+    let cancelled = false;
+
+    // If a logged-in Supabase admin has an access token, exchange it for the
+    // admin_session cookie before falling back to the password form.
+    async function mintFromSupabase(): Promise<boolean> {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const accessToken = data.session?.access_token;
+        if (!accessToken) return false;
+        const res = await fetch("/api/admin/session-from-supabase", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: "include",
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    (async () => {
+      try {
+        const existing = await fetch("/api/admin/session", { method: "GET" })
+          .then((r) => r.json())
+          .catch(() => ({ authenticated: false }));
+        if (existing.authenticated) {
+          if (!cancelled) router.push("/admin/dashboard");
+          return;
         }
-      })
-      .catch(() => setChecking(false));
+        if (await mintFromSupabase()) {
+          if (!cancelled) router.push("/admin/dashboard");
+          return;
+        }
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {

@@ -95,6 +95,40 @@ export default function AdminDashboardPage() {
               {item.label}
             </button>
           ))}
+
+          <div className="pt-4 mt-4 border-t border-white/[0.06] space-y-1">
+            <p className="px-4 pb-1 text-[10px] uppercase tracking-wider text-[#555]">
+              Tools
+            </p>
+            <Link
+              href="/admin/tracks"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>🎚️</span>
+              Music Manager
+            </Link>
+            <Link
+              href="/admin/artists"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>🎤</span>
+              Artist Manager
+            </Link>
+            <Link
+              href="/admin/email-blast"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>✉️</span>
+              Email Blast
+            </Link>
+            <Link
+              href="/admin/sms-blast"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>💬</span>
+              SMS Blast
+            </Link>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-white/[0.06]">
@@ -182,18 +216,30 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
       <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="flex gap-3 flex-wrap">
-          <button className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium hover:bg-[#c9a96e]/25 transition-all cursor-pointer">
-            + New Release
-          </button>
-          <button className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer">
+          <Link
+            href="/admin/tracks"
+            className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium hover:bg-[#c9a96e]/25 transition-all cursor-pointer"
+          >
             + New Track
-          </button>
-          <button className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer">
-            + New Video
-          </button>
-          <button className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer">
-            Export Data
-          </button>
+          </Link>
+          <Link
+            href="/admin/artists"
+            className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer"
+          >
+            + New Artist
+          </Link>
+          <Link
+            href="/admin/email-blast"
+            className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer"
+          >
+            Email Blast
+          </Link>
+          <Link
+            href="/admin/sms-blast"
+            className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer"
+          >
+            SMS Blast
+          </Link>
         </div>
       </div>
     </div>
@@ -219,11 +265,23 @@ function TracksSection() {
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold">All Tracks</h3>
-        <button className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer">
-          + New Track
-        </button>
+        <Link
+          href="/admin/tracks"
+          className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer hover:bg-[#c9a96e]/25"
+        >
+          Open Music Manager →
+        </Link>
       </div>
-      <p className="text-[#888]">Track management table with audio upload, metadata edit, preview clip settings.</p>
+      <p className="text-[#888] mb-4">
+        Upload catalog audio, edit metadata, set the 30-second sample window, and
+        publish or unpublish tracks.
+      </p>
+      <Link
+        href="/admin/tracks"
+        className="inline-block px-5 py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl"
+      >
+        Manage Tracks
+      </Link>
     </div>
   );
 }
@@ -272,8 +330,25 @@ function RevenueSection() {
 function ArtistsSection() {
   return (
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Artists</h3>
-      <p className="text-[#888]">Artist profiles, revenue per artist, payout management.</p>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="font-semibold">Artists</h3>
+        <Link
+          href="/admin/artists"
+          className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer hover:bg-[#c9a96e]/25"
+        >
+          Open Artist Manager →
+        </Link>
+      </div>
+      <p className="text-[#888] mb-4">
+        Create and edit artist profiles — name, bio, photo, verified and published
+        status.
+      </p>
+      <Link
+        href="/admin/artists"
+        className="inline-block px-5 py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl"
+      >
+        Manage Artists
+      </Link>
     </div>
   );
 }

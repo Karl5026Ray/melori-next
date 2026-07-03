@@ -31,7 +31,7 @@ export async function GET(
 
     const { data: track, error } = await supabaseAdmin
       .from("tracks")
-      .select("id, audio_url, preview_url, is_published")
+      .select("id, audio_url, preview_url, preview_start, preview_end, is_published")
       .eq("id", id)
       .eq("is_published", true)
       .maybeSingle();
@@ -69,13 +69,30 @@ export async function GET(
       throw new Error("Signed URL generation returned no URL");
     }
 
+    // For a free listener served the full file, the audible window is the
+    // admin-chosen [preview_start, preview_end] range (defaults 0..30). The
+    // player seeks to previewStart and hard-caps at previewEnd. A dedicated
+    // preview clip is already short, so no window is imposed on it.
+    const rawStart = Number(track.preview_start ?? 0);
+    const rawEnd = Number(track.preview_end ?? FREE_SAMPLE_SECONDS);
+    const previewStart =
+      Number.isFinite(rawStart) && rawStart >= 0 ? rawStart : 0;
+    const previewEnd =
+      Number.isFinite(rawEnd) && rawEnd > previewStart
+        ? rawEnd
+        : previewStart + FREE_SAMPLE_SECONDS;
+
+    const windowed = sample && !dedicatedPreview;
+
     return NextResponse.json({
       url: signed.signedUrl,
       expiresIn: EXPIRES_IN,
       sample,
       // Cap the full file for free users; a dedicated preview is already short so
       // no client cap is imposed on it.
-      sampleSeconds: sample && !dedicatedPreview ? FREE_SAMPLE_SECONDS : null,
+      sampleSeconds: windowed ? previewEnd - previewStart : null,
+      previewStart: windowed ? previewStart : null,
+      previewEnd: windowed ? previewEnd : null,
     });
   } catch (err) {
     console.error(`GET /api/tracks/${params.id}/stream failed:`, err);

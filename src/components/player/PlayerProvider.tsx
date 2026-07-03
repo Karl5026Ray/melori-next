@@ -65,8 +65,13 @@ export default function PlayerProvider({
   // True while playback is halted by an explicit user pause. Guards against a
   // late "ended" event (e.g. pausing right at the tail) silently auto-advancing.
   const userPausedRef = useRef(false);
-  // Free-preview cap (seconds) for the loaded track, or null for full access.
+  // Free-preview window (absolute seconds in the track timeline) for the loaded
+  // track, or null for full access. `sampleLimitRef` is the cap (previewEnd);
+  // `sampleStartRef` is where the audible window begins (previewStart).
   const sampleLimitRef = useRef<number | null>(null);
+  const sampleStartRef = useRef<number>(0);
+  // A one-shot seek target applied once the new src reports its metadata.
+  const pendingSeekRef = useRef<number | null>(null);
 
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -88,8 +93,8 @@ export default function PlayerProvider({
     const audio = audioRef.current;
 
     const onTime = () => {
-      // Hard-cap free previews at the sample limit: a free listener must not be
-      // able to hear past the 30s mark even though the audio element holds the
+      // Hard-cap free previews at the window end: a free listener must not be
+      // able to hear past previewEnd even though the audio element holds the
       // full file. Server-side gating serves a dedicated clip when one exists.
       const limit = sampleLimitRef.current;
       if (limit != null && audio.currentTime >= limit) {
@@ -108,6 +113,19 @@ export default function PlayerProvider({
     const onMeta = () => {
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
+      }
+      // Apply a pending window seek (previewStart) now that the new src is ready.
+      if (pendingSeekRef.current != null) {
+        const target = pendingSeekRef.current;
+        pendingSeekRef.current = null;
+        if (Number.isFinite(target) && target > 0) {
+          try {
+            audio.currentTime = target;
+            setCurrentTime(target);
+          } catch {
+            /* seek not yet permitted; ignore */
+          }
+        }
       }
     };
     const onPlay = () => setIsPlaying(true);
@@ -208,11 +226,25 @@ export default function PlayerProvider({
           url?: string;
           sample?: boolean;
           sampleSeconds?: number | null;
+          previewStart?: number | null;
+          previewEnd?: number | null;
         } = await res.json();
         if (!data.url) throw new Error("no stream url");
 
-        sampleLimitRef.current =
-          typeof data.sampleSeconds === "number" ? data.sampleSeconds : null;
+        // A windowed sample carries an explicit [previewStart, previewEnd]. The
+        // cap is previewEnd (absolute seconds); we seek to previewStart on load.
+        const start =
+          typeof data.previewStart === "number" ? data.previewStart : 0;
+        const end =
+          typeof data.previewEnd === "number"
+            ? data.previewEnd
+            : typeof data.sampleSeconds === "number"
+              ? start + data.sampleSeconds
+              : null;
+
+        sampleStartRef.current = start;
+        sampleLimitRef.current = end;
+        pendingSeekRef.current = start > 0 ? start : null;
         setIsSample(Boolean(data.sample));
 
         audio.src = data.url;

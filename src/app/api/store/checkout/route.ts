@@ -80,6 +80,15 @@ export async function POST(req: NextRequest) {
   );
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+  // Compact, authoritative record of what was purchased, embedded in Stripe
+  // metadata so the webhook can fulfill the order without trusting the client.
+  const fulfillLines: {
+    id: string;
+    name: string;
+    size: string;
+    qty: number;
+    unit: number;
+  }[] = [];
   let subtotal = 0;
 
   for (const r of requested) {
@@ -101,6 +110,13 @@ export async function POST(req: NextRequest) {
       );
     }
     subtotal += unitPrice * r.quantity;
+    fulfillLines.push({
+      id: product.id,
+      name: product.name,
+      size: r.size,
+      qty: r.quantity,
+      unit: unitPrice,
+    });
     lineItems.push({
       quantity: r.quantity,
       price_data: {
@@ -112,6 +128,14 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+  }
+
+  // Pack fulfillment data into metadata. Stripe caps each value at 500 chars,
+  // so we chunk the JSON across numbered keys (cart_0, cart_1, ...).
+  const cartJson = JSON.stringify(fulfillLines);
+  const cartMeta: Record<string, string> = {};
+  for (let i = 0, k = 0; i < cartJson.length; i += 480, k++) {
+    cartMeta[`cart_${k}`] = cartJson.slice(i, i + 480);
   }
 
   const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_RATE;
@@ -142,7 +166,11 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/store/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/store/cart`,
       shipping_address_collection: { allowed_countries: ["US", "CA", "GB"] },
-      metadata: { source: "melorimusic.org/store" },
+      metadata: {
+        source: "melorimusic.org/store",
+        subtotal_cents: String(subtotal),
+        ...cartMeta,
+      },
     });
 
     return NextResponse.json({ url: session.url });

@@ -87,7 +87,7 @@ export default function MissionPage() {
               {
                 num: "01",
                 title: "Fair pay",
-                desc: "Artists keep 70% of every sale. Superfans fund directly. No black-box algorithms deciding who gets paid.",
+                desc: "Artists keep their money from every sale with only a Stripe fee and taxes removed. No black-box algorithms deciding who gets paid.",
               },
               {
                 num: "02",

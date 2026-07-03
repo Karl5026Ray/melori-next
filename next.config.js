@@ -35,9 +35,14 @@ const nextConfig = {
         destination: '/membership-success',
       },
       // ── Members / auth (sign-in, sign-up, sessions, password reset, profile)
+      // NOTE: /api/members/stripe-webhook is now owned by a LOCAL Next.js route
+      // handler (src/app/api/members/stripe-webhook/route.ts) — migrated off the
+      // VPS because the VPS handler had a raw-body bug that failed every Stripe
+      // signature check. Default rewrites are `afterFiles`, so the filesystem
+      // route already wins over this catch-all; we intentionally do NOT proxy it.
       {
-        source: '/api/members/:path*',
-        destination: `${VPS_ORIGIN}/api/members/:path*`,
+        source: '/api/members/:path((?!stripe-webhook$).*)',
+        destination: `${VPS_ORIGIN}/api/members/:path`,
       },
       // ── Purchases (Stripe Checkout sessions, order lookup)
       {

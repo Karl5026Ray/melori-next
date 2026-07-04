@@ -13,6 +13,8 @@ interface Artist {
   cover_image_url: string | null;
   is_verified: boolean;
   is_published: boolean;
+  is_featured?: boolean;
+  featured_order?: number | null;
 }
 
 type View = "list" | "form";
@@ -26,6 +28,8 @@ const emptyForm = {
   cover_image_url: "",
   is_verified: false,
   is_published: false,
+  is_featured: false,
+  featured_order: "",
 };
 
 export default function AdminArtistsPage() {
@@ -38,6 +42,7 @@ export default function AdminArtistsPage() {
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const loadArtists = useCallback(async () => {
     setLoading(true);
@@ -76,7 +81,13 @@ export default function AdminArtistsPage() {
       cover_image_url: a.cover_image_url ?? "",
       is_verified: a.is_verified,
       is_published: a.is_published,
+      is_featured: Boolean(a.is_featured),
+      featured_order:
+        a.featured_order === null || a.featured_order === undefined
+          ? ""
+          : String(a.featured_order),
     });
+    setUploadError(null);
     setView("form");
   };
 
@@ -84,24 +95,59 @@ export default function AdminArtistsPage() {
     field: "avatar_url" | "cover_image_url",
     file: File,
   ) => {
+    setUploadError(null);
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please choose an image file (JPEG, PNG, WebP).");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("Image must be 10 MB or smaller.");
+      return;
+    }
+
     setUploadingPhoto(true);
     try {
+      // Step 1: request a short-lived signed upload URL from our admin API.
       const urlRes = await fetch("/api/admin/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, type: "cover" }),
       });
-      if (!urlRes.ok) throw new Error("Could not get upload URL");
+      if (!urlRes.ok) {
+        if (urlRes.status === 401) {
+          throw new Error(
+            "Your admin session expired. Please log in again.",
+          );
+        }
+        const d = await urlRes.json().catch(() => ({}));
+        throw new Error(
+          d.error ?? `Could not get upload URL (${urlRes.status}).`,
+        );
+      }
       const { signedUrl, publicUrl } = await urlRes.json();
+
+      // Step 2: PUT the file to Supabase Storage. `x-upsert` lets a repeat
+      // upload for the same path replace the old object cleanly.
       const putRes = await fetch(signedUrl, {
         method: "PUT",
         body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "x-upsert": "true",
+        },
       });
-      if (!putRes.ok) throw new Error("Upload failed");
+      if (!putRes.ok) {
+        const text = await putRes.text().catch(() => "");
+        console.error("Supabase upload failed:", putRes.status, text);
+        throw new Error(
+          `Upload failed (${putRes.status}). ${
+            text || "Check bucket permissions."
+          }`,
+        );
+      }
       setForm((f) => ({ ...f, [field]: publicUrl }));
     } catch (err: any) {
-      alert(err?.message ?? "Photo upload failed.");
+      setUploadError(err?.message ?? "Photo upload failed.");
     } finally {
       setUploadingPhoto(false);
     }
@@ -114,7 +160,7 @@ export default function AdminArtistsPage() {
     }
     setSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         name: form.name.trim(),
         slug: form.slug.trim(),
         bio: form.bio,
@@ -122,7 +168,11 @@ export default function AdminArtistsPage() {
         cover_image_url: form.cover_image_url || null,
         is_verified: form.is_verified,
         is_published: form.is_published,
+        is_featured: form.is_featured,
       };
+      const orderStr = String(form.featured_order ?? "").trim();
+      payload.featured_order =
+        orderStr === "" ? null : Number(orderStr);
       const res = await fetch(
         form.id ? `/api/admin/artists/${form.id}` : "/api/admin/artists",
         {
@@ -302,7 +352,9 @@ export default function AdminArtistsPage() {
               </div>
 
               <div>
-                <label className="text-sm text-[#888] block mb-1">Photo</label>
+                <label className="text-sm text-[#888] block mb-1">
+                  Profile photo (avatar)
+                </label>
                 <div className="flex items-center gap-4">
                   {form.avatar_url && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -315,19 +367,49 @@ export default function AdminArtistsPage() {
                   <input
                     type="file"
                     accept="image/*"
+                    disabled={uploadingPhoto}
                     onChange={(e) =>
                       e.target.files?.[0] &&
                       uploadPhoto("avatar_url", e.target.files[0])
                     }
-                    className="text-sm text-[#888] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-white/5 file:text-white hover:file:bg-white/10"
+                    className="text-sm text-[#888] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-white/5 file:text-white hover:file:bg-white/10 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-[#888] block mb-1">
+                  Cover image (optional)
+                </label>
+                <div className="flex items-center gap-4">
+                  {form.cover_image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={form.cover_image_url}
+                      alt=""
+                      className="w-24 h-16 rounded-lg object-cover bg-white/10"
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingPhoto}
+                    onChange={(e) =>
+                      e.target.files?.[0] &&
+                      uploadPhoto("cover_image_url", e.target.files[0])
+                    }
+                    className="text-sm text-[#888] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-white/5 file:text-white hover:file:bg-white/10 disabled:opacity-50"
                   />
                 </div>
                 {uploadingPhoto && (
-                  <p className="text-xs text-[#c9a96e] mt-1">Uploading photo…</p>
+                  <p className="text-xs text-[#c9a96e] mt-2">Uploading photo…</p>
+                )}
+                {uploadError && (
+                  <p className="text-xs text-red-400 mt-2">{uploadError}</p>
                 )}
               </div>
 
-              <div className="flex gap-6">
+              <div className="flex gap-6 flex-wrap">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -350,7 +432,42 @@ export default function AdminArtistsPage() {
                   />
                   Published
                 </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.is_featured}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        is_featured: e.target.checked,
+                      }))
+                    }
+                    className="accent-[#c9a96e] w-4 h-4"
+                  />
+                  Featured on /featured-artist
+                </label>
               </div>
+
+              {form.is_featured && (
+                <div>
+                  <label className="text-sm text-[#888] block mb-1">
+                    Featured order (lower = shown first, blank = end)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.featured_order}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        featured_order: e.target.value,
+                      }))
+                    }
+                    className="w-full max-w-[16rem] bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-[#c9a96e]/50"
+                    placeholder="e.g. 1"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end">

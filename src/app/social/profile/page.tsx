@@ -1,10 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { Radio } from "lucide-react";
+import EditProfileModal from "@/components/social/EditProfileModal";
+import type { Profile } from "@/types/social";
 
 export default function ProfilePage() {
   const { user } = useAuth();
+  const [editing, setEditing] = useState(false);
+  // Local override so the newly saved profile shows immediately without a
+  // full page reload. AuthProvider's user still refreshes on next auth event.
+  const [localOverride, setLocalOverride] = useState<Profile | null>(null);
 
   if (!user) {
     return (
@@ -13,6 +20,8 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  const view = localOverride ?? user;
 
   return (
     <div className="flex-1 overflow-y-auto animate-fade-in">
@@ -24,29 +33,33 @@ export default function ProfilePage() {
         <div className="flex flex-col md:flex-row items-start md:items-end gap-4 mb-6">
           <div className="relative">
             <img
-              src={user.avatar_url || "/favicon.png"}
+              src={view.avatar_url || "/favicon.png"}
               className="w-32 h-32 rounded-full border-4 border-melori-void object-cover"
-              alt={user.display_name}
+              alt={view.display_name}
             />
           </div>
           <div className="flex-1 mb-2">
             <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-2xl font-bold">{user.display_name}</h2>
-              {user.verified && (
+              <h2 className="text-2xl font-bold">{view.display_name}</h2>
+              {view.verified && (
                 <span className="text-melori-purple bg-melori-purple/10 px-2 py-0.5 rounded-full text-xs font-medium">
                   Verified
                 </span>
               )}
             </div>
             <p className="text-melori-purple font-medium text-sm mb-1 capitalize">
-              {user.role}
+              {view.role}
             </p>
             <p className="text-melori-muted text-sm">
-              {user.bio || "Independent music advocate"}
+              {view.bio || "Independent music advocate"}
             </p>
           </div>
           <div className="flex gap-2">
-            <button className="px-6 py-2.5 rounded-full bg-melori-elevated border border-melori-border font-medium text-sm hover:bg-melori-purple/10 hover:border-melori-purple/30 transition">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="px-6 py-2.5 rounded-full bg-melori-elevated border border-melori-border font-medium text-sm hover:bg-melori-purple/10 hover:border-melori-purple/30 transition"
+            >
               Edit Profile
             </button>
           </div>
@@ -55,13 +68,13 @@ export default function ProfilePage() {
         <div className="flex gap-6 mb-8 text-sm">
           <div>
             <span className="font-bold text-melori-text">
-              {user.followers_count}
+              {view.followers_count}
             </span>{" "}
             <span className="text-melori-muted">Followers</span>
           </div>
           <div>
             <span className="font-bold text-melori-text">
-              {user.following_count}
+              {view.following_count}
             </span>{" "}
             <span className="text-melori-muted">Following</span>
           </div>
@@ -97,6 +110,14 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {editing && (
+        <EditProfileModal
+          user={view}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => setLocalOverride(updated)}
+        />
+      )}
     </div>
   );
 }

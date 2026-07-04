@@ -48,6 +48,16 @@ export async function PATCH(
       update.is_verified = body.is_verified;
     if (typeof body.is_published === "boolean")
       update.is_published = body.is_published;
+    if (typeof body.is_featured === "boolean")
+      update.is_featured = body.is_featured;
+    if (body.featured_order !== undefined) {
+      if (body.featured_order === null) {
+        update.featured_order = null;
+      } else {
+        const n = Number(body.featured_order);
+        if (Number.isFinite(n)) update.featured_order = n;
+      }
+    }
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });

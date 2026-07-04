@@ -27,31 +27,57 @@ export async function GET(req: NextRequest) {
     const [
       { count: tracksCount },
       { count: releasesCount },
-      { count: membersCount },
+      { count: profilesCount },
+      { count: artistsCount },
+      { count: spacesCount },
+      { count: pendingSubs },
     ] = await Promise.all([
       supabase.from("tracks").select("*", { count: "exact", head: true }),
       supabase.from("releases").select("*", { count: "exact", head: true }),
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+      supabase.from("artists").select("*", { count: "exact", head: true }),
+      supabase.from("spaces").select("*", { count: "exact", head: true }),
       supabase
-        .from("membership_tiers")
-        .select("*", { count: "exact", head: true }),
+        .from("track_submissions")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending"),
     ]);
 
     const { data: orders } = await supabase
       .from("orders")
-      .select("amount, created_at")
+      .select("total_amount, created_at")
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(30);
 
     const totalRevenue =
-      orders?.reduce((sum, o: any) => sum + (o.amount || 0), 0) || 0;
+      orders?.reduce(
+        (sum: number, o: any) => sum + Number(o.total_amount || 0),
+        0,
+      ) || 0;
+
+    // Membership breakdown for the Overview tab.
+    const { data: memberBreakdown } = await supabase
+      .from("profiles")
+      .select("membership_tier")
+      .limit(10000);
+    const tiers = { free: 0, superfan: 0, artist: 0 };
+    for (const row of memberBreakdown ?? []) {
+      const t = ((row as any).membership_tier ?? "free") as keyof typeof tiers;
+      if (t in tiers) tiers[t]++;
+      else tiers.free++;
+    }
 
     return NextResponse.json({
-      totalRevenue: totalRevenue / 100, // cents to dollars
+      totalRevenue,
       totalOrders: orders?.length || 0,
-      totalMembers: membersCount || 0,
+      totalMembers: profilesCount || 0,
+      totalArtists: artistsCount || 0,
       totalTracks: tracksCount || 0,
       totalReleases: releasesCount || 0,
-      recentOrders: orders || [],
+      totalSpaces: spacesCount || 0,
+      pendingSubmissions: pendingSubs || 0,
+      recentOrders: orders?.slice(0, 10) || [],
+      memberBreakdown: tiers,
     });
   } catch (err: any) {
     console.error("Admin stats error:", err);
@@ -59,9 +85,13 @@ export async function GET(req: NextRequest) {
       totalRevenue: 0,
       totalOrders: 0,
       totalMembers: 0,
+      totalArtists: 0,
       totalTracks: 0,
       totalReleases: 0,
+      totalSpaces: 0,
+      pendingSubmissions: 0,
       recentOrders: [],
+      memberBreakdown: { free: 0, superfan: 0, artist: 0 },
     });
   }
 }

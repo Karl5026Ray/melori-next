@@ -74,6 +74,15 @@ export async function PATCH(req: NextRequest) {
     }
     update.avatar_url = raw ?? null;
   }
+  if ("notifications_email" in body) {
+    if (typeof body.notifications_email !== "boolean") {
+      return NextResponse.json(
+        { error: "notifications_email must be a boolean" },
+        { status: 400 },
+      );
+    }
+    update.notifications_email = body.notifications_email;
+  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json(
@@ -100,12 +109,39 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update(update)
-    .eq("id", userId)
-    .select("*")
-    .single();
+  const attemptUpdate = async (payload: Record<string, any>) =>
+    supabase
+      .from("profiles")
+      .update(payload)
+      .eq("id", userId)
+      .select("*")
+      .single();
+
+  let { data, error } = await attemptUpdate(update);
+
+  // If notifications_email column doesn't exist yet, retry without it so the
+  // rest of the update still lands. Client treats this as a soft-success.
+  if (
+    error &&
+    "notifications_email" in update &&
+    /notifications_email/.test(error.message ?? "")
+  ) {
+    const { notifications_email: _skip, ...rest } = update;
+    if (Object.keys(rest).length > 0) {
+      ({ data, error } = await attemptUpdate(rest));
+    } else {
+      // Nothing else to update — return current row.
+      const { data: current } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+      return NextResponse.json({
+        profile: current,
+        warning: "notifications_email column missing — preference not persisted",
+      });
+    }
+  }
 
   if (error) {
     console.error("Profile update failed:", error);

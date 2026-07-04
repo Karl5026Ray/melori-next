@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { authFetch } from "@/lib/authClient";
+import { putWithProgress, validateAudioFile } from "./uploadHelpers";
 
 interface UploadState {
   file: File | null;
@@ -29,6 +30,7 @@ export default function TrackUploader() {
   });
   const [dragActive, setDragActive] = useState(false);
   const [uploadedTrack, setUploadedTrack] = useState<{ id: string; title: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -52,14 +54,15 @@ export default function TrackUploader() {
   }, []);
 
   const handleAudioFile = (file: File) => {
-    const validTypes = ["audio/mpeg", "audio/wav", "audio/flac", "audio/x-wav", "audio/x-flac"];
-    if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|flac)$/i)) {
-      alert("Please upload an MP3, WAV, or FLAC file.");
+    const msg = validateAudioFile(file);
+    if (msg) {
+      setError(msg);
       return;
     }
 
     // Auto-fill title from filename
     const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+    setError(null);
     setState((prev) => ({
       ...prev,
       file,
@@ -69,10 +72,11 @@ export default function TrackUploader() {
 
   const handleUpload = async () => {
     if (!state.file || !state.title) {
-      alert("Please select an audio file and enter a title.");
+      setError("Please select an audio file and enter a title.");
       return;
     }
 
+    setError(null);
     setState((prev) => ({ ...prev, uploading: true, progress: 0 }));
 
     try {
@@ -86,16 +90,16 @@ export default function TrackUploader() {
           type: "audio",
         }),
       });
+      if (!audioRes.ok) {
+        const d = await audioRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not get an upload URL.");
+      }
       const { signedUrl: audioSignedUrl, publicUrl: audioPublicUrl, path: audioPath } = await audioRes.json();
 
-      // 2. Upload audio to Supabase Storage
-      await fetch(audioSignedUrl, {
-        method: "PUT",
-        body: state.file,
-        headers: { "Content-Type": state.file.type },
-      });
-
-      setState((prev) => ({ ...prev, progress: 50 }));
+      // 2. Upload audio to Supabase Storage with real progress.
+      await putWithProgress(audioSignedUrl, state.file, (pct) =>
+        setState((prev) => ({ ...prev, progress: pct })),
+      );
 
       // 3. Upload cover art if provided
       let coverPublicUrl = null;
@@ -109,17 +113,15 @@ export default function TrackUploader() {
             type: "cover",
           }),
         });
+        if (!coverRes.ok) {
+          const d = await coverRes.json().catch(() => ({}));
+          throw new Error(d.error ?? "Could not get a cover upload URL.");
+        }
         const { signedUrl: coverSignedUrl, publicUrl: coverUrl } = await coverRes.json();
 
-        await fetch(coverSignedUrl, {
-          method: "PUT",
-          body: state.coverArt,
-          headers: { "Content-Type": state.coverArt.type },
-        });
+        await putWithProgress(coverSignedUrl, state.coverArt, () => {});
         coverPublicUrl = coverUrl;
       }
-
-      setState((prev) => ({ ...prev, progress: 75 }));
 
       // 4. Create track record in Supabase
       const trackRes = await authFetch("/api/studio/tracks", {
@@ -138,15 +140,19 @@ export default function TrackUploader() {
           status: "draft",
         }),
       });
+      if (!trackRes.ok) {
+        const d = await trackRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not save the track.");
+      }
 
       const trackData = await trackRes.json();
       setState((prev) => ({ ...prev, progress: 100, uploading: false }));
       setUploadedTrack({ id: trackData.id, title: state.title });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Upload failed:", err);
       setState((prev) => ({ ...prev, uploading: false }));
-      alert("Upload failed. Please try again.");
+      setError(err?.message ?? "Upload failed. Please try again.");
     }
   };
 
@@ -180,6 +186,12 @@ export default function TrackUploader() {
         </div>
       ) : (
         <div className="space-y-6">
+          {error && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
           {/* Audio Drop Zone */}
           <div
             onDragEnter={handleDrag}

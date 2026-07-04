@@ -7,8 +7,9 @@ import WaveformEditor from "./components/WaveformEditor";
 import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
+import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
 
-type Tab = "upload" | "tracks" | "waveform" | "analytics" | "schedule";
+type Tab = "upload" | "tracks" | "waveform" | "analytics" | "schedule" | "profile";
 
 export default function StudioPage() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
@@ -25,6 +26,7 @@ export default function StudioPage() {
     { id: "waveform", label: "Preview Editor", icon: "✂️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "schedule", label: "Schedule", icon: "📅" },
+    { id: "profile", label: "Profile Photos", icon: "\u{1F5BC}\uFE0F" },
   ];
 
   return (
@@ -85,6 +87,20 @@ export default function StudioPage() {
         )}
         {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "schedule" && <ReleaseScheduler />}
+        {activeTab === "profile" && (
+      <div className="space-y-8 max-w-xl">
+        <div>
+          <h2 className="text-lg font-semibold mb-1">Profile picture</h2>
+          <p className="text-[#888] text-sm mb-3">Shown on your artist page and featured-artist cards.</p>
+          <ProfilePhotoUploader slot="avatar" label="Profile picture" shape="circle" />
+          </div>
+        <div>
+          <h2 className="text-lg font-semibold mb-1">Top bar photo</h2>
+          <p className="text-[#888] text-sm mb-3">The wide banner across the top of your artist page.</p>
+          <ProfilePhotoUploader slot="cover" label="Top bar photo" shape="banner" />
+          </div>
+        </div>
+      )}
       </div>
     </main>
   );

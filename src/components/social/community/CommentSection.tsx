@@ -9,6 +9,7 @@ import {
 } from "@/components/social/UpgradePrompt";
 import { authFetch } from "@/lib/authClient";
 import { WaveButton } from "@/components/social/WaveButton";
+import { MemberActions } from "@/components/social/MemberActions";
 import { MessageSquare } from "lucide-react";
 
 export interface CommunityComment {
@@ -148,6 +149,9 @@ export default function CommentSection({
                   <span className="text-xs text-melori-muted">
                     {relativeTime(c.created_at)}
                   </span>
+                  {c.user_id && (
+                <MemberActions memberId={c.user_id} memberName={c.author_name} />
+                )}
                 </div>
                 <p className="text-sm text-melori-text whitespace-pre-wrap break-words">
                   {c.body}

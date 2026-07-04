@@ -44,7 +44,7 @@ export default function AdminTracksPage() {
   const [view, setView] = useState<View>("list");
   const [tracks, setTracks] = useState<AdminTrack[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);   const [search, setSearch] = useState("");
 
   // Upload form state
   const [file, setFile] = useState<File | null>(null);
@@ -328,7 +328,7 @@ export default function AdminTracksPage() {
 
       <main className="p-6 md:p-10 max-w-6xl mx-auto">
         {view === "list" && (
-          <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl overflow-hidden">
+          <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl overflow-hidden"><div className="p-4 border-b border-white/[0.06]"><input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search songs, albums, or artists..." className="w-full px-4 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm outline-none focus:border-white/20" /></div>
             {loading ? (
               <div className="p-10 text-center text-[#888]">Loading tracks…</div>
             ) : error ? (
@@ -349,7 +349,7 @@ export default function AdminTracksPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tracks.map((t) => (
+                  {tracks.filter((t) => { const q = search.trim().toLowerCase(); return !q || t.title.toLowerCase().includes(q) || (t.release_title?.toLowerCase().includes(q) ?? false) || (t.artist_name?.toLowerCase().includes(q) ?? false); }).map((t) => (
                     <tr key={t.id} className="border-b border-white/[0.04]">
                       <td className="px-5 py-3">
                         <div className="font-medium">{t.title}</div>

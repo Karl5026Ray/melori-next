@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import ReleaseCard from "@/components/ReleaseCard";
 import type { Metadata } from "next";
@@ -35,14 +34,6 @@ export default async function HomePage() {
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
         <div className="max-w-5xl mx-auto px-6 pt-24 pb-10 flex flex-col items-center text-center">
-          <Image
-            src="/logo/logo.png"
-            alt="MELORI Music logo"
-            width={120}
-            height={120}
-            priority
-            className="mb-8"
-          />
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight">
             MELORI MUSIC
           </h1>

@@ -20,6 +20,19 @@ const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 
 const nextConfig = {
   reactStrictMode: true,
+  // Friendly-URL redirects for well-known aliases users type in the address bar.
+  // Site-evaluation P1 fix (2026-07-04): these previously 404'd.
+  async redirects() {
+    return [
+      { source: '/login',     destination: '/social/auth',   permanent: false },
+      { source: '/clubhouse', destination: '/social/spaces', permanent: false },
+      { source: '/about',     destination: '/mission',       permanent: true  },
+      { source: '/artist',    destination: '/artists',       permanent: true  },
+      { source: '/members',   destination: '/membership',    permanent: true  },
+      // Kimi also flagged /portal — safest landing for that is auth.
+      { source: '/portal',    destination: '/social/auth',   permanent: false },
+    ];
+  },
   async rewrites() {
     return [
       // ── Stripe success_url backwards-compat: VPS still sends Stripe a

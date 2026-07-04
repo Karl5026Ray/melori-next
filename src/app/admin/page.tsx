@@ -32,6 +32,13 @@ export default function AdminLoginPage() {
       }
     }
 
+    // Safety net: if either fetch below hangs (e.g. a Vercel edge blip), never
+    // leave the user staring at a spinner — fall through to the password form
+    // after 3s so they can still sign in.
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setChecking(false);
+    }, 3000);
+
     (async () => {
       try {
         const existing = await fetch("/api/admin/session", { method: "GET" })
@@ -46,6 +53,7 @@ export default function AdminLoginPage() {
           return;
         }
       } finally {
+        clearTimeout(timeoutId);
         if (!cancelled) setChecking(false);
       }
     })();

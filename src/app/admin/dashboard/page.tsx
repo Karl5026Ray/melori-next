@@ -4,7 +4,21 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-type Section = "overview" | "releases" | "tracks" | "videos" | "members" | "orders" | "revenue" | "artists" | "donors" | "settings" | "health";
+type Section =
+  | "overview"
+  | "releases"
+  | "tracks"
+  | "videos"
+  | "members"
+  | "orders"
+  | "revenue"
+  | "artists"
+  | "users"
+  | "submissions"
+  | "moderation"
+  | "donors"
+  | "settings"
+  | "health";
 
 interface DashboardStats {
   totalRevenue: number;
@@ -12,6 +26,10 @@ interface DashboardStats {
   totalMembers: number;
   totalTracks: number;
   totalReleases: number;
+  totalArtists?: number;
+  totalSpaces?: number;
+  pendingSubmissions?: number;
+  memberBreakdown?: Record<string, number>;
   recentOrders: any[];
 }
 
@@ -49,6 +67,9 @@ export default function AdminDashboardPage() {
 
   const navItems: { id: Section; label: string; icon: string }[] = [
     { id: "overview", label: "Overview", icon: "📊" },
+    { id: "users", label: "Users & Artists", icon: "👤" },
+    { id: "submissions", label: "Upload Queue", icon: "📥" },
+    { id: "moderation", label: "Moderation", icon: "🛡️" },
     { id: "releases", label: "Releases", icon: "💿" },
     { id: "tracks", label: "Tracks", icon: "🎵" },
     { id: "videos", label: "Videos", icon: "🎬" },
@@ -172,6 +193,9 @@ export default function AdminDashboardPage() {
 
         <div className="p-8">
           {section === "overview" && <OverviewSection stats={stats} />}
+          {section === "users" && <UsersSection />}
+          {section === "submissions" && <SubmissionsSection />}
+          {section === "moderation" && <ModerationSection />}
           {section === "releases" && <ReleasesSection />}
           {section === "tracks" && <TracksSection />}
           {section === "videos" && <VideosSection />}
@@ -190,14 +214,48 @@ export default function AdminDashboardPage() {
 
 // Placeholder sections — full implementations would be separate components
 function OverviewSection({ stats }: { stats: DashboardStats | null }) {
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+
   const cards = [
-    { label: "Total Revenue", value: `$${(stats?.totalRevenue || 0).toFixed(2)}`, icon: "💰", color: "text-[#c9a96e]" },
+    {
+      label: "Total Revenue",
+      value: `$${(stats?.totalRevenue || 0).toFixed(2)}`,
+      icon: "💰",
+      color: "text-[#c9a96e]",
+    },
     { label: "Total Orders", value: stats?.totalOrders || 0, icon: "📦", color: "text-white" },
     { label: "Members", value: stats?.totalMembers || 0, icon: "👥", color: "text-white" },
     { label: "Tracks", value: stats?.totalTracks || 0, icon: "🎵", color: "text-white" },
     { label: "Releases", value: stats?.totalReleases || 0, icon: "💿", color: "text-white" },
+    { label: "Artists", value: stats?.totalArtists ?? 0, icon: "🎤", color: "text-white" },
+    { label: "Social Spaces", value: stats?.totalSpaces ?? 0, icon: "🗣️", color: "text-white" },
+    {
+      label: "Pending Submissions",
+      value: stats?.pendingSubmissions ?? 0,
+      icon: "📥",
+      color: (stats?.pendingSubmissions ?? 0) > 0 ? "text-orange-400" : "text-white",
+    },
     { label: "Recent Activity", value: stats?.recentOrders?.length || 0, icon: "🔔", color: "text-white" },
   ];
+
+  const handleSeed = async () => {
+    if (!confirm("Seed demo MM Social spaces + community posts? This is idempotent.")) return;
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const res = await fetch("/api/admin/seed-social", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Seed failed");
+      setSeedMsg(
+        `Seeded: ${data.spacesCreated ?? 0} new spaces, ${data.postsCreated ?? 0} new posts.`,
+      );
+    } catch (err: any) {
+      setSeedMsg(err.message ?? "Seed failed");
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -240,8 +298,445 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
           >
             SMS Blast
           </Link>
+          <button
+            onClick={handleSeed}
+            disabled={seeding}
+            className="px-4 py-2 bg-purple-500/15 text-purple-300 rounded-lg text-sm font-medium hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
+          >
+            {seeding ? "Seeding…" : "🌱 Seed MM Social Demo"}
+          </button>
+        </div>
+        {seedMsg && (
+          <p className="mt-3 text-xs text-[#888]">{seedMsg}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Users & Artists
+// ---------------------------------------------------------------------------
+type AdminUser = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: string | null;
+  membership_tier: string | null;
+  membership_status: string | null;
+  verified: boolean | null;
+  created_at: string;
+};
+
+function UsersSection() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [role, setRole] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (role) params.set("role", role);
+    params.set("limit", "100");
+    const res = await fetch(`/api/admin/users?${params.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    setUsers(data.users ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const patch = async (id: string, body: Record<string, any>) => {
+    setBusy(id);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error ?? "Update failed");
+      } else {
+        await load();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h3 className="font-semibold">Users &amp; Artists</h3>
+        <div className="flex items-center gap-2">
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load()}
+            placeholder="Search email / username…"
+            className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs w-56"
+          />
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
+          >
+            <option value="">All roles</option>
+            <option value="user">User</option>
+            <option value="artist">Artist</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button
+            onClick={load}
+            className="px-3 py-1.5 rounded-lg bg-[#c9a96e]/15 text-[#c9a96e] text-xs font-medium"
+          >
+            Refresh
+          </button>
         </div>
       </div>
+
+      {loading ? (
+        <p className="text-[#888] text-sm">Loading…</p>
+      ) : users.length === 0 ? (
+        <p className="text-[#888] text-sm">No users found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-[#888] uppercase">
+              <tr>
+                <th className="text-left py-2 px-2">User</th>
+                <th className="text-left py-2 px-2">Role</th>
+                <th className="text-left py-2 px-2">Tier</th>
+                <th className="text-left py-2 px-2">Status</th>
+                <th className="text-left py-2 px-2">Verified</th>
+                <th className="text-right py-2 px-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id} className="border-t border-white/[0.06]">
+                  <td className="py-2 px-2">
+                    <div className="font-medium">{u.display_name || u.username || "—"}</div>
+                    <div className="text-xs text-[#666]">@{u.username ?? "—"}</div>
+                  </td>
+                  <td className="py-2 px-2">
+                    <select
+                      value={u.role ?? "user"}
+                      onChange={(e) => patch(u.id, { role: e.target.value })}
+                      disabled={busy === u.id}
+                      className="bg-black/60 border border-white/10 rounded px-2 py-1 text-xs"
+                    >
+                      <option value="user">user</option>
+                      <option value="artist">artist</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </td>
+                  <td className="py-2 px-2 capitalize text-[#ccc]">{u.membership_tier ?? "—"}</td>
+                  <td className="py-2 px-2 text-[#ccc]">{u.membership_status ?? "—"}</td>
+                  <td className="py-2 px-2">
+                    <button
+                      onClick={() => patch(u.id, { verified: !u.verified })}
+                      disabled={busy === u.id}
+                      className={`text-xs px-2 py-1 rounded ${
+                        u.verified
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : "bg-white/5 text-[#888]"
+                      }`}
+                    >
+                      {u.verified ? "✓ Verified" : "Verify"}
+                    </button>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <span className="text-xs text-[#666]">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Upload Queue (track submissions)
+// ---------------------------------------------------------------------------
+type Submission = {
+  id: string;
+  user_id: string;
+  artist_id: number | null;
+  title: string;
+  release_type: string | null;
+  genre: string | null;
+  description: string | null;
+  audio_url: string | null;
+  cover_url: string | null;
+  status: string;
+  created_at: string;
+  profile?: { display_name: string | null; username: string | null } | null;
+  artist?: { name: string | null } | null;
+};
+
+function SubmissionsSection() {
+  const [items, setItems] = useState<Submission[]>([]);
+  const [status, setStatus] = useState("pending");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch(`/api/admin/submissions?status=${status}`);
+    const data = await res.json().catch(() => ({}));
+    setItems(data.submissions ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const decide = async (id: string, action: "approve" | "reject") => {
+    const note =
+      action === "reject"
+        ? prompt("Optional rejection reason (visible to artist):") ?? ""
+        : "";
+    setBusy(id);
+    try {
+      const res = await fetch(`/api/admin/submissions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, note }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error ?? "Action failed");
+      } else {
+        await load();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h3 className="font-semibold">Upload Queue</h3>
+        <div className="flex items-center gap-2">
+          {["pending", "approved", "rejected", "all"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatus(s === "all" ? "" : s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize ${
+                (status || "all") === s
+                  ? "bg-[#c9a96e]/20 text-[#c9a96e]"
+                  : "bg-white/5 text-[#888] hover:bg-white/10"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-[#888] text-sm">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-[#888] text-sm">No submissions in this state.</p>
+      ) : (
+        <div className="space-y-3">
+          {items.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-start gap-4 p-4 bg-white/[0.02] border border-white/10 rounded-xl"
+            >
+              {s.cover_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={s.cover_url}
+                  alt=""
+                  className="w-16 h-16 rounded-lg object-cover border border-white/10"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-white/5 flex items-center justify-center text-2xl">
+                  🎵
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-semibold truncate">{s.title}</h4>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-[#ccc] uppercase">
+                    {s.release_type ?? "single"}
+                  </span>
+                  {s.genre && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-[#ccc]">
+                      {s.genre}
+                    </span>
+                  )}
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full uppercase ${
+                      s.status === "pending"
+                        ? "bg-orange-500/15 text-orange-300"
+                        : s.status === "approved"
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : "bg-red-500/15 text-red-300"
+                    }`}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+                <p className="text-xs text-[#888] mt-1">
+                  by {s.artist?.name ?? s.profile?.display_name ?? s.profile?.username ?? "unknown"}
+                  {" · "}
+                  {new Date(s.created_at).toLocaleString()}
+                </p>
+                {s.description && (
+                  <p className="text-sm text-[#ccc] mt-2 line-clamp-2">{s.description}</p>
+                )}
+                <div className="flex items-center gap-3 mt-2">
+                  {s.audio_url && (
+                    <a
+                      href={s.audio_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-[#c9a96e] hover:underline"
+                    >
+                      ▶ Preview audio
+                    </a>
+                  )}
+                </div>
+              </div>
+              {s.status === "pending" && (
+                <div className="flex flex-col gap-2 shrink-0">
+                  <button
+                    onClick={() => decide(s.id, "approve")}
+                    disabled={busy === s.id}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 text-xs font-medium hover:bg-emerald-500/25 disabled:opacity-50"
+                  >
+                    ✓ Approve
+                  </button>
+                  <button
+                    onClick={() => decide(s.id, "reject")}
+                    disabled={busy === s.id}
+                    className="px-3 py-1.5 rounded-lg bg-red-500/15 text-red-300 text-xs font-medium hover:bg-red-500/25 disabled:opacity-50"
+                  >
+                    ✕ Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Moderation (community comments)
+// ---------------------------------------------------------------------------
+type Comment = {
+  id: string;
+  body: string;
+  author_name: string | null;
+  user_id: string | null;
+  created_at: string;
+};
+
+function ModerationSection() {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch("/api/admin/moderation/comments");
+    if (res.ok) {
+      const data = await res.json();
+      setComments(data.comments ?? []);
+    } else {
+      setComments([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const remove = async (id: string) => {
+    if (!confirm("Delete this comment? This cannot be undone.")) return;
+    setBusy(id);
+    try {
+      const res = await fetch(`/api/admin/moderation/comments/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error ?? "Delete failed");
+      } else {
+        setComments((prev) => prev.filter((c) => c.id !== id));
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold">Community Moderation</h3>
+        <button
+          onClick={load}
+          className="px-3 py-1.5 rounded-lg bg-[#c9a96e]/15 text-[#c9a96e] text-xs font-medium"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-[#888] text-sm">Loading…</p>
+      ) : comments.length === 0 ? (
+        <p className="text-[#888] text-sm">No comments to moderate.</p>
+      ) : (
+        <div className="space-y-3">
+          {comments.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-start justify-between gap-4 p-4 bg-white/[0.02] border border-white/10 rounded-xl"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm">{c.body}</p>
+                <p className="text-xs text-[#666] mt-1">
+                  by {c.author_name ?? "anon"} ·{" "}
+                  {new Date(c.created_at).toLocaleString()}
+                </p>
+              </div>
+              <button
+                onClick={() => remove(c.id)}
+                disabled={busy === c.id}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-red-500/15 text-red-300 text-xs font-medium hover:bg-red-500/25 disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

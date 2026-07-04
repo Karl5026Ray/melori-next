@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
+import { authFetch, authHeaders } from "@/lib/authClient";
+import {
+  joinChannel as agoraJoin,
+  leaveChannel as agoraLeave,
+  setMuted as agoraSetMuted,
+  setRole as agoraSetRole,
+} from "@/lib/agoraClient";
 import { Space, SpaceParticipant } from "@/types/social";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
@@ -21,6 +28,8 @@ import {
   Copy,
   Flag,
   Trash2,
+  VolumeX,
+  UserMinus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -41,6 +50,8 @@ export default function SpaceDetailPage() {
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
+  const [micDenied, setMicDenied] = useState(false);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const fetchSpace = async () => {
@@ -143,11 +154,29 @@ export default function SpaceDetailPage() {
   const handleLeave = useCallback(async () => {
     if (!user) return;
 
-    await supabase
-      .from("space_participants")
-      .update({ left_at: new Date().toISOString() })
-      .eq("space_id", spaceId)
-      .eq("user_id", user.id);
+    // Release the mic + leave the Agora channel first so the audio session
+    // shuts down even if the follow-up API call fails.
+    try {
+      await agoraLeave();
+    } catch {
+      /* noop */
+    }
+
+    // Server-side leave: marks participant + auto-ends space when the last
+    // host leaves (Clubhouse-style ephemerality).
+    try {
+      await authFetch(`/api/social/spaces/${spaceId}/leave`, {
+        method: "POST",
+        keepalive: true,
+      });
+    } catch {
+      // Fallback: mark left_at directly.
+      await supabase
+        .from("space_participants")
+        .update({ left_at: new Date().toISOString() })
+        .eq("space_id", spaceId)
+        .eq("user_id", user.id);
+    }
 
     setIsJoined(false);
     await supabase.rpc("decrement_space_participants", { space_id: spaceId });
@@ -164,6 +193,11 @@ export default function SpaceDetailPage() {
       return;
     }
     const newMuted = !isMuted;
+    try {
+      await agoraSetMuted(newMuted);
+    } catch (err) {
+      console.warn("agora mute failed", err);
+    }
     await supabase
       .from("space_participants")
       .update({ is_muted: newMuted })
@@ -225,6 +259,67 @@ export default function SpaceDetailPage() {
     [isHost, spaceId],
   );
 
+  // Host-only: force-mute a speaker (they can still be present, just muted).
+  const hostMute = useCallback(
+    async (participantUserId: string, muted: boolean) => {
+      if (!isHost) return;
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ host_muted: muted }),
+        },
+      );
+    },
+    [isHost, spaceId],
+  );
+
+  // Host-only: demote a speaker back to audience.
+  const hostDemote = useCallback(
+    async (participantUserId: string) => {
+      if (!isHost) return;
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "audience" }),
+        },
+      );
+    },
+    [isHost, spaceId],
+  );
+
+  // Host-only: remove someone from the space entirely.
+  const hostRemove = useCallback(
+    async (participantUserId: string) => {
+      if (!isHost) return;
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ remove: true }),
+        },
+      );
+    },
+    [isHost, spaceId],
+  );
+
+  const handleGoLive = useCallback(async () => {
+    if (!isHost) return;
+    const res = await authFetch(`/api/social/spaces/${spaceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "go_live" }),
+    });
+    if (res.ok) {
+      const { space: updated } = await res.json();
+      setSpace((prev) => (prev ? { ...prev, ...updated } : prev));
+    }
+  }, [isHost, spaceId]);
+
   const handleEndSpace = useCallback(async () => {
     if (!isHost) return;
     if (
@@ -232,6 +327,11 @@ export default function SpaceDetailPage() {
       !window.confirm("End this space for everyone?")
     ) {
       return;
+    }
+    try {
+      await agoraLeave();
+    } catch {
+      /* noop */
     }
     await supabase
       .from("spaces")
@@ -247,6 +347,145 @@ export default function SpaceDetailPage() {
     setTimeout(() => {
       setReactions((prev) => prev.slice(1));
     }, 2000);
+  }, []);
+
+  // ---- Agora audio lifecycle -----------------------------------------------
+  // We (re)join whenever role changes. Audience → subscriber, speaker/host →
+  // publisher. Superfan+ only (server enforces on token endpoint).
+  useEffect(() => {
+    if (!isJoined || !user || !space?.agora_channel || !canParticipate) return;
+
+    const myPart = participants.find(
+      (p) => p.user_id === user.id && !p.left_at,
+    );
+    if (!myPart) return;
+
+    const role: "publisher" | "subscriber" =
+      myPart.role === "host" || myPart.role === "speaker"
+        ? "publisher"
+        : "subscriber";
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await agoraJoin({
+          channel: space.agora_channel!,
+          role,
+          spaceId,
+          onError: (err) => {
+            if (
+              /NotAllowedError|Permission|permission denied/i.test(
+                err.message ?? "",
+              )
+            ) {
+              setMicDenied(true);
+            }
+            console.warn("agora error", err);
+          },
+        });
+        if (cancelled) await agoraLeave();
+      } catch (err) {
+        if (
+          /NotAllowedError|Permission|permission denied/i.test(
+            (err as Error).message ?? "",
+          )
+        ) {
+          setMicDenied(true);
+        }
+        console.warn("agora join failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // We intentionally re-run when the participant's role changes so we can
+    // switch publisher/subscriber cleanly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isJoined,
+    user?.id,
+    space?.agora_channel,
+    spaceId,
+    canParticipate,
+    participants.find((p) => p.user_id === user?.id)?.role,
+  ]);
+
+  // React to role changes without a full rejoin when we're already connected.
+  useEffect(() => {
+    if (!user || !isJoined) return;
+    const myPart = participants.find(
+      (p) => p.user_id === user.id && !p.left_at,
+    );
+    if (!myPart) return;
+    const desired: "publisher" | "subscriber" =
+      myPart.role === "host" || myPart.role === "speaker"
+        ? "publisher"
+        : "subscriber";
+    agoraSetRole(desired).catch(() => {
+      /* handled inside setRole */
+    });
+  }, [user, isJoined, participants]);
+
+  // Heartbeat every 60s so `reap_idle_spaces` doesn't kill a live room.
+  useEffect(() => {
+    if (!isJoined) return;
+    const ping = () =>
+      authFetch(`/api/social/spaces/${spaceId}/heartbeat`, {
+        method: "POST",
+      }).catch(() => undefined);
+    ping();
+    heartbeatRef.current = setInterval(ping, 60_000);
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    };
+  }, [isJoined, spaceId]);
+
+  // pagehide/beforeunload → sendBeacon to end the space if we were the last host.
+  useEffect(() => {
+    if (!isJoined || typeof window === "undefined") return;
+    const beacon = async () => {
+      try {
+        const headers = await authHeaders();
+        const blob = new Blob([JSON.stringify({})], {
+          type: "application/json",
+        });
+        // sendBeacon can't set headers directly, so fall back to keepalive fetch
+        // when we need auth. We also try the beacon as a best-effort last resort.
+        try {
+          await fetch(`/api/social/spaces/${spaceId}/leave`, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+            keepalive: true,
+          });
+        } catch {
+          navigator.sendBeacon?.(
+            `/api/social/spaces/${spaceId}/leave`,
+            blob,
+          );
+        }
+        await agoraLeave();
+      } catch {
+        /* best-effort */
+      }
+    };
+    const onPageHide = () => {
+      void beacon();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onPageHide);
+    };
+  }, [isJoined, spaceId]);
+
+  // Component unmount → leave Agora cleanly.
+  useEffect(() => {
+    return () => {
+      void agoraLeave();
+    };
   }, []);
 
   const speakers = participants.filter(
@@ -361,6 +600,35 @@ export default function SpaceDetailPage() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         <div className="max-w-2xl mx-auto">
+          {space.status === "scheduled" && (
+            <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-melori-text">
+                  Scheduled to start
+                </p>
+                <p className="text-xs text-melori-muted mt-1">
+                  {space.scheduled_at
+                    ? new Date(space.scheduled_at).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "Time not set"}
+                </p>
+              </div>
+              {isHost && (
+                <button
+                  type="button"
+                  onClick={handleGoLive}
+                  className="btn-primary px-5 py-2.5 rounded-full font-semibold text-sm"
+                >
+                  Go Live Now
+                </button>
+              )}
+            </div>
+          )}
           {!isJoined ? (
             <div className="text-center py-12">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-melori-purple/20 to-melori-pink/20 flex items-center justify-center mx-auto mb-4">
@@ -391,7 +659,81 @@ export default function SpaceDetailPage() {
                   )}
                 </div>
                 <StageGrid participants={speakers} />
+
+                {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
+                  <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
+                    {speakers
+                      .filter((s) => s.user_id !== user?.id)
+                      .map((s) => (
+                        <div
+                          key={s.id}
+                          className="flex items-center gap-3 px-3 py-2"
+                        >
+                          <img
+                            src={s.user?.avatar_url || "/favicon.png"}
+                            className="w-8 h-8 rounded-full object-cover"
+                            alt=""
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {s.user?.display_name}
+                            </p>
+                            <p className="text-[11px] text-melori-muted">
+                              {s.role === "host" ? "Host" : "Speaker"}
+                              {(s as any).host_muted ? " · muted by host" : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              s.user_id &&
+                              hostMute(s.user_id, !(s as any).host_muted)
+                            }
+                            className="p-2 rounded-full hover:bg-white/5 text-melori-muted hover:text-melori-text transition"
+                            title={
+                              (s as any).host_muted
+                                ? "Unmute speaker"
+                                : "Mute speaker"
+                            }
+                          >
+                            {(s as any).host_muted ? (
+                              <Mic className="w-4 h-4" />
+                            ) : (
+                              <VolumeX className="w-4 h-4" />
+                            )}
+                          </button>
+                          {s.role !== "host" && s.user_id && (
+                            <button
+                              type="button"
+                              onClick={() => hostDemote(s.user_id!)}
+                              className="p-2 rounded-full hover:bg-white/5 text-melori-muted hover:text-melori-text transition"
+                              title="Move to audience"
+                            >
+                              <Hand className="w-4 h-4" />
+                            </button>
+                          )}
+                          {s.role !== "host" && s.user_id && (
+                            <button
+                              type="button"
+                              onClick={() => hostRemove(s.user_id!)}
+                              className="p-2 rounded-full hover:bg-red-500/10 text-melori-muted hover:text-red-400 transition"
+                              title="Remove from space"
+                            >
+                              <UserMinus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
+
+              {micDenied && (
+                <div className="mb-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+                  Microphone access was blocked. Enable it in your browser
+                  settings to speak in this space.
+                </div>
+              )}
 
               {raisedHands.length > 0 && (
                 <div className="mb-8">

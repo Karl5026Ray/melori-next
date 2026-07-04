@@ -78,9 +78,19 @@ export default function ChatPage() {
         },
         (payload) => {
           setMessages((prev) => [...prev, payload.new as Message]);
+          // Mark read as new messages arrive while we're viewing.
+          void authFetch(
+            `/api/social/conversations/${conversationId}/read`,
+            { method: "PATCH", keepalive: true },
+          );
         }
       )
       .subscribe();
+
+    // Mark the conversation as read when we open it.
+    void authFetch(`/api/social/conversations/${conversationId}/read`, {
+      method: "PATCH",
+    });
 
     return () => {
       supabase.removeChannel(channel);

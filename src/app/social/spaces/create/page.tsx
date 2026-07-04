@@ -41,6 +41,14 @@ export default function CreateSpacePage() {
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
   const [type, setType] = useState("listening");
+  const [scheduleFor, setScheduleFor] = useState<"now" | "later">("now");
+  // Default schedule = 30 minutes from now, formatted for <input type=datetime-local>.
+  const [scheduledAt, setScheduledAt] = useState(() => {
+    const d = new Date(Date.now() + 30 * 60_000);
+    // Convert to local-time YYYY-MM-DDTHH:mm.
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,16 +62,29 @@ export default function CreateSpacePage() {
     setIsSubmitting(true);
     setError("");
 
+    let scheduled_at: string | undefined;
+    if (scheduleFor === "later") {
+      const t = new Date(scheduledAt);
+      if (Number.isNaN(t.getTime())) {
+        setError("Pick a valid start time");
+        setIsSubmitting(false);
+        return;
+      }
+      scheduled_at = t.toISOString();
+    }
+
     // Server independently enforces Superfan+ on this endpoint (403 otherwise).
     const res = await authFetch("/api/social/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, topic, type }),
+      body: JSON.stringify({ title, topic, type, scheduled_at }),
     });
 
     if (res.ok) {
       const { space } = await res.json();
-      router.push(`/social/spaces/${space.id}`);
+      router.push(
+        scheduled_at ? "/social/spaces?tab=scheduled" : `/social/spaces/${space.id}`,
+      );
       return;
     }
 
@@ -122,6 +143,50 @@ export default function CreateSpacePage() {
           </div>
 
           <div>
+            <label className="block text-sm text-melori-muted mb-3">
+              When
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setScheduleFor("now")}
+                className={`text-left p-4 rounded-xl border transition ${
+                  scheduleFor === "now"
+                    ? "border-melori-purple bg-melori-purple/10"
+                    : "border-melori-border hover:border-melori-purple/30"
+                }`}
+              >
+                <p className="font-medium text-sm">Go live now</p>
+                <p className="text-xs text-melori-muted mt-1">
+                  Open the room immediately
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScheduleFor("later")}
+                className={`text-left p-4 rounded-xl border transition ${
+                  scheduleFor === "later"
+                    ? "border-melori-purple bg-melori-purple/10"
+                    : "border-melori-border hover:border-melori-purple/30"
+                }`}
+              >
+                <p className="font-medium text-sm">Schedule for later</p>
+                <p className="text-xs text-melori-muted mt-1">
+                  Announce a start time
+                </p>
+              </button>
+            </div>
+            {scheduleFor === "later" && (
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                className="mt-3 w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition"
+              />
+            )}
+          </div>
+
+          <div>
             <label className="block text-sm text-melori-muted mb-3">Type</label>
             <div className="grid grid-cols-2 gap-3">
               {spaceTypes.map((t) => {
@@ -163,7 +228,13 @@ export default function CreateSpacePage() {
             disabled={isSubmitting}
             className="btn-primary w-full py-3.5 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Going Live..." : "Go Live"}
+            {isSubmitting
+              ? scheduleFor === "later"
+                ? "Scheduling..."
+                : "Going Live..."
+              : scheduleFor === "later"
+                ? "Schedule Space"
+                : "Go Live"}
           </button>
         </form>
         )}

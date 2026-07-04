@@ -20,6 +20,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
+    // Optional scheduled_at → room is created in `scheduled` status; the
+    // host can go live later. Otherwise defaults to live-now.
+    let scheduledAt: string | null = null;
+    if (body.scheduled_at) {
+      const t = new Date(String(body.scheduled_at));
+      if (Number.isNaN(t.getTime())) {
+        return NextResponse.json(
+          { error: "Invalid scheduled_at" },
+          { status: 400 },
+        );
+      }
+      if (t.getTime() < Date.now() - 60_000) {
+        return NextResponse.json(
+          { error: "scheduled_at must be in the future" },
+          { status: 400 },
+        );
+      }
+      scheduledAt = t.toISOString();
+    }
+
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("spaces")
@@ -28,7 +48,8 @@ export async function POST(req: NextRequest) {
         topic: String(body.topic ?? "").trim() || "Open Discussion",
         type: body.type ?? "listening",
         host_id: membership.userId,
-        status: "live",
+        status: scheduledAt ? "scheduled" : "live",
+        scheduled_at: scheduledAt,
         agora_channel: `melori_${Date.now()}`,
       })
       .select()

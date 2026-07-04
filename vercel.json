@@ -4,6 +4,10 @@
     {
       "path": "/api/health",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/mm-social-prune",
+      "schedule": "0 * * * *"
     }
   ]
 }

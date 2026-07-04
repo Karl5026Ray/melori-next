@@ -33,6 +33,24 @@ export interface Space {
   created_at: string;
   ended_at: string | null;
   agora_channel: string | null;
+  scheduled_at?: string | null;
+  last_activity_at?: string | null;
+}
+
+export type WaveStatus = "pending" | "accepted" | "declined" | "expired";
+
+export interface Wave {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  message: string | null;
+  status: WaveStatus;
+  conversation_id: string | null;
+  created_at: string;
+  expires_at: string;
+  responded_at: string | null;
+  sender?: Profile;
+  recipient?: Profile;
 }
 
 export type ParticipantRole = "host" | "speaker" | "audience";
@@ -48,6 +66,9 @@ export interface SpaceParticipant {
   is_speaking: boolean;
   is_muted: boolean;
   has_raised_hand: boolean;
+  // Set by the host via force-mute; clients respect this even if the speaker
+  // toggles their own is_muted back off.
+  host_muted?: boolean;
 }
 
 export interface Conversation {

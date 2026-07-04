@@ -11,6 +11,8 @@ async function getConversations() {
       `
       *,
       members:conversation_members(
+        user_id,
+        last_read_at,
         user:profiles(id, display_name, avatar_url, role, verified)
       ),
       messages:messages(

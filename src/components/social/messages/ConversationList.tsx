@@ -27,7 +27,22 @@ export function ConversationList({
         const otherMember = conv.members?.find(
           (m: any) => m.user?.id !== user?.id
         )?.user;
-        const lastMessage = conv.messages?.[0];
+        // Latest message across the possibly-unordered array.
+        const lastMessage = (conv.messages ?? []).reduce(
+          (acc: any, m: any) =>
+            !acc || new Date(m.created_at) > new Date(acc.created_at) ? m : acc,
+          null,
+        );
+        const myMember = conv.members?.find(
+          (m: any) => m.user_id === user?.id || m.user?.id === user?.id,
+        );
+        const myLastRead = myMember?.last_read_at
+          ? new Date(myMember.last_read_at).getTime()
+          : 0;
+        const hasUnread =
+          !!lastMessage &&
+          lastMessage.sender_id !== user?.id &&
+          new Date(lastMessage.created_at).getTime() > myLastRead;
         const isActive = pathname === `/social/messages/${conv.id}`;
 
         return (
@@ -48,16 +63,35 @@ export function ConversationList({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-0.5">
-                <h4 className="font-medium text-sm truncate">
+                <h4
+                  className={`text-sm truncate ${
+                    hasUnread ? "font-bold text-melori-text" : "font-medium"
+                  }`}
+                >
                   {otherMember?.display_name || "Unknown"}
                 </h4>
-                <span className="text-xs text-melori-muted">
+                <span
+                  className={`text-xs ${
+                    hasUnread ? "text-melori-purple" : "text-melori-muted"
+                  }`}
+                >
                   {lastMessage ? formatTimeAgo(lastMessage.created_at) : ""}
                 </span>
               </div>
-              <p className="text-sm text-melori-muted truncate">
-                {lastMessage?.content || "No messages yet"}
-              </p>
+              <div className="flex items-center gap-2">
+                <p
+                  className={`text-sm truncate flex-1 ${
+                    hasUnread
+                      ? "text-melori-text font-medium"
+                      : "text-melori-muted"
+                  }`}
+                >
+                  {lastMessage?.content || "No messages yet"}
+                </p>
+                {hasUnread && (
+                  <span className="w-2.5 h-2.5 rounded-full bg-melori-purple shrink-0" />
+                )}
+              </div>
             </div>
           </Link>
         );

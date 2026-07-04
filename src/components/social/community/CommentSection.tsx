@@ -8,6 +8,7 @@ import {
   UpgradePrompt,
 } from "@/components/social/UpgradePrompt";
 import { authFetch } from "@/lib/authClient";
+import { WaveButton } from "@/components/social/WaveButton";
 import { MessageSquare } from "lucide-react";
 
 export interface CommunityComment {

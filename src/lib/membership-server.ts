@@ -13,6 +13,11 @@ import {
 // must forward its access token as `Authorization: Bearer <token>`. We verify the
 // token with the anon client, then read the caller's membership row with the
 // service-role admin client (bypasses RLS).
+//
+// NOTE: the `profiles` table stores tier + admin flag in a single `role` column
+// (values: 'free' | 'superfan' | 'artist' | 'admin'). There is no
+// `membership_tier` or `membership_expires_at` column, so we read `role` and map
+// it onto MembershipProfile.membership_tier for the shared gating helpers.
 
 export interface RequestMembership {
   userId: string | null;
@@ -20,9 +25,7 @@ export interface RequestMembership {
 }
 
 function bearerToken(request: Request): string | null {
-  const header =
-    request.headers.get("authorization") ??
-    request.headers.get("Authorization");
+  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   if (!header) return null;
   const [scheme, token] = header.split(" ");
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
@@ -35,8 +38,7 @@ export async function getRequestMembership(
   const token = bearerToken(request);
   if (!token) return { userId: null, profile: null };
 
-  const url =
-    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
   if (!url || !anonKey) return { userId: null, profile: null };
 
@@ -46,34 +48,45 @@ export async function getRequestMembership(
 
   const { data, error } = await authClient.auth.getUser(token);
   if (error || !data?.user) return { userId: null, profile: null };
-  const userId = data.user.id;
 
+  const userId = data.user.id;
   const admin = getSupabaseAdmin();
-  const { data: profile } = await admin
+  const { data: row } = await admin
     .from("profiles")
-    .select("membership_tier, membership_status, membership_expires_at")
+    .select("role, membership_status")
     .eq("id", userId)
     .maybeSingle();
 
-  return { userId, profile: (profile as MembershipProfile) ?? null };
+  const profile: MembershipProfile | null = row
+    ? {
+        membership_tier: (row as { role?: string | null }).role ?? "free",
+        membership_status: (row as { membership_status?: string | null }).membership_status ?? null,
+        membership_expires_at: null,
+      }
+    : null;
+
+  return { userId, profile };
 }
 
 // Guards: return a NextResponse (401/403) when the caller is not authorized,
 // otherwise return the resolved membership so the handler can proceed.
+
 export async function requireSuperfan(
   request: Request,
-): Promise<{ membership: RequestMembership } | NextResponse> {
+): Promise<{
+  membership: RequestMembership
+} | NextResponse> {
   const membership = await getRequestMembership(request);
   if (!membership.userId) {
     return NextResponse.json(
       { error: "Sign in required" },
-      { status: 401 },
+      { status: 401 }
     );
   }
   if (!isSuperfanOrBetter(membership.profile)) {
     return NextResponse.json(
-      { error: "Superfan membership required", upgrade: "/membership" },
-      { status: 403 },
+      { error: "Superfan membership required" },
+      { status: 403 }
     );
   }
   return { membership };
@@ -81,25 +94,22 @@ export async function requireSuperfan(
 
 export async function requireArtist(
   request: Request,
-): Promise<{ membership: RequestMembership } | NextResponse> {
+  artistId: string,
+): Promise<{
+  membership: RequestMembership
+} | NextResponse> {
   const membership = await getRequestMembership(request);
   if (!membership.userId) {
     return NextResponse.json(
       { error: "Sign in required" },
-      { status: 401 },
+      { status: 401 }
     );
   }
-  if (!isArtistSubscriber(membership.profile)) {
+  if (!isArtistSubscriber(membership.profile, artistId)) {
     return NextResponse.json(
-      { error: "Artist membership required", upgrade: "/membership" },
-      { status: 403 },
+      { error: "Artist subscription required" },
+      { status: 403 }
     );
   }
   return { membership };
-}
-
-export function isGuardFailure(
-  result: { membership: RequestMembership } | NextResponse,
-): result is NextResponse {
-  return result instanceof NextResponse;
 }

@@ -3,7 +3,9 @@ import type { StoreProduct } from "@/types";
 import ProductCard from "./ProductCard";
 import StoreControls from "./StoreControls";
 
-export const revalidate = 60;
+// Rendered per-request: this page queries Supabase at request time, so it must
+// not be statically prerendered at build time (env vars are runtime-only).
+export const dynamic = "force-dynamic";
 
 type SortKey = "newest" | "price-low" | "price-high" | "popular";
 

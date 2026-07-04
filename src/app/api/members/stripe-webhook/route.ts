@@ -279,6 +279,7 @@ async function applySubscriptionState(
     stripe_subscription_id: canceled ? null : args.subscriptionId ?? profile.stripe_subscription_id ?? null,
     membership_expires_at: canceled ? null : args.currentPeriodEnd ?? null,
     membership_updated_at: new Date().toISOString(),
+role: profile.role === "admin" ? "admin" : canceled ? "free" : tier ?? profile.membership_tier ?? profile.role ?? "free",
   };
 
   await supabase.from("profiles").update(update).eq("id", profile.id);
@@ -293,8 +294,9 @@ async function findProfile(
   membership_tier: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+role: string | null;
 } | null> {
-  const cols = "id,membership_tier,stripe_customer_id,stripe_subscription_id";
+  const cols = "id,membership_tier,stripe_customer_id,stripe_subscription_id,role";
 
   if (keys.customerId) {
     const { data } = await supabase

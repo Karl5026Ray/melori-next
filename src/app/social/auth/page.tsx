@@ -149,7 +149,7 @@ export default function AuthPage() {
         <p className="text-center text-sm text-melori-muted mt-6">
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => { if (isSignUp) { setIsSignUp(false); } else { router.push("/membership"); } }}
             className="text-melori-purple hover:underline font-medium"
           >
             {isSignUp ? "Sign In" : "Sign Up"}

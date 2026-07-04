@@ -72,7 +72,12 @@ export async function POST(req: NextRequest) {
       cover_image_url: body.cover_image_url ?? null,
       is_verified: Boolean(body.is_verified),
       is_published: Boolean(body.is_published),
+      is_featured: Boolean(body.is_featured),
     };
+    if (body.featured_order !== undefined && body.featured_order !== null) {
+      const n = Number(body.featured_order);
+      if (Number.isFinite(n)) insert.featured_order = n;
+    }
 
     const { data, error } = await supabase
       .from("artists")

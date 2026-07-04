@@ -341,13 +341,28 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Mobile menu panel */}
+      {/* Mobile menu panel. Height is capped above the fixed audio player so
+         nothing (especially the Log In / account block at the bottom) hides
+         behind the player. Panel is scrollable and respects iOS safe-area. */}
       {open && (
         <nav
           id="mobile-nav"
-          className="md:hidden border-t border-brand-border bg-brand-background"
+          className="md:hidden border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
+          style={{
+            // Header is 64px (h-16). Audio player is ~112px (single row) up to
+            // ~152px (with sample-preview upgrade banner). Reserve 168px so the
+            // drawer never overlaps the player on any state.
+            maxHeight:
+              "calc(100vh - 4rem - 168px - env(safe-area-inset-bottom))",
+          }}
         >
-          <div className="max-w-6xl mx-auto px-4 py-2 flex flex-col">
+          <div
+            className="max-w-6xl mx-auto px-4 py-2 flex flex-col"
+            style={{
+              paddingBottom:
+                "calc(env(safe-area-inset-bottom) + 1rem)",
+            }}
+          >
             {navGroups.map((group) => (
               <div key={group.label} className="py-1">
                 <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">

@@ -7,6 +7,7 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { Space, SpaceParticipant } from "@/types/social";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
+import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
 import {
   ArrowLeft,
   Share2,
@@ -17,6 +18,9 @@ import {
   Hand,
   Plus,
   Volume2,
+  Copy,
+  Flag,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -34,6 +38,9 @@ export default function SpaceDetailPage() {
   const [hasRaisedHand, setHasRaisedHand] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [reactions, setReactions] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchSpace = async () => {
@@ -183,6 +190,65 @@ export default function SpaceDetailPage() {
 
   const isHost = user?.id === space?.host_id;
 
+  // Copy the room URL to the clipboard, with a Web Share fallback on mobile.
+  const handleShare = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    const title = space?.title ?? "MELORI Space";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url });
+        return;
+      }
+    } catch {
+      /* user cancelled — fall through to clipboard */
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareToast("Room link copied");
+    } catch {
+      setShareToast("Could not copy link");
+    }
+    setTimeout(() => setShareToast(null), 2200);
+  }, [space?.title]);
+
+  // Host-only: promote an audience member to speaker.
+  const invitePromote = useCallback(
+    async (participantUserId: string) => {
+      if (!isHost) return;
+      await supabase
+        .from("space_participants")
+        .update({ role: "speaker", has_raised_hand: false })
+        .eq("space_id", spaceId)
+        .eq("user_id", participantUserId);
+    },
+    [isHost, spaceId],
+  );
+
+  const handleEndSpace = useCallback(async () => {
+    if (!isHost) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("End this space for everyone?")
+    ) {
+      return;
+    }
+    await supabase
+      .from("spaces")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", spaceId);
+    router.push("/social/spaces");
+  }, [isHost, spaceId, router]);
+
+  // Lightweight in-room reactions (host + audience). Purely visual — burst
+  // an emoji into a floating list that fades after ~2s.
+  const sendReaction = useCallback((emoji: string) => {
+    setReactions((prev) => [...prev, `${Date.now()}:${emoji}`]);
+    setTimeout(() => {
+      setReactions((prev) => prev.slice(1));
+    }, 2000);
+  }, []);
+
   const speakers = participants.filter(
     (p) => p.role === "host" || p.role === "speaker"
   );
@@ -225,19 +291,71 @@ export default function SpaceDetailPage() {
             <p className="text-xs text-melori-muted truncate">{space.topic}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 relative">
           <button
+            type="button"
+            onClick={handleShare}
             className="p-2.5 hover:bg-melori-elevated rounded-full transition"
             title="Share"
+            aria-label="Share this space"
           >
             <Share2 className="w-4 h-4 text-melori-muted" />
           </button>
           <button
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            aria-expanded={moreOpen}
             className="p-2.5 hover:bg-melori-elevated rounded-full transition"
             title="More"
           >
             <MoreHorizontal className="w-4 h-4 text-melori-muted" />
           </button>
+          {moreOpen && (
+            <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-melori-border bg-melori-void shadow-xl overflow-hidden z-20">
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  void handleShare();
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5 transition"
+              >
+                <Copy className="w-4 h-4" />
+                Copy room link
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  alert(
+                    "Thanks — a moderator will review this space.",
+                  );
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5 transition"
+              >
+                <Flag className="w-4 h-4" />
+                Report space
+              </button>
+              {isHost && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    void handleEndSpace();
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  End space
+                </button>
+              )}
+            </div>
+          )}
+          {shareToast && (
+            <span className="absolute right-0 -bottom-9 rounded-full bg-melori-purple/90 text-white text-xs font-medium px-3 py-1.5 shadow-lg">
+              {shareToast}
+            </span>
+          )}
         </div>
       </div>
 
@@ -299,8 +417,14 @@ export default function SpaceDetailPage() {
                         <span className="text-xs text-melori-muted truncate w-16 text-center">
                           {p.user?.display_name}
                         </span>
-                        {isHost && (
-                          <button className="text-[10px] bg-melori-purple/20 text-melori-purple px-2 py-1 rounded-full hover:bg-melori-purple/30 transition">
+                        {isHost && p.user_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              p.user_id && invitePromote(p.user_id)
+                            }
+                            className="text-[10px] bg-melori-purple/20 text-melori-purple px-2 py-1 rounded-full hover:bg-melori-purple/30 transition"
+                          >
                             Invite
                           </button>
                         )}
@@ -318,8 +442,29 @@ export default function SpaceDetailPage() {
               </div>
             </>
           )}
+
+          {/* Per-space comment thread. Public reads, Superfan+ posts. */}
+          <SpaceCommentSection spaceId={spaceId} />
         </div>
       </div>
+
+      {/* Floating reaction bursts */}
+      {reactions.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-32 z-30 flex justify-center gap-3">
+          {reactions.map((r) => {
+            const emoji = r.split(":")[1] ?? "❤️";
+            return (
+              <span
+                key={r}
+                className="text-3xl animate-bounce"
+                style={{ animationDuration: "1.6s" }}
+              >
+                {emoji}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {isJoined && (
         <div className="border-t border-melori-border p-4 md:p-6 bg-melori-void/95 backdrop-blur shrink-0">
@@ -362,14 +507,44 @@ export default function SpaceDetailPage() {
               )}
 
               {isHost && (
-                <button className="px-4 py-3 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium hover:bg-red-500/30 transition">
+                <button
+                  type="button"
+                  onClick={handleEndSpace}
+                  className="px-4 py-3 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium hover:bg-red-500/30 transition"
+                >
                   End Space
                 </button>
               )}
 
-              <button className="p-3 rounded-full bg-melori-elevated border border-melori-border text-melori-muted hover:text-melori-text transition">
-                <Plus className="w-5 h-5" />
-              </button>
+              {/* Quick reactions. Renders an emoji picker menu on click. */}
+              <div className="relative">
+                <details className="group">
+                  <summary className="list-none cursor-pointer p-3 rounded-full bg-melori-elevated border border-melori-border text-melori-muted hover:text-melori-text transition flex items-center justify-center">
+                    <Plus className="w-5 h-5" />
+                  </summary>
+                  <div className="absolute right-0 bottom-full mb-2 flex gap-1 rounded-full border border-melori-border bg-melori-void px-2 py-2 shadow-xl">
+                    {["❤️", "🔥", "👏", "🎵", "😂", "🙌"].map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          sendReaction(emoji);
+                          (
+                            e.currentTarget.closest("details") as
+                              | HTMLDetailsElement
+                              | null
+                          )?.removeAttribute("open");
+                        }}
+                        className="text-xl px-1 hover:scale-125 transition-transform"
+                        aria-label={`React ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
         </div>

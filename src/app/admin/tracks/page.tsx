@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SampleEditor from "./SampleEditor";
+import TrackUploadPanel from "./TrackUploadPanel";
+import { validateAudioFile, probeDuration } from "./uploadHelpers";
 
 interface AdminTrack {
   id: number;
@@ -31,20 +33,14 @@ interface UploadDraft {
   duration: number | null;
 }
 
-const AUDIO_TYPES = [
-  "audio/mpeg",
-  "audio/wav",
-  "audio/flac",
-  "audio/x-wav",
-  "audio/x-flac",
-];
-
 export default function AdminTracksPage() {
   const router = useRouter();
   const [view, setView] = useState<View>("list");
   const [tracks, setTracks] = useState<AdminTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);   const [search, setSearch] = useState("");
+  // Which track row has its inline master-upload panel expanded (null = none).
+  const [uploadingTrackId, setUploadingTrackId] = useState<number | null>(null);
 
   // Upload form state
   const [file, setFile] = useState<File | null>(null);
@@ -95,12 +91,9 @@ export default function AdminTracksPage() {
   };
 
   const pickFile = (f: File) => {
-    if (!AUDIO_TYPES.includes(f.type) && !f.name.match(/\.(mp3|wav|flac)$/i)) {
-      alert("Please upload an MP3, WAV, or FLAC file.");
-      return;
-    }
-    if (f.size > 100 * 1024 * 1024) {
-      alert("File exceeds the 100MB limit.");
+    const msg = validateAudioFile(f);
+    if (msg) {
+      alert(msg);
       return;
     }
     setFile(f);
@@ -108,26 +101,6 @@ export default function AdminTracksPage() {
       setTitle(f.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "));
     }
   };
-
-  const probeDuration = (f: File): Promise<number | null> =>
-    new Promise((resolve) => {
-      try {
-        const url = URL.createObjectURL(f);
-        const audio = new Audio();
-        audio.preload = "metadata";
-        audio.onloadedmetadata = () => {
-          URL.revokeObjectURL(url);
-          resolve(Number.isFinite(audio.duration) ? audio.duration : null);
-        };
-        audio.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve(null);
-        };
-        audio.src = url;
-      } catch {
-        resolve(null);
-      }
-    });
 
   const startUpload = async () => {
     if (!file || !title.trim()) {
@@ -350,7 +323,8 @@ export default function AdminTracksPage() {
                 </thead>
                 <tbody>
                   {tracks.filter((t) => { const q = search.trim().toLowerCase(); return !q || t.title.toLowerCase().includes(q) || (t.release_title?.toLowerCase().includes(q) ?? false) || (t.artist_name?.toLowerCase().includes(q) ?? false); }).map((t) => (
-                    <tr key={t.id} className="border-b border-white/[0.04]">
+                    <Fragment key={t.id}>
+                    <tr className="border-b border-white/[0.04]">
                       <td className="px-5 py-3">
                         <div className="font-medium">{t.title}</div>
                         {t.release_title && (
@@ -376,6 +350,20 @@ export default function AdminTracksPage() {
                       <td className="px-5 py-3">
                         <div className="flex gap-2 justify-end">
                           <button
+                            onClick={() =>
+                              setUploadingTrackId((cur) =>
+                                cur === t.id ? null : t.id,
+                              )
+                            }
+                            className={`px-3 py-1.5 bg-white/5 border rounded-lg text-xs ${
+                              uploadingTrackId === t.id
+                                ? "border-[#c9a96e]/60 text-[#c9a96e]"
+                                : "border-white/10 hover:border-[#c9a96e]/40"
+                            }`}
+                          >
+                            Upload
+                          </button>
+                          <button
                             onClick={() => openSampleEditor(t)}
                             className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs hover:border-[#c9a96e]/40"
                           >
@@ -390,6 +378,22 @@ export default function AdminTracksPage() {
                         </div>
                       </td>
                     </tr>
+                    {uploadingTrackId === t.id && (
+                      <tr className="border-b border-white/[0.04]">
+                        <td colSpan={5} className="px-5 pb-5 pt-0">
+                          <TrackUploadPanel
+                            trackId={t.id}
+                            trackTitle={t.title}
+                            onClose={() => setUploadingTrackId(null)}
+                            onSaved={() => {
+                              setUploadingTrackId(null);
+                              loadTracks();
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

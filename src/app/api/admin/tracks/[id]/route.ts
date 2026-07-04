@@ -43,6 +43,12 @@ export async function PATCH(
       update.is_published = body.is_published;
     if (body.price != null && body.price !== "")
       update.price = Number(body.price);
+    if (typeof body.audio_url === "string" && body.audio_url.trim())
+      update.audio_url = body.audio_url.trim();
+    if (body.duration_seconds != null) {
+      const d = Number(body.duration_seconds);
+      if (Number.isFinite(d) && d > 0) update.duration_seconds = Math.round(d);
+    }
     if (body.preview_start != null) {
       const s = Number(body.preview_start);
       if (Number.isFinite(s) && s >= 0) update.preview_start = s;

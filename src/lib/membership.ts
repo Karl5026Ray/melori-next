@@ -1,16 +1,19 @@
 // Shared membership model + gating helpers.
 //
 // Membership lives in Supabase `profiles`:
-//   - membership_tier: 'free' | 'superfan' | 'artist'  (artist is the TOP tier)
+//   - membership_tier: 'free' | 'superfan' | 'artist' | 'admin'  (artist is the TOP paid tier)
 //   - membership_status: e.g. 'active'
 //   - membership_expires_at: timestamptz | null
 //
-// Tier ranking (ascending): free < superfan < artist.
-// An `artist` subscriber has ALL superfan privileges PLUS studio access.
+// NOTE: the DB column is actually `role`; membership-server.ts maps role -> membership_tier
+// before these helpers run, so `membership_tier` here may hold 'admin'.
+//
+// Tier ranking (ascending): free < superfan < artist. Admins are treated as top
+// tier for access purposes and bypass the active-subscription requirement.
 //
 // This module is pure and client-safe (no server-only imports). Reuse it on both
 // the client (UI gating / CTAs) and the server (route handlers). Server-side
-// request→profile resolution lives in `membership-server.ts`.
+// request-profile resolution lives in `membership-server.ts`.
 
 export type MembershipTier = "free" | "superfan" | "artist";
 
@@ -20,8 +23,14 @@ export interface MembershipProfile {
   membership_expires_at?: string | null;
 }
 
+// True when the caller is a platform administrator (profiles.role === 'admin').
+export function isAdmin(profile: MembershipProfile | null | undefined): boolean {
+  return (profile?.membership_tier ?? "").toLowerCase() === "admin";
+}
+
 export function tierOf(profile: MembershipProfile | null | undefined): MembershipTier {
   const t = (profile?.membership_tier ?? "free").toLowerCase();
+  if (t === "admin") return "artist"; // admins treated as top tier
   if (t === "artist") return "artist";
   if (t === "superfan") return "superfan";
   return "free";
@@ -41,15 +50,18 @@ export function isActive(profile: MembershipProfile | null | undefined): boolean
   return true;
 }
 
-// "Superfan or better" — active AND tier in ['superfan', 'artist'].
+// "Superfan or better" — admins always qualify; otherwise active AND tier in
+// ['superfan', 'artist'].
 export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
+  if (isAdmin(profile)) return true;
   if (!isActive(profile)) return false;
   const tier = tierOf(profile);
   return tier === "superfan" || tier === "artist";
 }
 
-// Studio access — active AND tier === 'artist' (the top tier).
+// Studio access — admins always qualify; otherwise active AND tier === 'artist'.
 export function isArtistSubscriber(profile: MembershipProfile | null | undefined): boolean {
+  if (isAdmin(profile)) return true;
   return isActive(profile) && tierOf(profile) === "artist";
 }
 

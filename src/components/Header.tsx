@@ -163,7 +163,7 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative h-16 flex items-center justify-between gap-3">
-        <Link href="/" className="flex items-center gap-2 shrink-0">
+        <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 shrink-0">
           <Image
             src="/logo/logo.png"
             alt="MELORI Music"

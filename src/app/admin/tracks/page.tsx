@@ -11,6 +11,7 @@ interface AdminTrack {
   id: number;
   title: string;
   audio_url: string | null;
+  preview_url: string | null;
   preview_start: number;
   preview_end: number;
   duration_seconds: number | null;
@@ -55,6 +56,9 @@ export default function AdminTracksPage() {
   const [draft, setDraft] = useState<UploadDraft | null>(null);
   const [editing, setEditing] = useState<AdminTrack | null>(null);
   const [editUrl, setEditUrl] = useState<string | null>(null);
+  // Whether the editor is loaded against the full master or only the existing
+  // 30-second preview (when no master was ever uploaded). Drives an inline note.
+  const [editSource, setEditSource] = useState<"master" | "preview">("master");
   const [savingSample, setSavingSample] = useState(false);
 
   const savingDraftRef = useRef(false);
@@ -190,20 +194,35 @@ export default function AdminTracksPage() {
   };
 
   const openSampleEditor = async (track: AdminTrack) => {
-    if (!track.audio_url) {
-      alert("This track has no audio file to edit.");
+    // Edit sample must NEVER be a silent no-op. Prefer the master; if none was
+    // ever uploaded, fall back to the existing preview so the admin can still
+    // view/adjust the window; if there is no audio at all, open the inline
+    // master-upload panel so the next step is obvious.
+    const source = track.audio_url
+      ? { path: track.audio_url, kind: "master" as const }
+      : track.preview_url
+        ? { path: track.preview_url, kind: "preview" as const }
+        : null;
+
+    if (!source) {
+      setUploadingTrackId(track.id);
+      alert("Upload the master audio before editing the 30-second sample.");
       return;
     }
+
     setEditing(track);
     setEditUrl(null);
+    setEditSource(source.kind);
     setView("sample");
     try {
       const res = await fetch("/api/admin/sign-download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: track.audio_url, bucket: "audio-files" }),
+        body: JSON.stringify({ path: source.path, bucket: "audio-files" }),
       });
+      if (!res.ok) throw new Error("sign-download failed");
       const { url } = await res.json();
+      if (!url) throw new Error("no signed url");
       setEditUrl(url);
     } catch {
       alert("Could not load audio for editing.");
@@ -523,6 +542,14 @@ export default function AdminTracksPage() {
                 Drag the fixed 30-second window to choose what free listeners hear.
               </p>
             </div>
+
+            {editing && editSource === "preview" && (
+              <div className="rounded-xl bg-[#c9a96e]/10 border border-[#c9a96e]/30 px-4 py-3 text-sm text-[#c9a96e]">
+                No master uploaded — editing against the existing 30-second
+                preview. Upload the master audio to re-select the sample window
+                from the full track.
+              </div>
+            )}
 
             {draft ? (
               <SampleEditor

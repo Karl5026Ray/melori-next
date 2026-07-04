@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
+import TrackReplacePanel from "./TrackReplacePanel";
 
 interface Track {
   id: string;
@@ -24,9 +25,10 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | Track["status"]>("all");
+  const [replacingId, setReplacingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    authFetch("/api/studio/tracks")
+  const loadTracks = useCallback(() => {
+    return authFetch("/api/studio/tracks")
       .then((r) => r.json())
       .then((data) => {
         setTracks(data.tracks || []);
@@ -34,6 +36,10 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadTracks();
+  }, [loadTracks]);
 
   const filteredTracks = filter === "all" ? tracks : tracks.filter((t) => t.status === filter);
 
@@ -103,8 +109,8 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
       ) : (
         <div className="grid gap-4">
           {filteredTracks.map((track) => (
+            <div key={track.id}>
             <div
-              key={track.id}
               className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-5 flex items-center gap-5 hover:border-[#c9a96e]/20 transition-all"
             >
               {/* Art placeholder */}
@@ -140,6 +146,19 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                 >
                   ✂️ Preview
                 </button>
+                <button
+                  onClick={() =>
+                    setReplacingId((id) => (id === track.id ? null : track.id))
+                  }
+                  className={`px-4 py-2 border rounded-lg text-sm font-medium transition-all ${
+                    replacingId === track.id
+                      ? "bg-[#c9a96e]/15 text-[#c9a96e] border-[#c9a96e]/40"
+                      : "bg-white/5 border-white/10 hover:border-[#c9a96e]/40"
+                  }`}
+                  title="Replace the master audio for this track"
+                >
+                  🔁 Replace
+                </button>
                 <Link
                   href={`/music/${track.id}`}
                   className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"
@@ -147,6 +166,16 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                   View
                 </Link>
               </div>
+            </div>
+
+            {replacingId === track.id && (
+              <TrackReplacePanel
+                trackId={track.id}
+                trackTitle={track.title}
+                onClose={() => setReplacingId(null)}
+                onReplaced={loadTracks}
+              />
+            )}
             </div>
           ))}
         </div>

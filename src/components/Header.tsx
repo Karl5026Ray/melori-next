@@ -162,8 +162,8 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-        <Link href="/" className="flex items-center gap-2 shrink-0">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 relative h-16 flex items-center justify-between gap-3">
+        <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 shrink-0">
           <Image
             src="/logo/logo.png"
             alt="MELORI Music"
@@ -314,7 +314,7 @@ export default function Header() {
           </Link>
         </nav>
 
-        {/* Mobile hamburger toggle */}
+        {!user && (               <Link                 href="/social/auth"                 className="md:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md border border-brand-border px-4 py-1.5 text-sm font-semibold text-text-primary transition-colors hover:text-brand-primary"               >                 Sign In               </Link>             )}             {/* Mobile hamburger toggle */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}

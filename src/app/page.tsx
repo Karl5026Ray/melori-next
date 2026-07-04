@@ -33,34 +33,14 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
-        <div className="max-w-5xl mx-auto px-6 pt-24 pb-10 flex flex-col items-center text-center">
+        <div className="max-w-5xl mx-auto px-6 pt-10 pb-10 flex flex-col items-center text-center">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight">
             MELORI MUSIC
           </h1>
           <p className="mt-4 text-lg md:text-xl text-text-secondary">
-            Stream freely. Support directly. Create endlessly.
+            Stream freely. Support directly. <span className="whitespace-nowrap">Create endlessly.</span>
           </p>
-          <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/music"
-              className="px-6 py-3 rounded-full font-semibold bg-brand-primary hover:bg-brand-primary-dark transition-colors text-white"
-            >
-              Browse Music
-            </Link>
-            <Link
-              href="/video"
-              className="px-6 py-3 rounded-full font-semibold border border-brand-border hover:border-brand-primary transition-colors"
-            >
-              Watch Videos
-            </Link>
-            <Link
-              href="/artists"
-              className="px-6 py-3 rounded-full font-semibold border border-brand-border hover:border-brand-primary transition-colors"
-            >
-              Artists
-            </Link>
-          </div>
-        </div>
+                  </div>
       </section>
 
       {/* Featured releases — top 12 */}

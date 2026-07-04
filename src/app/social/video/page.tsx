@@ -1,7 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import { VideoFeed } from "@/components/social/video/VideoFeed";
 
-export const revalidate = 60;
+// Rendered per-request: this page queries Supabase at request time, so it must
+// not be statically prerendered at build time (env vars are runtime-only).
+export const dynamic = "force-dynamic";
 
 async function getVideos() {
   const { data, error } = await supabase

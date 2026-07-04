@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import HelpUsImprove from "@/components/HelpUsImprove";
 
 export const metadata: Metadata = {
   title: "Mission",
@@ -113,6 +114,15 @@ export default function MissionPage() {
           </div>
         </div>
       </section>
+<section className="border-t border-brand-border">
+<div className="max-w-2xl mx-auto px-6 py-20">
+<div className="mb-8 text-center">
+<h2 className="text-3xl md:text-4xl font-bold mb-3">Help us improve</h2>
+<p className="text-text-secondary text-lg">We’re building Melori in the open. Tell us what’s working, what isn’t, or what you’d love to see next.</p>
+</div>
+<HelpUsImprove />
+</div>
+</section>
     </div>
   );
 }

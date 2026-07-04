@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Space } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
-import { Users, Radio, CalendarClock } from "lucide-react";
+import { Users, Radio, CalendarClock, X } from "lucide-react"; import { useState, type MouseEvent } from "react"; import { useRouter } from "next/navigation"; import { supabase } from "@/lib/supabase"; import { useAuth } from "@/components/social/providers/AuthProvider";
 
 const typeConfig = {
   listening: { variant: "green" as const, label: "Listening" },
@@ -30,7 +30,7 @@ function formatSchedule(iso: string | null | undefined): string {
 export function SpaceCard({ space }: { space: Space }) {
   const type = typeConfig[space.type] || typeConfig.discussion;
   const host = space.host;
-  const isScheduled = space.status === "scheduled";
+  const isScheduled = space.status === "scheduled"; const { user } = useAuth(); const router = useRouter(); const [ending, setEnding] = useState(false); const isHost = !!user && user.id === space.host_id; const handleEndSpace = async (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); if (!isHost || ending) return; if (typeof window !== "undefined" && !window.confirm("End this space for everyone?")) return; setEnding(true); try { await supabase.from("spaces").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", space.id); router.refresh(); } catch { setEnding(false); } };
 
   return (
     <Link href={`/social/spaces/${space.id}`}>
@@ -90,7 +90,7 @@ export function SpaceCard({ space }: { space: Space }) {
           {isScheduled ? (
             <CalendarClock className="w-3.5 h-3.5 text-melori-muted" />
           ) : (
-            <Radio className="w-3.5 h-3.5 text-melori-muted" />
+            isHost ? (<button type="button" onClick={handleEndSpace} disabled={ending} className="flex items-center gap-1 rounded-full bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 transition-colors hover:bg-red-500/25 disabled:opacity-50"><X className="w-3.5 h-3.5" />{ending ? "Ending..." : "End"}</button>) : (<Radio className="w-3.5 h-3.5 text-melori-muted" />)
           )}
         </div>
       </div>

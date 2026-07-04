@@ -2,7 +2,9 @@ import { supabase } from "@/lib/supabase";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { MessageSquare } from "lucide-react";
 
-export const revalidate = 10;
+// Rendered per-request: this page queries Supabase at request time, so it must
+// not be statically prerendered at build time (env vars are runtime-only).
+export const dynamic = "force-dynamic";
 
 async function getConversations() {
   const { data, error } = await supabase

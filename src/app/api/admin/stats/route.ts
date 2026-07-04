@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { jwtVerify } from "jose";
 
+// Always run this route dynamically at request time. It reads cookies and
+// queries Supabase, so it must never be statically evaluated during `next build`.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const ADMIN_SECRET =
   process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
 

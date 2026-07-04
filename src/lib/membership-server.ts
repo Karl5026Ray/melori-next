@@ -25,7 +25,9 @@ export interface RequestMembership {
 }
 
 function bearerToken(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
+  const header =
+    request.headers.get("authorization") ??
+    request.headers.get("Authorization");
   if (!header) return null;
   const [scheme, token] = header.split(" ");
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
@@ -38,7 +40,8 @@ export async function getRequestMembership(
   const token = bearerToken(request);
   if (!token) return { userId: null, profile: null };
 
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const url =
+    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
   if (!url || !anonKey) return { userId: null, profile: null };
 
@@ -73,20 +76,18 @@ export async function getRequestMembership(
 
 export async function requireSuperfan(
   request: Request,
-): Promise<{
-  membership: RequestMembership
-} | NextResponse> {
+): Promise<{ membership: RequestMembership } | NextResponse> {
   const membership = await getRequestMembership(request);
   if (!membership.userId) {
     return NextResponse.json(
       { error: "Sign in required" },
-      { status: 401 }
+      { status: 401 },
     );
   }
   if (!isSuperfanOrBetter(membership.profile)) {
     return NextResponse.json(
-      { error: "Superfan membership required" },
-      { status: 403 }
+      { error: "Superfan membership required", upgrade: "/membership" },
+      { status: 403 },
     );
   }
   return { membership };
@@ -94,22 +95,25 @@ export async function requireSuperfan(
 
 export async function requireArtist(
   request: Request,
-  artistId: string,
-): Promise<{
-  membership: RequestMembership
-} | NextResponse> {
+): Promise<{ membership: RequestMembership } | NextResponse> {
   const membership = await getRequestMembership(request);
   if (!membership.userId) {
     return NextResponse.json(
       { error: "Sign in required" },
-      { status: 401 }
+      { status: 401 },
     );
   }
-  if (!isArtistSubscriber(membership.profile, artistId)) {
+  if (!isArtistSubscriber(membership.profile)) {
     return NextResponse.json(
-      { error: "Artist subscription required" },
-      { status: 403 }
+      { error: "Artist membership required", upgrade: "/membership" },
+      { status: 403 },
     );
   }
   return { membership };
+}
+
+export function isGuardFailure(
+  result: { membership: RequestMembership } | NextResponse,
+): result is NextResponse {
+  return result instanceof NextResponse;
 }

@@ -25,6 +25,32 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseAdmin();
+    
+    // Block enforcement: find the other participant(s) in this conversation
+    // and refuse to send if a block exists in either direction.
+    const { data: members } = await supabase
+      .from("conversation_members")
+      .select("user_id")
+      .eq("conversation_id", conversationId);
+    const otherIds = (members ?? [])
+      .map((m) => m.user_id as string)
+      .filter((id) => id && id !== membership.userId);
+    if (otherIds.length > 0) {
+      const { data: blocks } = await supabase
+        .from("member_blocks")
+        .select("blocker_id, blocked_id")
+        .or(
+          `and(blocker_id.eq.${membership.userId},blocked_id.in.(${otherIds.join(",")})),` +
+            `and(blocked_id.eq.${membership.userId},blocker_id.in.(${otherIds.join(",")}))`
+        );
+      if (blocks && blocks.length > 0) {
+        return NextResponse.json(
+          { error: "Messaging is unavailable between these members." },
+          { status: 403 }
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("messages")
       .insert({

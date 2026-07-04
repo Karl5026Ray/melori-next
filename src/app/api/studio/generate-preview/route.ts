@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { assertTrackOwnership, isOwnershipFailure } from "@/lib/studio-ownership";
 
 export async function POST(req: NextRequest) {
   const guard = await requireArtist(req);
@@ -9,15 +10,13 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient();
     const { trackId, start, end } = await req.json();
 
-    const { data: track, error: trackError } = await supabase
-      .from("studio_tracks")
-      .select("file_url, file_path")
-      .eq("id", trackId)
-      .single();
-
-    if (trackError || !track) {
-      return NextResponse.json({ error: "Track not found" }, { status: 404 });
-    }
+    const ownership = await assertTrackOwnership(
+      supabase,
+      trackId,
+      guard.membership.userId,
+      "file_url, file_path"
+    );
+    if (isOwnershipFailure(ownership)) return ownership;
 
     // Preview trimming is handled by a background worker (FFmpeg) in production.
     // Vercel functions have a short timeout, so the actual trim runs out-of-band.

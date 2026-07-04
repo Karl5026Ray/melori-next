@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // GET /api/studio/schedule — Studio tracks that have a release date, for the calendar.
 export async function GET(req: NextRequest) {
@@ -11,6 +12,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("studio_tracks")
       .select("id, title, release_date, status, type")
+      .eq(OWNER_COLUMN, guard.membership.userId)
       .not("release_date", "is", null)
       .order("release_date", { ascending: true });
 

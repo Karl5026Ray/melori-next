@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // GET /api/studio/track/[id] — Get single studio track
 export async function GET(
@@ -11,17 +12,15 @@ export async function GET(
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
-    const { data: track, error } = await supabase
-      .from("studio_tracks")
-      .select(
-        "id, title, artist, album, genre, file_url, preview_url, preview_start, preview_end, duration, status"
-      )
-      .eq("id", params.id)
-      .single();
+    const ownership = await assertTrackOwnership(
+      supabase,
+      params.id,
+      guard.membership.userId,
+      "title, artist, album, genre, file_url, preview_url, preview_start, preview_end, duration, status"
+    );
+    if (isOwnershipFailure(ownership)) return ownership;
 
-    if (error || !track) {
-      return NextResponse.json({ error: "Track not found" }, { status: 404 });
-    }
+    const track = ownership.row;
 
     // The WaveformEditor consumes camelCase fields; expose aliases alongside the
     // raw columns so it can load the master audio and preview window directly.
@@ -39,10 +38,9 @@ export async function GET(
 
 // PATCH /api/studio/track/[id] — Replace an existing track's master audio.
 //
-// Ownership: gated by requireArtist, mirroring every other studio route
-// (GET/POST /api/studio/tracks and the preview PATCH). The studio_tracks table
-// has no per-artist owner column in the current schema, so the artist-tier
-// membership guard is the ownership boundary used across the studio API.
+// Ownership: gated by requireArtist AND assertTrackOwnership so an artist can
+// only replace the master of their own track, matching every other studio
+// route. The final update is also scoped by OWNER_COLUMN as defense-in-depth.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -51,6 +49,14 @@ export async function PATCH(
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
+
+    const ownership = await assertTrackOwnership(
+      supabase,
+      params.id,
+      guard.membership.userId
+    );
+    if (isOwnershipFailure(ownership)) return ownership;
+
     const body = await req.json().catch(() => ({}));
 
     const update: Record<string, any> = {
@@ -101,6 +107,7 @@ export async function PATCH(
       .from("studio_tracks")
       .update(update)
       .eq("id", params.id)
+      .eq(OWNER_COLUMN, guard.membership.userId)
       .select("id")
       .single();
 

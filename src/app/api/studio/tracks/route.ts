@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // GET /api/studio/tracks — List all studio tracks
 export async function GET(req: NextRequest) {
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
       .select(
         "id, title, artist, album, genre, status, preview_url, created_at, duration"
       )
+      .eq(OWNER_COLUMN, guard.membership.userId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -48,6 +50,7 @@ export async function POST(req: NextRequest) {
         cover_url: body.cover_url,
         type: body.type,
         status: body.status || "draft",
+        [OWNER_COLUMN]: guard.membership.userId,
       })
       .select("id")
       .single();

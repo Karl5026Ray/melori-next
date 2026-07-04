@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // PATCH /api/studio/track/[id]/preview — Update preview settings
 export async function PATCH(
@@ -13,6 +14,13 @@ export async function PATCH(
     const supabase = createServiceClient();
     const body = await req.json();
 
+    const ownership = await assertTrackOwnership(
+      supabase,
+      params.id,
+      guard.membership.userId
+    );
+    if (isOwnershipFailure(ownership)) return ownership;
+
     const { error } = await supabase
       .from("studio_tracks")
       .update({
@@ -21,7 +29,8 @@ export async function PATCH(
         preview_end: body.previewEnd,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", params.id);
+      .eq("id", params.id)
+      .eq(OWNER_COLUMN, guard.membership.userId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

@@ -33,6 +33,23 @@ interface DashboardStats {
   recentOrders: any[];
 }
 
+// Only expose Supabase-served http(s) URLs in the moderation preview link.
+// Historical submissions rows could hold `javascript:` / `data:` values from
+// before R13 tightened the /api/artist/submissions POST validator, and an
+// admin clicking Preview would then execute the payload in their session.
+function safeHttpHref(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 2048) return null;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminDashboardPage() {
   const [section, setSection] = useState<Section>("overview");
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -608,16 +625,19 @@ function SubmissionsSection() {
                   <p className="text-sm text-[#ccc] mt-2 line-clamp-2">{s.description}</p>
                 )}
                 <div className="flex items-center gap-3 mt-2">
-                  {s.audio_url && (
-                    <a
-                      href={s.audio_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-[#c9a96e] hover:underline"
-                    >
-                      ▶ Preview audio
-                    </a>
-                  )}
+                  {(() => {
+                    const href = safeHttpHref(s.audio_url);
+                    return href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-[#c9a96e] hover:underline"
+                      >
+                        ▶ Preview audio
+                      </a>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               {s.status === "pending" && (

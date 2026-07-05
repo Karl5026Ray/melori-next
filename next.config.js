@@ -18,8 +18,44 @@
 
 const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 
+// Baseline security headers applied to every route. We deliberately leave the
+// Content-Security-Policy off for now because a wrong CSP would break Stripe
+// Checkout, Supabase realtime, and Agora WebRTC — that needs a staging pass
+// before we lock it in. Everything else here is safe defaults.
+const SECURITY_HEADERS = [
+  // Force HTTPS for a year across the apex + subdomains once the browser has
+  // seen this header. `preload` is intentionally omitted until we're sure we
+  // want to submit to the HSTS preload list.
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+  // Don't let anyone iframe the app — protects against clickjacking on the
+  // sign-in / checkout / studio surfaces.
+  { key: "X-Frame-Options", value: "DENY" },
+  // Don't sniff response bodies to guess the MIME type. Belt-and-suspenders
+  // against "user uploads a .jpg that's actually HTML with a script tag".
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  // Only send the origin (not the full path/query) on cross-origin nav — keeps
+  // conversation IDs and space IDs out of Referer on outbound links.
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Deny access to sensitive browser features we don't use. Camera + microphone
+  // are needed for Agora voice/video rooms, so we allow same-origin for those.
+  {
+    key: "Permissions-Policy",
+    value:
+      "camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(), interest-cohort=()",
+  },
+];
+
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        // Apply to every route including API handlers.
+        source: "/:path*",
+        headers: SECURITY_HEADERS,
+      },
+    ];
+  },
   // Friendly-URL redirects for well-known aliases users type in the address bar.
   // Site-evaluation P1 fix (2026-07-04): these previously 404'd.
   async redirects() {

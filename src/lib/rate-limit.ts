@@ -77,3 +77,16 @@ export function rateLimit(
   existing.updatedAt = now;
   return { allowed: true, retryAfterMs: 0 };
 }
+
+/**
+ * Best-effort client IP derivation for anonymous endpoints. Vercel forwards
+ * the caller's IP in `x-forwarded-for` and `x-real-ip`; both can be spoofed
+ * from outside Vercel's edge, but on Vercel's platform the values are set
+ * by the edge itself so they're trustworthy. In a local dev env with no
+ * proxy, this returns "unknown" and every hit shares one bucket — fine.
+ */
+export function clientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]?.trim() || "unknown";
+  return req.headers.get("x-real-ip") || "unknown";
+}

@@ -46,16 +46,38 @@ export async function PATCH(
     const body = await req.json().catch(() => ({}));
     const update: Record<string, any> = {};
 
-    if (typeof body.title === "string") update.title = body.title.trim();
+    // Bound free-form strings; reject rather than silently truncate so admins
+    // notice accidental oversized pastes.
+    if (typeof body.title === "string") {
+      const t = body.title.trim();
+      if (t.length > 200) {
+        return NextResponse.json({ error: "title too long (max 200)" }, { status: 400 });
+      }
+      update.title = t;
+    }
     if (typeof body.is_published === "boolean")
       update.is_published = body.is_published;
-    if (typeof body.preview_url === "string")
-      update.preview_url = body.preview_url.trim() || null;
-    else if (body.preview_url === null) update.preview_url = null;
-    if (body.price != null && body.price !== "")
-      update.price = Number(body.price);
-    if (typeof body.audio_url === "string" && body.audio_url.trim())
-      update.audio_url = body.audio_url.trim();
+    if (typeof body.preview_url === "string") {
+      const p = body.preview_url.trim();
+      if (p.length > 2048) {
+        return NextResponse.json({ error: "preview_url too long (max 2048)" }, { status: 400 });
+      }
+      update.preview_url = p || null;
+    } else if (body.preview_url === null) update.preview_url = null;
+    if (body.price != null && body.price !== "") {
+      const p = Number(body.price);
+      if (!Number.isFinite(p) || p < 0) {
+        return NextResponse.json({ error: "Invalid price" }, { status: 400 });
+      }
+      update.price = p;
+    }
+    if (typeof body.audio_url === "string" && body.audio_url.trim()) {
+      const a = body.audio_url.trim();
+      if (a.length > 2048) {
+        return NextResponse.json({ error: "audio_url too long (max 2048)" }, { status: 400 });
+      }
+      update.audio_url = a;
+    }
     if (body.duration_seconds != null) {
       const d = Number(body.duration_seconds);
       if (Number.isFinite(d) && d > 0) update.duration_seconds = Math.round(d);

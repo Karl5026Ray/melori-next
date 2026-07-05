@@ -104,6 +104,21 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    // Bound free-form strings so an accidental huge paste doesn't blow up the
+    // row. Admins are trusted, this is defense-in-depth against fat-fingers
+    // and any future admin-console bug that forwards untrimmed input.
+    if (title.length > 200) {
+      return NextResponse.json(
+        { error: "title too long (max 200)" },
+        { status: 400 },
+      );
+    }
+    if (audioUrl.length > 2048) {
+      return NextResponse.json(
+        { error: "audio_url too long (max 2048)" },
+        { status: 400 },
+      );
+    }
 
     const duration =
       body.duration_seconds != null ? Math.round(Number(body.duration_seconds)) : null;
@@ -118,6 +133,12 @@ export async function POST(req: NextRequest) {
       typeof body.preview_url === "string" && body.preview_url.trim()
         ? body.preview_url.trim()
         : null;
+    if (previewUrl && previewUrl.length > 2048) {
+      return NextResponse.json(
+        { error: "preview_url too long (max 2048)" },
+        { status: 400 },
+      );
+    }
     const isPublished = Boolean(body.is_published);
 
     // A newly-created track can only go live if it has a dedicated preview.
@@ -141,14 +162,28 @@ export async function POST(req: NextRequest) {
       duration_seconds: duration,
       is_published: isPublished,
     };
+    // Numeric fields — reject non-finite so we don't insert NaN and end up with
+    // a row that later math (SUMs, comparisons) silently treats as zero/null.
     if (body.release_id != null && body.release_id !== "") {
-      insert.release_id = Number(body.release_id);
+      const rid = Number(body.release_id);
+      if (!Number.isInteger(rid) || rid <= 0) {
+        return NextResponse.json({ error: "Invalid release_id" }, { status: 400 });
+      }
+      insert.release_id = rid;
     }
     if (body.price != null && body.price !== "") {
-      insert.price = Number(body.price);
+      const p = Number(body.price);
+      if (!Number.isFinite(p) || p < 0) {
+        return NextResponse.json({ error: "Invalid price" }, { status: 400 });
+      }
+      insert.price = p;
     }
     if (body.track_number != null && body.track_number !== "") {
-      insert.track_number = Number(body.track_number);
+      const tn = Number(body.track_number);
+      if (!Number.isInteger(tn) || tn <= 0) {
+        return NextResponse.json({ error: "Invalid track_number" }, { status: 400 });
+      }
+      insert.track_number = tn;
     }
 
     const { data, error } = await supabase

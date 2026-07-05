@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { approvedOrigin } from "@/lib/approved-origin";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Donations are not configured yet. Please try again later." },
       { status: 503 }
+    );
+  }
+
+  // Anonymous endpoint that creates real Stripe sessions. Cap 3 quick /
+  // ~1 per minute per IP so bots can't burn our Stripe API budget.
+  const rl = rateLimit(`donate:checkout:${clientIp(req)}`, 3, 1 / 60);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Please wait a moment before starting another donation." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
     );
   }
 
@@ -41,6 +55,17 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // If an email was supplied, verify shape before handing it to Stripe.
+  // Otherwise Stripe rejects with a 400 that surfaces to the caller as a
+  // generic 500. Silently drop malformed emails — the donor can still pay.
+  const emailTrimmed = body.email?.trim() ?? "";
+  const emailForStripe =
+    emailTrimmed &&
+    /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(emailTrimmed) &&
+    emailTrimmed.length <= 254
+      ? emailTrimmed
+      : undefined;
 
   // Locked to approved hosts — see src/lib/approved-origin.ts.
   const origin = approvedOrigin(req);
@@ -66,7 +91,7 @@ export async function POST(req: NextRequest) {
       ],
       success_url: `${origin}/donate/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/donate`,
-      customer_email: body.email?.trim() || undefined,
+      customer_email: emailForStripe,
       metadata: {
         donor_name: body.name?.trim()?.slice(0, 200) || "",
         donor_message: body.message?.trim()?.slice(0, 500) || "",

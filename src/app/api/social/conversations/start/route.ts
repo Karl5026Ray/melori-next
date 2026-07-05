@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You can't message yourself" }, { status: 400 });
   }
 
+  // Opening a conversation writes two rows and (usually) a new conversations
+  // row. Cap at 3 quick / ~1 per 5s so a runaway client can't create hundreds
+  // of empty 1:1 rows against every profile it finds.
+  const rl = rateLimit(`social:conv-start:${me}`, 3, 0.2);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "You're starting conversations too quickly." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
+
   const supabase = getSupabaseAdmin();
+
+  // Confirm the recipient actually exists before we open a conversation.
+  // Otherwise a client passing a random UUID would leave a stray empty 1:1
+  // in the database.
+  const { data: recipient } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", recipientId)
+    .maybeSingle();
+  if (!recipient) {
+    return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
+  }
 
   // Refuse if a block exists in either direction. We use `limit(1)` rather
   // than `maybeSingle()` because if both users blocked each other there are

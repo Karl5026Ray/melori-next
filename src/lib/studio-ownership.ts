@@ -53,3 +53,42 @@ export function isOwnershipFailure(
 ): result is NextResponse {
   return result instanceof NextResponse;
 }
+
+// Every studio upload goes through /api/studio/upload-url, which forces the
+// storage path to `studio/<callerUserId>/...`. When a route accepts `file_path`
+// (or `file_url` derived from getPublicUrl) back from the client to persist on
+// a studio_tracks row, we MUST verify the caller isn't claiming another
+// artist's path — otherwise a subsequent GET would sign that path and hand out
+// the other artist's private master. Returns true when the path is safely
+// scoped under the caller's own studio subfolder.
+export function isOwnedStudioPath(
+  filePath: unknown,
+  userId: string | null,
+): filePath is string {
+  if (typeof filePath !== "string" || !userId) return false;
+  const trimmed = filePath.trim();
+  if (!trimmed) return false;
+  // Block traversal and absolute paths; require the exact caller-scoped prefix.
+  if (trimmed.includes("..")) return false;
+  if (trimmed.startsWith("/")) return false;
+  return trimmed.startsWith(`studio/${userId}/`);
+}
+
+// Companion check for file_url. The upload-url route publishes both a signed
+// upload URL and a getPublicUrl string that embeds the same path. When the
+// client sends `file_url` back, ensure the embedded path is under the caller's
+// studio subfolder — a bare URL string is not sufficient proof of ownership.
+export function isOwnedStudioFileUrl(
+  fileUrl: unknown,
+  userId: string | null,
+): fileUrl is string {
+  if (typeof fileUrl !== "string" || !userId) return false;
+  const trimmed = fileUrl.trim();
+  if (!trimmed) return false;
+  // Match the exact per-artist prefix anywhere in the URL. getPublicUrl output
+  // looks like `.../storage/v1/object/public/audio-files/studio/<uid>/<file>`
+  // — the substring check is enough to reject cross-tenant paths without
+  // hard-coding the Supabase URL shape.
+  if (trimmed.includes("..")) return false;
+  return trimmed.includes(`/studio/${userId}/`);
+}

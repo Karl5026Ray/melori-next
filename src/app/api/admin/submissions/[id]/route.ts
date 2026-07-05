@@ -42,6 +42,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (action !== "approve" && action !== "reject") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
+  // Reviewer notes are surfaced back to the artist in their submission list;
+  // cap length so a stray huge paste doesn't blow up the row or the UI.
+  const trimmedNotes =
+    typeof notes === "string" ? notes.trim().slice(0, 4000) : null;
 
   const supabase = getSupabaseAdmin();
   const { data: sub, error: subErr } = await supabase
@@ -64,7 +68,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .from("track_submissions")
       .update({
         status: "rejected",
-        reviewer_notes: notes ?? null,
+        reviewer_notes: trimmedNotes,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", params.id);
@@ -134,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from("track_submissions")
     .update({
       status: "approved",
-      reviewer_notes: notes ?? null,
+      reviewer_notes: trimmedNotes,
       reviewed_at: new Date().toISOString(),
       approved_track_id: approvedTrackId,
     })

@@ -36,6 +36,15 @@ export async function POST(req: NextRequest) {
   if (items.length === 0) {
     return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
   }
+  // A real cart never has 100+ distinct line items — bound the loop and the
+  // downstream Stripe payload so a malformed client can't push megabytes of
+  // ids at us.
+  if (items.length > 50) {
+    return NextResponse.json(
+      { error: "Cart has too many items." },
+      { status: 400 },
+    );
+  }
 
   // Validate quantities and collect product ids.
   const requested: { id: string; quantity: number; size: string }[] = [];
@@ -44,6 +53,7 @@ export async function POST(req: NextRequest) {
     if (
       !item.productId ||
       typeof item.productId !== "string" ||
+      item.productId.length > 64 ||
       !Number.isInteger(quantity) ||
       quantity <= 0 ||
       quantity > 99
@@ -53,10 +63,13 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // Clip size to 32 chars — Stripe metadata values are capped at 500 chars,
+    // and legitimate sizes are things like "XL" or "US 10.5".
+    const rawSize = typeof item.size === "string" ? item.size : "";
     requested.push({
       id: item.productId,
       quantity,
-      size: typeof item.size === "string" ? item.size : "",
+      size: rawSize.slice(0, 32),
     });
   }
 

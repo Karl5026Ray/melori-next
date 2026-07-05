@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
-import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
+import {
+  assertTrackOwnership,
+  isOwnershipFailure,
+  OWNER_COLUMN,
+  isOwnedStudioPath,
+  isOwnedStudioFileUrl,
+} from "@/lib/studio-ownership";
 
 // GET /api/studio/track/[id] — Get single studio track
 //
@@ -82,13 +88,30 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     };
 
-    // Master replacement — the primary purpose of this route.
+    // Master replacement — the primary purpose of this route. Both file_url
+    // and file_path must be scoped under `studio/<callerUserId>/`. Without
+    // this check an artist could point their own track row at another
+    // artist's uploaded path; the GET route above signs `file_path` on read,
+    // which would then hand out someone else's private master audio.
     let replacingMaster = false;
+    const userId = guard.membership.userId;
     if (typeof body.file_url === "string" && body.file_url.trim()) {
+      if (!isOwnedStudioFileUrl(body.file_url, userId)) {
+        return NextResponse.json(
+          { error: "file_url is not scoped to caller" },
+          { status: 400 },
+        );
+      }
       update.file_url = body.file_url;
       replacingMaster = true;
     }
     if (typeof body.file_path === "string" && body.file_path.trim()) {
+      if (!isOwnedStudioPath(body.file_path, userId)) {
+        return NextResponse.json(
+          { error: "file_path is not scoped to caller" },
+          { status: 400 },
+        );
+      }
       update.file_path = body.file_path;
     }
     if (body.duration != null) {
@@ -126,7 +149,7 @@ export async function PATCH(
       .from("studio_tracks")
       .update(update)
       .eq("id", params.id)
-      .eq(OWNER_COLUMN, guard.membership.userId)
+      .eq(OWNER_COLUMN, userId)
       .select("id")
       .single();
 

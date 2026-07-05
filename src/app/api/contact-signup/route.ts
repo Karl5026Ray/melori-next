@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,19 @@ export const dynamic = "force-dynamic";
 // insert must run with the service role key (getSupabaseAdmin), never the anon
 // key. At least one of email/phone is required (also enforced by a table CHECK).
 export async function POST(req: NextRequest) {
+  // Anonymous contact-capture, so use IP-based rate limiting to blunt bot
+  // floods. 3 quick / ~1 per minute per IP.
+  const rl = rateLimit(`contact-signup:${clientIp(req)}`, 3, 1 / 60);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many signups from this location. Try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
 

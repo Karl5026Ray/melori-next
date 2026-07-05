@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
-import { OWNER_COLUMN } from "@/lib/studio-ownership";
+import {
+  OWNER_COLUMN,
+  isOwnedStudioPath,
+  isOwnedStudioFileUrl,
+} from "@/lib/studio-ownership";
 
 // GET /api/studio/tracks — List all studio tracks
 export async function GET(req: NextRequest) {
@@ -30,12 +34,43 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/studio/tracks — Create new studio track
+//
+// Path scoping: the client hands back `file_path` (and `file_url`) that came
+// from /api/studio/upload-url, which always issues paths under
+// `studio/<callerUserId>/`. Without this check an artist could submit another
+// artist's path — the GET route signs whatever file_path is stored, so a
+// forged path would leak someone else's private master. Reject anything not
+// scoped under the caller's own subfolder before writing the row.
 export async function POST(req: NextRequest) {
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
     const body = await req.json();
+    const userId = guard.membership.userId;
+
+    // file_path is the field the GET route signs — it MUST be caller-scoped.
+    if (
+      body.file_path != null &&
+      !isOwnedStudioPath(body.file_path, userId)
+    ) {
+      return NextResponse.json(
+        { error: "file_path is not scoped to caller" },
+        { status: 400 },
+      );
+    }
+    // file_url is a getPublicUrl string that embeds the same path; validating
+    // it stops a client from persisting a public URL pointing at someone
+    // else's file even when file_path is omitted.
+    if (
+      body.file_url != null &&
+      !isOwnedStudioFileUrl(body.file_url, userId)
+    ) {
+      return NextResponse.json(
+        { error: "file_url is not scoped to caller" },
+        { status: 400 },
+      );
+    }
 
     const { data, error } = await supabase
       .from("studio_tracks")
@@ -50,7 +85,7 @@ export async function POST(req: NextRequest) {
         cover_url: body.cover_url,
         type: body.type,
         status: body.status || "draft",
-        [OWNER_COLUMN]: guard.membership.userId,
+        [OWNER_COLUMN]: userId,
       })
       .select("id")
       .single();

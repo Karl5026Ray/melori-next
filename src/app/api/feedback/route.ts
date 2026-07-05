@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,19 @@ const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 // into public.feedback. Includes lightweight anti-spam: honeypot field, length
 // limits, disposable-domain block, and a link-count heuristic.
 export async function POST(req: NextRequest) {
+// Anonymous feedback form — IP-throttle so bots can't stuff the table.
+// 3 quick / ~1 per minute per IP.
+const rl = rateLimit(`feedback:${clientIp(req)}`, 3, 1 / 60);
+if (!rl.allowed) {
+return NextResponse.json(
+{ error: "Too many submissions. Please wait a moment and try again." },
+{
+status: 429,
+headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+},
+);
+}
+
 try {
 const body = await req.json().catch(() => ({}));
 

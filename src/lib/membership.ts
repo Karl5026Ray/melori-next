@@ -21,6 +21,10 @@ export interface MembershipProfile {
   membership_tier?: string | null;
   membership_status?: string | null;
   membership_expires_at?: string | null;
+    // Internal/comp access flags. Any of these grants full access without a paid tier.
+  is_comp?: boolean | null;
+  billing_exempt?: boolean | null;
+  is_internal_test?: boolean | null;
 }
 
 // True when the caller is a platform administrator (profiles.role === 'admin').
@@ -48,12 +52,20 @@ export function isActive(profile: MembershipProfile | null | undefined): boolean
     if (Number.isFinite(ts) && ts < Date.now()) return false;
   }
   return true;
-}
+
+  // Comp access: internal test, complimentary, or billing-exempt profiles. These are
+  // staff/test accounts that should never be paywalled but are not paying members.
+  export function isComp(profile: MembershipProfile | null | undefined): boolean {
+    if (!profile) return false;
+    return Boolean(profile.is_comp || profile.billing_exempt || profile.is_internal_test);
+    }
 
 // "Superfan or better" — admins always qualify; otherwise active AND tier in
 // ['superfan', 'artist'].
 export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
   if (isAdmin(profile)) return true;
+  // Comp / billing-exempt / internal-test accounts get full access regardless of paid tier.
+  if (isComp(profile)) return true;
   if (!isActive(profile)) return false;
   const tier = tierOf(profile);
   return tier === "superfan" || tier === "artist";

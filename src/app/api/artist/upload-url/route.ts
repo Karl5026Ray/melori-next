@@ -34,10 +34,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
   }
 
-  const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(path);
+  // Only the `covers` bucket is public; `audio-files` is private and its
+  // public URL would 404. Return publicUrl only for the covers bucket so
+  // downstream code doesn't cache a broken link into DB.
+  let publicUrl: string | null = null;
+  if (bucket === "covers") {
+    const { data: publicData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(path);
+    publicUrl = publicData.publicUrl;
+  }
   return NextResponse.json({
     signedUrl: data.signedUrl,
-    publicUrl: publicData.publicUrl,
+    publicUrl,
     path,
     bucket,
   });

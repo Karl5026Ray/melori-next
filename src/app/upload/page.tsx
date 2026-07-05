@@ -57,6 +57,11 @@ export default function UploadPage() {
   const canSubmit =
     !uploading && title.trim().length > 0 && audioFile !== null && !gateError;
 
+  // Audio uploads go into the private `audio-files` bucket and must be
+  // referenced by storage path (the stream endpoint signs it on demand).
+  // Cover art goes into the public `covers` bucket and is embedded directly
+  // via a public URL. So this returns different string types per kind, but
+  // both are what the submissions API expects for that column.
   async function uploadOne(file: File, kind: "audio" | "cover"): Promise<string> {
     setProgress(`Preparing ${kind} upload…`);
     const signRes = await authFetch("/api/artist/upload-url", {
@@ -65,9 +70,10 @@ export default function UploadPage() {
       body: JSON.stringify({ filename: file.name, type: kind }),
     });
     if (!signRes.ok) throw new Error(`Could not get ${kind} upload URL`);
-    const { signedUrl, publicUrl } = (await signRes.json()) as {
+    const { signedUrl, publicUrl, path } = (await signRes.json()) as {
       signedUrl: string;
-      publicUrl: string;
+      publicUrl: string | null;
+      path: string;
     };
 
     setProgress(`Uploading ${kind}…`);
@@ -77,6 +83,13 @@ export default function UploadPage() {
       body: file,
     });
     if (!putRes.ok) throw new Error(`${kind} upload failed (${putRes.status})`);
+
+    if (kind === "audio") {
+      // tracks.audio_url stores the storage path (see stream route).
+      return path;
+    }
+    // Cover art is embedded in <img>, so a public URL is required.
+    if (!publicUrl) throw new Error("Cover upload did not return a public URL");
     return publicUrl;
   }
 

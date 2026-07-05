@@ -63,13 +63,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: publicData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(path);
+    // Only `covers` is public. `audio-files` is private and its public URL
+    // would 404 — callers should sign it on demand via /api/tracks/[id]/stream.
+    let publicUrl: string | null = null;
+    if (bucket === "covers") {
+      const { data: publicData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(path);
+      publicUrl = publicData.publicUrl;
+    }
 
     return NextResponse.json({
       signedUrl: data.signedUrl,
-      publicUrl: publicData.publicUrl,
+      publicUrl,
       path,
       bucket,
     });

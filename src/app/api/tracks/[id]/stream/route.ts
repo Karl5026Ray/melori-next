@@ -46,6 +46,13 @@ export async function GET(
 
     // Superfans get the full track; free users get the dedicated sample clip if
     // one exists, else the full path capped client-side at 30s.
+    //
+    // NOTE: when a free listener is served the full file with a client-side
+    // cap, the cap is cosmetic — the signed URL is directly fetchable. To
+    // fully protect unpurchased tracks, always publish a dedicated
+    // `preview_url` clip. The admin/tracks flow supports generating one via
+    // /api/studio/generate-preview. This route logs a warning whenever it
+    // falls back so we can surface unprotected tracks operationally.
     const sourcePath = fullAccess
       ? track.audio_url ?? track.preview_url
       : track.preview_url ?? track.audio_url;
@@ -59,6 +66,11 @@ export async function GET(
     // player must enforce the 30s cap on the full file.
     const sample = !fullAccess;
     const dedicatedPreview = !fullAccess && Boolean(track.preview_url);
+    if (sample && !dedicatedPreview) {
+      console.warn(
+        `tracks/${id}/stream: serving full audio to free listener — track has no preview_url; client-side 30s cap is cosmetic. Generate a preview to protect this track.`,
+      );
+    }
 
     const { data: signed, error: signError } = await supabaseAdmin.storage
       .from("audio-files")
@@ -93,6 +105,7 @@ export async function GET(
       sampleSeconds: windowed ? previewEnd - previewStart : null,
       previewStart: windowed ? previewStart : null,
       previewEnd: windowed ? previewEnd : null,
+      dedicatedPreview,
     });
   } catch (err) {
     console.error(`GET /api/tracks/${params.id}/stream failed:`, err);

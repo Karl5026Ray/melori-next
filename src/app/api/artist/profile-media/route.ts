@@ -163,7 +163,18 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "publicUrl is required" }, { status: 400 });
   }
 
+  // The client PATCHes back a public URL it just received from our own
+  // POST handler. Reject anything that doesn't look like it came from our
+  // Supabase Storage `covers` bucket so a caller can't smuggle an arbitrary
+  // (e.g. phishing) image URL onto their public artist profile.
   const userId = guard.membership.userId!;
+  const expectedPathFragment = `/storage/v1/object/public/${BUCKET}/artists/${userId}/`;
+  if (!publicUrl.includes(expectedPathFragment)) {
+    return NextResponse.json(
+      { error: "publicUrl must reference the caller's storage folder" },
+      { status: 400 },
+    );
+  }
   const supabase = getSupabaseAdmin();
 
   const resolved = await resolveOrCreateArtistRow(supabase, userId);

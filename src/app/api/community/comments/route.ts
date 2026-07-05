@@ -50,6 +50,12 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    if (text.length > 2000) {
+      return NextResponse.json(
+        { error: "Comment must be 2000 characters or fewer" },
+        { status: 400 },
+      );
+    }
 
     const supabase = getSupabaseAdmin();
 

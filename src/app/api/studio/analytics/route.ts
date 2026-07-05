@@ -16,9 +16,23 @@ export async function GET(req: NextRequest) {
       .select("id", { count: "exact", head: true })
       .eq(OWNER_COLUMN, guard.membership.userId);
 
-    const { data: analytics } = await supabase
-      .from("track_analytics")
-      .select("*");
+    // Only aggregate analytics for tracks the caller owns. Previously this
+    // read every row in track_analytics, so every artist saw the whole
+    // platform's numbers.
+    const { data: ownedTracks } = await supabase
+      .from("studio_tracks")
+      .select("id")
+      .eq(OWNER_COLUMN, guard.membership.userId);
+    const ownedIds = (ownedTracks ?? []).map((t: any) => t.id);
+
+    let analytics: any[] | null = [];
+    if (ownedIds.length > 0) {
+      const { data } = await supabase
+        .from("track_analytics")
+        .select("*")
+        .in("track_id", ownedIds);
+      analytics = data;
+    }
 
     const totalStreams = (analytics || []).reduce(
       (sum, a: any) => sum + (a.streams || a.plays || 0),

@@ -50,15 +50,15 @@ let lastSpeakingState: boolean | null = null;
 let lastSpeakingWriteMs = 0;
 
 async function fetchToken(
-  channel: string,
+  spaceId: string,
   uid: number | string,
   role: AgoraRole,
-): Promise<string> {
+): Promise<{ token: string; channel: string }> {
   const res = await authFetch("/api/agora-token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      channel,
+      space_id: spaceId,
       uid: typeof uid === "string" ? 0 : uid,
       role,
       expireTime: 3600,
@@ -68,9 +68,10 @@ async function fetchToken(
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? `agora-token ${res.status}`);
   }
-  const { token } = await res.json();
+  const { token, channel } = await res.json();
   if (!token) throw new Error("agora-token: empty token");
-  return token as string;
+  if (!channel) throw new Error("agora-token: server did not return channel");
+  return { token, channel };
 }
 
 /**
@@ -81,14 +82,16 @@ async function fetchToken(
 export async function joinChannel(opts: JoinOptions): Promise<void> {
   if (typeof window === "undefined") return;
 
-  // Already in the right channel? Just update role if needed.
-  if (session && session.channel === opts.channel) {
+  // Already in the right space? Just update role if needed. We compare by
+  // spaceId now that the channel string is server-derived — the incoming
+  // opts.channel may be stale or missing, but spaceId is authoritative.
+  if (session && session.spaceId === opts.spaceId) {
     if (session.role !== opts.role) {
       await setRole(opts.role);
     }
     return;
   }
-  // Different channel — leave the old one first.
+  // Different space — leave the old one first.
   if (session) await leaveChannel();
 
   // Dynamic import so this file can be safely imported by server components.
@@ -104,7 +107,14 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   });
 
   const uid = opts.uid ?? 0;
-  const token = await fetchToken(opts.channel, uid, opts.role);
+  // Server derives the canonical channel from spaceId and returns it. We use
+  // the server's channel string (not opts.channel) so a stale client-side
+  // value can't route the local user to a channel they aren't authorized for.
+  const { token, channel: serverChannel } = await fetchToken(
+    opts.spaceId,
+    uid,
+    opts.role,
+  );
 
   // Volume indicator gives us local + remote speaking levels.
   try {
@@ -141,7 +151,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   // Token renewal ~30s before expiry.
   const onWillExpire = async () => {
     try {
-      const fresh = await fetchToken(opts.channel, uid, opts.role);
+      const { token: fresh } = await fetchToken(opts.spaceId, uid, opts.role);
       await client.renewToken(fresh);
     } catch (err) {
       opts.onError?.(err as Error);
@@ -165,7 +175,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   client.on("volume-indicator", onVolume);
   cleanups.push(() => client.off("volume-indicator", onVolume));
 
-  await client.join(appId, opts.channel, token, uid === 0 ? null : uid);
+  await client.join(appId, serverChannel, token, uid === 0 ? null : uid);
 
   let localAudioTrack: AnyTrack | null = null;
   if (opts.role === "publisher") {
@@ -178,7 +188,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   session = {
     client,
     localAudioTrack,
-    channel: opts.channel,
+    channel: serverChannel,
     uid,
     role: opts.role,
     spaceId: opts.spaceId,

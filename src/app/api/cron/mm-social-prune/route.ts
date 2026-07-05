@@ -10,16 +10,25 @@ export const dynamic = "force-dynamic";
 //   - prune_ended_spaces(2)  → delete ended rooms older than 2 hours
 //   - expire_stale_waves()   → flip pending waves past their 24h TTL
 //
-// Auth: expects `x-cron-secret: $CRON_SECRET` OR Vercel's own cron signature.
+// Auth: expects either `x-cron-secret: $CRON_SECRET` or
+// `Authorization: Bearer $CRON_SECRET` — the same secret Vercel Cron sends.
+//
+// Note: we do NOT accept the presence of `x-vercel-cron: 1` alone as proof.
+// That header can be spoofed by anyone who can reach the public URL; only the
+// shared secret proves the caller is really Vercel's scheduler.
 async function handle(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    // With no secret configured we refuse rather than run wide open.
+    return NextResponse.json(
+      { error: "CRON_SECRET not configured" },
+      { status: 503 },
+    );
+  }
   const provided =
     req.headers.get("x-cron-secret") ??
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const secret = process.env.CRON_SECRET;
-  // Vercel Cron sets `x-vercel-cron: 1` and signs with its own auth; we accept
-  // either that or our shared secret.
-  const isVercelCron = req.headers.get("x-vercel-cron") === "1";
-  if (secret && provided !== secret && !isVercelCron) {
+  if (provided !== secret) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

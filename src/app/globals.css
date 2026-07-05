@@ -22,6 +22,33 @@ body {
   background-color: var(--brand-background);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100%;
+  position: relative;
+}
+
+/* ============================================================ */
+/* Global horizontal overflow lock — keeps the viewport fixed  */
+/* and centered so dynamic content (audio player, song select, */
+/* etc.) can never push the page sideways or hide the nav.     */
+/* ============================================================ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+/* Reserve scrollbar space so vertical scrollbar appearing/
+   disappearing never shifts layout left/right. */
+html {
+  scrollbar-gutter: stable;
 }
 
 a {

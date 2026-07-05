@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { Sidebar } from "@/components/social/layout/Sidebar";
-import { MobileNav } from "@/components/social/layout/MobileNav";
 import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
+import { SocialShell } from "@/components/social/layout/SocialShell";
 
 export const metadata: Metadata = {
   title: "MM Social",
@@ -16,11 +15,7 @@ export default function SocialLayout({
 }) {
   return (
     <SocialAuthProvider>
-      <div className="flex min-h-[calc(100vh-4rem)] bg-melori-void text-melori-text">
-        <Sidebar />
-        <div className="flex-1 flex flex-col relative">{children}</div>
-      </div>
-      <MobileNav />
+      <SocialShell>{children}</SocialShell>
     </SocialAuthProvider>
   );
 }

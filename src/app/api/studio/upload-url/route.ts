@@ -1,26 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// POST /api/studio/upload-url — signed *upload* URL for the caller's own audio
+// master or cover art. Every artist gets their own subfolder so a leaked link
+// cannot stomp another artist's files.
+//
+// Body: { filename: string, type: "audio" | "cover" }
+//
+// This route was previously broken in two ways that made the Studio uploader
+// fail silently:
+//   1. It called `createSignedUrl` (a *download* URL) and returned it as the
+//      upload endpoint. PUTing a file to a read URL always fails with 400/405.
+//   2. Audio files went to a nonexistent "music" bucket instead of the
+//      canonical "audio-files" bucket used by the admin + artist portals.
+// Both are corrected here; the artist + admin upload-url routes already used
+// this shape.
 export async function POST(req: NextRequest) {
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
+
+  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const filename =
+    typeof body.filename === "string" ? body.filename : null;
+  const type = body.type === "cover" ? "cover" : "audio";
+
+  if (!filename) {
+    return NextResponse.json(
+      { error: "filename is required" },
+      { status: 400 },
+    );
+  }
+
+  const bucket = type === "cover" ? "covers" : "audio-files";
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const userId = guard.membership.userId!;
+  const path = `studio/${userId}/${Date.now()}_${safeName}`;
+
   try {
-    const supabase = createServiceClient();
-    const { filename, type } = await req.json();
-
-    const bucket = type === "cover" ? "covers" : "music";
-    const path = `${Date.now()}_${filename.replace(/\s+/g, "_")}`;
-
+    const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.storage
       .from(bucket)
-      .createSignedUrl(path, 600); // 10 min expiry
+      .createSignedUploadUrl(path);
 
     if (error || !data?.signedUrl) {
-      console.error("Signed URL error:", error);
+      console.error("Studio signed upload URL error:", error);
       return NextResponse.json(
         { error: "Failed to create upload URL" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -32,9 +62,11 @@ export async function POST(req: NextRequest) {
       signedUrl: data.signedUrl,
       publicUrl: publicData.publicUrl,
       path,
+      bucket,
     });
-  } catch (err: any) {
-    console.error("Upload URL error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("Studio upload URL error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

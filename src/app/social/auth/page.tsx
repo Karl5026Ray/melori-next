@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Music, Mail, Lock, User, ArrowRight } from "lucide-react";
 
+// Same rule the /api/social/profile update endpoint enforces. Validate at the
+// signup composer too so users don't create an account with an invalid handle
+// they can never edit without contacting support.
+const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
+
 export default function AuthPage() {
   const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
@@ -14,25 +19,36 @@ export default function AuthPage() {
   const [role, setRole] = useState<"artist" | "superfan">("superfan");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setNotice("");
 
     try {
       if (isSignUp) {
         if (password.length < 6) {
           throw new Error("Password must be at least 6 characters.");
         }
+        // Normalize + validate username *before* creating the auth user, so
+        // a bad handle doesn't leave an unrecoverable orphaned auth row.
+        const normalizedUsername = username.trim().toLowerCase();
+        if (!USERNAME_RE.test(normalizedUsername)) {
+          throw new Error(
+            "Username must be 3\u201330 chars: lowercase letters, numbers, underscore or dot.",
+          );
+        }
+
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              username,
+              username: normalizedUsername,
               role,
-              display_name: username,
+              display_name: normalizedUsername,
             },
           },
         });
@@ -40,9 +56,10 @@ export default function AuthPage() {
 
         // If the project has email confirmation enabled, no session is returned
         // yet. Tell the user to check their email instead of silently landing on
-        // a page that will bounce them back to the auth screen.
+        // a page that will bounce them back to the auth screen. Use the info
+        // notice bubble (green) rather than the red error bubble.
         if (!signUpData.session) {
-          setError(
+          setNotice(
             "Check your email to confirm your account, then sign in.",
           );
           setIsSignUp(false);
@@ -62,7 +79,7 @@ export default function AuthPage() {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${accessToken}`,
               },
-              body: JSON.stringify({ username, role }),
+              body: JSON.stringify({ username: normalizedUsername, role }),
             });
           }
         } catch {
@@ -164,6 +181,12 @@ export default function AuthPage() {
               className="w-full bg-melori-elevated border border-melori-border rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition"
             />
           </div>
+
+          {notice && (
+            <p className="text-emerald-300 text-sm bg-emerald-500/10 p-3 rounded-xl">
+              {notice}
+            </p>
+          )}
 
           {error && (
             <p className="text-red-400 text-sm bg-red-500/10 p-3 rounded-xl">

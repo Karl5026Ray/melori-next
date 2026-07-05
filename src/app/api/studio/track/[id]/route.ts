@@ -4,6 +4,12 @@ import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // GET /api/studio/track/[id] — Get single studio track
+//
+// The audio-files bucket is private, so the raw `file_url` (a getPublicUrl
+// output) cannot be fetched from the browser. Return a short-lived signed
+// download URL as `audioUrl` instead. Legacy rows written before this fix
+// only have `file_url` populated — fall back to it in that case so existing
+// tracks still load until they are replaced.
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -16,17 +22,30 @@ export async function GET(
       supabase,
       params.id,
       guard.membership.userId,
-      "title, artist, album, genre, file_url, preview_url, preview_start, preview_end, duration, status"
+      "title, artist, album, genre, file_url, file_path, preview_url, preview_start, preview_end, duration, status"
     );
     if (isOwnershipFailure(ownership)) return ownership;
 
     const track = ownership.row;
 
+    let audioUrl: string | null = null;
+    const filePath =
+      typeof track.file_path === "string" && track.file_path.trim()
+        ? track.file_path
+        : null;
+    if (filePath) {
+      const { data: signed } = await supabase.storage
+        .from("audio-files")
+        .createSignedUrl(filePath, 60 * 60); // 1 hour is plenty for an edit session.
+      audioUrl = signed?.signedUrl ?? null;
+    }
+    if (!audioUrl) audioUrl = track.file_url ?? null;
+
     // The WaveformEditor consumes camelCase fields; expose aliases alongside the
     // raw columns so it can load the master audio and preview window directly.
     return NextResponse.json({
       ...track,
-      audioUrl: track.file_url,
+      audioUrl,
       previewUrl: track.preview_url,
       previewStart: track.preview_start,
       previewEnd: track.preview_end,

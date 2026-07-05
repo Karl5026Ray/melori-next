@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,19 @@ export async function POST(req: NextRequest) {
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
+
+  // Community comments feed is publicly readable, so a spammer with a
+  // Superfan account could flood the wall. Cap at 3 quick / ~1 per 5s.
+  const rl = rateLimit(`community:comments:${membership.userId}`, 3, 0.2);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "You're posting too quickly. Please slow down." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
 
   try {
     const body = await req.json().catch(() => ({}));

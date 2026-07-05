@@ -37,6 +37,14 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // The messages and conversation_members tables are now RLS-protected
+    // (see migration 009). Both reads run under the caller's anon-key
+    // session, so we must wait for auth to be loaded before firing them —
+    // otherwise the initial fetch happens as an anonymous request and
+    // RLS returns an empty result, then the messages tab looks empty
+    // even though the conversation has history.
+    if (!user?.id) return;
+
     const fetchMessages = async () => {
       const { data } = await supabase
         .from("messages")
@@ -55,7 +63,7 @@ export default function ChatPage() {
         .from("conversation_members")
         .select(`user:profiles(*)`)
         .eq("conversation_id", conversationId)
-        .neq("user_id", user?.id)
+        .neq("user_id", user.id)
         .single();
 
       if (data?.user) setOtherUser(data.user as unknown as Profile);
@@ -66,6 +74,13 @@ export default function ChatPage() {
   }, [conversationId, user]);
 
   useEffect(() => {
+    // Realtime `postgres_changes` runs under the same auth context as the
+    // browser client. Under the new messages RLS policy, an unauthenticated
+    // channel gets no rows, so we defer subscribing until the auth session
+    // is loaded. supabase-js keeps the socket's JWT in sync with the auth
+    // session automatically once it exists.
+    if (!user?.id) return;
+
     const channel = supabase
       .channel(`chat:${conversationId}`)
       .on(
@@ -95,7 +110,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [conversationId]);
+  }, [conversationId, user]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

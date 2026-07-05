@@ -103,6 +103,21 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  // Cap subject + body to sane sizes. Resend accepts large bodies but our
+  // admin UI is a normal textarea; a runaway paste shouldn't be able to
+  // ship a multi-MB email to the entire list.
+  if (subject.length > 200) {
+    return NextResponse.json(
+      { error: "Subject must be 200 characters or fewer." },
+      { status: 400 },
+    );
+  }
+  if (message.length > 20_000) {
+    return NextResponse.json(
+      { error: "Message body is too long (max 20,000 characters)." },
+      { status: 400 },
+    );
+  }
 
   let recipients: string[];
   try {

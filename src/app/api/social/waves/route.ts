@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,19 @@ export async function POST(req: NextRequest) {
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { userId: senderId } = guard.membership;
+
+  // Waves are cross-user invites, so a runaway sender is a spam vector.
+  // Cap at 3-in-quick-succession, ~1 every 10s sustained.
+  const rl = rateLimit(`social:waves:${senderId}`, 3, 0.1);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "You're sending waves too quickly. Please slow down." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
 
   const body = await req.json().catch(() => ({}));
   const recipientId = String(body.recipient_id ?? "").trim();

@@ -40,12 +40,26 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
 
   // Pick a host: first admin profile if any, otherwise first profile in DB.
-  const { data: hostProfile } = await supabase
+  // (`.order('role', desc)` doesn't guarantee 'admin' sorts first — the string
+  // ordering happens to favor 'user' > 'superfan' > 'artist' > 'admin' in that
+  // direction. Explicit two-step lookup is safer and clearer.)
+  let { data: hostProfile } = await supabase
     .from("profiles")
     .select("id, display_name, username, full_name")
-    .order("role", { ascending: false }) // 'admin' sorts after some strings, but we just want deterministic
+    .eq("role", "admin")
+    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+
+  if (!hostProfile) {
+    const { data: fallback } = await supabase
+      .from("profiles")
+      .select("id, display_name, username, full_name")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    hostProfile = fallback ?? null;
+  }
 
   if (!hostProfile) {
     return NextResponse.json(

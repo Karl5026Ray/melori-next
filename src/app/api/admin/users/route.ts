@@ -35,9 +35,17 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl;
-  const q = (url.searchParams.get("q") ?? "").trim();
+  const rawQ = (url.searchParams.get("q") ?? "").trim();
   const role = url.searchParams.get("role") ?? "all";
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
+
+  // PostgREST .or() takes a comma-separated string; a comma, parenthesis,
+  // or backslash in the caller-supplied q would break out of the ilike
+  // pattern into a new filter clause. Strip anything but plain characters
+  // and cap length before splicing it into the query.
+  const q = rawQ.replace(/[,()\\%_"']/g, "").slice(0, 60);
+  const validRoles = new Set(["all", "user", "superfan", "artist", "admin"]);
+  const roleFilter = validRoles.has(role) ? role : "all";
 
   const supabase = getSupabaseAdmin();
   let query = supabase
@@ -48,7 +56,7 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (role !== "all") query = query.eq("role", role);
+  if (roleFilter !== "all") query = query.eq("role", roleFilter);
   if (q) {
     // Case-insensitive across the three name-ish columns.
     query = query.or(

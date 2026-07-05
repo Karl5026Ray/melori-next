@@ -1,40 +1,45 @@
-import { supabase } from "@/lib/supabase";
+"use client";
+
+import { useEffect, useState } from "react";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { MessageSquare } from "lucide-react";
+import { authFetch } from "@/lib/authClient";
+import { useAuth } from "@/components/social/providers/AuthProvider";
 
-// Rendered per-request: this page queries Supabase at request time, so it must
-// not be statically prerendered at build time (env vars are runtime-only).
-export const dynamic = "force-dynamic";
+// Client Component: the inbox has to fetch under the caller's own session.
+// Migration 009 turned on RLS for messages/conversations/conversation_members,
+// so a Server-Component read with the anon key returns nothing (auth.uid()
+// is null server-side). The new GET /api/social/conversations route verifies
+// the caller and runs the aggregate query with the service-role client.
+export default function MessagesPage() {
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-async function getConversations() {
-  const { data, error } = await supabase
-    .from("conversations")
-    .select(
-      `
-      *,
-      members:conversation_members(
-        user_id,
-        last_read_at,
-        user:profiles(id, display_name, avatar_url, role, verified)
-      ),
-      messages:messages(
-        id, content, created_at, sender_id
-      )
-    `
-    )
-    .order("updated_at", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error("Error fetching conversations:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-export default async function MessagesPage() {
-  const conversations = await getConversations();
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await authFetch("/api/social/conversations");
+        if (!res.ok) {
+          if (!cancelled) setConversations([]);
+          return;
+        }
+        const j = (await res.json()) as { conversations?: any[] };
+        if (!cancelled) setConversations(j.conversations ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   return (
     <div className="flex-1 flex h-full animate-fade-in">
@@ -68,7 +73,17 @@ export default async function MessagesPage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          <ConversationList conversations={conversations} />
+          {loading ? (
+            <div className="text-center py-8 text-melori-muted text-sm">
+              Loading…
+            </div>
+          ) : !user ? (
+            <div className="text-center py-8 text-melori-muted text-sm">
+              Sign in to see your messages
+            </div>
+          ) : (
+            <ConversationList conversations={conversations} />
+          )}
         </div>
       </div>
 

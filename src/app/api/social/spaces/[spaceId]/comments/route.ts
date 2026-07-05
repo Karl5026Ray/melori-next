@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,22 @@ export async function POST(
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
+
+  // Space chat is fast-moving but still spammable. 5 quick, ~1/sec sustained.
+  const rl = rateLimit(
+    `social:space-comments:${membership.userId}`,
+    5,
+    1,
+  );
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "You're posting too quickly. Please slow down." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
 
   try {
     const body = await req.json().catch(() => ({}));

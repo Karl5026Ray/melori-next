@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Hard cap on message payload to bound DB row size and client render cost.
+const MAX_MESSAGE_CHARS = 2000;
 
 // POST /api/social/messages — Send a message / reply in a conversation.
 // Commenting/replying is participation and requires an active Superfan-or-better
@@ -13,6 +17,20 @@ export async function POST(req: NextRequest) {
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 
+  // Per-user rate limit: 5 messages/sec burst, ~1/sec sustained. High
+  // enough that normal chatting never trips, low enough that a runaway
+  // client can't hammer the row insert path.
+  const rl = rateLimit(`social:messages:${membership.userId}`, 5, 1);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Slow down — you're sending messages too quickly." },
+      {
+        status: 429,
+        headers: { "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() },
+      },
+    );
+  }
+
   try {
     const body = await req.json();
     const conversationId = String(body.conversation_id ?? "").trim();
@@ -20,6 +38,12 @@ export async function POST(req: NextRequest) {
     if (!conversationId || !content) {
       return NextResponse.json(
         { error: "conversation_id and content are required" },
+        { status: 400 },
+      );
+    }
+    if (content.length > MAX_MESSAGE_CHARS) {
+      return NextResponse.json(
+        { error: `Message must be ${MAX_MESSAGE_CHARS} characters or fewer.` },
         { status: 400 },
       );
     }

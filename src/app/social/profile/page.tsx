@@ -4,14 +4,10 @@ import { useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { Radio } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
-import type { Profile } from "@/types/social";
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, applyUser, refreshUser } = useAuth();
   const [editing, setEditing] = useState(false);
-  // Local override so the newly saved profile shows immediately without a
-  // full page reload. AuthProvider's user still refreshes on next auth event.
-  const [localOverride, setLocalOverride] = useState<Profile | null>(null);
 
   if (!user) {
     return (
@@ -21,7 +17,7 @@ export default function ProfilePage() {
     );
   }
 
-  const view = localOverride ?? user;
+  const view = user;
 
   return (
     <div className="flex-1 overflow-y-auto animate-fade-in">
@@ -115,7 +111,13 @@ export default function ProfilePage() {
         <EditProfileModal
           user={view}
           onClose={() => setEditing(false)}
-          onSaved={(updated) => setLocalOverride(updated)}
+          onSaved={(updated) => {
+            // Instantly reflect the new fields everywhere (Header, sidebars,
+            // this page) and then re-fetch to pick up anything the server
+            // normalized (e.g. lowercased username, computed fields).
+            applyUser(updated);
+            void refreshUser();
+          }}
         />
       )}
     </div>

@@ -38,6 +38,9 @@ export default function SampleEditor({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(initialStart);
   const [dragging, setDragging] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioReady, setAudioReady] = useState(false);
+  const [volume, setVolume] = useState(1);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -185,13 +188,24 @@ export default function SampleEditor({
       }
       try {
         await el.play();
-      } catch (err) {
+        setAudioError(null);
+      } catch (err: any) {
         console.warn("Playback failed:", err);
+        setAudioError(
+          err?.message ??
+            "Playback was blocked. Tap the play button again or check the console.",
+        );
       }
     } else {
       el.pause();
     }
   };
+
+  // Keep the audio element's volume in sync with the slider.
+  useEffect(() => {
+    const el = audioElRef.current;
+    if (el) el.volume = Math.max(0, Math.min(1, volume));
+  }, [volume]);
 
   const onTimeUpdate = () => {
     const el = audioElRef.current;
@@ -267,9 +281,27 @@ export default function SampleEditor({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
+        onCanPlay={() => {
+          setAudioReady(true);
+          setAudioError(null);
+        }}
+        onError={(e) => {
+          const err = (e.currentTarget as HTMLAudioElement).error;
+          setAudioReady(false);
+          setAudioError(
+            err
+              ? `Could not load audio (code ${err.code}). The signed URL may have expired — close and reopen the editor.`
+              : "Could not load audio.",
+          );
+        }}
         onLoadedMetadata={(e) => {
           // Ensure we start at the current window start after metadata loads.
-          (e.currentTarget as HTMLAudioElement).currentTime = clampedStart;
+          try {
+            (e.currentTarget as HTMLAudioElement).currentTime = clampedStart;
+          } catch {
+            /* ignore — will retry on next effect */
+          }
+          setAudioReady(true);
         }}
       />
 
@@ -319,12 +351,20 @@ export default function SampleEditor({
 
         {/* Sample-window player. Big play/pause + time counter + scrubber that
             operates ONLY inside the selected 30s window. */}
-        <div className="mt-2 flex items-center gap-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+        <div className="mt-2 flex flex-wrap items-center gap-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
           <button
             type="button"
             onClick={togglePlay}
+            disabled={!audioReady && !isPlaying}
             aria-label={isPlaying ? "Pause preview" : "Play preview"}
-            className="shrink-0 h-12 w-12 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] flex items-center justify-center font-bold hover:opacity-90 transition"
+            title={
+              audioReady
+                ? isPlaying
+                  ? "Pause preview"
+                  : "Play the 30-second preview"
+                : "Loading audio…"
+            }
+            className="shrink-0 h-12 w-12 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] flex items-center justify-center font-bold hover:opacity-90 transition disabled:opacity-40 disabled:cursor-wait"
           >
             {isPlaying ? (
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -365,7 +405,32 @@ export default function SampleEditor({
           <span className="w-12 shrink-0 text-xs tabular-nums text-[#888]">
             {fmt(windowLen)}
           </span>
+
+          {/* Volume slider so the admin can adjust playback loudness without
+              leaving the sample editor. */}
+          <div className="flex items-center gap-2 min-w-[140px]">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-[#888]">
+              <path d="M5 9v6h4l5 5V4L9 9H5z" />
+            </svg>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              aria-label="Preview volume"
+              className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-white/10"
+              style={{ accentColor: "#c9a96e" }}
+            />
+          </div>
         </div>
+
+        {audioError && (
+          <p className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-300">
+            {audioError}
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3 justify-end">

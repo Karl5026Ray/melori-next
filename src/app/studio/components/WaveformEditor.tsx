@@ -35,6 +35,10 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
   const [isDragging, setIsDragging] = useState<"start" | "end" | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -243,6 +247,7 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
   const generatePreview = async () => {
     if (!track || !audioBuffer) return;
     setGenerating(true);
+    setSaveMessage(null);
 
     try {
       // For now, use server-side API (FFmpeg.wasm is heavy for client)
@@ -258,21 +263,43 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Preview save failed.");
+      }
+
       if (data.previewUrl) {
         setGeneratedUrl(data.previewUrl);
-        // Save preview settings to track
-        await authFetch(`/api/studio/track/${track.id}/preview`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            previewUrl: data.previewUrl,
-            previewStart,
-            previewEnd,
-          }),
-        });
       }
+
+      // Persist the preview window even when the rendered clip isn't ready
+      // yet (background worker). Without this, the [start, end] the artist
+      // scrubbed was thrown away after the loading spinner disappeared.
+      const patchRes = await authFetch(`/api/studio/track/${track.id}/preview`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewUrl: data.previewUrl ?? null,
+          previewStart,
+          previewEnd,
+        }),
+      });
+      if (!patchRes.ok) {
+        const patchBody = await patchRes.json().catch(() => ({}));
+        throw new Error(patchBody?.error ?? "Could not save preview.");
+      }
+
+      setSaveMessage({
+        kind: "success",
+        text: data.previewUrl
+          ? "Preview saved."
+          : `Preview window saved (${Math.round(previewEnd - previewStart)}s). Clip renders in the background.`,
+      });
     } catch (err) {
       console.error("Preview generation failed:", err);
+      setSaveMessage({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Preview save failed.",
+      });
     } finally {
       setGenerating(false);
     }
@@ -335,6 +362,18 @@ export default function WaveformEditor({ trackId, onBack }: WaveformEditorProps)
           </button>
         </div>
       </div>
+
+      {saveMessage && (
+        <div
+          className={`rounded-xl px-4 py-3 text-sm ${
+            saveMessage.kind === "success"
+              ? "bg-green-500/10 border border-green-500/30 text-green-400"
+              : "bg-red-500/10 border border-red-500/30 text-red-400"
+          }`}
+        >
+          {saveMessage.text}
+        </div>
+      )}
 
       {/* Waveform Canvas */}
       <div

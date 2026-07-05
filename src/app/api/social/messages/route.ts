@@ -25,16 +25,26 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseAdmin();
-    
-    // Block enforcement: find the other participant(s) in this conversation
-    // and refuse to send if a block exists in either direction.
+
+    // Membership + block enforcement in one pass. Fetch all conversation
+    // members; refuse if the caller is not a participant, then check for
+    // blocks in either direction with the other participants.
     const { data: members } = await supabase
       .from("conversation_members")
       .select("user_id")
       .eq("conversation_id", conversationId);
-    const otherIds = (members ?? [])
+    const memberIds = (members ?? [])
       .map((m) => m.user_id as string)
-      .filter((id) => id && id !== membership.userId);
+      .filter((id): id is string => Boolean(id));
+
+    if (!memberIds.includes(membership.userId!)) {
+      return NextResponse.json(
+        { error: "You are not a participant in this conversation." },
+        { status: 403 },
+      );
+    }
+
+    const otherIds = memberIds.filter((id) => id !== membership.userId);
     if (otherIds.length > 0) {
       const { data: blocks } = await supabase
         .from("member_blocks")

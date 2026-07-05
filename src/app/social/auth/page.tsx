@@ -22,7 +22,10 @@ export default function AuthPage() {
 
     try {
       if (isSignUp) {
-        const { error: signUpError } = await supabase.auth.signUp({
+        if (password.length < 6) {
+          throw new Error("Password must be at least 6 characters.");
+        }
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -34,6 +37,38 @@ export default function AuthPage() {
           },
         });
         if (signUpError) throw signUpError;
+
+        // If the project has email confirmation enabled, no session is returned
+        // yet. Tell the user to check their email instead of silently landing on
+        // a page that will bounce them back to the auth screen.
+        if (!signUpData.session) {
+          setError(
+            "Check your email to confirm your account, then sign in.",
+          );
+          setIsSignUp(false);
+          return;
+        }
+
+        // Best-effort seed of the profiles row with the chosen username/tier.
+        // We can't insert client-side because RLS only allows SELECT+UPDATE on
+        // own row; the server-side /profile/init uses the service role. Do not
+        // block the redirect on this — users can log in even if it fails.
+        try {
+          const accessToken = signUpData.session?.access_token;
+          if (accessToken) {
+            await fetch("/api/social/profile/init", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ username, role }),
+            });
+          }
+        } catch {
+          /* profile row can be seeded on next authenticated request */
+        }
+
         router.push("/social/spaces");
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({

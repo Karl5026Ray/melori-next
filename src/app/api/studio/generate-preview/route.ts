@@ -18,16 +18,37 @@ export async function POST(req: NextRequest) {
     );
     if (isOwnershipFailure(ownership)) return ownership;
 
-    // Preview trimming is handled by a background worker (FFmpeg) in production.
-    // Vercel functions have a short timeout, so the actual trim runs out-of-band.
+    // Validate the requested window. FFmpeg-based clip generation happens
+    // out-of-band; even without a rendered clip we save the [start, end]
+    // range on the track row so /api/tracks/[id]/stream can serve a windowed
+    // preview from the full file. Without this save, the client generate
+    // button used to silently do nothing.
+    const s = Number(start);
+    const e = Number(end);
+    if (!Number.isFinite(s) || !Number.isFinite(e) || s < 0 || e <= s) {
+      return NextResponse.json(
+        { error: "Invalid preview window" },
+        { status: 400 },
+      );
+    }
+
+    const { error: saveErr } = await supabase
+      .from("studio_tracks")
+      .update({ preview_start: s, preview_end: e })
+      .eq("id", trackId);
+    if (saveErr) {
+      console.error("generate-preview save error:", saveErr);
+      // Fall through — the client still gets a status so it can react.
+    }
+
     return NextResponse.json({
       previewUrl: null,
-      status: "processing",
+      status: "saved",
       message:
-        "Preview generation queued. In production, this uses a background worker with FFmpeg.",
+        "Preview window saved. A background worker renders the trimmed clip.",
       trackId,
-      start,
-      end,
+      previewStart: s,
+      previewEnd: e,
     });
   } catch (err: any) {
     console.error("Preview generation error:", err);

@@ -80,6 +80,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
   }
 
+  // Refuse if either party has blocked the other.
+  const { data: block } = await supabase
+    .from("member_blocks")
+    .select("blocker_id")
+    .or(
+      `and(blocker_id.eq.${senderId},blocked_id.eq.${recipientId}),` +
+        `and(blocker_id.eq.${recipientId},blocked_id.eq.${senderId})`,
+    )
+    .maybeSingle();
+  if (block) {
+    return NextResponse.json(
+      { error: "Waves are unavailable between these members." },
+      { status: 403 },
+    );
+  }
+
   const { data, error } = await supabase
     .from("waves")
     .insert({

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 
@@ -50,7 +51,10 @@ export async function POST(req: NextRequest) {
         host_id: membership.userId,
         status: scheduledAt ? "scheduled" : "live",
         scheduled_at: scheduledAt,
-        agora_channel: `melori_${Date.now()}`,
+        // Agora channel names must be unique per active room. Using Date.now()
+        // alone could collide if two spaces were created in the same tick; add
+        // 6 random hex chars so concurrent creates each get their own channel.
+        agora_channel: `melori_${Date.now()}_${randomBytes(3).toString("hex")}`,
       })
       .select()
       .single();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
+import { getRequestMembership } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,6 +157,12 @@ export async function POST(req: NextRequest) {
       ? `https://${req.headers.get("host")}`
       : "https://melorimusic.org");
 
+  // Attach buyer identity if the caller is signed in, so the order can be
+  // linked back to their profile in the DB and so Stripe pre-fills the email.
+  const membership = await getRequestMembership(req).catch(() => null);
+  const buyerUserId = membership?.userId ?? null;
+  const buyerEmail = membership?.email ?? undefined;
+
   const stripe = new Stripe(secret);
 
   try {
@@ -166,9 +173,12 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/store/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/store/cart`,
       shipping_address_collection: { allowed_countries: ["US", "CA", "GB"] },
+      ...(buyerEmail ? { customer_email: buyerEmail } : {}),
+      ...(buyerUserId ? { client_reference_id: buyerUserId } : {}),
       metadata: {
         source: "melorimusic.org/store",
         subtotal_cents: String(subtotal),
+        ...(buyerUserId ? { user_id: buyerUserId } : {}),
         ...cartMeta,
       },
     });

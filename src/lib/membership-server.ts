@@ -21,6 +21,7 @@ import {
 
 export interface RequestMembership {
   userId: string | null;
+  email: string | null;
   profile: MembershipProfile | null;
 }
 
@@ -38,21 +39,22 @@ export async function getRequestMembership(
   request: Request,
 ): Promise<RequestMembership> {
   const token = bearerToken(request);
-  if (!token) return { userId: null, profile: null };
+  if (!token) return { userId: null, email: null, profile: null };
 
   const url =
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  if (!url || !anonKey) return { userId: null, profile: null };
+  if (!url || !anonKey) return { userId: null, email: null, profile: null };
 
   const authClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data?.user) return { userId: null, profile: null };
+  if (error || !data?.user) return { userId: null, email: null, profile: null };
 
   const userId = data.user.id;
+  const email = data.user.email ?? null;
   const admin = getSupabaseAdmin();
   const { data: row } = await admin
     .from("profiles")
@@ -68,7 +70,7 @@ export async function getRequestMembership(
       }
     : null;
 
-  return { userId, profile };
+  return { userId, email, profile };
 }
 
 // Guards: return a NextResponse (401/403) when the caller is not authorized,

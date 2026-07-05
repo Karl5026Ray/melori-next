@@ -96,11 +96,20 @@ async function fulfillStoreOrder(session: Stripe.Checkout.Session) {
       ? session.payment_intent
       : session.payment_intent?.id ?? null;
 
+  // Prefer client_reference_id (set at checkout when the buyer was signed in),
+  // fall back to the copy we stashed in metadata for defense-in-depth.
+  const buyerUserId =
+    session.client_reference_id ||
+    (typeof session.metadata?.user_id === "string"
+      ? session.metadata.user_id
+      : null) ||
+    null;
+
   // Create the order row.
   const { data: order, error: orderErr } = await supabase
     .from("orders")
     .insert({
-      user_id: null,
+      user_id: buyerUserId,
       stripe_session_id: sessionId,
       stripe_payment_intent_id: paymentIntentId,
       total_amount: totalAmount,
@@ -113,9 +122,11 @@ async function fulfillStoreOrder(session: Stripe.Checkout.Session) {
     throw new Error(`order insert failed: ${orderErr?.message}`);
   }
 
-  // Line items + inventory updates.
+  // Line items + inventory updates. We surface any failure so it appears in
+  // logs — previously errors from either call were silently discarded, letting
+  // inventory drift out of sync with paid orders.
   for (const line of lines) {
-    await supabase.from("store_order_items").insert({
+    const { error: itemErr } = await supabase.from("store_order_items").insert({
       order_id: order.id,
       product_id: line.id,
       product_name: line.name,
@@ -123,11 +134,23 @@ async function fulfillStoreOrder(session: Stripe.Checkout.Session) {
       quantity: line.qty,
       unit_price: line.unit,
     });
+    if (itemErr) {
+      console.error(
+        `stripe/webhook order_item insert failed order=${order.id} product=${line.id}:`,
+        itemErr.message,
+      );
+    }
 
     // Decrement inventory / increment sold_count atomically.
-    await supabase.rpc("record_store_sale", {
+    const { error: rpcErr } = await supabase.rpc("record_store_sale", {
       p_product_id: line.id,
       p_qty: line.qty,
     });
+    if (rpcErr) {
+      console.error(
+        `stripe/webhook record_store_sale failed order=${order.id} product=${line.id}:`,
+        rpcErr.message,
+      );
+    }
   }
 }

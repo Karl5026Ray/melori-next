@@ -86,14 +86,14 @@ export default function AuthPage() {
           /* profile row can be seeded on next authenticated request */
         }
 
-        router.push("/social/spaces");
+        router.push("/social/profile");
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (signInError) throw signInError;
-        router.push("/social/spaces");
+        router.push("/social/profile");
       }
     } catch (err: any) {
       setError(err.message);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,65 +65,24 @@ export async function PATCH(
     return NextResponse.json({ wave: data });
   }
 
-  // Accept: find (or create) a shared 1-1 conversation.
+  // Accept: find (or create) a true 1:1 conversation.
+  //
+  // Previously the fallback here matched "any conversation both users belong
+  // to", which mis-routed the accepted wave into whatever group chat the two
+  // happened to share. The shared helper below requires the conversation to
+  // have EXACTLY two members before it's reused as the direct thread.
   let conversationId: string | null = wave.conversation_id;
 
   if (!conversationId) {
-    // Find any conversation that contains both users.
-    const { data: shared } = await supabase.rpc(
-      "find_or_create_direct_conversation",
-      { user_a: wave.sender_id, user_b: wave.recipient_id },
+    const result = await findOrCreateDirectConversation(
+      supabase,
+      wave.sender_id,
+      wave.recipient_id,
     );
-    if (typeof shared === "string") {
-      conversationId = shared;
-    } else if (shared && typeof shared === "object" && "id" in shared) {
-      conversationId = (shared as { id: string }).id;
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
-  }
-
-  // If the RPC doesn't exist yet, fall back to manual SQL.
-  if (!conversationId) {
-    // Try to find an existing conversation both users belong to.
-    const { data: mine } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", wave.sender_id);
-    const senderConvos = new Set(
-      (mine ?? []).map((r) => r.conversation_id as string),
-    );
-    const { data: theirs } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", wave.recipient_id);
-    const overlap = (theirs ?? [])
-      .map((r) => r.conversation_id as string)
-      .find((c) => senderConvos.has(c));
-
-    if (overlap) {
-      conversationId = overlap;
-    } else {
-      const { data: convo, error: convoErr } = await supabase
-        .from("conversations")
-        .insert({})
-        .select()
-        .single();
-      if (convoErr || !convo) {
-        return NextResponse.json(
-          { error: convoErr?.message ?? "Failed to open conversation" },
-          { status: 500 },
-        );
-      }
-      conversationId = convo.id;
-      const { error: memberErr } = await supabase
-        .from("conversation_members")
-        .insert([
-          { conversation_id: conversationId, user_id: wave.sender_id },
-          { conversation_id: conversationId, user_id: wave.recipient_id },
-        ]);
-      if (memberErr) {
-        return NextResponse.json({ error: memberErr.message }, { status: 500 });
-      }
-    }
+    conversationId = result.id;
   }
 
   const { data, error } = await supabase

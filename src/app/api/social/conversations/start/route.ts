@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ export async function POST(req: NextRequest) {
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
   const me = membership.userId;
+  if (!me) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const recipientId = String(body.recipient_id ?? "").trim();
@@ -26,64 +30,34 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabaseAdmin();
 
-  // Refuse if a block exists in either direction.
-  const { data: block } = await supabase
+  // Refuse if a block exists in either direction. We use `limit(1)` rather
+  // than `maybeSingle()` because if both users blocked each other there are
+  // two rows and `maybeSingle()` errors out — we just need to know at least
+  // one exists.
+  const { data: blocks } = await supabase
     .from("member_blocks")
     .select("blocker_id")
     .or(
       `and(blocker_id.eq.${me},blocked_id.eq.${recipientId}),` +
         `and(blocker_id.eq.${recipientId},blocked_id.eq.${me})`
     )
-    .maybeSingle();
-  if (block) {
+    .limit(1);
+  if (blocks && blocks.length > 0) {
     return NextResponse.json(
       { error: "Messaging is unavailable between these members." },
       { status: 403 }
     );
   }
 
-  // Find an existing 1:1 conversation both users belong to.
-  const { data: myRows } = await supabase
-    .from("conversation_members")
-    .select("conversation_id")
-    .eq("user_id", me);
-  const myConversationIds = (myRows ?? []).map((r) => r.conversation_id as string);
-
-  let conversationId: string | null = null;
-  if (myConversationIds.length > 0) {
-    const { data: shared } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", recipientId)
-      .in("conversation_id", myConversationIds)
-      .limit(1);
-    if (shared && shared.length > 0) {
-      conversationId = shared[0].conversation_id as string;
-    }
+  // Find (or open) a TRUE 1:1 conversation. Previously this matched "any
+  // conversation both users belong to" and would return a group chat both
+  // users happened to share, misdirecting their DM into that group thread.
+  // The helper requires the conversation to have EXACTLY two members before
+  // reusing it.
+  const result = await findOrCreateDirectConversation(supabase, me, recipientId);
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
-  // Otherwise create a new conversation with both members.
-  if (!conversationId) {
-    const { data: convo, error: convoErr } = await supabase
-      .from("conversations")
-      .insert({})
-      .select("id")
-      .single();
-    if (convoErr || !convo) {
-      return NextResponse.json(
-        { error: convoErr?.message ?? "Could not create conversation" },
-        { status: 500 }
-      );
-    }
-    conversationId = convo.id as string;
-    const { error: memErr } = await supabase.from("conversation_members").insert([
-      { conversation_id: conversationId, user_id: me },
-      { conversation_id: conversationId, user_id: recipientId },
-    ]);
-    if (memErr) {
-      return NextResponse.json({ error: memErr.message }, { status: 500 });
-    }
-  }
-
-  return NextResponse.json({ conversation_id: conversationId });
+  return NextResponse.json({ conversation_id: result.id });
 }

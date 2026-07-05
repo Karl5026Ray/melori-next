@@ -145,10 +145,19 @@ export default function SpaceDetailPage() {
       { onConflict: "space_id,user_id" }
     );
 
-    if (!error) {
-      setIsJoined(true);
-      await supabase.rpc("increment_space_participants", { space_id: spaceId });
+    if (error) {
+      // Show the real reason (RLS, network, etc.) instead of pretending we joined.
+      setShareToast(error.message || "Could not join this space");
+      setTimeout(() => setShareToast(null), 2500);
+      return;
     }
+    setIsJoined(true);
+    // Best-effort participant count bump. Doesn't gate the UX.
+    void supabase
+      .rpc("increment_space_participants", { space_id: spaceId })
+      .then(({ error: rpcErr }) => {
+        if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
+      });
   }, [user, spaceId, router]);
 
   const handleLeave = useCallback(async () => {
@@ -308,52 +317,70 @@ export default function SpaceDetailPage() {
     [isHost, spaceId],
   );
 
-  // Host-only: force-mute a speaker (they can still be present, just muted).
-  const hostMute = useCallback(
-    async (participantUserId: string, muted: boolean) => {
+  // Small helper: run a host moderation call and surface success/failure via
+  // the same shareToast we use for the copy-link button. Silently failing
+  // moderation is a footgun — the host taps and thinks it worked.
+  const runHostAction = useCallback(
+    async (
+      participantUserId: string,
+      body: Record<string, unknown>,
+      successToast: string,
+    ) => {
       if (!isHost) return;
-      await authFetch(
-        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ host_muted: muted }),
-        },
-      );
+      try {
+        const res = await authFetch(
+          `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setShareToast(data?.error ?? "Action failed");
+        } else {
+          setShareToast(successToast);
+        }
+      } catch {
+        setShareToast("Network error");
+      }
+      setTimeout(() => setShareToast(null), 2200);
     },
     [isHost, spaceId],
+  );
+
+  // Host-only: force-mute a speaker (they can still be present, just muted).
+  const hostMute = useCallback(
+    (participantUserId: string, muted: boolean) =>
+      runHostAction(
+        participantUserId,
+        { host_muted: muted },
+        muted ? "Speaker muted" : "Speaker unmuted",
+      ),
+    [runHostAction],
   );
 
   // Host-only: demote a speaker back to audience.
   const hostDemote = useCallback(
-    async (participantUserId: string) => {
-      if (!isHost) return;
-      await authFetch(
-        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "audience" }),
-        },
-      );
-    },
-    [isHost, spaceId],
+    (participantUserId: string) =>
+      runHostAction(
+        participantUserId,
+        { role: "audience" },
+        "Moved to audience",
+      ),
+    [runHostAction],
   );
 
   // Host-only: remove someone from the space entirely.
   const hostRemove = useCallback(
-    async (participantUserId: string) => {
-      if (!isHost) return;
-      await authFetch(
-        `/api/social/spaces/${spaceId}/participants/${participantUserId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ remove: true }),
-        },
-      );
-    },
-    [isHost, spaceId],
+    (participantUserId: string) =>
+      runHostAction(
+        participantUserId,
+        { remove: true },
+        "Removed from space",
+      ),
+    [runHostAction],
   );
 
   const handleGoLive = useCallback(async () => {
@@ -843,7 +870,8 @@ export default function SpaceDetailPage() {
       {reactions.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-32 z-30 flex justify-center gap-3">
           {reactions.map((r) => {
-            const emoji = r.split(":")[1] ?? "❤️";
+            // r has the form "<ts>-<seq>:<emoji>". Split on the first ':'.
+            const emoji = r.slice(r.indexOf(":") + 1) || "❤️";
             return (
               <span
                 key={r}

@@ -116,6 +116,14 @@ export default function EditProfileModal({
       }
       const { profile } = await res.json();
       onSaved(profile as Profile);
+      // Notify any other consumers of profile state (e.g. the top-nav Header,
+      // which tracks user/displayName independently of the Social provider)
+      // so they refresh without waiting for the next auth event.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("melori:profile-updated", { detail: profile }),
+        );
+      }
       onClose();
     } catch (err: any) {
       setError(err?.message ?? "Could not save profile.");

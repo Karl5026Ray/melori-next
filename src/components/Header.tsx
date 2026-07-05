@@ -137,9 +137,26 @@ export default function Header() {
       if (active) applyUser(session?.user ?? null);
     });
 
+    // Refresh Header display name whenever the user edits their profile in
+    // the Social modal. Dispatched by EditProfileModal after a successful PATCH.
+    const onProfileUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { display_name?: string; full_name?: string; username?: string }
+        | undefined;
+      if (!detail || !active) return;
+      setDisplayName(
+        detail.display_name ||
+          detail.full_name ||
+          detail.username ||
+          null,
+      );
+    };
+    window.addEventListener("melori:profile-updated", onProfileUpdated);
+
     return () => {
       active = false;
       sub.subscription.unsubscribe();
+      window.removeEventListener("melori:profile-updated", onProfileUpdated);
     };
   }, []);
 

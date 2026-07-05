@@ -21,6 +21,26 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const handleForgotPassword = async () => {
+  setError("");
+  setNotice("");
+  if (!email) {
+    setError("Enter your email above, then click Forgot password.");
+    return;
+  }
+  setLoading(true);
+  try {
+    const redirectTo = `${window.location.origin}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
+    setNotice("Password reset email sent. Check your inbox.");
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Could not send reset email.");
+  } finally {
+    setLoading(false);
+  }
+};
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -203,6 +223,16 @@ export default function AuthPage() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+{!isSignUp && (
+  <button
+    type="button"
+    onClick={handleForgotPassword}
+    disabled={loading}
+    className="text-melori-purple hover:underline text-sm mt-4 block mx-auto"
+  >
+    Forgot password?
+  </button>
+)}
 
         <p className="text-center text-sm text-melori-muted mt-6">
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}

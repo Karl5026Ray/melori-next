@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
 import { getRequestMembership } from "@/lib/membership-server";
+import { approvedOrigin } from "@/lib/approved-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -151,11 +152,9 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const origin =
-    req.headers.get("origin") ||
-    (req.headers.get("host")
-      ? `https://${req.headers.get("host")}`
-      : "https://melorimusic.org");
+  // Return URLs handed to Stripe are locked to approved hosts — see
+  // src/lib/approved-origin.ts for why.
+  const origin = approvedOrigin(req);
 
   // Attach buyer identity if the caller is signed in, so the order can be
   // linked back to their profile in the DB and so Stripe pre-fills the email.

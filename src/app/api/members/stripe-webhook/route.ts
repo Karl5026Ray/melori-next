@@ -92,13 +92,13 @@ export async function POST(req: NextRequest) {
 async function handleEvent(stripe: Stripe, event: Stripe.Event) {
   const supabase = createServiceClient();
 
-  // Idempotency: skip if we already processed this event id.
-  const { data: seen } = await supabase
-    .from("membership_events")
-    .select("id")
-    .eq("stripe_event_id", event.id)
-    .maybeSingle();
-  if (seen) return;
+  // Idempotency: we no longer short-circuit on a `seen` row before running the
+  // profile update. The old check meant a mid-processing crash could leave
+  // the profile stale forever — a Stripe retry would see the audit row and
+  // skip the whole thing. Instead we make the profile update itself
+  // idempotent (deterministic given the event) and rely on the unique
+  // constraint on membership_events(stripe_event_id) to swallow duplicate
+  // audit inserts. logEvent handles the 23505 collision quietly.
 
   switch (event.type) {
     case "checkout.session.completed": {
@@ -384,7 +384,7 @@ async function logEvent(
   event: Stripe.Event,
   a: LogArgs
 ) {
-  await supabase.from("membership_events").insert({
+  const { error } = await supabase.from("membership_events").insert({
     stripe_event_id: event.id,
     event_type: event.type,
     stripe_customer_id: a.customerId,
@@ -397,4 +397,10 @@ async function logEvent(
     current_period_end: a.currentPeriodEnd,
     raw: event.data.object as unknown as Record<string, unknown>,
   });
+  // Duplicate insert on a Stripe retry is expected and safe — the profile
+  // update is idempotent and the unique key on stripe_event_id guarantees
+  // each event only appears once in the audit table.
+  if (error && error.code !== "23505") {
+    console.error("membership_events insert error:", error);
+  }
 }

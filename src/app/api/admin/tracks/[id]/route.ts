@@ -49,6 +49,9 @@ export async function PATCH(
     if (typeof body.title === "string") update.title = body.title.trim();
     if (typeof body.is_published === "boolean")
       update.is_published = body.is_published;
+    if (typeof body.preview_url === "string")
+      update.preview_url = body.preview_url.trim() || null;
+    else if (body.preview_url === null) update.preview_url = null;
     if (body.price != null && body.price !== "")
       update.price = Number(body.price);
     if (typeof body.audio_url === "string" && body.audio_url.trim())
@@ -75,6 +78,33 @@ export async function PATCH(
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    }
+
+    // Enforce a dedicated preview clip whenever a track goes live. Without
+    // one, /api/tracks/[id]/stream falls back to serving the full audio to
+    // free listeners with only a client-side 30s cap — which is cosmetic
+    // (the signed URL is directly fetchable). Publishing is the right
+    // gate: unpublished tracks aren't served to free listeners anyway.
+    if (update.is_published === true) {
+      // preview_url may come from this same PATCH, or already exist on the row.
+      let effectivePreview: string | null | undefined = update.preview_url;
+      if (effectivePreview === undefined) {
+        const { data: existing } = await supabase
+          .from("tracks")
+          .select("preview_url")
+          .eq("id", id)
+          .maybeSingle();
+        effectivePreview = existing?.preview_url ?? null;
+      }
+      if (!effectivePreview) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot publish: this track has no preview clip. Generate a preview from the Music Manager before publishing.",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const { error } = await supabase.from("tracks").update(update).eq("id", id);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import { approvedOrigin } from "@/lib/approved-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,11 +42,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const origin =
-    req.headers.get("origin") ||
-    (req.headers.get("host")
-      ? `https://${req.headers.get("host")}`
-      : "https://melorimusic.org");
+  // Locked to approved hosts — see src/lib/approved-origin.ts.
+  const origin = approvedOrigin(req);
 
   const stripe = new Stripe(secret);
 

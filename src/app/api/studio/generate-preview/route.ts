@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
-import { assertTrackOwnership, isOwnershipFailure } from "@/lib/studio-ownership";
+import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
 
 export async function POST(req: NextRequest) {
   const guard = await requireArtist(req);
@@ -32,10 +32,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Defense-in-depth: the update is already guarded by assertTrackOwnership
+    // above, but repeat the owner filter on the update itself so a race or a
+    // refactor of the ownership helper can't turn this into a cross-tenant write.
     const { error: saveErr } = await supabase
       .from("studio_tracks")
       .update({ preview_start: s, preview_end: e })
-      .eq("id", trackId);
+      .eq("id", trackId)
+      .eq(OWNER_COLUMN, guard.membership.userId);
     if (saveErr) {
       console.error("generate-preview save error:", saveErr);
       // Fall through — the client still gets a status so it can react.

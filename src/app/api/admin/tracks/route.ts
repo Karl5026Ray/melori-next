@@ -114,14 +114,32 @@ export async function POST(req: NextRequest) {
       previewEnd = previewStart + 30;
     }
 
+    const previewUrl =
+      typeof body.preview_url === "string" && body.preview_url.trim()
+        ? body.preview_url.trim()
+        : null;
+    const isPublished = Boolean(body.is_published);
+
+    // A newly-created track can only go live if it has a dedicated preview.
+    // See PATCH handler for the rationale (free-listener cap is cosmetic).
+    if (isPublished && !previewUrl) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot publish: this track has no preview clip. Create it as unpublished, generate a preview, then publish.",
+        },
+        { status: 400 },
+      );
+    }
+
     const insert: Record<string, any> = {
       title,
       audio_url: audioUrl,
-      preview_url: body.preview_url ?? null,
+      preview_url: previewUrl,
       preview_start: previewStart,
       preview_end: previewEnd,
       duration_seconds: duration,
-      is_published: Boolean(body.is_published),
+      is_published: isPublished,
     };
     if (body.release_id != null && body.release_id !== "") {
       insert.release_id = Number(body.release_id);

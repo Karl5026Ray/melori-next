@@ -14,8 +14,37 @@ export async function POST(
 ) {
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
+  const callerId = guard.membership.userId!;
 
   const supabase = getSupabaseAdmin();
+
+  // Only participants of *this* space can keep it alive. Without this check,
+  // any Superfan could ping any live space's last_activity_at and prevent
+  // reap_idle_spaces() from ever cleaning up abandoned rooms.
+  const { data: space } = await supabase
+    .from("spaces")
+    .select("id, host_id, status")
+    .eq("id", params.spaceId)
+    .maybeSingle();
+  if (!space) {
+    return NextResponse.json({ error: "Space not found" }, { status: 404 });
+  }
+  if (space.status !== "live") {
+    // No-op: don't resurrect ended/scheduled spaces via heartbeat.
+    return NextResponse.json({ ok: true, ignored: true });
+  }
+  if (space.host_id !== callerId) {
+    const { count } = await supabase
+      .from("space_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("space_id", params.spaceId)
+      .eq("user_id", callerId)
+      .is("left_at", null);
+    if ((count ?? 0) === 0) {
+      return NextResponse.json({ error: "Not a participant" }, { status: 403 });
+    }
+  }
+
   const { error } = await supabase
     .from("spaces")
     .update({ last_activity_at: new Date().toISOString() })

@@ -20,6 +20,24 @@ export async function POST(req: NextRequest) {
     if (!title) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
+    if (title.length > 200) {
+      return NextResponse.json(
+        { error: "Title must be 200 characters or fewer" },
+        { status: 400 },
+      );
+    }
+    const topic = String(body.topic ?? "").trim();
+    if (topic.length > 500) {
+      return NextResponse.json(
+        { error: "Topic must be 500 characters or fewer" },
+        { status: 400 },
+      );
+    }
+    const ALLOWED_TYPES = new Set(["listening", "discussion", "creation", "dj_set"]);
+    const type =
+      typeof body.type === "string" && ALLOWED_TYPES.has(body.type)
+        ? body.type
+        : "listening";
 
     // Optional scheduled_at → room is created in `scheduled` status; the
     // host can go live later. Otherwise defaults to live-now.
@@ -46,8 +64,8 @@ export async function POST(req: NextRequest) {
       .from("spaces")
       .insert({
         title,
-        topic: String(body.topic ?? "").trim() || "Open Discussion",
-        type: body.type ?? "listening",
+        topic: topic || "Open Discussion",
+        type,
         host_id: membership.userId,
         status: scheduledAt ? "scheduled" : "live",
         scheduled_at: scheduledAt,

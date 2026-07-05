@@ -56,17 +56,26 @@ export async function getRequestMembership(
   const userId = data.user.id;
   const email = data.user.email ?? null;
   const admin = getSupabaseAdmin();
-  const { data: row } = await admin
-    .from("profiles")
-    .select("role, membership_status")
-    .eq("id", userId)
-    .maybeSingle();
+  // Billing/membership lookups must NEVER block authentication. If this
+  // read fails (missing column, transient DB/billing error, etc.) we degrade
+  // gracefully to a null profile — the caller is still authenticated.
+  let row: any = null;
+  try {
+    const res = await admin
+      .from("profiles")
+      .select("role, membership_status, membership_tier, membership_expires_at, billing_exempt, is_comp")
+      .eq("id", userId)
+      .maybeSingle();
+    row = res.data ?? null;
+  } catch {
+    row = null;
+  }
 
   const profile: MembershipProfile | null = row
     ? {
         membership_tier: (row as { role?: string | null }).role ?? "free",
         membership_status: (row as { membership_status?: string | null }).membership_status ?? null,
-        membership_expires_at: null,
+                membership_expires_at: (row as { membership_expires_at?: string | null }).membership_expires_at ?? null,
       }
     : null;
 

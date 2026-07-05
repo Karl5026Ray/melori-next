@@ -36,6 +36,38 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [email, setEmail] = useState<string>("");
 
+  // Password change
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPw, setChangingPw] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+
+  const handleChangePassword = async () => {
+    setPwError(null);
+    setPwSuccess(null);
+    if (newPassword.length < 6) {
+      setPwError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError("Passwords do not match.");
+      return;
+    }
+    setChangingPw(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setPwSuccess("Password updated.");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setPwError(err.message ?? "Could not update password.");
+    } finally {
+      setChangingPw(false);
+    }
+  };
+
   // Editable fields
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -408,6 +440,40 @@ export default function SettingsPage() {
             Manage membership
           </Link>
         </section>
+
+          {/* Password */}
+          <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+            <h2 className="text-lg font-semibold mb-5">Password</h2>
+            <div className="mb-4">
+              <label className="text-xs uppercase tracking-wide text-[#888]">New password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full mt-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="text-xs uppercase tracking-wide text-[#888]">Confirm new password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full mt-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+              />
+            </div>
+            {pwError && <p className="text-sm text-red-400 mb-3">{pwError}</p>}
+            {pwSuccess && <p className="text-sm text-green-400 mb-3">{pwSuccess}</p>}
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              disabled={changingPw}
+              className="px-6 py-2.5 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm disabled:opacity-50"
+            >
+              {changingPw ? "Updating…" : "Change password"}
+            </button>
+          </section>
+
 
         {/* Account */}
         <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">

@@ -223,10 +223,39 @@ async function maybeWriteSpeaking(
     .eq("user_id", user.id);
 }
 
-/** Toggle mute on the local publish track (Agora-side + our own DB flag). */
+/** Toggle mute on the local publish track (Agora-side + our own DB flag).
+ *
+ * If we're a publisher without a live track yet (e.g. the user was just
+ * promoted to speaker and the track hasn't been created), we lazily create
+ * and publish one before unmuting. Otherwise unmute would silently no-op
+ * and the room wouldn't hear the speaker despite the UI saying they're live.
+ */
 export async function setMuted(muted: boolean): Promise<void> {
-  if (!session?.localAudioTrack) return;
-  await session.localAudioTrack.setEnabled(!muted);
+  if (!session) return;
+
+  // Missing track path: only meaningful if we're supposed to be publishing
+  // AND the caller wants to unmute. Muting without a track is already a
+  // no-op that matches the desired state.
+  if (!session.localAudioTrack) {
+    if (muted || session.role !== "publisher") return;
+    try {
+      const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
+      const track = await ensureMicTrack(AgoraRTC);
+      if (!track) return; // permission denied or SDK error — caller surfaces UI
+      await session.client.publish([track]);
+      session.localAudioTrack = track;
+    } catch (err) {
+      console.warn("setMuted: could not create/publish local track", err);
+      return;
+    }
+    return;
+  }
+
+  try {
+    await session.localAudioTrack.setEnabled(!muted);
+  } catch (err) {
+    console.warn("setMuted: setEnabled failed", err);
+  }
 }
 
 /** Change role between publisher (speaker) and subscriber (audience). */

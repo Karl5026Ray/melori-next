@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authFetch } from "@/lib/authClient";
 
 type Slot = "avatar" | "cover";
@@ -28,6 +28,14 @@ export default function ProfilePhotoUploader({
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Keep preview in sync when parent supplies a URL asynchronously (e.g.,
+  // after the Studio page fetches the artist's current photos). Don't
+  // overwrite a locally-uploaded preview.
+  useEffect(() => {
+    if (currentUrl && !preview) setPreview(currentUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUrl]);
 
   const pick = () => inputRef.current?.click();
 

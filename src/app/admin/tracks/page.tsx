@@ -203,10 +203,20 @@ export default function AdminTracksPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: track.audio_url, bucket: "audio-files" }),
       });
-      const { url } = await res.json();
-      setEditUrl(url);
-    } catch {
-      alert("Could not load audio for editing.");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.url) {
+        // Common cause: admin_session expired (401). Surface the real reason
+        // so the admin knows to re-login instead of staring at a blank editor.
+        throw new Error(
+          body?.error ??
+            (res.status === 401
+              ? "Admin session expired \u2014 please re-open the Admin dashboard."
+              : `sign-download ${res.status}`),
+        );
+      }
+      setEditUrl(body.url);
+    } catch (err: any) {
+      alert(err?.message ?? "Could not load audio for editing.");
       setView("list");
       setEditing(null);
     }

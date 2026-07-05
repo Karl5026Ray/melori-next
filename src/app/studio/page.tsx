@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import TrackUploader from "./components/TrackUploader";
 import WaveformEditor from "./components/WaveformEditor";
@@ -8,17 +8,42 @@ import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
+import { authFetch } from "@/lib/authClient";
 
 type Tab = "upload" | "tracks" | "waveform" | "analytics" | "schedule" | "profile";
 
 export default function StudioPage() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
     setActiveTab("waveform");
   }, []);
+
+  // Preload current profile photos when the Profile tab opens so the
+  // uploader shows what's already saved instead of the empty placeholder.
+  useEffect(() => {
+    if (activeTab !== "profile") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch("/api/artist/profile-media", { method: "GET" });
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({}) as any);
+        if (cancelled) return;
+        setAvatarUrl(body?.artist?.avatar_url ?? null);
+        setCoverUrl(body?.artist?.cover_image_url ?? null);
+      } catch {
+        /* non-blocking preview */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "upload", label: "Upload", icon: "📤" },
@@ -92,12 +117,24 @@ export default function StudioPage() {
         <div>
           <h2 className="text-lg font-semibold mb-1">Profile picture</h2>
           <p className="text-[#888] text-sm mb-3">Shown on your artist page and featured-artist cards.</p>
-          <ProfilePhotoUploader slot="avatar" label="Profile picture" shape="circle" />
+          <ProfilePhotoUploader
+            slot="avatar"
+            label="Profile picture"
+            shape="circle"
+            currentUrl={avatarUrl}
+            onUploaded={(url) => setAvatarUrl(url)}
+          />
           </div>
         <div>
           <h2 className="text-lg font-semibold mb-1">Top bar photo</h2>
           <p className="text-[#888] text-sm mb-3">The wide banner across the top of your artist page.</p>
-          <ProfilePhotoUploader slot="cover" label="Top bar photo" shape="banner" />
+          <ProfilePhotoUploader
+            slot="cover"
+            label="Top bar photo"
+            shape="banner"
+            currentUrl={coverUrl}
+            onUploaded={(url) => setCoverUrl(url)}
+          />
           </div>
         </div>
       )}

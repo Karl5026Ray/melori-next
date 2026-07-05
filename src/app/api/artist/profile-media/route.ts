@@ -84,6 +84,31 @@ async function resolveOrCreateArtistRow(
   return { id: insert.data.id as number };
 }
 
+// GET -> returns the caller artist's current avatar_url / cover_image_url so
+// the Studio page can preview what's already saved.
+export async function GET(req: Request) {
+  const guard = await requireArtist(req);
+  if (isGuardFailure(guard)) return guard;
+
+  const userId = guard.membership.userId!;
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("artists")
+    .select("id, avatar_url, cover_image_url")
+    .eq("profile_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Artist profile-media GET error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    artist: data ?? { id: null, avatar_url: null, cover_image_url: null },
+  });
+}
+
 export async function POST(req: Request) {
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;

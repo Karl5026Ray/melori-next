@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,10 @@ export async function GET(
   { params }: { params: { spaceId: string } },
 ) {
   const spaceId = String(params.spaceId ?? "").trim();
-  if (!spaceId) {
-    return NextResponse.json({ error: "spaceId required" }, { status: 400 });
+  if (!spaceId || !isUuid(spaceId)) {
+    // Return an empty list rather than 400 so the client's polling doesn't
+    // spam errors during page navigation with a not-yet-resolved id.
+    return NextResponse.json({ comments: [] });
   }
 
   try {
@@ -49,8 +52,8 @@ export async function POST(
   { params }: { params: { spaceId: string } },
 ) {
   const spaceId = String(params.spaceId ?? "").trim();
-  if (!spaceId) {
-    return NextResponse.json({ error: "spaceId required" }, { status: 400 });
+  if (!spaceId || !isUuid(spaceId)) {
+    return NextResponse.json({ error: "Invalid spaceId" }, { status: 400 });
   }
 
   const guard = await requireSuperfan(req);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +39,15 @@ export async function POST(req: NextRequest) {
     if (!conversationId || !content) {
       return NextResponse.json(
         { error: "conversation_id and content are required" },
+        { status: 400 },
+      );
+    }
+    // conversation_id must be a UUID before we splice it into a PostgREST
+    // filter below — without this a client-supplied garbage id would return
+    // an opaque 500 from Postgres. Explicit 400 is friendlier and cheaper.
+    if (!isUuid(conversationId)) {
+      return NextResponse.json(
+        { error: "Invalid conversation_id" },
         { status: 400 },
       );
     }

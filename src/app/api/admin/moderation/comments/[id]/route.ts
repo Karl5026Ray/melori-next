@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
+import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,8 +39,8 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!id || !isUuid(id)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
   const supabase = getSupabaseAdmin();

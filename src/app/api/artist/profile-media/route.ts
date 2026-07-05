@@ -162,6 +162,9 @@ export async function PATCH(req: Request) {
   if (!publicUrl || typeof publicUrl !== "string") {
     return NextResponse.json({ error: "publicUrl is required" }, { status: 400 });
   }
+  if (publicUrl.length > 2048 || publicUrl.includes("..")) {
+    return NextResponse.json({ error: "Invalid publicUrl" }, { status: 400 });
+  }
 
   // The client PATCHes back a public URL it just received from our own
   // POST handler. Reject anything that doesn't look like it came from our

@@ -59,6 +59,45 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Description too long" }, { status: 400 });
   }
 
+  // Path scoping: /api/artist/upload-url always issues paths under
+  // `submissions/<callerUserId>/`. If we didn't verify this here, an artist
+  // could submit another artist's audio path — admin approval inserts
+  // sub.audio_url straight into the public tracks table, so the impersonated
+  // artist's master would then be served under a different name. Reject any
+  // audio_url or cover_url that isn't scoped under the caller's own folder.
+  const userId = guard.membership.userId;
+  const submissionFolder = `submissions/${userId}/`;
+  if (audioUrl.includes("..") || !audioUrl.includes(submissionFolder)) {
+    return NextResponse.json(
+      { error: "audio_url is not scoped to caller" },
+      { status: 400 },
+    );
+  }
+  if (audioUrl.length > 2048) {
+    return NextResponse.json({ error: "audio_url too long" }, { status: 400 });
+  }
+  if (coverUrl) {
+    if (coverUrl.includes("..") || !coverUrl.includes(submissionFolder)) {
+      return NextResponse.json(
+        { error: "cover_url is not scoped to caller" },
+        { status: 400 },
+      );
+    }
+    if (coverUrl.length > 2048) {
+      return NextResponse.json({ error: "cover_url too long" }, { status: 400 });
+    }
+  }
+  if (genre && genre.length > 60) {
+    return NextResponse.json({ error: "Genre too long" }, { status: 400 });
+  }
+  // Reject nonsense numerics so a client can't stash NaN/Infinity on the row.
+  if (fileSize !== null && (!Number.isFinite(fileSize) || fileSize < 0)) {
+    return NextResponse.json({ error: "Invalid file_size_bytes" }, { status: 400 });
+  }
+  if (duration !== null && (!Number.isFinite(duration) || duration < 0)) {
+    return NextResponse.json({ error: "Invalid duration_sec" }, { status: 400 });
+  }
+
   const supabase = getSupabaseAdmin();
 
   // Try to link the submission to an existing artist row that this profile owns.

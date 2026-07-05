@@ -22,7 +22,12 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const rawUsername = typeof body.username === "string" ? body.username.trim() : "";
+  // Cap free-form full_name at 100 chars so a caller can't stash a huge
+  // payload on the row via the initial signup form. Anything past the cap
+  // is truncated rather than rejected — sign-up shouldn't fail because a
+  // paste was too long.
+  const rawUsername =
+    typeof body.username === "string" ? body.username.trim().slice(0, 100) : "";
   const rawRole = body.role;
   const desiredRole =
     rawRole === "artist" || rawRole === "superfan" ? rawRole : "free";

@@ -66,13 +66,32 @@ export async function PATCH(req: NextRequest) {
   }
   if ("avatar_url" in body) {
     const raw = body.avatar_url;
-    if (raw !== null && typeof raw !== "string") {
+    if (raw === null || raw === "") {
+      update.avatar_url = null;
+    } else if (typeof raw !== "string") {
       return NextResponse.json(
         { error: "Invalid avatar_url" },
         { status: 400 },
       );
+    } else {
+      // Bound length and require an http(s) URL. This is user-visible content
+      // rendered as an <img> across the app; we don't want a caller storing
+      // javascript:/data:/file: URLs or a 10kB blob URL that breaks pages.
+      const trimmed = raw.trim();
+      if (trimmed.length > 2048) {
+        return NextResponse.json(
+          { error: "avatar_url too long" },
+          { status: 400 },
+        );
+      }
+      if (!/^https?:\/\//i.test(trimmed) || trimmed.includes("..")) {
+        return NextResponse.json(
+          { error: "avatar_url must be an http(s) URL" },
+          { status: 400 },
+        );
+      }
+      update.avatar_url = trimmed;
     }
-    update.avatar_url = raw ?? null;
   }
   if ("notifications_email" in body) {
     if (typeof body.notifications_email !== "boolean") {

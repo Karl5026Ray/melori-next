@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
+import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!params?.id || !isUuid(params.id)) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
   const body = await req.json().catch(() => ({}) as any);

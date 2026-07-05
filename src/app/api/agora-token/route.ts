@@ -110,6 +110,16 @@ export async function POST(req: NextRequest) {
             { status: 403 },
           );
         }
+        // A host-muted speaker must not mint a *publisher* token — otherwise
+        // they could rejoin the channel with publish rights and bypass the
+        // mute. Give them a subscriber token instead so they still hear
+        // the room; the host lifts the mute to promote them back.
+        if (participant.host_muted) {
+          return NextResponse.json(
+            { error: "You are muted by the host", muted: true },
+            { status: 403 },
+          );
+        }
       }
     }
 

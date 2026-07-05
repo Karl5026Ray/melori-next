@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
 
 const PRESETS = [5, 10, 25, 50, 100];
 

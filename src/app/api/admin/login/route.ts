@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { SignJWT } from "jose";
+import { getAdminSecret } from "@/lib/admin-secret";
 
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH;
-const ADMIN_SECRET =
-  process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
-
 export async function POST(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   try {
     const { password } = await req.json();
 

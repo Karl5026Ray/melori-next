@@ -315,12 +315,54 @@ role: string | null;
     if (data) return data;
   }
   if (keys.email) {
-    const { data } = await supabase
-      .from("profiles")
-      .select(cols)
-      .ilike("username", keys.email)
-      .maybeSingle();
-    if (data) return data;
+    // Resolve email -> auth user id via the service-role admin API, then look
+    // up the profile by id. Previously this used `ilike("username", email)`,
+    // which never matched: `username` is a lowercase display handle (see
+    // /api/social/profile — 3-30 chars, letters/digits/_/.), so an email
+    // containing "@" or a dot before the TLD would virtually never resolve.
+    // That left Payment-Link buyers stuck at the free tier even after they
+    // paid, until an admin manually reconciled them.
+    const userId = await resolveUserIdByEmail(supabase, keys.email);
+    if (userId) {
+      const { data } = await supabase
+        .from("profiles")
+        .select(cols)
+        .eq("id", userId)
+        .maybeSingle();
+      if (data) return data;
+    }
+  }
+  return null;
+}
+
+// Look up an auth user by email using the service-role admin API. Returns
+// null if not found or on any error. Paginates in reasonable chunks up to a
+// hard ceiling so a single misdirected event can't spin forever.
+async function resolveUserIdByEmail(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  email: string
+): Promise<string | null> {
+  const target = email.trim().toLowerCase();
+  if (!target) return null;
+  try {
+    const perPage = 200;
+    const maxPages = 25; // up to 5,000 users scanned per event — plenty for this app.
+    for (let page = 1; page <= maxPages; page += 1) {
+      const { data, error } = await supabase.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+      if (error || !data?.users?.length) return null;
+      const match = data.users.find(
+        (u: { id: string; email?: string | null }) =>
+          (u.email ?? "").toLowerCase() === target,
+      );
+      if (match) return match.id;
+      if (data.users.length < perPage) return null;
+    }
+  } catch (err) {
+    console.error("members/stripe-webhook resolveUserIdByEmail error", err);
   }
   return null;
 }

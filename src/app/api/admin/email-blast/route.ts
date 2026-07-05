@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ADMIN_SECRET =
-  process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
 
 // Same verified sender the app already uses for its Resend emails
 // (see /api/donate/verify). Domain melorimusic.org is verified in Resend.
@@ -19,6 +17,8 @@ const CHUNK_SIZE = 50;
 async function verifyAdmin(req: NextRequest) {
   const token = req.cookies.get("admin_session")?.value;
   if (!token) return false;
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) return false;
   try {
     await jwtVerify(token, new TextEncoder().encode(ADMIN_SECRET));
     return true;
@@ -47,6 +47,14 @@ async function loadRecipients(): Promise<string[]> {
 
 // GET — eligible recipient count (admin-guarded).
 export async function GET(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -64,6 +72,14 @@ export async function GET(req: NextRequest) {
 
 // POST — send the blast (admin-guarded).
 export async function POST(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

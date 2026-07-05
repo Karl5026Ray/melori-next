@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { jwtVerify } from "jose";
+import { getAdminSecret } from "@/lib/admin-secret";
 
 // Always run this route dynamically at request time. It reads cookies and
 // queries Supabase, so it must never be statically evaluated during `next build`.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ADMIN_SECRET =
-  process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
-
 async function verifyAdmin(req: NextRequest) {
   const token = req.cookies.get("admin_session")?.value;
   if (!token) return false;
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) return false;
   try {
     await jwtVerify(token, new TextEncoder().encode(ADMIN_SECRET));
     return true;
@@ -22,6 +22,14 @@ async function verifyAdmin(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

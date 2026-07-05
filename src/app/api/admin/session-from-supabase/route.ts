@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-
-const ADMIN_SECRET =
-  process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
+import { getAdminSecret } from "@/lib/admin-secret";
 
 function bearerToken(req: NextRequest): string | null {
   const header =
@@ -20,6 +18,14 @@ function bearerToken(req: NextRequest): string | null {
 // verified server-side and the role is read with the service-role client —
 // a client-sent role is never trusted.
 export async function POST(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   const token = bearerToken(req);
   if (!token) {
     return NextResponse.json({ error: "Not an admin" }, { status: 403 });

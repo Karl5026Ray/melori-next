@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || "melori-admin-fallback-secret";
-
 async function verifyAdmin(req: NextRequest) {
   const token = req.cookies.get("admin_session")?.value;
   if (!token) return false;
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) return false;
   try {
     await jwtVerify(token, new TextEncoder().encode(ADMIN_SECRET));
     return true;
@@ -21,6 +22,14 @@ async function verifyAdmin(req: NextRequest) {
 // GET /api/admin/users?q=&role=all|superfan|artist|admin&limit=100
 // Paginated user list for the Users & Artists admin tab.
 export async function GET(req: NextRequest) {
+  const ADMIN_SECRET = getAdminSecret();
+  if (!ADMIN_SECRET) {
+    return NextResponse.json(
+      { error: "Admin auth is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

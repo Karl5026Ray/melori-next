@@ -63,7 +63,7 @@ export async function getRequestMembership(
   try {
     const res = await admin
       .from("profiles")
-      .select("role, membership_status, membership_tier, membership_expires_at, billing_exempt, is_comp")
+      .select("role, membership_status, membership_tier, membership_expires_at, billing_exempt, is_comp, is_internal_test")
       .eq("id", userId)
       .maybeSingle();
     row = res.data ?? null;
@@ -76,6 +76,9 @@ export async function getRequestMembership(
         membership_tier: (row as { role?: string | null }).role ?? "free",
         membership_status: (row as { membership_status?: string | null }).membership_status ?? null,
                 membership_expires_at: (row as { membership_expires_at?: string | null }).membership_expires_at ?? null,
+      is_comp: (row as { is_comp?: boolean | null }).is_comp ?? null,
+      billing_exempt: (row as { billing_exempt?: boolean | null }).billing_exempt ?? null,
+      is_internal_test: (row as { is_internal_test?: boolean | null }).is_internal_test ?? null,
       }
     : null;
 

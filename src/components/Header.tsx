@@ -314,7 +314,10 @@ export default function Header() {
           </Link>
         </nav>
 
-        {!user && (               <Link                 href="/social/auth"                 className="md:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md border border-brand-border px-4 py-1.5 text-sm font-semibold text-text-primary transition-colors hover:text-brand-primary"               >                 Sign In               </Link>             )}             {/* Mobile hamburger toggle */}
+        {/* Mobile hamburger toggle. Log In / Account controls live INSIDE the
+           drawer (pinned at the top of the drawer so they're always the first
+           thing visible when it opens), so we no longer render a duplicate
+           Sign In pill on the top bar. */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -341,19 +344,25 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Mobile menu panel. Height is capped above the fixed audio player so
-         nothing (especially the Log In / account block at the bottom) hides
-         behind the player. Panel is scrollable and respects iOS safe-area. */}
+      {/* Mobile menu panel.
+         - Uses 100dvh (dynamic viewport height) so mobile Safari/Chrome URL
+           bar collapsing/expanding doesn't push the drawer under the fixed
+           audio player.
+         - Height is capped above the fixed audio player (approx 112px normal,
+           152px with sample-preview upgrade banner). Reserving 168px leaves
+           a comfortable gap on all states.
+         - The Log In / account block is pinned at the TOP of the drawer so
+           it's always the first thing you see when you tap the hamburger,
+           regardless of scroll position.
+         - The panel itself is scrollable so overflow content is always
+           reachable. */}
       {open && (
         <nav
           id="mobile-nav"
           className="md:hidden border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
           style={{
-            // Header is 64px (h-16). Audio player is ~112px (single row) up to
-            // ~152px (with sample-preview upgrade banner). Reserve 168px so the
-            // drawer never overlaps the player on any state.
             maxHeight:
-              "calc(100vh - 4rem - 168px - env(safe-area-inset-bottom))",
+              "calc(100dvh - 4rem - 168px - env(safe-area-inset-bottom))",
           }}
         >
           <div
@@ -363,6 +372,66 @@ export default function Header() {
                 "calc(env(safe-area-inset-bottom) + 1rem)",
             }}
           >
+            {/* Account / Log In — pinned to the top of the drawer so it's
+               visible immediately without scrolling. */}
+            {user ? (
+              <div className="pb-2 mb-1 border-b border-brand-border">
+                <p className="truncate pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
+                  {displayName ?? "Account"}
+                </p>
+                <Link
+                  href="/membership"
+                  onClick={() => setOpen(false)}
+                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Membership
+                </Link>
+                <Link
+                  href="/social/profile"
+                  onClick={() => setOpen(false)}
+                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  My profile
+                </Link>
+                {isAdmin && (
+                  <Link
+                    href="/admin/dashboard"
+                    onClick={() => setOpen(false)}
+                    className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                  >
+                    Admin
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    void handleLogout();
+                  }}
+                  className="block w-full py-2.5 text-left text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <div className="pb-2 mb-1 border-b border-brand-border grid grid-cols-2 gap-2 pt-2">
+                <Link
+                  href="/social/auth"
+                  onClick={() => setOpen(false)}
+                  className="rounded-md border border-brand-border px-4 py-2.5 text-center font-semibold text-text-primary transition-colors hover:text-brand-primary"
+                >
+                  Log In
+                </Link>
+                <Link
+                  href="/membership"
+                  onClick={() => setOpen(false)}
+                  className="rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
+
             {navGroups.map((group) => (
               <div key={group.label} className="py-1">
                 <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
@@ -391,55 +460,6 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
-
-            {user ? (
-              <div className="border-t border-brand-border py-1">
-                <p className="truncate pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
-                  {displayName ?? "Account"}
-                </p>
-                <Link
-                  href="/membership"
-                  onClick={() => setOpen(false)}
-                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  Membership
-                </Link>
-                <Link
-                  href="/social/spaces"
-                  onClick={() => setOpen(false)}
-                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  MM Social
-                </Link>
-                {isAdmin && (
-                  <Link
-                    href="/admin/dashboard"
-                    onClick={() => setOpen(false)}
-                    className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                  >
-                    Admin
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    void handleLogout();
-                  }}
-                  className="block w-full py-2.5 text-left text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  Log Out
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/social/auth"
-                onClick={() => setOpen(false)}
-                className="my-3 rounded-md border border-brand-border px-4 py-2.5 text-center font-semibold text-text-primary transition-colors hover:text-brand-primary"
-              >
-                Log In
-              </Link>
-            )}
 
             <Link
               href="/donate"

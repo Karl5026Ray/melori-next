@@ -183,6 +183,25 @@ export default function SpaceDetailPage() {
     router.push("/social/spaces");
   }, [user, spaceId, router]);
 
+  // Central helper: change mute state locally + on Agora + in the DB.
+  const applyMute = useCallback(
+    async (nextMuted: boolean) => {
+      if (!user) return;
+      try {
+        await agoraSetMuted(nextMuted);
+      } catch (err) {
+        console.warn("agora mute failed", err);
+      }
+      await supabase
+        .from("space_participants")
+        .update({ is_muted: nextMuted })
+        .eq("space_id", spaceId)
+        .eq("user_id", user.id);
+      setIsMuted(nextMuted);
+    },
+    [user, spaceId],
+  );
+
   const toggleMute = useCallback(async () => {
     if (!user) return;
     // Speaking is a vocal-conversation action → Superfan+ only. (The Agora token
@@ -192,19 +211,49 @@ export default function SpaceDetailPage() {
       router.push("/membership");
       return;
     }
-    const newMuted = !isMuted;
-    try {
-      await agoraSetMuted(newMuted);
-    } catch (err) {
-      console.warn("agora mute failed", err);
-    }
-    await supabase
-      .from("space_participants")
-      .update({ is_muted: newMuted })
-      .eq("space_id", spaceId)
-      .eq("user_id", user.id);
-    setIsMuted(newMuted);
-  }, [user, spaceId, isMuted, canParticipate, router]);
+    await applyMute(!isMuted);
+  }, [user, isMuted, canParticipate, router, applyMute]);
+
+  // Press-and-hold-to-talk (PTT). While the mic button is held down we
+  // unmute; on release we return to whatever mute state the user had before.
+  // Short taps still fall through to `toggleMute` (see button onClick).
+  const pttPrevMutedRef = useRef<boolean | null>(null);
+  const pttHeldRef = useRef(false);
+  const pttStartedAtRef = useRef(0);
+
+  const startPTT = useCallback(() => {
+    if (!user || !canParticipate) return;
+    if (pttHeldRef.current) return;
+    pttHeldRef.current = true;
+    pttStartedAtRef.current = Date.now();
+    pttPrevMutedRef.current = isMuted;
+    if (isMuted) void applyMute(false);
+  }, [user, canParticipate, isMuted, applyMute]);
+
+  const endPTT = useCallback(
+    (opts: { asClick?: boolean } = {}) => {
+      if (!pttHeldRef.current) return false;
+      const heldMs = Date.now() - pttStartedAtRef.current;
+      pttHeldRef.current = false;
+      const prevMuted = pttPrevMutedRef.current;
+      pttPrevMutedRef.current = null;
+
+      // If the press was quick (< 350ms), treat it as a tap so the user gets
+      // the familiar toggle-mute behavior. Otherwise, restore prior state.
+      const wasQuickTap = heldMs < 350;
+      if (wasQuickTap) {
+        // Undo the auto-unmute we did on press, then let toggle run.
+        if (prevMuted === false) void applyMute(false);
+        else void applyMute(true);
+        if (opts.asClick) void toggleMute();
+        return true;
+      }
+      // Long press: restore whatever mute state we came from.
+      if (prevMuted !== null) void applyMute(prevMuted);
+      return true;
+    },
+    [applyMute, toggleMute],
+  );
 
   const toggleHand = useCallback(async () => {
     if (!user) return;
@@ -820,9 +869,40 @@ export default function SpaceDetailPage() {
             </button>
 
             <div className="flex items-center gap-3">
+              {/* Mic button.
+                 - Tap: toggle mute (classic behavior).
+                 - Press & hold: push-to-talk. Unmutes for as long as you're
+                   holding it, then restores the previous mute state on
+                   release. Works with mouse and touch. */}
               <button
-                onClick={toggleMute}
-                className={`p-3 rounded-full border border-melori-border transition ${
+                type="button"
+                onClick={(e) => {
+                  // If a long-press was in progress, endPTT already handled it.
+                  if (endPTT({ asClick: false })) {
+                    e.preventDefault();
+                    return;
+                  }
+                  void toggleMute();
+                }}
+                onMouseDown={startPTT}
+                onMouseUp={() => endPTT()}
+                onMouseLeave={() => endPTT()}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  startPTT();
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  endPTT();
+                }}
+                onTouchCancel={() => endPTT()}
+                aria-label={
+                  isMuted
+                    ? "Unmute (tap) or hold to talk"
+                    : "Mute (tap) or hold to talk"
+                }
+                title="Tap to toggle mute · Press and hold to talk"
+                className={`p-3 rounded-full border border-melori-border transition select-none touch-none ${
                   isMuted
                     ? "bg-red-500/20 text-red-400"
                     : "bg-melori-elevated text-melori-muted"

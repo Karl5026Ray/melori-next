@@ -63,7 +63,12 @@ export default function ProfilePhotoUploader({
         headers: { "Content-Type": file.type },
       });
       if (!putRes.ok) {
-        setError("Upload failed. Please try again.");
+        const detail = await putRes.text().catch(() => "");
+        setError(
+          detail
+            ? `Upload failed (${putRes.status}): ${detail.slice(0, 140)}`
+            : `Upload failed (${putRes.status}). Please try again.`,
+        );
         setBusy(false);
         return;
       }

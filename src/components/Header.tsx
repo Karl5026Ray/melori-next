@@ -11,7 +11,7 @@ type NavGroup = { label: string; items: NavItem[] };
 
 // Grouped desktop nav. Videos (YouTube) is its own entry under "Music".
 // MM Social and Studio live under "Community"; Store is a standalone tab;
-// Mission + Membership under "About". Donate stays a standalone CTA.
+// Mission lives under "About" (Membership merged into Mission). Donate stays a standalone CTA.
 const navGroups: NavGroup[] = [
   {
     label: "Music",
@@ -33,8 +33,6 @@ const navGroups: NavGroup[] = [
     label: "About",
     items: [
       { label: "Mission", href: "/mission" },
-      { label: "Membership", href: "/membership" },
-    ],
   },
 ];
 

@@ -7,6 +7,7 @@ import {
   type Interval,
   type Tier,
 } from "@/lib/membership-sync";
+import { ensureArtistRow } from "@/lib/artist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -265,6 +266,12 @@ async function applySubscriptionState(
   );
 
   await supabase.from("profiles").update(update).eq("id", profile.id);
+
+  // When this subscription grants the artist role, ensure the artist has a
+  // linked `artists` row so the dashboard/studio populate. Idempotent.
+  if (update.role === "artist") {
+    await ensureArtistRow(profile.id, {}, supabase);
+  }
 }
 
 async function findProfile(

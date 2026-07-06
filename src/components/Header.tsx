@@ -26,7 +26,6 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "MM Social", href: "/social/spaces" },
       { label: "Comments", href: "/social/community" },
-      { label: "Studio", href: "/studio" },
     ],
   },
   {
@@ -50,6 +49,7 @@ export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isArtist, setIsArtist] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   // Close desktop dropdowns on outside click / Escape.
@@ -86,8 +86,11 @@ export default function Header() {
         .eq("id", u.id)
         .maybeSingle();
       if (!active) return;
-      const admin = (data as { role?: string } | null)?.role === "admin";
+      const role = (data as { role?: string } | null)?.role;
+      const admin = role === "admin";
       setIsAdmin(admin);
+      // Surface the Artist Studio link only for artist accounts (admins too).
+      setIsArtist(role === "artist" || admin);
       setDisplayName(
         (data as { display_name?: string; full_name?: string; username?: string } | null)
           ?.display_name ||
@@ -125,6 +128,7 @@ export default function Header() {
       } else {
         setDisplayName(null);
         setIsAdmin(false);
+        setIsArtist(false);
         mintedAdmin = false;
       }
     }
@@ -278,6 +282,24 @@ export default function Header() {
               </button>
               {accountOpen && (
                 <div className="absolute right-0 mt-2 min-w-48 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
+                  {isArtist && (
+                    <>
+                      <Link
+                        href="/studio"
+                        onClick={() => setAccountOpen(false)}
+                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                      >
+                        Artist Studio
+                      </Link>
+                      <Link
+                        href="/dashboard"
+                        onClick={() => setAccountOpen(false)}
+                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                      >
+                        Dashboard
+                      </Link>
+                    </>
+                  )}
                   <Link
                     href="/membership"
                     onClick={() => setAccountOpen(false)}
@@ -286,11 +308,11 @@ export default function Header() {
                     Membership
                   </Link>
                   <Link
-                    href="/social/spaces"
+                    href="/settings"
                     onClick={() => setAccountOpen(false)}
                     className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
                   >
-                    MM Social
+                    Settings
                   </Link>
                   {isAdmin && (
                     <Link
@@ -396,6 +418,24 @@ export default function Header() {
                 <p className="truncate pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
                   {displayName ?? "Account"}
                 </p>
+                {isArtist && (
+                  <>
+                    <Link
+                      href="/studio"
+                      onClick={() => setOpen(false)}
+                      className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                    >
+                      Artist Studio
+                    </Link>
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setOpen(false)}
+                      className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                    >
+                      Dashboard
+                    </Link>
+                  </>
+                )}
                 <Link
                   href="/membership"
                   onClick={() => setOpen(false)}
@@ -409,6 +449,13 @@ export default function Header() {
                   className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
                 >
                   My profile
+                </Link>
+                <Link
+                  href="/settings"
+                  onClick={() => setOpen(false)}
+                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Settings
                 </Link>
                 {isAdmin && (
                   <Link

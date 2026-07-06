@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
@@ -44,6 +44,16 @@ export default function CommentSection({
   const { user } = useAuth();
   const canParticipate = useCanParticipate();
   const [comments, setComments] = useState<CommunityComment[]>(initialComments);
+
+  // MM Social: pin the logged-in user's own entries to the TOP of the list so
+  // their own profile/posts always appear first. Stable order otherwise.
+  const orderedComments = useMemo(() => {
+    if (!user?.id) return comments;
+    const mine = comments.filter((c) => c.user_id === user.id);
+    const others = comments.filter((c) => c.user_id !== user.id);
+    return [...mine, ...others];
+  }, [comments, user?.id]);
+
   const [body, setBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -137,15 +147,26 @@ export default function CommentSection({
           </p>
         ) : (
           <ul className="space-y-4">
-            {comments.map((c) => (
+            {orderedComments.map((c) => {
+              const isMine = !!user?.id && c.user_id === user.id;
+              return (
               <li
                 key={c.id}
-                className="rounded-2xl border border-melori-border bg-melori-elevated/50 p-4"
+                className={`rounded-2xl border p-4 ${
+                  isMine
+                    ? "border-melori-purple/40 bg-melori-purple/5"
+                    : "border-melori-border bg-melori-elevated/50"
+                }`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-semibold text-sm">
                     {c.author_name || "Superfan"}
                   </span>
+                  {isMine && (
+                    <span className="rounded-full bg-melori-purple/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-melori-purple">
+                      You
+                    </span>
+                  )}
                   <span className="text-xs text-melori-muted">
                     {relativeTime(c.created_at)}
                   </span>
@@ -157,7 +178,8 @@ export default function CommentSection({
                   {c.body}
                 </p>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>

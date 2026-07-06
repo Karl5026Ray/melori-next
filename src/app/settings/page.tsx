@@ -30,9 +30,10 @@ type ProfileRow = {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [state, setState] = useState<"checking" | "ready" | "signed-out">(
-    "checking",
-  );
+  const [state, setState] = useState<
+    "checking" | "ready" | "signed-out" | "load-error"
+  >("checking");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [email, setEmail] = useState<string>("");
 
@@ -51,43 +52,54 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let active = true;
+  const load = async (): Promise<void> => {
+    setState("checking");
+    setLoadError(null);
 
-    (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      if (!session?.user) {
-        if (active) setState("signed-out");
+    if (!session?.user) {
+      setState("signed-out");
+      router.replace("/social/auth?next=/settings");
+      return;
+    }
+
+    // Load via the resilient service-role API so a missing/optional column or
+    // RLS quirk can never leave this page hanging on "Loading settings…".
+    try {
+      const res = await authFetch("/api/user/me");
+      if (res.status === 401) {
+        setState("signed-out");
         router.replace("/social/auth?next=/settings");
         return;
       }
-
-      const { data } = await supabase
-        .from("profiles")
-        .select(
-          "id, username, display_name, bio, avatar_url, membership_tier, membership_status, membership_expires_at, notifications_email",
-        )
-        .eq("id", session.user.id)
-        .maybeSingle();
-
-      if (!active) return;
-      const p = (data as ProfileRow) ?? null;
-      setProfile(p);
-      setEmail(session.user.email ?? "");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not load your settings.");
+      }
+      const { profile: p, email: apiEmail } = (await res.json()) as {
+        profile: ProfileRow;
+        email: string | null;
+      };
+      setProfile(p ?? null);
+      setEmail(apiEmail ?? session.user.email ?? "");
       setDisplayName(p?.display_name ?? "");
       setUsername(p?.username ?? "");
       setBio(p?.bio ?? "");
       setAvatarUrl(p?.avatar_url ?? null);
       setNotifEmail(p?.notifications_email !== false); // default true
       setState("ready");
-    })();
+    } catch (err: any) {
+      setLoadError(err?.message ?? "Could not load your settings.");
+      setState("load-error");
+    }
+  };
 
-    return () => {
-      active = false;
-    };
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const handlePickPhoto = () => fileInputRef.current?.click();
@@ -151,8 +163,8 @@ export default function SettingsPage() {
     }
     setSaving(true);
     try {
-      const res = await authFetch("/api/social/profile", {
-        method: "PATCH",
+      const res = await authFetch("/api/user/settings", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           display_name: dn,
@@ -181,8 +193,8 @@ export default function SettingsPage() {
       // Best-effort: try to persist via /api/social/profile PATCH.
       // If the column doesn't exist yet the API will 400 — we surface a
       // friendly message and don't block the rest of settings.
-      const res = await authFetch("/api/social/profile", {
-        method: "PATCH",
+      const res = await authFetch("/api/user/settings", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notifications_email: notifEmail }),
       });
@@ -203,6 +215,25 @@ export default function SettingsPage() {
     await supabase.auth.signOut();
     router.replace("/social/auth");
   };
+
+  if (state === "load-error") {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <p className="text-sm text-red-400">
+            {loadError ?? "We couldn't load your settings."}
+          </p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="px-6 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-white hover:bg-white/10 transition"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (state !== "ready") {
     return (

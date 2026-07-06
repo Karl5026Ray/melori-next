@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { ensureArtistRow } from "@/lib/artist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,61 +28,6 @@ function slotColumn(slot: unknown): "avatar_url" | "cover_image_url" | null {
   if (slot === "avatar") return "avatar_url";
   if (slot === "cover") return "cover_image_url";
   return null;
-}
-
-// Resolve (and lazily create) the caller's linked `artists` row.
-// Admins and artist subscribers both hit this route; admins in particular
-// often don't have an artists row yet, so uploading a photo used to explode
-// with "Failed to save photo". We now upsert on first use.
-async function resolveOrCreateArtistRow(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  userId: string,
-): Promise<{ id: number } | { error: string }> {
-  const existing = await supabase
-    .from("artists")
-    .select("id")
-    .eq("profile_id", userId)
-    .maybeSingle();
-  if (existing.data?.id) return { id: existing.data.id as number };
-
-  // Look up a display name from profiles to seed the artist row.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, full_name, username")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const seedName =
-    (profile as { display_name?: string } | null)?.display_name ||
-    (profile as { full_name?: string } | null)?.full_name ||
-    (profile as { username?: string } | null)?.username ||
-    "MELORI Artist";
-
-  // Build a URL-safe slug and disambiguate with a short user-id suffix so we
-  // never collide with an existing artist slug.
-  const baseSlug = seedName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 40) || "artist";
-  const slug = `${baseSlug}-${userId.slice(0, 6)}`;
-
-  const insert = await supabase
-    .from("artists")
-    .insert({
-      name: seedName,
-      slug,
-      profile_id: userId,
-      is_published: false,
-    })
-    .select("id")
-    .single();
-
-  if (insert.error || !insert.data?.id) {
-    console.error("Artist profile-media auto-create error:", insert.error);
-    return { error: insert.error?.message ?? "Could not create artist row" };
-  }
-  return { id: insert.data.id as number };
 }
 
 // GET -> returns the caller artist's current avatar_url / cover_image_url so
@@ -180,9 +126,12 @@ export async function PATCH(req: Request) {
   }
   const supabase = getSupabaseAdmin();
 
-  const resolved = await resolveOrCreateArtistRow(supabase, userId);
-  if ("error" in resolved) {
-    return NextResponse.json({ error: resolved.error }, { status: 500 });
+  const resolved = await ensureArtistRow(userId, {}, supabase);
+  if (!resolved.id) {
+    return NextResponse.json(
+      { error: resolved.error ?? "Could not create artist row" },
+      { status: 500 },
+    );
   }
 
   const { data, error } = await supabase

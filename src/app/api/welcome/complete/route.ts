@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { buildMembershipUpdate } from "@/lib/membership-sync";
+import { ensureArtistRow } from "@/lib/artist";
 import { verifyCheckoutSession, findAuthUserByEmail } from "@/lib/welcome";
 import { sendSetPasswordEmail } from "@/lib/email";
 import { SITE_URL } from "@/lib/site";
@@ -104,6 +105,9 @@ export async function POST(req: NextRequest) {
   // recovery link so the buyer can set a password and finish activating. ----
   if (existing) {
     await applyMembershipToProfile(admin, existing.id, membershipUpdate, displayNameRaw);
+    if (artist) {
+      await ensureArtistRow(existing.id, { displayName: displayNameRaw || null }, admin);
+    }
 
     let emailSent = false;
     try {
@@ -168,6 +172,9 @@ export async function POST(req: NextRequest) {
     const now = await findAuthUserByEmail(admin, email);
     if (now) {
       await applyMembershipToProfile(admin, now.id, membershipUpdate, displayNameRaw);
+      if (artist) {
+        await ensureArtistRow(now.id, { displayName: displayNameRaw || null }, admin);
+      }
       return NextResponse.json({
         mode: "existing",
         email,
@@ -201,6 +208,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Account created but profile setup failed. Please contact support." },
       { status: 500 },
+    );
+  }
+
+  if (artist) {
+    await ensureArtistRow(
+      userId,
+      { displayName: displayNameRaw || null, username: finalUsername },
+      admin,
     );
   }
 

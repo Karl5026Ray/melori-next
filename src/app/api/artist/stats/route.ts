@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { ensureArtistRow } from "@/lib/artist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,11 +17,26 @@ export async function GET(req: Request) {
   const userId = guard.membership.userId!;
   const supabase = getSupabaseAdmin();
 
-  const { data: artist } = await supabase
+  let { data: artist } = await supabase
     .from("artists")
     .select("id, name, slug, avatar_url, cover_image_url, is_featured, is_verified")
     .eq("profile_id", userId)
     .maybeSingle();
+
+  // Self-heal: the caller passed requireArtist, so they're an artist-tier member.
+  // If no artists row is linked yet (e.g. role granted before this backfill
+  // existed), create one now and re-read so stats populate on first load.
+  if (!artist) {
+    const ensured = await ensureArtistRow(userId, {}, supabase);
+    if (ensured.id) {
+      const reread = await supabase
+        .from("artists")
+        .select("id, name, slug, avatar_url, cover_image_url, is_featured, is_verified")
+        .eq("profile_id", userId)
+        .maybeSingle();
+      artist = reread.data;
+    }
+  }
 
   // If not linked, still return submissions so the pending-uploads section works.
   const submissionsPromise = supabase

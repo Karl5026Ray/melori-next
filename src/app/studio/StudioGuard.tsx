@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isArtistSubscriber } from "@/lib/membership";
+import { authFetch } from "@/lib/authClient";
 
 // Client-side gate for the Artist Studio. Supabase auth here is localStorage-based
 // (no cookies), so a true server redirect can't see the session — instead we block
@@ -29,7 +30,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("membership_tier, membership_status, membership_expires_at")
+        .select("role, membership_tier, membership_status, membership_expires_at")
         .eq("id", session.user.id)
         .maybeSingle();
 
@@ -37,6 +38,11 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
 
       if (isArtistSubscriber(profile)) {
         setStatus("allowed");
+        // Self-heal: ensure this artist has a linked `artists` row so the
+        // dashboard/studio stats populate. Idempotent + fire-and-forget.
+        void authFetch("/api/artist/ensure-row", { method: "POST" }).catch(
+          () => {},
+        );
       } else {
         router.replace("/membership");
       }

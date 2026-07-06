@@ -85,9 +85,15 @@ export async function POST(req: NextRequest) {
         cover_url: body.cover_url,
         type: body.type,
         status: body.status || "draft",
+        // Both ownership columns must be the caller's uid: profile_id
+        // (OWNER_COLUMN, what studio routes filter by) AND owner_id (the column
+        // RLS "Owners manage" / "Published viewable" policies check). Writing
+        // only profile_id left owner_id null, so published-visibility and any
+        // future anon reads broke; setting both keeps the row consistent.
         [OWNER_COLUMN]: userId,
+        owner_id: userId,
       })
-      .select("id")
+      .select("id, status, owner_id, profile_id")
       .single();
 
     if (error) {
@@ -95,7 +101,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ id: data.id, success: true });
+    return NextResponse.json({ ...data, success: true });
   } catch (err: any) {
     console.error("Create track error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

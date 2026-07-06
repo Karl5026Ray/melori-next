@@ -26,6 +26,29 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | Track["status"]>("all");
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+
+  const setStatus = useCallback(
+    async (trackId: string, status: Track["status"]) => {
+      setPublishingId(trackId);
+      try {
+        const res = await authFetch(`/api/studio/track/${trackId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const newStatus: Track["status"] = data?.track?.status ?? status;
+        setTracks((prev) =>
+          prev.map((t) => (t.id === trackId ? { ...t, status: newStatus } : t)),
+        );
+      } finally {
+        setPublishingId(null);
+      }
+    },
+    [],
+  );
 
   const loadTracks = useCallback(() => {
     return authFetch("/api/studio/tracks")
@@ -159,6 +182,25 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                 >
                   🔁 Replace
                 </button>
+                {track.status === "published" ? (
+                  <button
+                    onClick={() => setStatus(track.id, "draft")}
+                    disabled={publishingId === track.id}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-yellow-500/40 transition-all disabled:opacity-50"
+                    title="Revert to draft (unpublish)"
+                  >
+                    {publishingId === track.id ? "…" : "Unpublish"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setStatus(track.id, "published")}
+                    disabled={publishingId === track.id}
+                    className="px-4 py-2 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm font-medium hover:border-green-500/60 transition-all disabled:opacity-50"
+                    title="Publish this track"
+                  >
+                    {publishingId === track.id ? "…" : "Publish"}
+                  </button>
+                )}
                 <Link
                   href={`/music/${track.id}`}
                   className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"

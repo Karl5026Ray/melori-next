@@ -119,6 +119,21 @@ export async function PATCH(
       if (Number.isFinite(d) && d >= 0) update.duration = d;
     }
 
+    // Publish / unpublish. The DB CHECK constraint only permits these three
+    // values, so validate before writing to avoid a raw constraint error.
+    // Ownership was already asserted above (owner or admin via requireArtist +
+    // assertTrackOwnership), and the update is scoped by OWNER_COLUMN below.
+    if (body.status != null) {
+      const allowed = ["draft", "scheduled", "published"] as const;
+      if (!allowed.includes(body.status)) {
+        return NextResponse.json(
+          { error: "Invalid status" },
+          { status: 400 },
+        );
+      }
+      update.status = body.status;
+    }
+
     // Optional metadata edits.
     if (typeof body.title === "string" && body.title.trim())
       update.title = body.title.trim();
@@ -150,7 +165,7 @@ export async function PATCH(
       .update(update)
       .eq("id", params.id)
       .eq(OWNER_COLUMN, userId)
-      .select("id")
+      .select("id, status")
       .single();
 
     if (error) {
@@ -160,7 +175,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Track not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, previewCleared: replacingMaster });
+    return NextResponse.json({
+      success: true,
+      previewCleared: replacingMaster,
+      track: data,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

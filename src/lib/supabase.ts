@@ -29,9 +29,21 @@ return typeof value === "function" ? value.bind(client) : value;
 // Server-only client - service role key, bypasses RLS.
 // Per spec: all DB queries run server-side with the service role key.
 // Already lazy (function), so it is only constructed when actually called.
+//
+// Fail loudly when misconfigured. Previously this fell back to an empty key,
+// producing an unprivileged client that silently failed every write (RLS
+// rejected the insert) — which is how studio_tracks ended up empty. Throwing
+// surfaces the misconfiguration as a 500 instead of a silent no-op.
 export function createServiceClient(): SupabaseClient {
+const url = supabaseUrl || process.env.SUPABASE_URL || "";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-return createClient(supabaseUrl, serviceKey, {
+if (!url || !serviceKey) {
+console.error(
+"createServiceClient: missing Supabase URL or SUPABASE_SERVICE_ROLE_KEY",
+);
+throw new Error("Supabase service client is not configured");
+}
+return createClient(url, serviceKey, {
 auth: { persistSession: false },
 });
 }

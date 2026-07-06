@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import TrackUploader from "./components/TrackUploader";
+import VideoUploader from "./components/VideoUploader";
 import WaveformEditor from "./components/WaveformEditor";
 import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
@@ -13,6 +14,7 @@ import { authFetch } from "@/lib/authClient";
 
 type Tab =
   | "upload"
+  | "video"
   | "tracks"
   | "waveform"
   | "analytics"
@@ -65,6 +67,7 @@ export default function StudioPage() {
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "upload", label: "Upload", icon: "📤" },
+    { id: "video", label: "Video", icon: "🎬" },
     { id: "tracks", label: "My Tracks", icon: "🎵" },
     { id: "waveform", label: "Preview Editor", icon: "✂️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
@@ -120,6 +123,7 @@ export default function StudioPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === "upload" && <TrackUploader />}
+        {activeTab === "video" && <VideoUploader />}
         {activeTab === "tracks" && (
           <TrackList onEditWaveform={handleEditWaveform} />
         )}

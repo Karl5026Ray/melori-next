@@ -8,9 +8,17 @@ import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
+import PayoutsPanel from "./components/PayoutsPanel";
 import { authFetch } from "@/lib/authClient";
 
-type Tab = "upload" | "tracks" | "waveform" | "analytics" | "schedule" | "profile";
+type Tab =
+  | "upload"
+  | "tracks"
+  | "waveform"
+  | "analytics"
+  | "schedule"
+  | "profile"
+  | "payouts";
 
 export default function StudioPage() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
@@ -21,6 +29,16 @@ export default function StudioPage() {
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
     setActiveTab("waveform");
+  }, []);
+
+  // Returning from the Stripe account link lands on /studio?connect=return|refresh
+  // (or /studio?purchase=...) — open the Payouts tab so the artist sees status.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("connect") || params.has("purchase")) {
+      setActiveTab("payouts");
+    }
   }, []);
 
   // Preload current profile photos when the Profile tab opens so the
@@ -52,6 +70,7 @@ export default function StudioPage() {
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "schedule", label: "Schedule", icon: "📅" },
     { id: "profile", label: "Profile Photos", icon: "\u{1F5BC}\uFE0F" },
+    { id: "payouts", label: "Payouts", icon: "\uD83D\uDCB8" },
   ];
 
   return (
@@ -112,6 +131,7 @@ export default function StudioPage() {
         )}
         {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "schedule" && <ReleaseScheduler />}
+        {activeTab === "payouts" && <PayoutsPanel />}
         {activeTab === "profile" && (
       <div className="space-y-8 max-w-xl">
         <div>

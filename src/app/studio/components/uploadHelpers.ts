@@ -28,6 +28,32 @@ export function validateAudioFile(f: File): string | null {
   return null;
 }
 
+export const VIDEO_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-matroska",
+  "video/x-m4v",
+];
+
+// The signed-URL PUT goes straight to Supabase Storage, which supports large
+// files; keep a generous cap so artists can post full-length videos.
+export const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+
+// Returns an error message if the file is not an acceptable video, else null.
+export function validateVideoFile(f: File): string | null {
+  if (
+    !VIDEO_TYPES.includes(f.type) &&
+    !f.name.match(/\.(mp4|mov|webm|mkv|m4v)$/i)
+  ) {
+    return "Please choose an MP4, MOV, WEBM, or MKV file.";
+  }
+  if (f.size > MAX_VIDEO_BYTES) {
+    return "File exceeds the 500MB limit.";
+  }
+  return null;
+}
+
 // Read the duration from the file locally (best-effort; resolves null on failure).
 export function probeDuration(f: File): Promise<number | null> {
   return new Promise((resolve) => {

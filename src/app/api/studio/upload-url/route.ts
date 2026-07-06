@@ -6,10 +6,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/studio/upload-url — signed *upload* URL for the caller's own audio
-// master or cover art. Every artist gets their own subfolder so a leaked link
-// cannot stomp another artist's files.
+// master, cover art, or social video. Every artist gets their own subfolder so a
+// leaked link cannot stomp another artist's files.
 //
-// Body: { filename: string, type: "audio" | "cover" }
+// Body: { filename: string, type: "audio" | "cover" | "video" }
 //
 // This route was previously broken in two ways that made the Studio uploader
 // fail silently:
@@ -26,7 +26,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}) as Record<string, unknown>);
   const filename =
     typeof body.filename === "string" ? body.filename : null;
-  const type = body.type === "cover" ? "cover" : "audio";
+  const type =
+    body.type === "cover"
+      ? "cover"
+      : body.type === "video"
+        ? "video"
+        : "audio";
 
   if (!filename) {
     return NextResponse.json(
@@ -35,7 +40,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const bucket = type === "cover" ? "covers" : "audio-files";
+  // Videos go to the public `social-videos` bucket so <video src> can play the
+  // public URL directly; audio masters stay in the private `audio-files` bucket.
+  const bucket =
+    type === "video"
+      ? "social-videos"
+      : type === "cover"
+        ? "covers"
+        : "audio-files";
   const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_");
   const userId = guard.membership.userId!;
   const path = `studio/${userId}/${Date.now()}_${safeName}`;

@@ -105,7 +105,9 @@ export default function CommentSection({
           <h2 className="text-2xl font-bold">Community</h2>
         </div>
         <p className="text-sm text-melori-muted mb-8">
-          Anyone can read the conversation. Posting is a Superfan feature.
+          {canParticipate
+            ? "Share updates, questions, and shout-outs with the Melori community."
+            : "Anyone can read the conversation. Posting is a Superfan feature."}
         </p>
 
         {/* Composer / gate */}

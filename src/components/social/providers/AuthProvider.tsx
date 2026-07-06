@@ -45,11 +45,21 @@ export function SocialAuthProvider({
   const userIdRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (id: string) => {
+    // Select explicit columns rather than "*". PostgREST fails the ENTIRE query
+    // if any column lacks a SELECT grant for the authenticated role (a common
+    // side effect of an additive migration), which would leave `user` null — and
+    // a null user makes the shared gate (isSuperfanOrBetter) treat an Artist as
+    // free, showing the "Become a Superfan to comment" wall on /social/community.
+    // These are the same columns Header/StudioGuard already select successfully,
+    // and they must include `role` + `membership_tier` so the participation gate
+    // can resolve the caller's tier.
     const { data } = await supabase
       .from("profiles")
-      .select("*")
+      .select(
+        "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_tier, membership_status, membership_expires_at",
+      )
       .eq("id", id)
-      .single();
+      .maybeSingle();
     if (data) {
       setUser({
         ...data,

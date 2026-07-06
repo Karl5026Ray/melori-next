@@ -69,31 +69,75 @@ export function SocialAuthProvider({
   }, []);
 
   useEffect(() => {
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        userIdRef.current = session.user.id;
-        await loadProfile(session.user.id);
-      }
-      setIsLoading(false);
-    };
-    init();
+    let cancelled = false;
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        userIdRef.current = session.user.id;
-        await loadProfile(session.user.id);
-      } else {
+    // Resolve a session into a loaded profile. Profile loading is deferred out
+    // of the auth callback with setTimeout(0): @supabase/supabase-js runs the
+    // onAuthStateChange callback while holding its internal auth lock, and any
+    // PostgREST query (loadProfile -> supabase.from) attaches the bearer token
+    // by re-acquiring that same lock. Awaiting the query INSIDE the callback
+    // therefore deadlocks — getSession() and the profiles fetch both hang, so
+    // on a hard load of /social/* with a token in localStorage NO profiles
+    // request is ever made, `user` stays null, and an Artist is walled behind
+    // "Become a Superfan to comment". Deferring lets the callback return and
+    // release the lock before the query runs.
+    const applySession = (session: { user?: { id: string } } | null) => {
+      const id = session?.user?.id ?? null;
+      if (!id) {
         userIdRef.current = null;
         setUser(null);
+        setIsLoading(false);
+        return;
       }
+      // Guard duplicate loads: repeated TOKEN_REFRESHED/INITIAL_SESSION events
+      // for the same user shouldn't refetch. A different id always reloads.
+      const alreadyLoaded = userIdRef.current === id;
+      userIdRef.current = id;
+      if (alreadyLoaded) {
+        setIsLoading(false);
+        return;
+      }
+      setTimeout(() => {
+        if (cancelled) return;
+        loadProfile(id).finally(() => {
+          if (!cancelled) setIsLoading(false);
+        });
+      }, 0);
+    };
+
+    // INITIAL_SESSION (fired on mount for the persisted session), SIGNED_IN and
+    // TOKEN_REFRESHED all carry a session when authenticated; SIGNED_OUT clears.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        userIdRef.current = null;
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+      applySession(session);
     });
 
-    return () => subscription.unsubscribe();
+    // Fallback for environments where onAuthStateChange does not emit an
+    // INITIAL_SESSION event: read the persisted session directly. Deferred so
+    // it cannot race the auth lock held by the callback above.
+    setTimeout(() => {
+      if (cancelled) return;
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (cancelled) return;
+        if (session?.user) {
+          if (userIdRef.current !== session.user.id) applySession(session);
+        } else if (!userIdRef.current) {
+          setIsLoading(false);
+        }
+      });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {

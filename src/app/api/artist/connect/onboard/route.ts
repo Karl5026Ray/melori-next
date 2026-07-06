@@ -49,6 +49,12 @@ export async function POST(req: Request) {
 
     // Create the Express connected account only if we don't already have one.
     if (!accountId) {
+      // Destination-charge model: the platform creates the charge and routes
+      // 90% to the artist via `transfer_data.destination` + a 10%
+      // `application_fee_amount` (see api/artist/purchase/checkout). In that
+      // model the connected account only needs the `transfers` capability.
+      // Requesting `card_payments` (a direct-charge capability) makes
+      // accounts.create throw in live mode for this platform configuration.
       const account = await stripe.accounts.create({
         type: "express",
         country: "US",
@@ -56,7 +62,6 @@ export async function POST(req: Request) {
         business_type: "individual",
         capabilities: {
           transfers: { requested: true },
-          card_payments: { requested: true },
         },
         metadata: { artist_id: String(artistId), profile_id: userId },
       });
@@ -98,10 +103,24 @@ export async function POST(req: Request) {
         { status: 503 },
       );
     }
-    const msg = err instanceof Error ? err.message : "Stripe error";
-    console.error("artist/connect/onboard error:", msg);
+    // Surface the underlying Stripe failure so onboarding problems are
+    // debuggable instead of collapsing into an opaque generic message. Stripe
+    // errors carry `code`/`type`; plain errors just carry `message`.
+    const e = err as { message?: string; code?: string; type?: string };
+    const message = e?.message ?? "Stripe error";
+    console.error("artist/connect/onboard error:", {
+      message,
+      code: e?.code,
+      type: e?.type,
+      err,
+    });
     return NextResponse.json(
-      { error: "Could not start payout onboarding. Please try again." },
+      {
+        error: "Could not start payout onboarding. Please try again.",
+        detail: message,
+        code: e?.code,
+        type: e?.type,
+      },
       { status: 500 },
     );
   }

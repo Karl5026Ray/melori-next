@@ -7,8 +7,8 @@ interface Analytics {
   totalStreams: number;
   totalDownloads: number;
   totalRevenue: number;
-  artistShare: number; // 70%
-  platformShare: number; // 30%
+  artistShare: number; // 90%
+  platformShare: number; // 10%
   tracksCount: number;
   topTrack: { title: string; streams: number } | null;
   monthlyData: { month: string; revenue: number; streams: number }[];
@@ -74,15 +74,15 @@ export default function AnalyticsPanel() {
         <div className="flex h-8 rounded-full overflow-hidden mb-3">
           <div
             className="bg-[#c9a96e] flex items-center justify-center text-xs font-bold text-[#0a0a0a]"
-            style={{ width: "70%" }}
+            style={{ width: "90%" }}
           >
-            You: 70%
+            You: 90%
           </div>
           <div
             className="bg-white/10 flex items-center justify-center text-xs font-bold text-white"
-            style={{ width: "30%" }}
+            style={{ width: "10%" }}
           >
-            Platform: 30%
+            Platform: 10%
           </div>
         </div>
         <div className="flex justify-between text-sm">
@@ -97,7 +97,7 @@ export default function AnalyticsPanel() {
           { label: "Total Streams", value: stats.totalStreams.toLocaleString(), icon: "▶️" },
           { label: "Downloads", value: stats.totalDownloads.toLocaleString(), icon: "⬇️" },
           { label: "Total Revenue", value: `$${stats.totalRevenue.toFixed(2)}`, icon: "💰" },
-          { label: "Your Share (70%)", value: `$${stats.artistShare.toFixed(2)}`, icon: "🎤" },
+          { label: "Your Share (90%)", value: `$${stats.artistShare.toFixed(2)}`, icon: "🎤" },
         ].map((stat) => (
           <div key={stat.label} className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-5 text-center">
             <div className="text-2xl mb-2">{stat.icon}</div>

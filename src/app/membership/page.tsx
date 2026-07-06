@@ -66,7 +66,7 @@ export default async function MembershipPage() {
         )}
 
         <p className="mt-12 text-center text-sm text-text-secondary">
-          Cancel anytime. No hidden fees. 70% of every paid membership goes
+          Cancel anytime. No hidden fees. 90% of every paid membership goes
           directly to artists.
         </p>
       </section>

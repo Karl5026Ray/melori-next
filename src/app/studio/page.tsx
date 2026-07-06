@@ -83,7 +83,7 @@ export default function StudioPage() {
                 Artist Studio
               </h1>
               <p className="text-[#888] text-sm mt-1">
-                Upload, edit, and release your music — keep 70% of every sale.
+                Upload, edit, and release your music — keep 90% of every sale.
               </p>
             </div>
             <Link

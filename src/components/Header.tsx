@@ -315,13 +315,22 @@ export default function Header() {
                     Settings
                   </Link>
                   {isAdmin && (
-                    <Link
-                      href="/admin/dashboard"
-                      onClick={() => setAccountOpen(false)}
-                      className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                    >
-                      Admin
-                    </Link>
+                    <>
+                      <Link
+                        href="/admin/dashboard"
+                        onClick={() => setAccountOpen(false)}
+                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                      >
+                        Admin
+                      </Link>
+                      <Link
+                        href="/admin/accounts"
+                        onClick={() => setAccountOpen(false)}
+                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                      >
+                        User Management
+                      </Link>
+                    </>
                   )}
                   <button
                     type="button"
@@ -458,13 +467,22 @@ export default function Header() {
                   Settings
                 </Link>
                 {isAdmin && (
-                  <Link
-                    href="/admin/dashboard"
-                    onClick={() => setOpen(false)}
-                    className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                  >
-                    Admin
-                  </Link>
+                  <>
+                    <Link
+                      href="/admin/dashboard"
+                      onClick={() => setOpen(false)}
+                      className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                    >
+                      Admin
+                    </Link>
+                    <Link
+                      href="/admin/accounts"
+                      onClick={() => setOpen(false)}
+                      className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                    >
+                      User Management
+                    </Link>
+                  </>
                 )}
                 <button
                   type="button"

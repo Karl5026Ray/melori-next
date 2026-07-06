@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
+import {
+  buildMembershipUpdate,
+  classifyPrice,
+  type Interval,
+  type Tier,
+} from "@/lib/membership-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,34 +27,9 @@ export const dynamic = "force-dynamic";
 // event is recorded in public.membership_events for idempotency + audit.
 // ---------------------------------------------------------------------------
 
-type Tier = "superfan" | "artist" | null;
-type Interval = "month" | "year" | null;
-
-// Amounts in cents. Superfan: 299 / 2999. Artist: 499 / 4999.
-// (Legacy amounts 499/4999/999/9999 kept as fallbacks so any in-flight
-// subscriptions created before the price change still classify correctly.)
-function classifyPrice(amountCents: number | null | undefined): {
-  tier: Tier;
-  interval: Interval;
-} {
-  switch (amountCents) {
-    case 299:
-      return { tier: "superfan", interval: "month" };
-    case 2999:
-      return { tier: "superfan", interval: "year" };
-    case 499:
-      return { tier: "artist", interval: "month" };
-    case 4999:
-      return { tier: "artist", interval: "year" };
-    // Legacy pricing fallbacks (pre July 2026):
-    case 999:
-      return { tier: "artist", interval: "month" };
-    case 9999:
-      return { tier: "artist", interval: "year" };
-    default:
-      return { tier: null, interval: null };
-  }
-}
+// Price -> tier/interval classification and the profile update shape are shared
+// with the /welcome onboarding flow via @/lib/membership-sync so both grant
+// identical entitlements.
 
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_SECRET_KEY;
@@ -270,17 +251,18 @@ async function applySubscriptionState(
     return;
   }
 
-  const canceled = !!args.clearOnCancel || args.status === "canceled";
-  const update: Record<string, unknown> = {
-    membership_status: canceled ? "free" : args.status === "past_due" ? "past_due" : "active",
-    membership_tier: canceled ? null : tier ?? profile.membership_tier ?? null,
-    membership_interval: canceled ? null : resolvedInterval ?? null,
-    stripe_customer_id: args.customerId ?? profile.stripe_customer_id ?? null,
-    stripe_subscription_id: canceled ? null : args.subscriptionId ?? profile.stripe_subscription_id ?? null,
-    membership_expires_at: canceled ? null : args.currentPeriodEnd ?? null,
-    membership_updated_at: new Date().toISOString(),
-role: profile.role === "admin" ? "admin" : canceled ? "free" : tier ?? profile.membership_tier ?? profile.role ?? "free",
-  };
+  const update = buildMembershipUpdate(
+    {
+      tier,
+      interval: resolvedInterval,
+      customerId: args.customerId,
+      subscriptionId: args.subscriptionId,
+      status: args.status,
+      currentPeriodEnd: args.currentPeriodEnd ?? null,
+      canceled: !!args.clearOnCancel,
+    },
+    profile,
+  );
 
   await supabase.from("profiles").update(update).eq("id", profile.id);
 }

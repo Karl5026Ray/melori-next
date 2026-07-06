@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import ReleaseCard from "@/components/ReleaseCard";
+import SuccessBanner from "@/components/SuccessBanner";
 import type { Metadata } from "next";
 import { getReleases } from "@/lib/data";
 
@@ -30,6 +32,10 @@ export default async function HomePage() {
 
   return (
     <div>
+      <Suspense fallback={null}>
+        <SuccessBanner />
+      </Suspense>
+
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />

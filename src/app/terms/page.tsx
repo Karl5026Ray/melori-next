@@ -41,9 +41,9 @@ export default function TermsPage() {
               For artists
             </h2>
             <p>
-              You retain 100% ownership of your music. We take 30% of sales to
+              You retain 100% ownership of your music. We take 10% of sales to
               cover hosting, payment processing, and platform costs. You
-              receive 70%. Payouts are processed monthly via Stripe Connect or
+              receive 90%. Payouts are processed monthly via Stripe Connect or
               bank transfer.
             </p>
           </section>

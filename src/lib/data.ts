@@ -127,6 +127,84 @@ export async function getArtistBySlug(
   };
 }
 
+// Published tracks uploaded through the Artist Studio. These live in a
+// separate table (`studio_tracks`) from legacy `releases`/`tracks`, so the
+// public catalog has to fetch them explicitly. Everything on the public site
+// that surfaces artist-uploaded work should include this list — otherwise
+// artists see their uploads only inside Studio and think the platform is
+// broken.
+//
+// The join to `profiles` is optional: the row can render fine without a
+// display name (falls back to the free-text `artist` string the artist
+// typed at upload time), but the display_name is nicer when present.
+export interface StudioTrackListItem {
+  id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  genre: string | null;
+  cover_url: string | null;
+  preview_url: string | null;
+  duration: number | null;
+  created_at: string;
+  profile: { display_name: string | null; avatar_url: string | null } | null;
+}
+
+export async function getPublishedStudioTracks(
+  limit = 50,
+): Promise<StudioTrackListItem[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("studio_tracks")
+    .select(
+      "id, title, artist, album, genre, cover_url, preview_url, duration, created_at, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
+    )
+    .eq("status", "published")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    // The join name (`studio_tracks_profile_id_fkey`) is Supabase's default
+    // for a FK column named `profile_id`. If a future migration renames it,
+    // this select fails — fall back to the row without the profile join
+    // so the catalog doesn't blank out.
+    const { data: bare, error: bareErr } = await supabase
+      .from("studio_tracks")
+      .select(
+        "id, title, artist, album, genre, cover_url, preview_url, duration, created_at",
+      )
+      .eq("status", "published")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (bareErr) throw bareErr;
+    return ((bare as any[] | null) ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      artist: row.artist,
+      album: row.album,
+      genre: row.genre,
+      cover_url: row.cover_url,
+      preview_url: row.preview_url,
+      duration: row.duration,
+      created_at: row.created_at,
+      profile: null,
+    }));
+  }
+
+  return ((data as any[] | null) ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    album: row.album,
+    genre: row.genre,
+    cover_url: row.cover_url,
+    preview_url: row.preview_url,
+    duration: row.duration,
+    created_at: row.created_at,
+    profile: firstOrSelf(row.profile) as StudioTrackListItem["profile"],
+  }));
+}
+
 export async function getReleaseBySlug(slug: string): Promise<{
   release: Release;
   artist: ArtistRef | null;

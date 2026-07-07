@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -83,6 +84,13 @@ export async function POST(req: NextRequest) {
       console.error("Social video insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // New video appears on the home feed and /social/video listing. Both are
+    // Server Components that pull from `social_videos`, so bust their caches
+    // now instead of waiting for the next revalidate tick.
+    revalidatePath("/");
+    revalidatePath("/social/video");
+    revalidatePath("/video");
 
     return NextResponse.json({ ...data, success: true });
   } catch (err: unknown) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
@@ -84,6 +85,12 @@ export async function PATCH(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // A new preview clip changes what plays on /music and the per-track page,
+    // so bust the caches that render either.
+    revalidatePath("/music");
+    revalidatePath(`/music/${params.id}`);
+    revalidatePath("/");
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

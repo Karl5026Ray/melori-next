@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import StudioTrackPlayButton from "./StudioTrackPlayButton";
 
 export const dynamic = "force-dynamic";
 
@@ -115,20 +116,16 @@ export default async function StudioTrackPage({
             <p className="mt-1 text-sm text-text-secondary/80">{duration}</p>
           )}
 
-          {track.preview_url ? (
-            <audio
-              controls
-              preload="none"
-              className="mt-6 w-full"
-              src={track.preview_url}
-            >
-              Your browser does not support audio playback.
-            </audio>
-          ) : (
-            <p className="mt-6 text-sm text-text-secondary/80">
-              Preview coming soon.
-            </p>
-          )}
+          {/* Route playback through PlayerProvider so listens get logged and
+              superfan gating works. The old bare <audio> element skipped both. */}
+          <StudioTrackPlayButton
+            track={{
+              id: track.id,
+              title: track.title,
+              displayArtist,
+              coverUrl: track.cover_url,
+            }}
+          />
         </div>
       </div>
     </div>

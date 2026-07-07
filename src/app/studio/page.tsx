@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import TrackUploader from "./components/TrackUploader";
 import VideoUploader from "./components/VideoUploader";
+import VideoList from "./components/VideoList";
 import WaveformEditor from "./components/WaveformEditor";
 import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
@@ -11,6 +12,7 @@ import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
 import PayoutsPanel from "./components/PayoutsPanel";
 import { authFetch } from "@/lib/authClient";
+import { supabase } from "@/lib/supabase";
 
 type Tab =
   | "upload"
@@ -27,6 +29,19 @@ export default function StudioPage() {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  // Caller uid, used by VideoList to filter the public feed down to the
+  // artist's own uploads. StudioGuard already gates the whole page on an
+  // authenticated artist, so this session lookup is guaranteed to resolve.
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) setUserId(data.session?.user?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
@@ -123,7 +138,12 @@ export default function StudioPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === "upload" && <TrackUploader />}
-        {activeTab === "video" && <VideoUploader />}
+        {activeTab === "video" && (
+          <>
+            <VideoUploader />
+            <VideoList userId={userId} />
+          </>
+        )}
         {activeTab === "tracks" && (
           <TrackList onEditWaveform={handleEditWaveform} />
         )}

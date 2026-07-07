@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import {
@@ -13,12 +14,20 @@ export async function GET(req: NextRequest) {
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
+    // Ordering rationale: primary sort is (album, sort_order) so tracks within
+    // the same album stay in the artist's chosen order. Tracks without an
+    // album or without a sort_order fall back to created_at DESC (newest
+    // first) so a freshly uploaded single lands at the top. NULLS LAST on
+    // sort_order keeps un-positioned rows at the bottom of their album
+    // grouping — otherwise a NULL would sort before 1 and reshuffle the album.
     const { data: tracks, error } = await supabase
       .from("studio_tracks")
       .select(
-        "id, title, artist, album, genre, status, preview_url, created_at, duration"
+        "id, title, artist, album, genre, status, preview_url, created_at, duration, sort_order"
       )
       .eq(OWNER_COLUMN, guard.membership.userId)
+      .order("album", { ascending: true, nullsFirst: false })
+      .order("sort_order", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -72,6 +81,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Assign the next sort_order within this (owner_id, album) partition so a
+    // newly created track lands at the end of its album, not somewhere
+    // arbitrary. Two concurrent inserts to the same album could collide on
+    // the same value (Postgres offers no easy per-partition sequence), but
+    // a collision just means both share a slot until the artist reorders —
+    // no data loss, no error. If album is null we still compute a bucket
+    // value so "no album" ordering is deterministic.
+    const albumForOrder = typeof body.album === "string" && body.album.trim()
+      ? body.album.trim()
+      : null;
+    let nextSortOrder = 1;
+    {
+      const orderQuery = supabase
+        .from("studio_tracks")
+        .select("sort_order")
+        .eq(OWNER_COLUMN, userId);
+      const scoped = albumForOrder == null
+        ? orderQuery.is("album", null)
+        : orderQuery.eq("album", albumForOrder);
+      const { data: existing } = await scoped
+        .order("sort_order", { ascending: false, nullsFirst: false })
+        .limit(1);
+      if (existing && existing[0]?.sort_order != null) {
+        nextSortOrder = existing[0].sort_order + 1;
+      }
+    }
+
     const { data, error } = await supabase
       .from("studio_tracks")
       .insert({
@@ -84,6 +120,7 @@ export async function POST(req: NextRequest) {
         file_path: body.file_path,
         cover_url: body.cover_url,
         type: body.type,
+        sort_order: nextSortOrder,
         status: body.status || "draft",
         // Both ownership columns must be the caller's uid: profile_id
         // (OWNER_COLUMN, what studio routes filter by) AND owner_id (the column
@@ -99,6 +136,17 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("Insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // A new track — even a draft — shows up in the artist's own listings
+    // immediately, and a track created with status="published" needs to hit
+    // /music and the home feed on the next request. Both pages read via
+    // Server Components, so bust them here rather than waiting for a
+    // background revalidation tick.
+    if (data?.status === "published") {
+      revalidatePath("/");
+      revalidatePath("/music");
+      revalidatePath("/artists");
     }
 
     return NextResponse.json({ ...data, success: true });

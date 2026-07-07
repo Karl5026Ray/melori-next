@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import MusicCatalog from "@/components/MusicCatalog";
-import { getReleases } from "@/lib/data";
+import StudioTrackGrid from "@/components/StudioTrackGrid";
+import { getReleases, getPublishedStudioTracks } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,12 @@ export const metadata: Metadata = {
 };
 
 export default async function MusicPage() {
-  const releases = await getReleases().catch(() => []);
+  // Load both sources in parallel — legacy releases and artist-studio uploads.
+  // A failure in one list must not blank the other, so each has its own catch.
+  const [releases, studioTracks] = await Promise.all([
+    getReleases().catch(() => []),
+    getPublishedStudioTracks(50).catch(() => []),
+  ]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
@@ -33,6 +39,7 @@ export default async function MusicPage() {
         Browse every release on MELORI Music.
       </p>
       <MusicCatalog releases={releases} />
+      <StudioTrackGrid tracks={studioTracks} />
     </div>
   );
 }

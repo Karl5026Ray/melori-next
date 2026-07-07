@@ -11,6 +11,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
 import PayoutsPanel from "./components/PayoutsPanel";
+import SuperfansPanel from "./components/SuperfansPanel";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 
@@ -20,6 +21,7 @@ type Tab =
   | "tracks"
   | "waveform"
   | "analytics"
+  | "superfans"
   | "schedule"
   | "profile"
   | "payouts";
@@ -33,10 +35,27 @@ export default function StudioPage() {
   // artist's own uploads. StudioGuard already gates the whole page on an
   // authenticated artist, so this session lookup is guaranteed to resolve.
   const [userId, setUserId] = useState<string | null>(null);
+  // Artist display name for the studio header. Falls back to full_name /
+  // email localpart so the header still personalizes when display_name isn't set.
+  const [artistName, setArtistName] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) setUserId(data.session?.user?.id ?? null);
+    supabase.auth.getSession().then(async ({ data }) => {
+      const uid = data.session?.user?.id ?? null;
+      const email = data.session?.user?.email ?? null;
+      if (!cancelled) setUserId(uid);
+      if (!uid) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name, full_name")
+        .eq("id", uid)
+        .maybeSingle();
+      if (cancelled) return;
+      const resolved =
+        profile?.display_name?.trim() ||
+        profile?.full_name?.trim() ||
+        (email ? email.split("@")[0] : null);
+      setArtistName(resolved);
     });
     return () => {
       cancelled = true;
@@ -86,6 +105,7 @@ export default function StudioPage() {
     { id: "tracks", label: "My Tracks", icon: "🎵" },
     { id: "waveform", label: "Preview Editor", icon: "✂️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
+    { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
     { id: "profile", label: "Profile Photos", icon: "\u{1F5BC}\uFE0F" },
     { id: "payouts", label: "Payouts", icon: "\uD83D\uDCB8" },
@@ -100,6 +120,11 @@ export default function StudioPage() {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-[#c9a96e] to-[#f0d99c] bg-clip-text text-transparent">
                 Artist Studio
               </h1>
+              {artistName && (
+                <p className="text-white/90 text-base font-medium mt-1 truncate">
+                  {artistName}
+                </p>
+              )}
               <p className="text-[#888] text-sm mt-1">
                 Upload, edit, and release your music — keep 90% of every sale.
               </p>
@@ -154,6 +179,7 @@ export default function StudioPage() {
           />
         )}
         {activeTab === "analytics" && <AnalyticsPanel />}
+        {activeTab === "superfans" && <SuperfansPanel />}
         {activeTab === "schedule" && <ReleaseScheduler />}
         {activeTab === "payouts" && <PayoutsPanel />}
         {activeTab === "profile" && (

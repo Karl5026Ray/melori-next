@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import ReleaseCard from "@/components/ReleaseCard";
+import SuperfanButton from "@/components/SuperfanButton";
 import { getArtistBySlug } from "@/lib/data";
 import type { ReleaseListItem } from "@/lib/data";
 
@@ -95,6 +96,9 @@ export default async function ArtistDetailPage({
         {artist.bio && (
           <p className="mt-6 max-w-3xl text-text-secondary">{artist.bio}</p>
         )}
+
+        {/* Superfans dropdown */}
+        <SuperfanButton slug={artist.slug} />
 
         {/* Discography */}
         <section className="py-12">

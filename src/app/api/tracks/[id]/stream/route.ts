@@ -29,9 +29,14 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Join to releases -> artists to resolve the owning artist's profile_id;
+    // needed so a listen event can be attributed to the correct artist. Kept
+    // as a single query so the hot streaming path stays one round-trip.
     const { data: track, error } = await supabaseAdmin
       .from("tracks")
-      .select("id, audio_url, preview_url, preview_start, preview_end, is_published")
+      .select(
+        "id, audio_url, preview_url, preview_start, preview_end, is_published, release:releases!inner(artist:artists!inner(profile_id))",
+      )
       .eq("id", id)
       .eq("is_published", true)
       .maybeSingle();
@@ -41,8 +46,16 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const { profile } = await getRequestMembership(request);
+    const { profile, userId: listenerId } = await getRequestMembership(request);
     const fullAccess = isSuperfanOrBetter(profile);
+
+    // Resolve the owning artist's profile_id from the embed. Supabase returns
+    // embedded relations as either an object or a single-item array depending
+    // on join shape, so normalize before reading `profile_id`.
+    const rel = (track as any).release;
+    const releaseObj = Array.isArray(rel) ? rel[0] : rel;
+    const artistObj = releaseObj && (Array.isArray(releaseObj.artist) ? releaseObj.artist[0] : releaseObj.artist);
+    const artistOwnerId: string | null = artistObj?.profile_id ?? null;
 
     // Superfans get the full track; free users get the dedicated sample clip if
     // one exists, else the full path capped client-side at 30s.
@@ -95,6 +108,30 @@ export async function GET(
         : previewStart + FREE_SAMPLE_SECONDS;
 
     const windowed = sample && !dedicatedPreview;
+
+    // Fire-and-forget: log a listen event when a superfan+ streams the full
+    // track. We DO NOT block the response on this insert — playback should
+    // start even if analytics logging fails. Free/anon streams are excluded
+    // because the product definition of "superfan" is account holders with
+    // an active tier; anonymous samples don't count toward the leaderboard.
+    //
+    // Self-listens (artist streaming their own track) are also excluded, so
+    // artists can't inflate their own leaderboard by hitting refresh.
+    if (fullAccess && listenerId && artistOwnerId && listenerId !== artistOwnerId) {
+      void supabaseAdmin
+        .from("track_listens")
+        .insert({
+          legacy_track_id: id,
+          listener_id: listenerId,
+          artist_owner_id: artistOwnerId,
+        })
+        .then(({ error: logErr }) => {
+          if (logErr) {
+            // Non-fatal — just observability.
+            console.warn(`tracks/${id}/stream: listen log failed`, logErr.message);
+          }
+        });
+    }
 
     return NextResponse.json({
       url: signed.signedUrl,

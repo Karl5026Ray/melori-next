@@ -10,11 +10,35 @@ import {
 } from "react";
 import { authHeaders } from "@/lib/authClient";
 
+// A PlayerTrack refers to either a row in the legacy `tracks` table (integer
+// PK) or a row in `studio_tracks` (UUID PK). We keep `id` typed as the union
+// so callers don't have to coerce, and use `sourceType` to route to the
+// correct signed-URL endpoint. Legacy is the default because the majority of
+// existing callers still use the old table.
+export type TrackSource = "legacy" | "studio";
+
 export interface PlayerTrack {
-  id: number;
+  id: number | string;
   title: string;
   artistName: string | null;
   coverUrl: string | null;
+  // Optional — defaults to "legacy" so pre-existing callers keep working.
+  sourceType?: TrackSource;
+}
+
+// Stable string key used for internal equality checks (e.g. "is this track
+// currently loaded?"). Distinguishing by source type prevents a collision
+// where a legacy tracks.id=5 would appear equal to a studio_tracks.id whose
+// string happens to be "5".
+function trackKey(t: { id: number | string; sourceType?: TrackSource }): string {
+  return `${t.sourceType ?? "legacy"}:${t.id}`;
+}
+
+// Resolve the correct signed-URL endpoint for a track based on its source.
+function streamUrlFor(t: PlayerTrack): string {
+  return t.sourceType === "studio"
+    ? `/api/studio/tracks/${t.id}/stream`
+    : `/api/tracks/${t.id}/stream`;
 }
 
 interface PlayerContextValue {
@@ -59,7 +83,9 @@ export default function PlayerProvider({
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // Tracks which track's signed URL is currently loaded into the <audio>.
-  const loadedIdRef = useRef<number | null>(null);
+  // Key of the track whose signed URL is loaded into the <audio>. Uses the
+  // composite trackKey() so legacy and studio ids never collide.
+  const loadedIdRef = useRef<string | null>(null);
   // Holds the latest auto-advance behavior for the (once-bound) "ended" event.
   const advanceRef = useRef<() => void>(() => {});
   // True while playback is halted by an explicit user pause. Guards against a
@@ -217,7 +243,7 @@ export default function PlayerProvider({
       setIsLoading(true);
       setSampleEnded(false);
       try {
-        const res = await fetch(`/api/tracks/${track.id}/stream`, {
+        const res = await fetch(streamUrlFor(track), {
           cache: "no-store",
           headers: await authHeaders(),
         });
@@ -249,7 +275,7 @@ export default function PlayerProvider({
 
         audio.src = data.url;
         audio.volume = volume;
-        loadedIdRef.current = track.id;
+        loadedIdRef.current = trackKey(track);
         if (shouldPlay) {
           userPausedRef.current = false;
           await audio.play();
@@ -284,7 +310,7 @@ export default function PlayerProvider({
     const audio = audioRef.current;
     if (!audio || !current) return;
     // Restored or not-yet-loaded track: fetch a fresh signed URL, then play.
-    if (loadedIdRef.current !== current.id) {
+    if (loadedIdRef.current !== trackKey(current)) {
       void loadAndPlay(current, true);
       return;
     }
@@ -301,8 +327,15 @@ export default function PlayerProvider({
     (tracks: PlayerTrack[], startIndex: number) => {
       const target = tracks[startIndex];
       if (!target) return;
-      // Clicking the already-active track toggles play/pause.
-      if (current?.id === target.id && loadedIdRef.current === target.id) {
+      // Clicking the already-active track toggles play/pause. Compare via
+      // trackKey so legacy id=5 and studio id="5" never masquerade as each
+      // other on mixed lists.
+      const targetKey = trackKey(target);
+      if (
+        current &&
+        trackKey(current) === targetKey &&
+        loadedIdRef.current === targetKey
+      ) {
         setQueue(tracks);
         setIndex(startIndex);
         togglePlay();

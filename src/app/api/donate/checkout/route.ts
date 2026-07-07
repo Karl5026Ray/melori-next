@@ -101,10 +101,19 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Stripe error";
-    console.error("donate/checkout error", msg);
+    // Diagnostic: surface underlying Stripe error so we can root-cause the
+    // production 500 without Vercel personal-scope log access. Matches the
+    // shape used by the artist Connect routes. Revert once fixed.
+    const e = err as { message?: string; code?: string; type?: string };
+    const msg = e?.message ?? "Stripe error";
+    console.error("donate/checkout error", { message: msg, code: e?.code, type: e?.type });
     return NextResponse.json(
-      { error: "Could not start checkout. Please try again." },
+      {
+        error: "Could not start checkout. Please try again.",
+        detail: msg,
+        code: e?.code,
+        type: e?.type,
+      },
       { status: 500 }
     );
   }

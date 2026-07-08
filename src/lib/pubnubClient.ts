@@ -29,11 +29,32 @@ export interface PresenceState {
   uuids: string[];
 }
 
+// A lightweight peer-to-peer signal fanned out over the space channel. Unlike
+// `__system` messages (which the SERVER publishes, e.g. "space-ended"), these
+// are published by participants for instant in-room UX: raise-hand and
+// reactions. They carry `__signal: true` so the listener can route them
+// separately from server system messages.
+export interface SpaceSignal {
+  type: "reaction" | "hand";
+  // reaction payload
+  emoji?: string;
+  // raise-hand payload
+  raised?: boolean;
+  // who sent it (PubNub publisher uuid is also on the envelope, but we echo it
+  // in the body so consumers don't depend on transport specifics)
+  uuid?: string;
+  // client timestamp (ms) — used as a de-dupe / ordering hint
+  ts?: number;
+}
+
 export interface JoinPresenceOptions {
   spaceId: string;
   uuid: string;
   onPresence?: (state: PresenceState) => void;
   onSystemSignal?: (payload: Record<string, unknown>) => void;
+  // Fired for peer signals (reactions, raise-hand) published by OTHER
+  // participants. We suppress echoes of the local user's own signals.
+  onSignal?: (signal: SpaceSignal) => void;
   onError?: (err: Error) => void;
 }
 
@@ -109,8 +130,17 @@ export async function joinPresence(opts: JoinPresenceOptions): Promise<void> {
     },
     message: (evt: any) => {
       const msg = evt.message;
-      if (msg && typeof msg === "object" && msg.__system) {
+      if (!msg || typeof msg !== "object") return;
+      if (msg.__system) {
         opts.onSystemSignal?.(msg as Record<string, unknown>);
+        return;
+      }
+      if (msg.__signal) {
+        // Ignore our own signals echoed back by PubNub — we already applied
+        // them optimistically on send.
+        const from = msg.uuid ?? evt.publisher;
+        if (from && from === opts.uuid) return;
+        opts.onSignal?.(msg as SpaceSignal);
       }
     },
     status: (evt: any) => {
@@ -186,4 +216,29 @@ export function getPresenceSession() {
   return active
     ? { spaceId: active.spaceId, uuid: active.uuid, channel: active.channel }
     : null;
+}
+
+// Publish a peer signal (reaction or raise-hand) to the whole room. Best-effort
+// and non-throwing: PubNub is additive, so a failed publish must never break
+// the local UI (the caller already applied the change optimistically, and the
+// DB stays the source of truth for raise-hand). No-op if not currently present
+// in this space (e.g. PubNub not configured / join failed).
+export async function publishSignal(
+  spaceId: string,
+  signal: SpaceSignal,
+): Promise<void> {
+  if (!active || active.spaceId !== spaceId) return;
+  try {
+    await active.pubnub.publish({
+      channel: active.channel,
+      message: {
+        __signal: true,
+        uuid: active.uuid,
+        ts: Date.now(),
+        ...signal,
+      },
+    });
+  } catch (err) {
+    console.warn("pubnub publishSignal failed", err);
+  }
 }

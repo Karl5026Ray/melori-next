@@ -14,12 +14,21 @@ const SUBSCRIBE_KEY = process.env.PUBNUB_SUBSCRIBE_KEY ?? "";
 // POST /api/social/spaces/[spaceId]/pubnub-auth
 //
 // Mints a short-lived PubNub PAM v3 token scoped to this one space channel,
-// bound to the caller's user id (authorized_uuid). Mirrors the Agora token
-// flow: Superfan-gated, host/speaker get publish rights, audience read-only.
+// bound to the caller's user id (authorized_uuid). Superfan-gated to match who
+// is allowed *in* the room (same gate as the Agora voice token).
+//
+// PUBLISH RIGHTS: every authenticated participant gets channel write. The
+// PubNub channel only carries lightweight, low-risk UX signals — reactions and
+// raise-hand — which are legitimate audience actions (raising a hand IS how an
+// audience member asks to speak). Actual VOICE publishing is separately and
+// strictly gated by the Agora token route, so granting PubNub write to the
+// audience does not let anyone speak. The server remains the only publisher of
+// `__system` control messages (e.g. space-ended), and raise-hand's source of
+// truth stays the DB (`has_raised_hand`) — the signal is just instant fan-out.
 //
 // The client uses the returned token to subscribe (with presence) to
 // `space-<spaceId>`. Presence is what drives the room-vanish webhook, so the
-// gating here matches who is allowed *in* the room at all.
+// Superfan gate here matches who is allowed in the room at all.
 export async function POST(
   req: NextRequest,
   { params }: { params: { spaceId: string } },
@@ -55,22 +64,11 @@ export async function POST(
     );
   }
 
-  // Publish rights on the signal channel = host or promoted speaker. Audience
-  // members subscribe read-only. (Voice publish is separately gated by the
-  // Agora token route; this only governs PubNub signals like raise-hand.)
-  let canPublish = space.host_id === userId;
-  if (!canPublish) {
-    const { data: participant } = await supabase
-      .from("space_participants")
-      .select("role, left_at")
-      .eq("space_id", space.id)
-      .eq("user_id", userId)
-      .is("left_at", null)
-      .maybeSingle();
-    canPublish =
-      !!participant &&
-      (participant.role === "host" || participant.role === "speaker");
-  }
+  // Publish rights on the signal channel = ANY authenticated participant. The
+  // channel carries only reactions and raise-hand (see the header comment).
+  // Voice is gated elsewhere (Agora), so this is safe and lets the audience
+  // raise their hand / react in real time.
+  const canPublish = true;
 
   try {
     const token = await grantSpaceToken({

@@ -15,6 +15,7 @@ import {
 import {
   joinPresence as pubnubJoin,
   leavePresence as pubnubLeave,
+  publishSignal as pubnubPublishSignal,
 } from "@/lib/pubnubClient";
 import { Space, SpaceParticipant } from "@/types/social";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
@@ -56,7 +57,19 @@ export default function SpaceDetailPage() {
   const [reactions, setReactions] = useState<string[]>([]);
   const [micDenied, setMicDenied] = useState(false);
   const [liveHere, setLiveHere] = useState<number | null>(null);
+  const [peerHandToast, setPeerHandToast] = useState<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Monotonic counter so simultaneous reactions get unique React keys even if
+  // they share a millisecond timestamp (fan-out can burst several at once).
+  const reactionSeqRef = useRef(0);
+  // Mirror of `participants` for use inside the PubNub signal callback, which
+  // lives in an effect that must NOT re-subscribe every time the list changes
+  // (that would tear down + rebuild presence). The ref stays current without
+  // being a dependency.
+  const participantsRef = useRef<SpaceParticipant[]>([]);
+  useEffect(() => {
+    participantsRef.current = participants;
+  }, [participants]);
 
   useEffect(() => {
     const fetchSpace = async () => {
@@ -277,12 +290,16 @@ export default function SpaceDetailPage() {
       return;
     }
     const newHand = !hasRaisedHand;
+    setHasRaisedHand(newHand);
+    // Instant fan-out so the host/room sees the hand go up without waiting for
+    // the Supabase Realtime round-trip. The DB write below stays the source of
+    // truth (the host's promote flow reads `has_raised_hand`).
+    void pubnubPublishSignal(spaceId, { type: "hand", raised: newHand });
     await supabase
       .from("space_participants")
       .update({ has_raised_hand: newHand })
       .eq("space_id", spaceId)
       .eq("user_id", user.id);
-    setHasRaisedHand(newHand);
   }, [user, spaceId, hasRaisedHand, canParticipate, router]);
 
   const isHost = user?.id === space?.host_id;
@@ -421,14 +438,27 @@ export default function SpaceDetailPage() {
     router.push("/social/spaces");
   }, [isHost, spaceId, router]);
 
-  // Lightweight in-room reactions (host + audience). Purely visual — burst
-  // an emoji into a floating list that fades after ~2s.
-  const sendReaction = useCallback((emoji: string) => {
-    setReactions((prev) => [...prev, `${Date.now()}:${emoji}`]);
+  // Spawn a floating emoji burst locally. Used both for the local user's own
+  // reactions and for reactions received from other participants over PubNub.
+  // Fades after ~2s. The seq counter guarantees a unique React key.
+  const spawnReaction = useCallback((emoji: string) => {
+    const key = `${Date.now()}-${reactionSeqRef.current++}:${emoji}`;
+    setReactions((prev) => [...prev, key]);
     setTimeout(() => {
-      setReactions((prev) => prev.slice(1));
+      setReactions((prev) => prev.filter((r) => r !== key));
     }, 2000);
   }, []);
+
+  // Lightweight in-room reactions (host + audience). Show it locally right away
+  // (optimistic), then fan it out to the whole room over PubNub so everyone
+  // sees it instantly. Purely visual — never persisted.
+  const sendReaction = useCallback(
+    (emoji: string) => {
+      spawnReaction(emoji);
+      void pubnubPublishSignal(spaceId, { type: "reaction", emoji });
+    },
+    [spaceId, spawnReaction],
+  );
 
   // ---- Agora audio lifecycle -----------------------------------------------
   // We (re)join whenever role changes. Audience → subscriber, speaker/host →
@@ -531,6 +561,25 @@ export default function SpaceDetailPage() {
               router.push("/social/spaces");
             }
           },
+          onSignal: (signal) => {
+            if (cancelled) return;
+            // A peer reacted — mirror their emoji into our floating burst.
+            if (signal.type === "reaction" && signal.emoji) {
+              spawnReaction(signal.emoji);
+              return;
+            }
+            // A peer raised (or lowered) their hand. Supabase Realtime still
+            // refreshes the authoritative participant list + raised-hand
+            // badges; this just gives the host an instant heads-up toast.
+            if (signal.type === "hand" && signal.raised) {
+              const who =
+                participantsRef.current.find(
+                  (p) => p.user_id === signal.uuid,
+                )?.user?.display_name ?? "Someone";
+              setPeerHandToast(`✋ ${who} raised their hand`);
+              setTimeout(() => setPeerHandToast(null), 2600);
+            }
+          },
           onError: (err) => console.warn("pubnub presence", err),
         });
       } catch (err) {
@@ -542,7 +591,7 @@ export default function SpaceDetailPage() {
       cancelled = true;
       void pubnubLeave();
     };
-  }, [isJoined, user?.id, spaceId, router]);
+  }, [isJoined, user?.id, spaceId, router, spawnReaction]);
 
   // Heartbeat every 60s so `reap_idle_spaces` doesn't kill a live room.
   useEffect(() => {
@@ -940,6 +989,18 @@ export default function SpaceDetailPage() {
               </span>
             );
           })}
+        </div>
+      )}
+
+      {/* Peer raised-hand heads-up (instant via PubNub signal) */}
+      {peerHandToast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-44 z-30 flex justify-center">
+          <span
+            className="rounded-full bg-melori-warning/90 text-melori-void text-xs font-semibold px-4 py-2 shadow-lg"
+            data-testid="toast-peer-hand"
+          >
+            {peerHandToast}
+          </span>
         </div>
       )}
 

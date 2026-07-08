@@ -39,6 +39,7 @@ export async function GET(
       )
       .eq("release_id", release.id)
       .eq("is_published", true)
+      .eq("moderation_status", "clean") // publish-first: hide flagged/removed tracks
       .order("track_number", { ascending: true });
 
     if (tracksError) throw tracksError;

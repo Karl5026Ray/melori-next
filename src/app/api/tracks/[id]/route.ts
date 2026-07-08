@@ -24,6 +24,7 @@ export async function GET(
       )
       .eq("id", id)
       .eq("is_published", true)
+      .eq("moderation_status", "clean") // publish-first: hide flagged/removed tracks
       .maybeSingle();
 
     if (error) throw error;

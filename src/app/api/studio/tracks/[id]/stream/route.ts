@@ -33,7 +33,7 @@ export async function GET(
     const supabaseAdmin = getSupabaseAdmin();
     const { data: track, error } = await supabaseAdmin
       .from("studio_tracks")
-      .select("id, audio_url, preview_url, status, profile_id")
+      .select("id, file_url, file_path, preview_url, preview_start, preview_end, status, profile_id")
       .eq("id", params.id)
       .eq("status", "published")
       .maybeSingle();
@@ -46,9 +46,13 @@ export async function GET(
     const { profile, userId: listenerId } = await getRequestMembership(request);
     const fullAccess = isSuperfanOrBetter(profile);
 
+    // Prefer `file_path` (Supabase Storage object key) for signing. Fall back
+    // to `file_url` if that's what was populated. Preview mirrors the same
+    // logic for free listeners.
+    const fullPath = track.file_path ?? track.file_url;
     const sourcePath = fullAccess
-      ? track.audio_url ?? track.preview_url
-      : track.preview_url ?? track.audio_url;
+      ? fullPath ?? track.preview_url
+      : track.preview_url ?? fullPath;
 
     if (!sourcePath) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -71,12 +75,14 @@ export async function GET(
       throw new Error("Signed URL generation returned no URL");
     }
 
-    // studio_tracks doesn't currently carry preview_start/preview_end; the
-    // preview file is assumed to be short. Free listeners without a
-    // dedicated preview fall back to the standard [0, FREE_SAMPLE_SECONDS]
-    // window on the client, same as legacy.
-    const previewStart = 0;
-    const previewEnd = FREE_SAMPLE_SECONDS;
+    // Free listeners without a dedicated preview clip get a windowed sample.
+    // Use the track's own preview_start/preview_end if set, else default to
+    // [0, FREE_SAMPLE_SECONDS] — same behavior as the legacy route.
+    const previewStart = Number(track.preview_start ?? 0) || 0;
+    const previewEnd =
+      Number(track.preview_end ?? 0) > previewStart
+        ? Number(track.preview_end)
+        : previewStart + FREE_SAMPLE_SECONDS;
     const windowed = sample && !dedicatedPreview;
 
     // Listen logging: superfan+ only, exclude self-listens, fire-and-forget.

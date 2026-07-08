@@ -146,6 +146,13 @@ export default function AdminDashboardPage() {
               Music Manager
             </Link>
             <Link
+              href="/admin/releases"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>💿</span>
+              Release Manager
+            </Link>
+            <Link
               href="/admin/artists"
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
@@ -766,11 +773,23 @@ function ReleasesSection() {
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold">All Releases</h3>
-        <button className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer">
-          + New Release
-        </button>
+        <Link
+          href="/admin/releases"
+          className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer hover:bg-[#c9a96e]/25"
+        >
+          Open Release Manager →
+        </Link>
       </div>
-      <p className="text-[#888]">Release management table would render here with CRUD operations.</p>
+      <p className="text-[#888] mb-4">
+        View every album and single with its full track list, and delete
+        releases or individual tracks.
+      </p>
+      <Link
+        href="/admin/releases"
+        className="inline-block px-5 py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl"
+      >
+        Manage Releases
+      </Link>
     </div>
   );
 }

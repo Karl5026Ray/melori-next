@@ -236,6 +236,10 @@ export async function getReleaseBySlug(slug: string): Promise<{
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)
+    // Show every published track except ones an admin explicitly took down.
+    // Mirrors /api/releases/[slug]; NULL / transient moderation states stay
+    // visible so publish-first uploads aren't hidden.
+    .or("moderation_status.is.null,moderation_status.neq.removed")
     .order("track_number", { ascending: true });
 
   if (tracksError) throw tracksError;

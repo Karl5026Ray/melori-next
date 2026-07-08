@@ -39,7 +39,10 @@ export async function GET(
       )
       .eq("release_id", release.id)
       .eq("is_published", true)
-      .eq("moderation_status", "clean") // publish-first: hide flagged/removed tracks
+      // Publish-first: hide only tracks an admin explicitly took down. A strict
+      // `= 'clean'` match wrongly hid legitimately-published tracks whose status
+      // is NULL (older rows) or a transient review state (pending_review/flagged).
+      .or("moderation_status.is.null,moderation_status.neq.removed")
       .order("track_number", { ascending: true });
 
     if (tracksError) throw tracksError;

@@ -142,7 +142,57 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/admin/tracks/[id] — remove a track row.
+// Given a Supabase storage value, return { bucket, path } ready for
+// storage.from(bucket).remove([path]).
+//
+// tracks.audio_url and tracks.preview_url are stored as BUCKET-RELATIVE paths
+// inside the private `audio-files` bucket (e.g. "submissions/<uid>/123_x.mp3"
+// or "kaiel-r/women-only/01-328-preview.mp3"). releases.cover_art_url, by
+// contrast, is a FULL public URL that may live in EITHER the `covers` or the
+// `images` bucket depending on when/how it was uploaded. So we detect the two
+// shapes: an absolute http(s) URL is parsed for its bucket+path; anything else
+// is treated as an already-relative path in the supplied default bucket.
+function resolveStorageTarget(
+  value: string | null | undefined,
+  defaultBucket: string,
+): { bucket: string; path: string } | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const marker = "/object/public/";
+  const idx = trimmed.indexOf(marker);
+  if (idx !== -1) {
+    // Absolute public URL: everything after the marker is "<bucket>/<path>".
+    const rest = trimmed.slice(idx + marker.length);
+    const slash = rest.indexOf("/");
+    if (slash === -1) return null;
+    const bucket = rest.slice(0, slash);
+    const path = decodeURIComponent(rest.slice(slash + 1));
+    if (!bucket || !path) return null;
+    return { bucket, path };
+  }
+
+  // Reject any other absolute URL shape we don't understand rather than
+  // guessing — better to leave an orphan than to remove the wrong object.
+  if (/^https?:\/\//i.test(trimmed)) return null;
+
+  // Relative path in the default bucket. Guard against path traversal.
+  if (trimmed.includes("..")) return null;
+  return { bucket: defaultBucket, path: trimmed };
+}
+
+// DELETE /api/admin/tracks/[id] — DESTRUCTIVE: remove a track row and clean up
+// its storage artifacts (master audio + preview clip). If this track is the
+// LAST track on its release, the now-empty release and its cover art are
+// removed too, so "discard a song and cover" fully cleans up. When other tracks
+// still share the release, the release + shared cover art are preserved (they
+// belong to the album, not this single song).
+//
+// Order: read the row first (so we know which files to clean), delete the DB
+// row (the source of truth), THEN delete storage objects. If storage cleanup
+// partially fails we still return ok:true with a `storageErrors` array — the
+// row is already gone from every listing, and retrying the DELETE would 404.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } },
@@ -166,9 +216,79 @@ export async function DELETE(
 
   try {
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("tracks").delete().eq("id", id);
-    if (error) throw error;
-    return NextResponse.json({ ok: true });
+
+    // 1. Read the artifacts we need to clean up before the row disappears.
+    const { data: track, error: readErr } = await supabase
+      .from("tracks")
+      .select("id, release_id, audio_url, preview_url")
+      .eq("id", id)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    if (!track) {
+      return NextResponse.json({ error: "Track not found" }, { status: 404 });
+    }
+
+    // 2. Decide whether this is the last track on its release. If so we can
+    //    also remove the release + its cover art; otherwise the cover belongs
+    //    to sibling tracks and must be preserved.
+    let isLastOnRelease = false;
+    if (track.release_id != null) {
+      const { count } = await supabase
+        .from("tracks")
+        .select("id", { count: "exact", head: true })
+        .eq("release_id", track.release_id);
+      isLastOnRelease = (count ?? 0) <= 1;
+    }
+
+    // 3. Delete the track row — the definitive user-visible record.
+    const { error: delErr } = await supabase.from("tracks").delete().eq("id", id);
+    if (delErr) throw delErr;
+
+    const storageErrors: string[] = [];
+    const removeTarget = async (
+      value: string | null | undefined,
+      defaultBucket: string,
+      label: string,
+    ) => {
+      const target = resolveStorageTarget(value, defaultBucket);
+      if (!target) return;
+      const { error } = await supabase.storage
+        .from(target.bucket)
+        .remove([target.path]);
+      if (error) storageErrors.push(`${label}:${error.message}`);
+    };
+
+    // 4. Master audio + preview clip both live in the private audio-files bucket.
+    await removeTarget(track.audio_url, "audio-files", "audio");
+    await removeTarget(track.preview_url, "audio-files", "preview");
+
+    // 5. Cover art + empty release, only when nothing else references them.
+    let removedRelease = false;
+    if (isLastOnRelease && track.release_id != null) {
+      const { data: rel } = await supabase
+        .from("releases")
+        .select("cover_art_url")
+        .eq("id", track.release_id)
+        .maybeSingle();
+      // Cover URLs may be in `covers` OR `images`; resolveStorageTarget reads
+      // the bucket straight out of the URL, so the default is only a fallback.
+      await removeTarget(rel?.cover_art_url, "covers", "cover");
+      const { error: relDelErr } = await supabase
+        .from("releases")
+        .delete()
+        .eq("id", track.release_id);
+      if (relDelErr) {
+        storageErrors.push(`release:${relDelErr.message}`);
+      } else {
+        removedRelease = true;
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      removedRelease,
+      storageErrors: storageErrors.length ? storageErrors : undefined,
+    });
   } catch (err: any) {
     console.error(`DELETE /api/admin/tracks/${params.id} failed:`, err);
     return NextResponse.json(

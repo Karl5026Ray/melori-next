@@ -268,15 +268,36 @@ export default function AdminTracksPage() {
   };
 
   const deleteTrack = async (track: AdminTrack) => {
-    if (!confirm(`Delete "${track.title}"? This cannot be undone.`)) return;
+    if (
+      !confirm(
+        `Delete "${track.title}"?\n\nThis permanently removes the track, its audio master, and its preview clip. If it is the only song on its release, the release and its cover art are removed too. This cannot be undone.`,
+      )
+    )
+      return;
     try {
       const res = await fetch(`/api/admin/tracks/${track.id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => ({}) as Record<string, unknown>);
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.error === "string" ? data.error : "Request failed",
+        );
+      }
+      // Row is gone from every listing — drop it from the UI immediately.
       setTracks((prev) => prev.filter((t) => t.id !== track.id));
-    } catch {
-      alert("Could not delete track.");
+      // Surface any storage-cleanup issues so orphaned files can be pruned
+      // manually; the DB row is already removed regardless.
+      if (Array.isArray(data?.storageErrors) && data.storageErrors.length) {
+        alert(
+          `Track deleted, but some files could not be removed from storage:\n\n${data.storageErrors.join(
+            "\n",
+          )}`,
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not delete track.";
+      alert(`Could not delete track.\n\n${msg}`);
     }
   };
 

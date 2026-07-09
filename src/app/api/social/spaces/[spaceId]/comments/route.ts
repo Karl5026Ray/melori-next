@@ -23,8 +23,8 @@ export async function GET(
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
-      .from("space_comments")
-      .select("id, user_id, author_name, body, created_at")
+      .from("space_comments_with_author")
+      .select("id, user_id, author_display, avatar_url, username, verified, body, created_at")
       .eq("space_id", spaceId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -107,7 +107,7 @@ export async function POST(
     // Resolve a friendly display name for this author from their profile.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("display_name, full_name, username")
+    .select("display_name, full_name, username, avatar_url")      
       .eq("id", membership.userId)
       .maybeSingle();
 
@@ -133,8 +133,7 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ comment: data });
-  } catch (err: any) {
+    return NextResponse.json({ comment: { ...data, avatar_url: profile?.avatar_url ?? null, author_display: authorName, username: profile?.username ?? null } });  } catch (err: any) {
     console.error("Space comment POST exception:", err);
     return NextResponse.json(
       { error: err?.message ?? "Failed to post comment" },

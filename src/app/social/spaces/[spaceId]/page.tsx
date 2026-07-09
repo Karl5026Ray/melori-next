@@ -11,7 +11,7 @@ import {
   leaveChannel as agoraLeave,
   setMuted as agoraSetMuted,
   setRole as agoraSetRole,
-} from "@/lib/agoraClient";
+} from "@/lib/livekitClient";
 import { Space, SpaceParticipant } from "@/types/social";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";

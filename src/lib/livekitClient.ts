@@ -26,6 +26,7 @@ export type LiveKitRole = "publisher" | "subscriber";
 
 export interface JoinOptions {
   spaceId: string;
+    channel?: string; // accepted for call-site compatibility; ignored (room derived server-side)
   role: LiveKitRole;
   onRemoteUserSpeaking?: (identity: string, speaking: boolean) => void;
   onLocalSpeakingChange?: (isSpeaking: boolean) => void;

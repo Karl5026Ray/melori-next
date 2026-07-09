@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     const guard = await requireSuperfan(req);
     if (isGuardFailure(guard)) return guard;
     const { userId } = guard.membership;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const body = await req.json().catch(() => ({}));
     const spaceId: string | undefined = body?.space_id;

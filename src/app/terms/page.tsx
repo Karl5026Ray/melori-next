@@ -31,7 +31,7 @@ export default function TermsPage() {
             </h2>
             <p>
               Digital purchases are final. Downloads are for personal use only
-              — no redistribution. Memberships, when launched, will auto-renew
+                              &mdash; no redistribution. Memberships auto-renew
               unless canceled.
             </p>
           </section>

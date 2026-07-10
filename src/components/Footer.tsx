@@ -22,15 +22,19 @@ export default function Footer() {
 
         {/* Links */}
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          {footerLinks.map((link) => (
-            <Link
-              key={link.label}
-              href={link.href}
-              className="text-text-secondary transition-colors hover:text-brand-primary"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {footerLinks.map((link, i) => (
+<span key={link.label} className="flex items-center gap-x-6">
+{i > 0 && (
+<span aria-hidden="true" className="text-text-secondary/40 select-none">·</span>
+)}
+<Link
+href={link.href}
+className="text-text-secondary transition-colors hover:text-brand-primary"
+>
+{link.label}
+</Link>
+</span>
+))}
         </nav>
       </div>
 

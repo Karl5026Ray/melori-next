@@ -480,7 +480,7 @@ export default function SpaceDetailPage() {
     (async () => {
       try {
         await agoraJoin({
-          channel: space.agora_channel!,
+          channel: space.agora_channel!,           spaceType: space.type,
           role,
           spaceId,
           onError: (err) => {

@@ -22,6 +22,9 @@ body {
   background-color: var(--brand-background);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+/* Prevent horizontal scroll / left-right sliding on mobile */
+overflow-x: hidden;
+max-width: 100%;
 }
 
 a {

@@ -20,7 +20,7 @@ type Tier = "free" | "superfan" | "artist";
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
   { id: "free", name: "Free Fan", price: "$0", blurb: "Stream music, join the community." },
   { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Early access, exclusives, HD audio." },
-  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio." },
+  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 90%." },
 ];
 
 function RegisterInner() {

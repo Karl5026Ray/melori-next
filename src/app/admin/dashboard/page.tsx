@@ -55,7 +55,20 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState("Admin");
+  // Controls the mobile slide-out drawer. Ignored on lg+ where the sidebar is
+  // always visible.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
+
+  // Lock body scroll while the mobile drawer is open so the page behind it
+  // doesn't scroll under the overlay.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
 
   useEffect(() => {
     // Verify session
@@ -108,21 +121,71 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-[#0d0d0d] border-r border-white/[0.06] flex flex-col">
-        <div className="p-6 border-b border-white/[0.06]">
-          <Link href="/" className="flex items-center gap-2">
+    <div className="min-h-screen bg-[#0a0a0a] text-white lg:flex">
+      {/* Mobile top bar — only shown below lg. Holds the hamburger + title. */}
+      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 bg-[#0d0d0d] border-b border-white/[0.06] px-4 h-14">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={sidebarOpen}
+          className="p-2 -ml-2 rounded-lg text-[#ccc] hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
+        >
+          {/* hamburger */}
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <span className="text-base font-bold truncate">
+          {navItems.find((n) => n.id === section)?.label ?? "MELORI Admin"}
+        </span>
+      </div>
+
+      {/* Mobile overlay — click to dismiss the drawer. */}
+      {sidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/60 z-40"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar — a slide-out drawer below lg, a static column at lg+. */}
+      <aside
+        className={`bg-[#0d0d0d] border-r border-white/[0.06] flex flex-col
+          fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] transform transition-transform duration-300 ease-out overflow-y-auto
+          lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:transition-none
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+      >
+        <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2" onClick={() => setSidebarOpen(false)}>
             <span className="text-xl">🎵</span>
             <span className="font-bold text-lg">MELORI Admin</span>
           </Link>
+          {/* Close button — mobile only. */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close menu"
+            className="lg:hidden p-2 -mr-2 rounded-lg text-[#888] hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="6" y1="18" x2="18" y2="6" />
+            </svg>
+          </button>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setSection(item.id)}
+              onClick={() => {
+                setSection(item.id);
+                setSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer
                 ${section === item.id
                   ? "bg-[#c9a96e]/15 text-[#c9a96e]"
@@ -140,6 +203,7 @@ export default function AdminDashboardPage() {
             </p>
             <Link
               href="/admin/tracks"
+              onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
               <span>🎚️</span>
@@ -147,6 +211,7 @@ export default function AdminDashboardPage() {
             </Link>
             <Link
               href="/admin/releases"
+              onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
               <span>💿</span>
@@ -154,6 +219,7 @@ export default function AdminDashboardPage() {
             </Link>
             <Link
               href="/admin/artists"
+              onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
               <span>🎤</span>
@@ -161,6 +227,7 @@ export default function AdminDashboardPage() {
             </Link>
             <Link
               href="/admin/email-blast"
+              onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
               <span>✉️</span>
@@ -168,6 +235,7 @@ export default function AdminDashboardPage() {
             </Link>
             <Link
               href="/admin/sms-blast"
+              onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
             >
               <span>💬</span>
@@ -196,8 +264,10 @@ export default function AdminDashboardPage() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <header className="bg-[#0d0d0d] border-b border-white/[0.06] px-8 py-4 flex items-center justify-between">
+      <main className="flex-1 overflow-auto min-w-0">
+        {/* Desktop header — hidden on mobile where the top bar already shows the
+            section title. */}
+        <header className="hidden lg:flex bg-[#0d0d0d] border-b border-white/[0.06] px-8 py-4 items-center justify-between">
           <h1 className="text-xl font-bold">
             {navItems.find((n) => n.id === section)?.label}
           </h1>
@@ -215,7 +285,7 @@ export default function AdminDashboardPage() {
           </div>
         </header>
 
-        <div className="p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
           {section === "overview" && <OverviewSection stats={stats} />}
           {section === "users" && <UsersSection />}
           {section === "submissions" && <SubmissionsSection />}

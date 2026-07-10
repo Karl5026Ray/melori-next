@@ -2,19 +2,24 @@
 
 // LiveKit RTC client wrapper for MM Social spaces.
 //
-// This intentionally mirrors the public API of the previous agoraClient.ts
-// (joinChannel / setMuted / setRole / leaveChannel / getSession) so the
-// Spaces page swaps its import with minimal changes.
+// Mirrors the previous agoraClient.ts public API (joinChannel / setMuted /
+// setRole / leaveChannel / getSession) so the Spaces page swaps imports with
+// minimal changes.
 //
-// Design notes
-// ------------
-// - One Room per active space page (module-level singleton).
-// - The livekit-client SDK is dynamically imported inside joinChannel() to
-//   avoid pulling browser globals into any server component.
+// Best-in-class audio design
+// --------------------------
+// - Audio profile is derived from the space "type":
+//     * "listening" | "dj_set" | "creation" -> MUSIC profile:
+//         stereo, high bitrate (up to 256 kbps), NO noise suppression /
+//         echo cancellation / auto gain, so beats and mixes are not mangled.
+//     * "discussion" (and default) -> VOICE profile:
+//         mono, DTX + RED enabled, noise suppression + echo cancellation +
+//         auto gain on for clean speech.
+// - adaptiveStream + dynacast keep large audiences efficient.
+// - Reconnection is surfaced (onReconnecting/onReconnected) instead of only
+//   treating drops as fatal, so brief network blips self-heal.
 // - Tokens are minted server-side by POST /api/livekit-token (Superfan-gated).
 // - Publisher = host + speakers; subscriber = audience.
-// - The ActiveSpeakers event writes local is_speaking back to
-//   space_participants for the local user only, throttled to 500 ms.
 
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
@@ -23,13 +28,33 @@ type AnyRoom = any;
 type AnyTrack = any;
 
 export type LiveKitRole = "publisher" | "subscriber";
+export type AudioProfile = "music" | "voice";
+
+// Map a space type to the audio profile that should drive capture + publish.
+export function audioProfileForType(spaceType?: string | null): AudioProfile {
+  switch ((spaceType || "").toLowerCase()) {
+    case "listening":
+    case "dj_set":
+    case "dj set":
+    case "creation":
+      return "music";
+    default:
+      return "voice";
+  }
+}
 
 export interface JoinOptions {
   spaceId: string;
-    channel?: string; // accepted for call-site compatibility; ignored (room derived server-side)
+  channel?: string; // accepted for call-site compatibility; ignored (room derived server-side)
   role: LiveKitRole;
+  // Optional space type ("listening", "dj_set", "discussion", "creation").
+  // Drives the audio capture + publish profile. Falls back to voice.
+  spaceType?: string | null;
+  audioProfile?: AudioProfile;
   onRemoteUserSpeaking?: (identity: string, speaking: boolean) => void;
   onLocalSpeakingChange?: (isSpeaking: boolean) => void;
+  onReconnecting?: () => void;
+  onReconnected?: () => void;
   onError?: (err: Error) => void;
 }
 
@@ -38,6 +63,7 @@ interface ActiveSession {
   spaceId: string | null;
   identity: string | null;
   role: LiveKitRole;
+  profile: AudioProfile;
   localAudioTrack: AnyTrack | null;
   cleanups: Array<() => void>;
 }
@@ -47,6 +73,7 @@ let session: ActiveSession = {
   spaceId: null,
   identity: null,
   role: "subscriber",
+  profile: "voice",
   localAudioTrack: null,
   cleanups: [],
 };
@@ -87,17 +114,77 @@ async function writeLocalSpeaking(spaceId: string, identity: string, speaking: b
   }
 }
 
+// Capture (getUserMedia) constraints tuned per profile.
+function captureDefaultsFor(profile: AudioProfile) {
+  if (profile === "music") {
+    // Preserve the source: disable the DSP that mangles music.
+    return {
+      autoGainControl: false,
+      echoCancellation: false,
+      noiseSuppression: false,
+      channelCount: 2,
+      sampleRate: 48000,
+    };
+  }
+  // Voice: clean speech.
+  return {
+    autoGainControl: true,
+    echoCancellation: true,
+    noiseSuppression: true,
+    channelCount: 1,
+    sampleRate: 48000,
+  };
+}
+
+// Publish options tuned per profile.
+function publishDefaultsFor(profile: AudioProfile, AudioPresets: any) {
+  if (profile === "music") {
+    return {
+      audioPreset: AudioPresets?.musicHighQualityStereo,
+      dtx: false,
+      red: false,
+      forceStereo: true,
+    };
+  }
+  return {
+    audioPreset: AudioPresets?.speech,
+    dtx: true,
+    red: true,
+    forceStereo: false,
+  };
+}
+
 export async function joinChannel(opts: JoinOptions): Promise<void> {
   // Re-join cleanly if already connected somewhere.
   if (session.room) {
     await leaveChannel();
   }
 
-  const { Room, RoomEvent, Track } = await import("livekit-client");
+  const lk = await import("livekit-client");
+  const { Room, RoomEvent, AudioPresets } = lk as any;
+
+  const profile =
+    opts.audioProfile || audioProfileForType(opts.spaceType);
+  const capture = captureDefaultsFor(profile);
+  const publish = publishDefaultsFor(profile, AudioPresets);
 
   try {
     const creds = await fetchToken(opts.spaceId, opts.role);
-    const room: AnyRoom = new Room({ adaptiveStream: true, dynacast: true });
+
+    const room: AnyRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      // Tuned publish defaults so speakers sound right for the room type.
+      publishDefaults: {
+        audioPreset: publish.audioPreset,
+        dtx: publish.dtx,
+        red: publish.red,
+        forceStereo: publish.forceStereo,
+      },
+      // Default capture constraints; music rooms keep the raw signal.
+      audioCaptureDefaults: capture,
+      stopLocalTrackOnUnpublish: true,
+    });
 
     const onActiveSpeakers = (speakers: Array<{ identity: string }>) => {
       const speakingIds = new Set(speakers.map((s) => s.identity));
@@ -113,23 +200,38 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
     session.cleanups.push(() => room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers));
 
+    // Surface reconnection so brief network blips self-heal instead of
+    // being treated as a fatal disconnect.
+    const onReconnecting = () => opts.onReconnecting?.();
+    const onReconnected = () => opts.onReconnected?.();
+    room.on(RoomEvent.Reconnecting, onReconnecting);
+    room.on(RoomEvent.Reconnected, onReconnected);
+    session.cleanups.push(() => room.off(RoomEvent.Reconnecting, onReconnecting));
+    session.cleanups.push(() => room.off(RoomEvent.Reconnected, onReconnected));
+
     const onDisconnected = () => {
       opts.onError?.(new Error("Disconnected from space"));
     };
     room.on(RoomEvent.Disconnected, onDisconnected);
     session.cleanups.push(() => room.off(RoomEvent.Disconnected, onDisconnected));
 
-    await room.connect(creds.url, creds.token);
+    await room.connect(creds.url, creds.token, { autoSubscribe: true });
 
     session.room = room;
     session.spaceId = opts.spaceId;
     session.identity = creds.identity;
     session.role = creds.role;
+    session.profile = profile;
 
     // Publishers start with the mic enabled; subscribers stay silent.
     if (creds.role === "publisher") {
-      await room.localParticipant.setMicrophoneEnabled(true);
-      session.localAudioTrack = Track ? true : true;
+      await room.localParticipant.setMicrophoneEnabled(true, capture, {
+        audioPreset: publish.audioPreset,
+        dtx: publish.dtx,
+        red: publish.red,
+        forceStereo: publish.forceStereo,
+      });
+      session.localAudioTrack = true;
     }
   } catch (err) {
     opts.onError?.(err as Error);
@@ -151,11 +253,11 @@ export async function setRole(role: LiveKitRole): Promise<void> {
   // Roles are enforced by the token grant, so switching to publisher requires
   // a fresh token with canPublish. Re-mint and apply mic state accordingly.
   if (role === session.role) return;
-
   if (role === "publisher") {
     const creds = await fetchToken(session.spaceId, "publisher");
     // If the server refused (not a speaker), it throws before this line.
-    await session.room.localParticipant.setMicrophoneEnabled(true);
+    const capture = captureDefaultsFor(session.profile);
+    await session.room.localParticipant.setMicrophoneEnabled(true, capture);
     session.role = creds.role;
   } else {
     await session.room.localParticipant.setMicrophoneEnabled(false);
@@ -185,6 +287,7 @@ export async function leaveChannel(): Promise<void> {
     spaceId: null,
     identity: null,
     role: "subscriber",
+    profile: "voice",
     localAudioTrack: null,
     cleanups: [],
   };
@@ -195,6 +298,7 @@ export function getSession() {
     spaceId: session.spaceId,
     identity: session.identity,
     role: session.role,
+    profile: session.profile,
     connected: !!session.room,
     hasLocalAudio: !!session.localAudioTrack,
   };

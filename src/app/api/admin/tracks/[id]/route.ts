@@ -31,21 +31,17 @@ export async function PATCH(
       { status: 503 },
     );
   }
-
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const id = Number(params.id);
   if (!Number.isInteger(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-
   try {
     const supabase = getSupabaseAdmin();
     const body = await req.json().catch(() => ({}));
     const update: Record<string, any> = {};
-
     // Bound free-form strings; reject rather than silently truncate so admins
     // notice accidental oversized pastes.
     if (typeof body.title === "string") {
@@ -82,6 +78,16 @@ export async function PATCH(
       const d = Number(body.duration_seconds);
       if (Number.isFinite(d) && d > 0) update.duration_seconds = Math.round(d);
     }
+    // track_number lets an admin arrange the running order of songs within a
+    // release. Accept any non-negative integer; the Release Manager sends the
+    // new position when reordering tracks up/down.
+    if (body.track_number != null) {
+      const n = Number(body.track_number);
+      if (!Number.isInteger(n) || n < 0) {
+        return NextResponse.json({ error: "Invalid track_number" }, { status: 400 });
+      }
+      update.track_number = n;
+    }
     if (body.preview_start != null) {
       const s = Number(body.preview_start);
       if (Number.isFinite(s) && s >= 0) update.preview_start = s;
@@ -97,11 +103,9 @@ export async function PATCH(
     ) {
       update.preview_end = update.preview_start + 30;
     }
-
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
-
     // Enforce a dedicated preview clip whenever a track goes live. Without
     // one, /api/tracks/[id]/stream falls back to serving the full audio to
     // free listeners with only a client-side 30s cap — which is cosmetic
@@ -128,10 +132,8 @@ export async function PATCH(
         );
       }
     }
-
     const { error } = await supabase.from("tracks").update(update).eq("id", id);
     if (error) throw error;
-
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(`PATCH /api/admin/tracks/${params.id} failed:`, err);
@@ -159,7 +161,6 @@ function resolveStorageTarget(
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-
   const marker = "/object/public/";
   const idx = trimmed.indexOf(marker);
   if (idx !== -1) {
@@ -172,11 +173,9 @@ function resolveStorageTarget(
     if (!bucket || !path) return null;
     return { bucket, path };
   }
-
   // Reject any other absolute URL shape we don't understand rather than
   // guessing — better to leave an orphan than to remove the wrong object.
   if (/^https?:\/\//i.test(trimmed)) return null;
-
   // Relative path in the default bucket. Guard against path traversal.
   if (trimmed.includes("..")) return null;
   return { bucket: defaultBucket, path: trimmed };
@@ -204,19 +203,15 @@ export async function DELETE(
       { status: 503 },
     );
   }
-
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const id = Number(params.id);
   if (!Number.isInteger(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-
   try {
     const supabase = getSupabaseAdmin();
-
     // 1. Read the artifacts we need to clean up before the row disappears.
     const { data: track, error: readErr } = await supabase
       .from("tracks")
@@ -227,7 +222,6 @@ export async function DELETE(
     if (!track) {
       return NextResponse.json({ error: "Track not found" }, { status: 404 });
     }
-
     // 2. Decide whether this is the last track on its release. If so we can
     //    also remove the release + its cover art; otherwise the cover belongs
     //    to sibling tracks and must be preserved.
@@ -239,11 +233,9 @@ export async function DELETE(
         .eq("release_id", track.release_id);
       isLastOnRelease = (count ?? 0) <= 1;
     }
-
     // 3. Delete the track row — the definitive user-visible record.
     const { error: delErr } = await supabase.from("tracks").delete().eq("id", id);
     if (delErr) throw delErr;
-
     const storageErrors: string[] = [];
     const removeTarget = async (
       value: string | null | undefined,
@@ -257,11 +249,9 @@ export async function DELETE(
         .remove([target.path]);
       if (error) storageErrors.push(`${label}:${error.message}`);
     };
-
     // 4. Master audio + preview clip both live in the private audio-files bucket.
     await removeTarget(track.audio_url, "audio-files", "audio");
     await removeTarget(track.preview_url, "audio-files", "preview");
-
     // 5. Cover art + empty release, only when nothing else references them.
     let removedRelease = false;
     if (isLastOnRelease && track.release_id != null) {
@@ -283,7 +273,6 @@ export async function DELETE(
         removedRelease = true;
       }
     }
-
     return NextResponse.json({
       ok: true,
       removedRelease,

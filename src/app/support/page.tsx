@@ -20,11 +20,11 @@ const faqs = [
   },
   {
     q: "How do I cancel my membership?",
-    a: "Memberships aren't live yet. When they launch, you'll cancel from your account settings or by emailing us. Cancellations take effect at the end of the billing period.",
+    a: "You can cancel anytime from your account settings, or by emailing us. Cancellations take effect at the end of the current billing period.",
   },
   {
     q: "I'm an artist — how do I get paid?",
-    a: "Artists receive payouts monthly via Stripe Connect. Complete your payout details in your artist dashboard once it's available.",
+    a: "Artists receive payouts monthly via Stripe Connect. Add your payout details in your artist dashboard to start receiving payments.",
   },
 ];
 

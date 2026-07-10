@@ -299,7 +299,7 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="flex gap-3 flex-wrap">
           <Link
-            href="/admin/tracks"
+            href="/admin/releases"
             className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium hover:bg-[#c9a96e]/25 transition-all cursor-pointer"
           >
             + New Track
@@ -800,7 +800,7 @@ function TracksSection() {
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold">All Tracks</h3>
         <Link
-          href="/admin/tracks"
+          href="/admin/releases"
           className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer hover:bg-[#c9a96e]/25"
         >
           Open Music Manager →

@@ -148,6 +148,30 @@ export default function PayoutsPanel() {
               </p>
             </div>
           )}
+          <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+  <p className="text-sm font-medium text-[#f0d99c]">
+    Before you start, have these ready
+  </p>
+  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[#9fb8a8]">
+    <li>A valid email address to sign in to Stripe.</li>
+    <li>
+      A government-issued photo ID (driver&apos;s license or passport)
+      to verify your identity.
+    </li>
+    <li>Your date of birth and home address.</li>
+    <li>
+      Your bank account and routing numbers (or a debit card) so
+      payouts land in your account.
+    </li>
+    <li>
+      For US taxes: your SSN (or EIN if you pay out to a business).
+    </li>
+  </ul>
+  <p className="mt-2 text-xs text-[#7a8a80]">
+    You enter this on Stripe&apos;s secure page &mdash; Melori never sees
+    or stores your ID or bank details. Setup takes about 5 minutes.
+  </p>
+</div>
           <button
             onClick={startOnboarding}
             disabled={busy}

@@ -18,6 +18,8 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Music", href: "/music" },
       { label: "Artists", href: "/artists" },
+{ label: "Albums", href: "/music?type=album" },
+{ label: "Singles", href: "/music?type=single" },
       { label: "Videos", href: "/video" },
     ],
   },

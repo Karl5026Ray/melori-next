@@ -53,8 +53,9 @@ export async function POST(req: Request) {
       // 90% to the artist via `transfer_data.destination` + a 10%
       // `application_fee_amount` (see api/artist/purchase/checkout). In that
       // model the connected account only needs the `transfers` capability.
-      // Requesting `card_payments` (a direct-charge capability) makes
-      // accounts.create throw in live mode for this platform configuration.
+    // Request both `card_payments` and `transfers`: Stripe requires
+    // platform approval for `transfers` without `card_payments`, which
+    // otherwise makes accounts.create throw in live mode.
       const account = await stripe.accounts.create({
         type: "express",
         country: "US",
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
         business_type: "individual",
         capabilities: {
           transfers: { requested: true },
+          card_payments: { requested: true },
         },
         metadata: { artist_id: String(artistId), profile_id: userId },
       });

@@ -76,8 +76,7 @@ export default function PrivacyPage() {
                 className="text-brand-primary hover:underline"
               >
                 support@melorimusic.org
-              </a>
-              .
+              </a>.
             </p>
           </section>
         </div>

@@ -55,7 +55,7 @@ export default function SpaceDetailPage() {
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
-  const [micDenied, setMicDenied] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
   const [liveHere, setLiveHere] = useState<number | null>(null);
   const [peerHandToast, setPeerHandToast] = useState<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -483,7 +483,7 @@ export default function SpaceDetailPage() {
           channel: space.agora_channel!,           spaceType: space.type,
           role,
           spaceId,
-          onError: (err) => {
+          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),         onError: (err) => {
             if (
               /NotAllowedError|Permission|permission denied/i.test(
                 err.message ?? "",
@@ -841,7 +841,7 @@ export default function SpaceDetailPage() {
                     </span>
                   )}
                 </div>
-                <StageGrid participants={speakers} />
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={speakers} /> participants={speakers} />
 
                 {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
                   <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
@@ -963,7 +963,7 @@ export default function SpaceDetailPage() {
                 <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
                   Audience ({audience.length})
                 </h3>
-                <StageGrid participants={audience} size="sm" />
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={speakers} /> participants={audience} size="sm" />
               </div>
             </>
           )}

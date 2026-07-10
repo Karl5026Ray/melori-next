@@ -13,7 +13,7 @@ import { Music, Mail, Lock, ArrowRight } from "lucide-react";
 function safeNext(next: string | null): string {
   // Only allow same-origin absolute paths to avoid open-redirects.
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/social/spaces";
+  return "/social/profile";
 }
 
 function AuthInner() {
@@ -81,7 +81,7 @@ function AuthInner() {
           disabled={googleLoading}
           className="w-full flex items-center justify-center gap-2 rounded-xl border border-melori-border bg-melori-elevated py-3 text-sm font-medium transition hover:border-melori-purple/40 disabled:opacity-50 mb-4"
         >
-          {googleLoading ? "Redirecting…" : "Continue with Google"}
+          {googleLoading ? "Redirecting\u2026" : "Continue with Google"}
         </button>
 
         <div className="flex items-center gap-3 mb-4">

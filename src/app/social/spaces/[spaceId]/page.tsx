@@ -11,7 +11,7 @@ import {
   leaveChannel as agoraLeave,
   setMuted as agoraSetMuted,
   setRole as agoraSetRole,
-} from "@/lib/agoraClient";
+} from "@/lib/livekitClient";
 import {
   joinPresence as pubnubJoin,
   leavePresence as pubnubLeave,
@@ -144,7 +144,7 @@ export default function SpaceDetailPage() {
       }
     }
   }, [user, participants]);
-
+  
   const handleJoin = useCallback(async () => {
     if (!user) {
       router.push("/social/auth");
@@ -176,7 +176,7 @@ export default function SpaceDetailPage() {
       .then(({ error: rpcErr }) => {
         if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
       });
-  }, [user, spaceId, router]);
+  }, [user, spaceId, router]);    useEffect(() => { if (isJoined) return; if (!user || !space) return; if (user.id === space.host_id) void handleJoin(); }, [isJoined, user, space, handleJoin]);
 
   const handleLeave = useCallback(async () => {
     if (!user) return;
@@ -208,7 +208,7 @@ export default function SpaceDetailPage() {
     setIsJoined(false);
     await supabase.rpc("decrement_space_participants", { space_id: spaceId });
     router.push("/social/spaces");
-  }, [user, spaceId, router]);
+  }, [user, spaceId, router]); 
 
   // Central helper: change mute state locally + on Agora + in the DB.
   const applyMute = useCallback(

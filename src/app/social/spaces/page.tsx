@@ -6,6 +6,9 @@ import Link from "next/link";
 // Rendered per-request: this page queries Supabase at request time, so it must
 // not be statically prerendered at build time (env vars are runtime-only).
 export const dynamic = "force-dynamic";
+// Disable Next.js Data Cache for this route so newly-created live spaces
+// appear immediately instead of a stale (empty) cached fetch result.
+export const revalidate = 0;
 
 type Tab = "live" | "scheduled";
 

@@ -17,12 +17,12 @@ import {
 } from "lucide-react";
 
 const navItems = [
+  { href: "/social/profile", label: "Profile", icon: User },
   { href: "/social/spaces", label: "Spaces", icon: Radio },
   { href: "/social/community", label: "Community", icon: MessagesSquare },
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
   { href: "/social/waves", label: "Waves", icon: Hand },
   { href: "/social/video", label: "Video", icon: Compass },
-  { href: "/social/profile", label: "Profile", icon: User },
 ];
 
 export function Sidebar() {

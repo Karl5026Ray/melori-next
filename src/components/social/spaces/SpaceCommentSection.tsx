@@ -15,6 +15,11 @@ interface SpaceComment {
   id: string;
   user_id: string | null;
   author_name: string | null;
+  // Populated from the space_comments_with_author view / profile join so every
+  // comment renders a real author + avatar instead of a bare name.
+  author_display?: string | null;
+  avatar_url?: string | null;
+  username?: string | null;
   body: string;
   created_at: string;
 }
@@ -32,6 +37,10 @@ function relativeTime(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+function displayName(c: SpaceComment): string {
+  return c.author_display || c.author_name || "Superfan";
 }
 
 // Per-space comment thread rendered below the stage. Reads are public.
@@ -66,7 +75,10 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
       }
     })();
 
-    // Live updates while the room is open.
+    // Live updates while the room is open. The realtime INSERT payload only
+    // carries the raw space_comments row (no profile join), so we resolve the
+    // author's avatar/name from profiles before inserting into state. This is
+    // what keeps every incoming comment tied to a real person's profile pic.
     const channel = supabase
       .channel(`space_comments:${spaceId}`)
       .on(
@@ -77,10 +89,35 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
           table: "space_comments",
           filter: `space_id=eq.${spaceId}`,
         },
-        (payload) => {
-          const c = payload.new as SpaceComment;
+        async (payload) => {
+          const row = payload.new as SpaceComment;
+
+          // Our own comment is already added optimistically by handleSubmit.
+          if (user && row.user_id === user.id) return;
+
+          let enriched: SpaceComment = row;
+          if (row.user_id) {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("display_name, full_name, username, avatar_url")
+              .eq("id", row.user_id)
+              .maybeSingle();
+            if (profile) {
+              enriched = {
+                ...row,
+                author_display:
+                  profile.display_name ||
+                  profile.full_name ||
+                  profile.username ||
+                  row.author_name,
+                avatar_url: profile.avatar_url ?? null,
+                username: profile.username ?? null,
+              };
+            }
+          }
+
           setComments((prev) =>
-            prev.some((x) => x.id === c.id) ? prev : [c, ...prev],
+            prev.some((x) => x.id === enriched.id) ? prev : [enriched, ...prev],
           );
         },
       )
@@ -90,7 +127,7 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [spaceId]);
+  }, [spaceId, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +135,7 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
       router.push("/social/auth");
       return;
     }
+
     const text = body.trim();
     if (!text) return;
 
@@ -124,6 +162,7 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
       router.push("/membership");
       return;
     }
+
     if (res.status === 401) {
       router.push("/social/auth");
       return;
@@ -135,49 +174,44 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
   };
 
   return (
-    <div className="mt-10 border-t border-melori-border pt-8">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-9 h-9 rounded-xl bg-melori-purple/15 flex items-center justify-center">
-          <MessageSquare className="w-4 h-4 text-melori-purple" />
-        </div>
-        <div>
-          <h3 className="font-bold">Room comments</h3>
-          <p className="text-xs text-melori-muted">
-            Anyone can read. Posting is a Superfan feature.
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <div>
+        <h3 className="font-semibold text-lg mb-1">Room comments</h3>
+        <p className="text-sm text-melori-muted mb-4">
+          Anyone can read. Posting is a Superfan feature.
+        </p>
 
-      {canParticipate ? (
-        <form onSubmit={handleSubmit} className="mb-6">
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={2}
-            maxLength={2000}
-            placeholder="Share a thought with the room…"
-            className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition resize-none"
-          />
-          {error && (
-            <p className="mt-2 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
-              {error}
-            </p>
-          )}
-          <div className="mt-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={isSubmitting || !body.trim()}
-              className="btn-primary px-5 py-2 rounded-full font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "Posting…" : "Post"}
-            </button>
+        {canParticipate ? (
+          <form onSubmit={handleSubmit}>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={2}
+              maxLength={2000}
+              placeholder="Share a thought with the room…"
+              className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition resize-none"
+            />
+            {error && (
+              <p className="mt-2 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
+                {error}
+              </p>
+            )}
+            <div className="mt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={isSubmitting || !body.trim()}
+                className="btn-primary px-5 py-2 rounded-full font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Posting…" : "Post"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="mb-6">
+            <UpgradePrompt action="comment" />
           </div>
-        </form>
-      ) : (
-        <div className="mb-6">
-          <UpgradePrompt action="comment" />
-        </div>
-      )}
+        )}
+      </div>
 
       {loading ? (
         <p className="text-center text-sm text-melori-muted py-6">Loading…</p>
@@ -187,24 +221,57 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
         </p>
       ) : (
         <ul className="space-y-3">
-          {comments.map((c) => (
-            <li
-              key={c.id}
-              className="rounded-2xl border border-melori-border bg-melori-elevated/50 p-4"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-semibold text-sm">
-                  {c.author_name || "Superfan"}
-                </span>
-                <span className="text-xs text-melori-muted">
-                  {relativeTime(c.created_at)}
-                </span>
-              </div>
-              <p className="text-sm text-melori-text whitespace-pre-wrap break-words">
-                {c.body}
-              </p>
-            </li>
-          ))}
+          {comments.map((c) => {
+            const name = displayName(c);
+            const initial = name.charAt(0).toUpperCase();
+            const profileHref = c.username ? `/social/u/${c.username}` : undefined;
+            const Avatar = (
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-melori-purple/30 text-xs font-semibold">
+                {c.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.avatar_url}
+                    alt={name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  initial
+                )}
+              </span>
+            );
+            return (
+              <li
+                key={c.id}
+                className="rounded-2xl border border-melori-border bg-melori-elevated/50 p-4"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  {profileHref ? (
+                    <a href={profileHref} className="shrink-0">
+                      {Avatar}
+                    </a>
+                  ) : (
+                    Avatar
+                  )}
+                  {profileHref ? (
+                    <a
+                      href={profileHref}
+                      className="font-semibold text-sm hover:underline"
+                    >
+                      {name}
+                    </a>
+                  ) : (
+                    <span className="font-semibold text-sm">{name}</span>
+                  )}
+                  <span className="text-xs text-melori-muted">
+                    {relativeTime(c.created_at)}
+                  </span>
+                </div>
+                <p className="text-sm text-melori-text whitespace-pre-wrap break-words">
+                  {c.body}
+                </p>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

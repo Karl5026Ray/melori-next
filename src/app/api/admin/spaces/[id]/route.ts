@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getAdminSecret } from "@/lib/admin-secret";
+import { getAdminSecretKey } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,8 @@ const auth = req.headers.get("authorization") || "";
 const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 if (!token) return null;
 try {
-const secret = new TextEncoder().encode(getAdminSecret());
+const secret = getAdminSecretKey();
+if (!secret) return null;
 const { payload } = await jwtVerify(token, secret);
 if (payload.role !== "admin") return null;
 return payload;

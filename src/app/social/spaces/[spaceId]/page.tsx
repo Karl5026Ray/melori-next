@@ -127,16 +127,6 @@ export default function SpaceDetailPage() {
     }
   }, [user, participants]);
   
-// Auto-join: host spawns directly into their own space on load,
-// skipping the manual "Join Space" step.
-useEffect(() => {
-if (isJoined) return;
-if (!user || !space) return;
-if (user.id === space.host_id) {
-void handleJoin();
-}
-}, [isJoined, user, space, handleJoin]);
-
   const handleJoin = useCallback(async () => {
     if (!user) {
       router.push("/social/auth");
@@ -168,7 +158,7 @@ void handleJoin();
       .then(({ error: rpcErr }) => {
         if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
       });
-  }, [user, spaceId, router]);
+  }, [user, spaceId, router]);    useEffect(() => { if (isJoined) return; if (!user || !space) return; if (user.id === space.host_id) void handleJoin(); }, [isJoined, user, space, handleJoin]);
 
   const handleLeave = useCallback(async () => {
     if (!user) return;
@@ -200,7 +190,7 @@ void handleJoin();
     setIsJoined(false);
     await supabase.rpc("decrement_space_participants", { space_id: spaceId });
     router.push("/social/spaces");
-  }, [user, spaceId, router]);
+  }, [user, spaceId, router]); 
 
   // Central helper: change mute state locally + on Agora + in the DB.
   const applyMute = useCallback(

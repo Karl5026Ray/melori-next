@@ -67,6 +67,7 @@ export default async function AlbumDetailPage({
             <span className="uppercase tracking-wide text-text-secondary">
               {release.release_type}
             </span>
+            <span aria-hidden="true" className="text-text-secondary/40 select-none">·</span>
             <span className="font-semibold text-brand-primary">
               {formatPrice(release.price)}
             </span>

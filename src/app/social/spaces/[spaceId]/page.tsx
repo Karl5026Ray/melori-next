@@ -126,6 +126,16 @@ export default function SpaceDetailPage() {
       }
     }
   }, [user, participants]);
+  
+// Auto-join: host spawns directly into their own space on load,
+// skipping the manual "Join Space" step.
+useEffect(() => {
+if (isJoined) return;
+if (!user || !space) return;
+if (user.id === space.host_id) {
+void handleJoin();
+}
+}, [isJoined, user, space, handleJoin]);
 
   const handleJoin = useCallback(async () => {
     if (!user) {

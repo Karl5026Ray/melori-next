@@ -179,6 +179,28 @@ function RegisterInner() {
               through secure Stripe checkout. After payment you&apos;ll finish
               creating your account.
             </p>
+            {tier === "artist" && (
+  <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
+    <p className="text-sm font-medium text-[#f0d99c]">
+      After you join, set up payouts to get paid
+    </p>
+    <p className="mt-1 text-xs text-[#888]">
+      Artists keep 90% of every sale. Once your account is created,
+      head to Artist Studio &rarr; Payouts to connect Stripe. Have these
+      ready:
+    </p>
+    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
+      <li>A government-issued photo ID to verify your identity.</li>
+      <li>Your date of birth and home address.</li>
+      <li>Your bank account and routing numbers (or a debit card).</li>
+      <li>For US taxes: your SSN (or EIN for a business).</li>
+    </ul>
+    <p className="mt-2 text-xs text-[#7a8a80]">
+      You enter this on Stripe&apos;s secure page &mdash; Melori never sees
+      or stores your ID or bank details.
+    </p>
+  </div>
+)}
             <button
               type="button"
               onClick={() => router.push("/membership")}

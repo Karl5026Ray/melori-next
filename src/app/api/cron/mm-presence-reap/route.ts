@@ -97,6 +97,8 @@ async function handle(req: NextRequest) {
   let ended = 0;
   const endedIds: string[] = [];
   const now = new Date().toISOString();
+  const HARD_IDLE_SECONDS = 1800; // 30 min: ghost PubNub presence must never keep a room live forever
+  const hardIdleCutoff = new Date(Date.now() - HARD_IDLE_SECONDS * 1000).toISOString();
 
   // Sequential to keep PubNub hereNow() call volume gentle; the live-room set
   // is small in practice.
@@ -108,9 +110,9 @@ async function handle(req: NextRequest) {
       // Can't confirm emptiness → do NOT end. Leave it for the next run or
       // the idle reaper. Ending on an unconfirmed read risks killing a live
       // room during a transient PubNub blip.
-      continue;
+      const la = s.last_activity_at ?? s.created_at; const stale = !!la && new Date(la).toISOString() <= hardIdleCutoff; if (!stale) continue; occupancy = 0; // hereNow failed but room is past hard-idle: treat as empty and reap
     }
-    if (occupancy > 0) continue;
+    const lastActive = s.last_activity_at ?? s.created_at; const pastHardIdle = !!lastActive && new Date(lastActive).toISOString() <= hardIdleCutoff; if (occupancy > 0 && !pastHardIdle) continue;
 
     // Genuinely empty → end atomically via the guarded RPC (idempotent).
     const { data: endedId, error: rpcErr } = await supabase.rpc(

@@ -17,21 +17,41 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-const spaceTypes = [
+const spaceTypes: {
+  id: string;
+  format: "release_party" | "discussion" | "versus_battle" | "dj_set";
+  label: string;
+  icon: typeof Headphones;
+  desc: string;
+}[] = [
   {
     id: "listening",
-    label: "Listening",
+    format: "release_party",
+    label: "Release Party",
     icon: Headphones,
-    desc: "Play music together",
+    desc: "Time-capped premiere with countdown and Q&A",
   },
   {
     id: "discussion",
+    format: "discussion",
     label: "Discussion",
     icon: MessageCircle,
-    desc: "Talk about music",
+    desc: "Panels, AMAs, and open forums",
   },
-  { id: "creation", label: "Creation", icon: Mic, desc: "Show your process" },
-  { id: "dj_set", label: "DJ Set", icon: Radio, desc: "Live mixing" },
+  {
+    id: "creation",
+    format: "versus_battle",
+    label: "Versus Battle",
+    icon: Mic,
+    desc: "Head-to-head showdown with live voting",
+  },
+  {
+    id: "dj_set",
+    format: "dj_set",
+    label: "DJ Set",
+    icon: Radio,
+    desc: "Continuous mix with track requests",
+  },
 ];
 
 export default function CreateSpacePage() {
@@ -77,7 +97,7 @@ export default function CreateSpacePage() {
     const res = await authFetch("/api/social/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, topic, type, scheduled_at }),
+      body: JSON.stringify({ title, topic, type, room_format: spaceTypes.find((s) => s.id === type)?.format, scheduled_at }),
     });
 
     if (res.ok) {
@@ -187,7 +207,7 @@ export default function CreateSpacePage() {
           </div>
 
           <div>
-            <label className="block text-sm text-melori-muted mb-3">Type</label>
+            <label className="block text-sm text-melori-muted mb-3">Room Format</label>
             <div className="grid grid-cols-2 gap-3">
               {spaceTypes.map((t) => {
                 const Icon = t.icon;

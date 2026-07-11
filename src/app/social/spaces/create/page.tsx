@@ -56,7 +56,7 @@ const spaceTypes: {
 
 export default function CreateSpacePage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profileError } = useAuth();
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
@@ -75,6 +75,13 @@ export default function CreateSpacePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
+      // If the profile fetch errored (rather than the member genuinely being
+      // signed out), show the reason here instead of a mysterious bounce to
+      // /social/auth.
+      if (profileError) {
+        setError("Couldn't load your profile. Please try again.");
+        return;
+      }
       router.push("/social/auth");
       return;
     }

@@ -28,13 +28,24 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
         return;
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from("profiles")
         .select("role, membership_status")
         .eq("id", session.user.id)
         .maybeSingle();
 
       if (!active) return;
+
+      // Surface a failed profile query instead of silently treating the errored
+      // (null) result as "not a subscriber" and redirecting with no signal — the
+      // same swallow that masked a production bug in the social AuthProvider.
+      if (error) {
+        console.error(`[StudioGuard] profile load failed: ${error.message}`, {
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+      }
 
       if (isArtistSubscriber(profile)) {
         setStatus("allowed");

@@ -29,7 +29,7 @@ export default async function MusicPage() {
   // A failure in one list must not blank the other, so each has its own catch.
   const [releases, studioTracks] = await Promise.all([
     getReleases().catch(() => []),
-    getPublishedStudioTracks(50).catch(() => []),
+    getPublishedStudioTracks(500).catch(() => []),
   ]);
 
   return (

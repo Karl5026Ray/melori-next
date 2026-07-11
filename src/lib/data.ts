@@ -150,8 +150,24 @@ export interface StudioTrackListItem {
   profile: { display_name: string | null; avatar_url: string | null } | null;
 }
 
+// Case-insensitive A→Z by title. Postgres ORDER BY sorts capitals before
+// lowercase ("Zebra" < "apple"), which looks wrong in a music library, so we
+// re-sort in JS with localeCompare on the base sensitivity. Falls back to
+// created_at for identically-titled rows so the order stays stable.
+function sortStudioAlpha<T extends { title: string; created_at: string }>(
+  rows: T[],
+): T[] {
+  return [...rows].sort((a, b) => {
+    const byTitle = (a.title ?? "").localeCompare(b.title ?? "", undefined, {
+      sensitivity: "base",
+    });
+    if (byTitle !== 0) return byTitle;
+    return (a.created_at ?? "").localeCompare(b.created_at ?? "");
+  });
+}
+
 export async function getPublishedStudioTracks(
-  limit = 50,
+  limit = 500,
 ): Promise<StudioTrackListItem[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -160,7 +176,10 @@ export async function getPublishedStudioTracks(
       "id, title, artist, album, genre, cover_url, preview_url, duration, created_at, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
     )
     .eq("status", "published")
-    .order("created_at", { ascending: false })
+    // Alphabetical by title (A→Z, case-insensitive). Every self-upload lands
+    // in the collection in alphabetical order so the public grid reads like a
+    // sorted library rather than a reverse-chronological feed.
+    .order("title", { ascending: true })
     .limit(limit);
 
   if (error) {
@@ -174,10 +193,27 @@ export async function getPublishedStudioTracks(
         "id, title, artist, album, genre, cover_url, preview_url, duration, created_at",
       )
       .eq("status", "published")
-      .order("created_at", { ascending: false })
+      .order("title", { ascending: true })
       .limit(limit);
     if (bareErr) throw bareErr;
-    return ((bare as any[] | null) ?? []).map((row) => ({
+    return sortStudioAlpha(
+      ((bare as any[] | null) ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        genre: row.genre,
+        cover_url: row.cover_url,
+        preview_url: row.preview_url,
+        duration: row.duration,
+        created_at: row.created_at,
+        profile: null,
+      })),
+    );
+  }
+
+  return sortStudioAlpha(
+    ((data as any[] | null) ?? []).map((row) => ({
       id: row.id,
       title: row.title,
       artist: row.artist,
@@ -187,22 +223,9 @@ export async function getPublishedStudioTracks(
       preview_url: row.preview_url,
       duration: row.duration,
       created_at: row.created_at,
-      profile: null,
-    }));
-  }
-
-  return ((data as any[] | null) ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    artist: row.artist,
-    album: row.album,
-    genre: row.genre,
-    cover_url: row.cover_url,
-    preview_url: row.preview_url,
-    duration: row.duration,
-    created_at: row.created_at,
-    profile: firstOrSelf(row.profile) as StudioTrackListItem["profile"],
-  }));
+      profile: firstOrSelf(row.profile) as StudioTrackListItem["profile"],
+    })),
+  );
 }
 
 export async function getReleaseBySlug(slug: string): Promise<{

@@ -20,6 +20,7 @@ export default function UploadPage() {
   const [gateError, setGateError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
+  const [artistName, setArtistName] = useState("");
   const [releaseType, setReleaseType] = useState<"single" | "ep" | "album">("single");
   const [genre, setGenre] = useState("R&B");
   const [description, setDescription] = useState("");
@@ -57,14 +58,20 @@ export default function UploadPage() {
   const canSubmit =
     !uploading && title.trim().length > 0 && audioFile !== null && !gateError;
 
-  // Audio uploads go into the private `audio-files` bucket and must be
-  // referenced by storage path (the stream endpoint signs it on demand).
-  // Cover art goes into the public `covers` bucket and is embedded directly
-  // via a public URL. So this returns different string types per kind, but
-  // both are what the submissions API expects for that column.
-  async function uploadOne(file: File, kind: "audio" | "cover"): Promise<string> {
+  // Audio uploads go into the private `audio-files` bucket under the caller's
+  // own `studio/<uid>/` folder; the stream endpoint signs the path on demand.
+  // Cover art goes into the public `covers` bucket and is embedded directly via
+  // a public URL. We use /api/studio/upload-url (not /api/artist/upload-url) so
+  // the returned path is scoped under `studio/` — which is what
+  // /api/studio/tracks validates before writing the row. Returns BOTH the
+  // bucket-relative path and the public URL so the caller can persist whichever
+  // the tracks table needs (file_path + file_url for audio, cover_url for art).
+  async function uploadOne(
+    file: File,
+    kind: "audio" | "cover",
+  ): Promise<{ path: string; publicUrl: string | null }> {
     setProgress(`Preparing ${kind} upload…`);
-    const signRes = await authFetch("/api/artist/upload-url", {
+    const signRes = await authFetch("/api/studio/upload-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, type: kind }),
@@ -84,13 +91,7 @@ export default function UploadPage() {
     });
     if (!putRes.ok) throw new Error(`${kind} upload failed (${putRes.status})`);
 
-    if (kind === "audio") {
-      // tracks.audio_url stores the storage path (see stream route).
-      return path;
-    }
-    // Cover art is embedded in <img>, so a public URL is required.
-    if (!publicUrl) throw new Error("Cover upload did not return a public URL");
-    return publicUrl;
+    return { path, publicUrl: publicUrl ?? null };
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,26 +109,33 @@ export default function UploadPage() {
 
     setUploading(true);
     try {
-      const audioUrl = await uploadOne(audioFile, "audio");
-      const coverUrl = coverFile ? await uploadOne(coverFile, "cover") : null;
+      const audio = await uploadOne(audioFile, "audio");
+      const cover = coverFile ? await uploadOne(coverFile, "cover") : null;
 
-      setProgress("Submitting for review…");
-      const res = await authFetch("/api/artist/submissions", {
+      // Publish straight into the collection — no review queue. The row lands
+      // in studio_tracks with status "published", so it shows on /music (and
+      // the home feed) on the next request. Free listeners automatically get a
+      // 30-second sample from the stream endpoint; supporters hear the full
+      // track. `type` mirrors the release type the artist picked.
+      setProgress("Publishing to the collection…");
+      const res = await authFetch("/api/studio/tracks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim(),
-          release_type: releaseType,
+          artist: artistName.trim() || null,
+          album: null,
           genre,
-          description: description.trim() || null,
-          audio_url: audioUrl,
-          cover_url: coverUrl,
-          file_size_bytes: audioFile.size,
+          type: releaseType,
+          file_path: audio.path,
+          file_url: audio.publicUrl,
+          cover_url: cover?.publicUrl ?? null,
+          status: "published",
         }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || `Submission failed (${res.status})`);
+        throw new Error(j.error || `Publish failed (${res.status})`);
       }
       setSuccess(true);
     } catch (err: any) {
@@ -164,16 +172,17 @@ export default function UploadPage() {
   if (success) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-2">Submission received</h1>
+        <h1 className="text-2xl font-bold mb-2">You're live 🎉</h1>
         <p className="text-text-secondary mb-6">
-          Your track is in the admin review queue. You'll see it in your dashboard once it's approved.
+          Your track is published to the music collection right now — no approval needed. It’s
+          filed alphabetically and free listeners hear a 30-second sample automatically.
         </p>
         <div className="flex justify-center gap-3">
           <Link
-            href="/dashboard"
+            href="/music"
             className="px-5 py-2.5 rounded-lg bg-brand-primary text-black font-semibold"
           >
-            Back to dashboard
+            View it in the collection
           </Link>
           <button
             type="button"
@@ -186,7 +195,7 @@ export default function UploadPage() {
             }}
             className="px-5 py-2.5 rounded-lg border border-brand-border"
           >
-            Submit another
+            Upload another
           </button>
         </div>
       </div>
@@ -195,9 +204,10 @@ export default function UploadPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold">Submit a track</h1>
+      <h1 className="text-3xl font-bold">Add a track to the collection</h1>
       <p className="text-text-secondary mt-1 mb-8">
-        Tracks are reviewed by a Melori admin before going live on the catalog.
+        Your upload goes live in the music collection instantly — no review queue. It’s filed
+        alphabetically, and free listeners automatically hear a 30-second sample.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -208,6 +218,17 @@ export default function UploadPage() {
             onChange={(e) => setTitle(e.target.value)}
             maxLength={200}
             required
+            className="w-full rounded-md border border-input-border bg-brand-surface px-3 py-2"
+          />
+        </Field>
+
+        <Field label="Artist name (optional — defaults to your profile name)">
+          <input
+            type="text"
+            value={artistName}
+            onChange={(e) => setArtistName(e.target.value)}
+            maxLength={120}
+            placeholder="e.g. Norwood G"
             className="w-full rounded-md border border-input-border bg-brand-surface px-3 py-2"
           />
         </Field>
@@ -294,7 +315,7 @@ export default function UploadPage() {
             disabled={!canSubmit}
             className="px-6 py-3 rounded-lg bg-brand-primary text-black font-semibold disabled:opacity-50"
           >
-            {uploading ? progress || "Uploading…" : "Submit for review"}
+            {uploading ? progress || "Uploading…" : "Publish to collection"}
           </button>
         </div>
       </form>

@@ -11,6 +11,7 @@ import {
   leaveChannel as agoraLeave,
   setMuted as agoraSetMuted,
   setRole as agoraSetRole,
+  ensureAudioPlayback as agoraEnsureAudio,
 } from "@/lib/livekitClient";
 import {
   joinPresence as pubnubJoin,
@@ -195,6 +196,9 @@ export default function SpaceDetailPage() {
       return;
     }
     setIsJoined(true);
+    // Joining is a user gesture. Listeners/audience never press the mic button,
+    // so unlock remote audio playback here so they can hear speakers.
+    void agoraEnsureAudio();
     // Best-effort participant count bump. Doesn't gate the UX.
     void supabase
       .rpc("increment_space_participants", { space_id: spaceId })
@@ -283,6 +287,9 @@ export default function SpaceDetailPage() {
       router.push("/membership");
       return;
     }
+    // Keyboard/click activation is also a user gesture — unlock playback here
+    // too so non-pointer paths still enable remote audio.
+    void agoraEnsureAudio();
     await applyMute(!isMuted);
   }, [user, isMuted, canParticipate, router, applyMute]);
 
@@ -298,6 +305,9 @@ export default function SpaceDetailPage() {
 
   const startPTT = useCallback(() => {
     if (!user || !canParticipate) return;
+    // Unlock remote audio playback from this genuine user gesture (pointer/
+    // touch/mouse down) so browsers allow everyone to be heard instantly.
+    void agoraEnsureAudio();
     if (pttHeldRef.current) return;
     pttHeldRef.current = true;
     pttStartedAtRef.current = Date.now();
@@ -714,6 +724,23 @@ export default function SpaceDetailPage() {
     return () => {
       void agoraLeave();
       void pubnubLeave();
+    };
+  }, []);
+
+  // Listener/audience autoplay unlock: any first tap/click anywhere on the
+  // Space page counts as a user gesture, so unlock remote audio playback for
+  // people who never press the mic button. One-time (removes itself after the
+  // first event) and cleaned up on unmount. SSR-guarded.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const unlock = () => {
+      void agoraEnsureAudio();
+    };
+    document.addEventListener("pointerdown", unlock, { once: true });
+    document.addEventListener("click", unlock, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("click", unlock);
     };
   }, []);
 

@@ -312,6 +312,31 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   }
 }
 
+// Unlock/resume audio playback. MUST be called from a user gesture (e.g. the
+// mic button, a join click, or the first tap on the page) so browsers allow
+// remote audio to play. Browsers gate autoplay of remote <audio> elements
+// behind a user gesture; room.startAudio() is LiveKit's official unlock and is
+// safe to call repeatedly.
+export async function ensureAudioPlayback(): Promise<void> {
+  if (!session.room) return;
+  try {
+    if (typeof session.room.startAudio === "function") {
+      await session.room.startAudio();
+    }
+  } catch (err) {
+    console.warn("[spaces] startAudio failed", err);
+  }
+  // Re-play any attached remote audio elements that autoplay may have paused.
+  session.remoteAudioEls.forEach((el) => {
+    const p = el.play?.();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {
+        /* autoplay still blocked */
+      });
+    }
+  });
+}
+
 export async function setMuted(muted: boolean): Promise<void> {
   if (!session.room) return;
   // Unmuting while we're connected as a subscriber can never publish — the

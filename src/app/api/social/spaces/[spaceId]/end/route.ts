@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
@@ -9,13 +9,14 @@ export const dynamic = "force-dynamic";
 // Only the host may end the room. Marks status='ended' and stamps ended_at.
 export async function POST(
   req: NextRequest,
-  { params }: { params: { spaceId: string } }
+  { params }: { params: Promise<{ spaceId: string }> }
 ) {
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 
-  const spaceId = String(params?.spaceId ?? "").trim();
+  const { spaceId: rawSpaceId } = await params;
+  const spaceId = String(rawSpaceId ?? "").trim();
   if (!spaceId) {
     return NextResponse.json({ error: "spaceId is required" }, { status: 400 });
   }

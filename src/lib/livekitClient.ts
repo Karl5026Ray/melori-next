@@ -241,8 +241,20 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
 
 export async function setMuted(muted: boolean): Promise<void> {
   if (!session.room) return;
-  // Enabling the mic lazily publishes a track if the user is a publisher.
-  await session.room.localParticipant.setMicrophoneEnabled(!muted);
+  // Unmuting while we're connected as a subscriber can never publish — the
+  // current token has no canPublish grant. Re-mint a publisher token first
+  // (same path as setRole("publisher")), which also enables the mic. This
+  // makes unmute reliable even if the initial publisher connect fell back to
+  // subscriber (e.g. a token race). Errors propagate so the UI can react.
+  if (!muted && session.role !== "publisher") {
+    await setRole("publisher");
+    return;
+  }
+  // Enabling the mic lazily publishes a track if the user is a publisher. Pass
+  // the profile capture constraints so a (re)publish keeps the right audio
+  // characteristics (raw signal for music rooms, cleaned speech otherwise).
+  const capture = muted ? undefined : captureDefaultsFor(session.profile);
+  await session.room.localParticipant.setMicrophoneEnabled(!muted, capture);
 }
 
 export async function setRole(role: LiveKitRole): Promise<void> {

@@ -25,7 +25,7 @@ function AuthInner() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(params.get("error") ?? "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +51,7 @@ function AuthInner() {
     try {
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}${next}`
+          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
           : undefined;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",

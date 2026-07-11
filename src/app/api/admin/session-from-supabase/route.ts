@@ -4,6 +4,13 @@ import { SignJWT } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 
+function parseAllowedEmails(): string[] {
+  return (process.env.ADMIN_ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function bearerToken(req: NextRequest): string | null {
   const header =
     req.headers.get("authorization") ?? req.headers.get("Authorization");
@@ -56,7 +63,14 @@ export async function POST(req: NextRequest) {
       .eq("id", userId)
       .maybeSingle();
 
-    if (!profile || (profile as { role?: string }).role !== "admin") {
+    const roleOk = (profile as { role?: string } | null)?.role === "admin";
+    const allowed = parseAllowedEmails();
+    const emailOk =
+      allowed.length === 0
+        ? true
+        : allowed.includes((data.user.email ?? "").toLowerCase());
+
+    if (!roleOk || !emailOk) {
       return NextResponse.json({ error: "Not an admin" }, { status: 403 });
     }
 

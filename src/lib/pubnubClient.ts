@@ -38,6 +38,9 @@ export interface SpaceSignal {
   type: "reaction" | "hand";
   // reaction payload
   emoji?: string;
+  // when present, the reaction is aimed at a specific participant (their user
+  // id) and should animate over that person's avatar instead of center-screen
+  target?: string;
   // raise-hand payload
   raised?: boolean;
   // who sent it (PubNub publisher uuid is also on the envelope, but we echo it

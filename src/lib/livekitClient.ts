@@ -53,6 +53,11 @@ export interface JoinOptions {
   audioProfile?: AudioProfile;
   onRemoteUserSpeaking?: (identity: string, speaking: boolean) => void;
   onLocalSpeakingChange?: (isSpeaking: boolean) => void;
+  // Full set of currently-active speaker identities (LiveKit identity == auth
+  // user id). Emitted on every ActiveSpeakersChanged so the UI can show the
+  // speaking ring for EVERYONE and clear it when they stop — this is the
+  // primary, real-time driver (the DB is_speaking write is only a fallback).
+  onActiveSpeakersChange?: (identities: string[]) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
   onError?: (err: Error) => void;
@@ -190,13 +195,25 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       stopLocalTrackOnUnpublish: true,
     });
 
+    // Track who was speaking last tick so we can emit BOTH true and false
+    // transitions for remote users (the raw event only lists active speakers).
+    let prevSpeakingIds = new Set<string>();
     const onActiveSpeakers = (speakers: Array<{ identity: string }>) => {
       const speakingIds = new Set(speakers.map((s) => s.identity));
-      speakers.forEach((s) => {
-        if (s.identity !== creds.identity) {
-          opts.onRemoteUserSpeaking?.(s.identity, true);
+      // Full active set — primary driver so every speaker's ring shows/clears.
+      opts.onActiveSpeakersChange?.(Array.from(speakingIds));
+      // Per-remote transitions (fire false when someone stops speaking).
+      speakingIds.forEach((id) => {
+        if (id !== creds.identity && !prevSpeakingIds.has(id)) {
+          opts.onRemoteUserSpeaking?.(id, true);
         }
       });
+      prevSpeakingIds.forEach((id) => {
+        if (id !== creds.identity && !speakingIds.has(id)) {
+          opts.onRemoteUserSpeaking?.(id, false);
+        }
+      });
+      prevSpeakingIds = speakingIds;
       const localSpeaking = speakingIds.has(creds.identity);
       opts.onLocalSpeakingChange?.(localSpeaking);
       void writeLocalSpeaking(opts.spaceId, creds.identity, localSpeaking);

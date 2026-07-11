@@ -6,6 +6,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
 import { Sparkles, Lock, MessageSquare, Tag, Headphones } from "lucide-react";
+import CoverImage from "@/components/CoverImage";
+import EditProfileModal from "@/components/social/EditProfileModal";
+import type { Profile } from "@/types/social";
 
 // /superfan — hub gated to Superfan+ (role in superfan/artist/admin). Free users
 // are sent to /membership. Data-driven where tables exist (early-access releases
@@ -29,6 +32,10 @@ export default function SuperfanPage() {
   );
   const [releases, setReleases] = useState<Release[]>([]);
   const [hdAudio, setHdAudio] = useState(false);
+  // The signed-in user's profile, powering the "Your profile" card + edit modal.
+  // Loaded from /api/user/me (the resilient source the gate check already hits).
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -53,10 +60,28 @@ export default function SuperfanPage() {
         router.replace("/social/auth?next=/superfan");
         return;
       }
-      const { role } = (await meRes.json()) as { role: string };
+      const me = (await meRes.json()) as {
+        role: string;
+        profile?: Record<string, any> | null;
+      };
+      const role = me.role;
       if (!SUPERFAN_TIERS.has(role)) {
         router.replace("/membership");
         return;
+      }
+      if (active && me.profile) {
+        const p = me.profile;
+        setProfile({
+          id: p.id ?? session.user.id,
+          username: p.username ?? "",
+          display_name: p.display_name || p.full_name || p.username || "You",
+          avatar_url: p.avatar_url ?? null,
+          role: (p.role ?? role) as Profile["role"],
+          bio: p.bio ?? null,
+          verified: Boolean(p.verified),
+          followers_count: p.followers_count ?? 0,
+          following_count: p.following_count ?? 0,
+        });
       }
 
       // Early-access feed — most recent published releases. Public endpoint;
@@ -109,6 +134,46 @@ export default function SuperfanPage() {
             <h1 className="text-3xl font-bold">Your Superfan hub</h1>
           </div>
         </div>
+
+        {/* Your profile — self-service edit entry point */}
+        {profile && (
+          <section className="mb-8 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="w-16 h-16 shrink-0 overflow-hidden rounded-full border border-[#c9a96e]/30">
+                <CoverImage
+                  src={profile.avatar_url}
+                  alt={profile.display_name}
+                  name={profile.display_name}
+                  rounded="rounded-full"
+                  className="w-full h-full"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold truncate">
+                  {profile.display_name}
+                </h2>
+                <p className="text-xs uppercase tracking-widest text-[#c9a96e] capitalize">
+                  {profile.role}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="px-5 py-2.5 rounded-full bg-[#c9a96e] text-[#0a0a0a] text-sm font-semibold hover:bg-[#d8bd88] transition"
+                >
+                  Edit profile
+                </button>
+                <Link
+                  href="/settings"
+                  className="text-sm text-[#888] hover:text-[#c9a96e] transition"
+                >
+                  Account settings
+                </Link>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Early access */}
         <section className="mb-8">
@@ -210,6 +275,14 @@ export default function SuperfanPage() {
           </section>
         </div>
       </div>
+
+      {editing && profile && (
+        <EditProfileModal
+          user={profile}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => setProfile(updated)}
+        />
+      )}
     </div>
   );
 }

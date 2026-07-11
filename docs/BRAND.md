@@ -46,7 +46,7 @@ The live site uses a **dark theme** as its primary (and only active) mode.
 - og:title: `MELORI MUSIC`
 - og:description: `Stream freely. Support directly. Create endlessly.`
 - og:image: `/public/images/og-image.png` (source: same logo PNG on current site)
-- meta description: `Independent music from Karl Ray, KAEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.`
+- meta description: `Independent music from Karl Ray, KAIEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.`
 - theme-color: `#ff8c00`
 - apple-mobile-web-app-title: `Melori`
 

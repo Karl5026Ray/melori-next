@@ -38,8 +38,10 @@ export default async function MusicPage() {
       <p className="mt-2 mb-8 text-text-secondary">
         Browse every release on MELORI Music.
       </p>
-      <MusicCatalog releases={releases} />
       <StudioTrackGrid tracks={studioTracks} />
+      <div className="mt-16">
+        <MusicCatalog releases={releases} />
+      </div>
     </div>
   );
 }

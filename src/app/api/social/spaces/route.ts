@@ -39,6 +39,17 @@ export async function POST(req: NextRequest) {
         ? body.type
         : "listening";
 
+        const ALLOWED_FORMATS = new Set([
+      "release_party",
+      "discussion",
+      "versus_battle",
+      "dj_set",
+    ]);
+    const room_format =
+      typeof body.room_format === "string" && ALLOWED_FORMATS.has(body.room_format)
+        ? (body.room_format as string)
+        : null;
+
     // Optional scheduled_at → room is created in `scheduled` status; the
     // host can go live later. Otherwise defaults to live-now.
     let scheduledAt: string | null = null;
@@ -60,12 +71,26 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseAdmin();
+
+        // One active room per host: gracefully end any prior non-ended space by
+    // this user before starting a new one (Clubhouse-style single-room rule).
+    // Best-effort — failures here should not block room creation.
+    try {
+      await supabase
+        .from("spaces")
+        .update({ status: "ended", ended_at: new Date().toISOString() })
+        .eq("host_id", membership.userId)
+        .neq("status", "ended");
+    } catch (endErr) {
+      console.warn("one-active-room cleanup failed", endErr);
+    }
     const { data, error } = await supabase
       .from("spaces")
       .insert({
         title,
         topic: topic || "Open Discussion",
         type,
+                room_format,
         host_id: membership.userId,
         status: scheduledAt ? "scheduled" : "live",
         scheduled_at: scheduledAt,

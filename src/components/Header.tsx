@@ -5,9 +5,33 @@ import Image from "next/image";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import CoverImage from "@/components/CoverImage";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
+type ArtistLink = {
+  id: number;
+  name: string;
+  slug: string;
+  avatar_url: string | null;
+};
+
+// How many artists to show in the nav dropdown before the "View all" link.
+const ARTIST_DROPDOWN_LIMIT = 8;
+
+// Small round avatar for the Artists dropdown rows. Uses CoverImage (plain
+// <img> + branded placeholder) so we don't have to allowlist the Supabase
+// storage host in next.config.
+function ArtistAvatar({ src, name }: { src: string | null; name: string }) {
+  return (
+    <CoverImage
+      src={src}
+      alt={name}
+      className="h-7 w-7 shrink-0"
+      rounded="rounded-full"
+    />
+  );
+}
 
 // Grouped desktop nav. Videos (YouTube) is its own entry under "Music".
 // MM Social and Studio live under "Community"; Store is a standalone tab;
@@ -17,7 +41,6 @@ const navGroups: NavGroup[] = [
     label: "Music",
     items: [
       { label: "Music", href: "/music" },
-      { label: "Artists", href: "/artists" },
 { label: "Albums", href: "/music?type=album" },
 { label: "Singles", href: "/music?type=single" },
       { label: "Videos", href: "/video" },
@@ -52,7 +75,26 @@ export default function Header() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isArtist, setIsArtist] = useState(false);
+  const [artists, setArtists] = useState<ArtistLink[]>([]);
   const navRef = useRef<HTMLElement>(null);
+
+  // Load published artists once for the nav "Artists" dropdown. Data-driven so
+  // newly published artists appear automatically. Failure is non-fatal — the
+  // dropdown still offers the "View all artists" link.
+  useEffect(() => {
+    let active = true;
+    fetch("/api/artists")
+      .then((res) => (res.ok ? res.json() : { artists: [] }))
+      .then((data: { artists?: ArtistLink[] }) => {
+        if (active) setArtists(data.artists ?? []);
+      })
+      .catch(() => {
+        if (active) setArtists([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Close desktop dropdowns on outside click / Escape.
   useEffect(() => {
@@ -249,6 +291,58 @@ export default function Header() {
               </div>
             );
           })}
+
+          {/* Artists dropdown — data-driven list of published artists with
+             photos, plus a "View all artists" link. */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() =>
+                setOpenGroup((cur) => (cur === "Artists" ? null : "Artists"))
+              }
+              aria-expanded={openGroup === "Artists"}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+            >
+              Artists
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className={`h-3.5 w-3.5 transition-transform ${
+                  openGroup === "Artists" ? "rotate-180" : ""
+                }`}
+                aria-hidden
+              >
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+              </svg>
+            </button>
+            {openGroup === "Artists" && (
+              <div className="absolute left-0 mt-2 min-w-60 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
+                {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
+                  <Link
+                    key={artist.id}
+                    href={`/artists/${artist.slug}`}
+                    onClick={() => setOpenGroup(null)}
+                    className="flex items-center gap-3 px-4 py-2 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                  >
+                    <ArtistAvatar
+                      src={artist.avatar_url}
+                      name={artist.name}
+                    />
+                    <span className="truncate">{artist.name}</span>
+                  </Link>
+                ))}
+                <Link
+                  href="/artists"
+                  onClick={() => setOpenGroup(null)}
+                  className="block border-t border-brand-border px-4 py-2.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                >
+                  View all artists
+                </Link>
+              </div>
+            )}
+          </div>
 
           {standaloneLinks.map((link) => (
             <Link
@@ -533,6 +627,31 @@ export default function Header() {
                 ))}
               </div>
             ))}
+
+            {/* Artists — data-driven list of published artists with photos. */}
+            <div className="py-1">
+              <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
+                Artists
+              </p>
+              {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
+                <Link
+                  key={artist.id}
+                  href={`/artists/${artist.slug}`}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  <ArtistAvatar src={artist.avatar_url} name={artist.name} />
+                  <span className="truncate">{artist.name}</span>
+                </Link>
+              ))}
+              <Link
+                href="/artists"
+                onClick={() => setOpen(false)}
+                className="block py-2.5 font-semibold text-text-secondary transition-colors hover:text-brand-primary"
+              >
+                View all artists
+              </Link>
+            </div>
 
             {standaloneLinks.map((link) => (
               <Link

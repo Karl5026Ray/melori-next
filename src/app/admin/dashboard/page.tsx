@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import CoverImage from "@/components/CoverImage";
+import { authFetch } from "@/lib/authClient";
 
 type Section =
   | "overview"
@@ -966,11 +968,226 @@ function DonorsSection() {
   );
 }
 
+// Admin self-service profile control. Reuses the same social endpoints as the
+// EditProfileModal: POST /api/social/profile/upload-url for the avatar and
+// PATCH /api/social/profile for display_name/bio. Loads the admin's own profile
+// from /api/user/me on mount.
 function SettingsSection() {
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch("/api/user/me", { method: "GET" });
+        if (!res.ok) return;
+        const me = await res.json().catch(() => ({}) as any);
+        if (cancelled) return;
+        const p = me?.profile ?? {};
+        setDisplayName(p.display_name || p.full_name || "");
+        setBio(p.bio ?? "");
+        setAvatarUrl(p.avatar_url ?? null);
+      } catch {
+        /* leave fields empty on failure */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePickPhoto = () => fileInputRef.current?.click();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Photo must be 5 MB or smaller.");
+      return;
+    }
+    setError(null);
+    setSaved(false);
+    setUploading(true);
+    try {
+      const urlRes = await authFetch("/api/social/profile/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      if (!urlRes.ok) {
+        const d = await urlRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not get upload URL");
+      }
+      const { signedUrl, publicUrl } = await urlRes.json();
+      const putRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!putRes.ok) throw new Error("Upload failed — please try again.");
+      setAvatarUrl(publicUrl);
+    } catch (err: any) {
+      setError(err?.message ?? "Photo upload failed.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSave = async () => {
+    setError(null);
+    setSaved(false);
+    const dn = displayName.trim();
+    if (!dn) {
+      setError("Display name is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await authFetch("/api/social/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: dn,
+          bio: bio.trim() ? bio.trim() : null,
+          avatar_url: avatarUrl,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Save failed");
+      }
+      setSaved(true);
+      if (typeof window !== "undefined") {
+        const { profile } = await res.json().catch(() => ({ profile: null }));
+        if (profile) {
+          window.dispatchEvent(
+            new CustomEvent("melori:profile-updated", { detail: profile }),
+          );
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message ?? "Could not save profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Site Settings</h3>
-      <p className="text-[#888]">Homepage management, pricing tiers, legal pages, password change.</p>
+    <div className="space-y-6">
+      {/* My Profile — admin self-service edit */}
+      <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+        <h3 className="font-semibold mb-4">My Profile</h3>
+        {loading ? (
+          <p className="text-[#888] text-sm">Loading…</p>
+        ) : (
+          <div className="space-y-4 max-w-xl">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={handlePickPhoto}
+                disabled={uploading}
+                aria-label="Change photo"
+                className="w-20 h-20 shrink-0 overflow-hidden rounded-full border border-[#c9a96e]/30 disabled:opacity-50"
+              >
+                <CoverImage
+                  src={avatarUrl}
+                  alt={displayName || "Admin"}
+                  name={displayName || "Admin"}
+                  rounded="rounded-full"
+                  className="w-full h-full"
+                />
+              </button>
+              <div>
+                <button
+                  type="button"
+                  onClick={handlePickPhoto}
+                  disabled={uploading}
+                  className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition disabled:opacity-50"
+                >
+                  {uploading ? "Uploading…" : "Change photo"}
+                </button>
+                <p className="mt-1 text-xs text-[#666]">JPG or PNG, up to 5 MB.</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+                Display name
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={50}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+                Bio
+              </label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                rows={3}
+                maxLength={500}
+                placeholder="Say something about yourself…"
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition resize-none"
+              />
+              <p className="mt-1 text-xs text-[#666] text-right">{bio.length}/500</p>
+            </div>
+
+            {error && (
+              <p className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
+                {error}
+              </p>
+            )}
+            {saved && (
+              <p className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-sm text-emerald-300">
+                Profile saved.
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || uploading}
+              className="px-6 py-2.5 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm disabled:opacity-50 transition"
+            >
+              {saving ? "Saving…" : "Save profile"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Site Settings — placeholder sub-panel */}
+      <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+        <h3 className="font-semibold mb-4">Site Settings</h3>
+        <p className="text-[#888]">Homepage management, pricing tiers, legal pages, password change.</p>
+      </div>
     </div>
   );
 }

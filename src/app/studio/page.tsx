@@ -31,6 +31,14 @@ export default function StudioPage() {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  // Editable profile details for the Profile tab. Saved via PATCH
+  // /api/social/profile, the same endpoint the social EditProfileModal uses.
+  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
   // Caller uid, used by VideoList to filter the public feed down to the
   // artist's own uploads. StudioGuard already gates the whole page on an
   // authenticated artist, so this session lookup is guaranteed to resolve.
@@ -93,11 +101,68 @@ export default function StudioPage() {
       } catch {
         /* non-blocking preview */
       }
+
+      // Preload the editable profile fields (name / username / bio) from the
+      // resilient /api/user/me source so the form isn't empty.
+      try {
+        const meRes = await authFetch("/api/user/me", { method: "GET" });
+        if (!meRes.ok) return;
+        const me = await meRes.json().catch(() => ({}) as any);
+        if (cancelled) return;
+        const p = me?.profile ?? {};
+        setDisplayName(p.display_name || p.full_name || "");
+        setUsername(p.username ?? "");
+        setBio(p.bio ?? "");
+      } catch {
+        /* non-blocking preload */
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [activeTab]);
+
+  // Save the profile details — mirrors EditProfileModal.handleSave: PATCH
+  // /api/social/profile with { display_name, username, bio }, then feedback.
+  const handleSaveProfile = async () => {
+    setProfileError(null);
+    setProfileSaved(false);
+    const dn = displayName.trim();
+    if (!dn) {
+      setProfileError("Display name is required.");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const res = await authFetch("/api/social/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: dn,
+          username: username.trim().toLowerCase() || undefined,
+          bio: bio.trim() ? bio.trim() : null,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Save failed");
+      }
+      setArtistName(dn);
+      setProfileSaved(true);
+      if (typeof window !== "undefined") {
+        const { profile } = await res.json().catch(() => ({ profile: null }));
+        if (profile) {
+          window.dispatchEvent(
+            new CustomEvent("melori:profile-updated", { detail: profile }),
+          );
+        }
+      }
+    } catch (err: any) {
+      setProfileError(err?.message ?? "Could not save profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "upload", label: "Upload", icon: "📤" },
@@ -107,7 +172,7 @@ export default function StudioPage() {
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
-    { id: "profile", label: "Profile Photos", icon: "\u{1F5BC}\uFE0F" },
+    { id: "profile", label: "Profile", icon: "\u{1F5BC}\uFE0F" },
     { id: "payouts", label: "Payouts", icon: "\uD83D\uDCB8" },
   ];
 
@@ -184,7 +249,75 @@ export default function StudioPage() {
         {activeTab === "payouts" && <PayoutsPanel />}
         {activeTab === "profile" && (
       <div className="space-y-8 max-w-xl">
-        <div>
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold mb-1">Profile details</h2>
+            <p className="text-[#888] text-sm">
+              Your public name, handle, and bio.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+              Display name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={50}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+              Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              maxLength={30}
+              placeholder="unique_handle"
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+            />
+            <p className="mt-1 text-xs text-[#666]">
+              3–30 chars · lowercase letters, numbers, underscore, dot
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+              Bio
+            </label>
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="Say something about yourself…"
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition resize-none"
+            />
+            <p className="mt-1 text-xs text-[#666] text-right">{bio.length}/500</p>
+          </div>
+          {profileError && (
+            <p className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
+              {profileError}
+            </p>
+          )}
+          {profileSaved && (
+            <p className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-sm text-emerald-300">
+              Profile saved.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveProfile}
+            disabled={savingProfile}
+            className="px-6 py-2.5 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm disabled:opacity-50 transition"
+          >
+            {savingProfile ? "Saving…" : "Save profile"}
+          </button>
+        </div>
+        <div className="border-t border-white/[0.06] pt-8">
           <h2 className="text-lg font-semibold mb-1">Profile picture</h2>
           <p className="text-[#888] text-sm mb-3">Shown on your artist page and featured-artist cards.</p>
           <ProfilePhotoUploader

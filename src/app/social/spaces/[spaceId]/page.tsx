@@ -431,10 +431,7 @@ export default function SpaceDetailPage() {
     } catch {
       /* noop */
     }
-    await supabase
-      .from("spaces")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
-      .eq("id", spaceId);
+    await authFetch(`/api/social/spaces/${spaceId}/end`, { method: "POST", headers: { "Content-Type": "application/json" } });
     router.push("/social/spaces");
   }, [isHost, spaceId, router]);
 

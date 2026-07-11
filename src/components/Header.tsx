@@ -70,6 +70,7 @@ const standaloneLinks: NavItem[] = [
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
+  const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
   const [accountOpen, setAccountOpen] = useState(false); // desktop account menu
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -610,47 +611,104 @@ export default function Header() {
               </div>
             )}
 
-            {navGroups.map((group) => (
-              <div key={group.label} className="py-1">
-                <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
-                  {group.label}
-                </p>
-                {group.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
+            {/* Nav groups as collapsible accordions. Collapsed by default so
+               the drawer stays short; opening one closes any other (one open
+               at a time). Reuses the desktop chevron-rotate pattern. */}
+            {navGroups.map((group) => {
+              const isOpen = openMobileGroup === group.label;
+              return (
+                <div key={group.label} className="border-b border-brand-border/60">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenMobileGroup((cur) =>
+                        cur === group.label ? null : group.label
+                      )
+                    }
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center justify-between py-3 text-left text-xs font-semibold uppercase tracking-wide text-text-secondary/60 transition-colors hover:text-brand-primary"
                   >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            ))}
+                    {group.label}
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      className={`h-4 w-4 transition-transform ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                      aria-hidden
+                    >
+                      <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                  {isOpen && (
+                    <div className="pb-2">
+                      {group.items.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setOpen(false)}
+                          className="block py-2.5 pl-3 text-text-secondary transition-colors hover:text-brand-primary"
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-            {/* Artists — data-driven list of published artists with photos. */}
-            <div className="py-1">
-              <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/60">
-                Artists
-              </p>
-              {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
-                <Link
-                  key={artist.id}
-                  href={`/artists/${artist.slug}`}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  <ArtistAvatar src={artist.avatar_url} name={artist.name} />
-                  <span className="truncate">{artist.name}</span>
-                </Link>
-              ))}
-              <Link
-                href="/artists"
-                onClick={() => setOpen(false)}
-                className="block py-2.5 font-semibold text-text-secondary transition-colors hover:text-brand-primary"
+            {/* Artists — collapsible accordion holding the data-driven list of
+               published artists (photos) plus the "View all artists" link. */}
+            <div className="border-b border-brand-border/60">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenMobileGroup((cur) =>
+                    cur === "Artists" ? null : "Artists"
+                  )
+                }
+                aria-expanded={openMobileGroup === "Artists"}
+                className="flex w-full items-center justify-between py-3 text-left text-xs font-semibold uppercase tracking-wide text-text-secondary/60 transition-colors hover:text-brand-primary"
               >
-                View all artists
-              </Link>
+                Artists
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  className={`h-4 w-4 transition-transform ${
+                    openMobileGroup === "Artists" ? "rotate-180" : ""
+                  }`}
+                  aria-hidden
+                >
+                  <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+                </svg>
+              </button>
+              {openMobileGroup === "Artists" && (
+                <div className="pb-2">
+                  {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
+                    <Link
+                      key={artist.id}
+                      href={`/artists/${artist.slug}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 py-2.5 pl-3 text-text-secondary transition-colors hover:text-brand-primary"
+                    >
+                      <ArtistAvatar src={artist.avatar_url} name={artist.name} />
+                      <span className="truncate">{artist.name}</span>
+                    </Link>
+                  ))}
+                  <Link
+                    href="/artists"
+                    onClick={() => setOpen(false)}
+                    className="block py-2.5 pl-3 font-semibold text-text-secondary transition-colors hover:text-brand-primary"
+                  >
+                    View all artists
+                  </Link>
+                </div>
+              )}
             </div>
 
             {standaloneLinks.map((link) => (

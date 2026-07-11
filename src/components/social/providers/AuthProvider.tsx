@@ -46,17 +46,23 @@ export function SocialAuthProvider({
 
   const loadProfile = useCallback(async (id: string) => {
     // Select explicit columns rather than "*". PostgREST fails the ENTIRE query
-    // if any column lacks a SELECT grant for the authenticated role (a common
-    // side effect of an additive migration), which would leave `user` null — and
-    // a null user makes the shared gate (isSuperfanOrBetter) treat an Artist as
-    // free, showing the "Become a Superfan to comment" wall on /social/community.
-    // These are the same columns Header/StudioGuard already select successfully,
-    // and they must include `role` + `membership_tier` so the participation gate
-    // can resolve the caller's tier.
+    // if any column is unknown (or lacks a SELECT grant for the authenticated
+    // role), which would leave `user` null — and a null user makes the shared
+    // gate (isSuperfanOrBetter) treat an Artist as free (the "Become a Superfan"
+    // wall on /social/community) AND bounces genuinely-logged-in members to
+    // /social/auth from the create-space submit (`if (!user)`).
+    //
+    // `role` is the SOURCE OF TRUTH for the participation gate (see membership.ts
+    // effectiveTierString), so we select it here. We do NOT select
+    // `membership_tier` / `membership_expires_at`: those are optional derived
+    // Stripe fields that are ABSENT on this `profiles` table (see the notes in
+    // membership-server.ts and /api/user/me, which reads them defensively). Naming
+    // them in an explicit select made every profile fetch error out — the exact
+    // failure this comment warns about.
     const { data } = await supabase
       .from("profiles")
       .select(
-        "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_tier, membership_status, membership_expires_at",
+        "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
       )
       .eq("id", id)
       .maybeSingle();

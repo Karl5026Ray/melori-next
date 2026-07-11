@@ -152,18 +152,26 @@ export default function SpaceDetailPage() {
       return;
     }
 
-    // The creator/host starts on stage (unmuted) with full moderation controls;
-    // everyone else joins muted in the audience and can raise a hand to be
-    // promoted. Preserve an existing on-stage role on re-join (e.g. a speaker
-    // who briefly dropped) so we don't demote people back to the audience.
+    // Stage placement is gated on membership: the host and any paid/elevated
+    // member (admin, artist, superfan) start on stage; free members join as
+    // listeners in the audience and can raise a hand to be promoted. Preserve an
+    // existing on-stage role on re-join so we never demote someone who was
+    // already speaking (or a free member the host promoted to speaker).
     const isHostJoining = user.id === space?.host_id;
+    const stageRoles = ["admin", "artist", "superfan"];
+    const isElevated = stageRoles.includes((((user as any).role as string) || "").toLowerCase());
     const existing = participants.find((p) => p.user_id === user.id);
+    const keepsStage =
+      existing?.role === "speaker" || existing?.role === "host";
     const joinRole = isHostJoining
       ? "host"
-      : existing?.role === "speaker" || existing?.role === "host"
-        ? existing.role
-        : "audience";
-    const joinMuted = joinRole === "host" || joinRole === "speaker" ? false : true;
+      : keepsStage
+        ? existing!.role
+        : isElevated
+          ? "speaker"
+          : "audience";
+    // On stage but start muted (except the host) so people opt in to talking.
+    const joinMuted = joinRole === "host" ? false : true;
 
     const { error } = await supabase.from("space_participants").upsert(
       {
@@ -190,7 +198,7 @@ export default function SpaceDetailPage() {
       .then(({ error: rpcErr }) => {
         if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
       });
-  }, [user, spaceId, router, space, participants]);    useEffect(() => { if (isJoined) return; if (!user || !space) return; if (user.id === space.host_id) void handleJoin(); }, [isJoined, user, space, handleJoin]);
+  }, [user, spaceId, router, space, participants]);    useEffect(() => { if (isJoined) return; if (!user || !space) return; const elevated = ["admin", "artist", "superfan"].includes(((user as any).role || "").toLowerCase()); if (user.id === space.host_id || elevated) void handleJoin(); }, [isJoined, user, space, handleJoin]);
 
   const handleLeave = useCallback(async () => {
     if (!user) return;

@@ -18,7 +18,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // Component a route-level `dynamic = "force-dynamic"` does NOT reliably stop those
 // query results from being served stale. Route Handlers bypass that cache — which
 // is why /api/artists returned fresh rows while the /artists page rendered a stale
-// snapshot (old "Kael R" name, taken before the 4th artist was published). Reading
+// snapshot (old "KAIEL R" name, taken before the 4th artist was published). Reading
 // no-store keeps every server-side query live.
 export function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =

@@ -20,11 +20,37 @@ export interface Profile {
 export type SpaceType = "listening" | "discussion" | "creation" | "dj_set";
 export type SpaceStatus = "scheduled" | "live" | "ended";
 
+export type RoomFormat =
+  | "release_party"
+  | "discussion"
+  | "versus_battle"
+  | "dj_set";
+
+// Shared format → badge presentation. Used by SpaceCard and the room detail
+// header so labels/variants stay consistent. Legacy rows with a null
+// room_format fall back to `discussion` (see ROOM_FORMAT_FALLBACK).
+export const ROOM_FORMAT_CONFIG: Record<
+  RoomFormat,
+  { variant: "green" | "purple" | "pink" | "orange"; label: string }
+> = {
+  release_party: { variant: "green", label: "Release Party" },
+  discussion: { variant: "purple", label: "Discussion" },
+  versus_battle: { variant: "pink", label: "Versus Battle" },
+  dj_set: { variant: "orange", label: "DJ Set" },
+};
+
+export const ROOM_FORMAT_FALLBACK: RoomFormat = "discussion";
+
+export function getRoomFormatConfig(format: RoomFormat | null | undefined) {
+  return ROOM_FORMAT_CONFIG[format ?? ROOM_FORMAT_FALLBACK];
+}
+
 export interface Space {
   id: string;
   title: string;
   topic: string;
   type: SpaceType;
+  room_format?: RoomFormat | null;
   status: SpaceStatus;
   host_id: string;
   host?: Profile;

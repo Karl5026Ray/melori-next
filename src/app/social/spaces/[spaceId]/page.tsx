@@ -232,21 +232,41 @@ export default function SpaceDetailPage() {
     router.push("/social/spaces");
   }, [user, spaceId, router]); 
 
-  // Central helper: change mute state locally + on Agora + in the DB.
+  // Central helper: change mute state locally + on LiveKit + in the DB.
+  // The audio session is the source of truth: we drive the mic first, then
+  // mirror local state, then persist. A Supabase/RLS hiccup on the DB write
+  // must never leave the mic logically stuck.
   const applyMute = useCallback(
     async (nextMuted: boolean) => {
       if (!user) return;
       try {
         await agoraSetMuted(nextMuted);
+        // A successful unmute means the mic is actually live — clear any
+        // previous "blocked" hint.
+        if (!nextMuted) setMicDenied(false);
       } catch (err) {
-        console.warn("agora mute failed", err);
+        // Going live failed (most often getUserMedia was blocked, or no
+        // publisher token). Surface it and stay muted so the UI reflects
+        // reality instead of showing a mic that isn't really publishing.
+        const msg = (err as Error)?.message ?? "";
+        if (!nextMuted && /NotAllowed|Permission|permission denied|denied/i.test(msg)) {
+          setMicDenied(true);
+        }
+        console.warn("mic toggle failed", err);
+        if (!nextMuted) {
+          setIsMuted(true);
+          return;
+        }
       }
-      await supabase
+      setIsMuted(nextMuted);
+      // Persist is_muted last, best-effort. The mic + local state above already
+      // reflect the change, so an RLS/network failure here can't wedge the UI.
+      const { error: muteErr } = await supabase
         .from("space_participants")
         .update({ is_muted: nextMuted })
         .eq("space_id", spaceId)
         .eq("user_id", user.id);
-      setIsMuted(nextMuted);
+      if (muteErr) console.warn("is_muted persist failed", muteErr);
     },
     [user, spaceId],
   );
@@ -269,6 +289,9 @@ export default function SpaceDetailPage() {
   const pttPrevMutedRef = useRef<boolean | null>(null);
   const pttHeldRef = useRef(false);
   const pttStartedAtRef = useRef(0);
+  // Set when a pointer/touch release has already handled the tap so the
+  // synthetic click that follows a mouse release doesn't toggle a second time.
+  const suppressClickRef = useRef(false);
 
   const startPTT = useCallback(() => {
     if (!user || !canParticipate) return;
@@ -276,33 +299,45 @@ export default function SpaceDetailPage() {
     pttHeldRef.current = true;
     pttStartedAtRef.current = Date.now();
     pttPrevMutedRef.current = isMuted;
+    // Optimistically go live while the button is held. For a quick tap we
+    // reconcile this into a normal toggle in endPTT.
     if (isMuted) void applyMute(false);
   }, [user, canParticipate, isMuted, applyMute]);
 
-  const endPTT = useCallback(
-    (opts: { asClick?: boolean } = {}) => {
-      if (!pttHeldRef.current) return false;
-      const heldMs = Date.now() - pttStartedAtRef.current;
-      pttHeldRef.current = false;
-      const prevMuted = pttPrevMutedRef.current;
-      pttPrevMutedRef.current = null;
+  const endPTT = useCallback(() => {
+    if (!pttHeldRef.current) return false;
+    const heldMs = Date.now() - pttStartedAtRef.current;
+    pttHeldRef.current = false;
+    const prevMuted = pttPrevMutedRef.current;
+    pttPrevMutedRef.current = null;
 
-      // If the press was quick (< 350ms), treat it as a tap so the user gets
-      // the familiar toggle-mute behavior. Otherwise, restore prior state.
-      const wasQuickTap = heldMs < 350;
-      if (wasQuickTap) {
-        // Undo the auto-unmute we did on press, then let toggle run.
-        if (prevMuted === false) void applyMute(false);
-        else void applyMute(true);
-        if (opts.asClick) void toggleMute();
-        return true;
-      }
-      // Long press: restore whatever mute state we came from.
-      if (prevMuted !== null) void applyMute(prevMuted);
+    // Quick tap (< 350ms) → behave like a plain mute toggle. startPTT already
+    // unmuted us if we were muted, so a tap that STARTED muted is now
+    // (correctly) unmuted — leave it. A tap that started unmuted should mute.
+    // Crucially this decision is made here in the pointer/touch handler, not in
+    // a follow-up click: on touch the synthetic click is suppressed by
+    // preventDefault, so relying on onClick left the mic stuck muted.
+    if (heldMs < 350) {
+      if (prevMuted === false) void applyMute(true);
       return true;
-    },
-    [applyMute, toggleMute],
-  );
+    }
+    // Long press: restore whatever mute state we came from.
+    if (prevMuted !== null) void applyMute(prevMuted);
+    return true;
+  }, [applyMute]);
+
+  // Pointer/touch release handler: run the tap-vs-hold decision, then swallow
+  // the synthetic click that a mouse release triggers so we don't toggle twice.
+  const endPTTGesture = useCallback(() => {
+    if (endPTT()) {
+      suppressClickRef.current = true;
+      // Clear shortly after the synthetic click would have arrived so a later
+      // real click / keyboard activation isn't wrongly swallowed.
+      setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 400);
+    }
+  }, [endPTT]);
 
   const toggleHand = useCallback(async () => {
     if (!user) return;
@@ -1050,24 +1085,27 @@ export default function SpaceDetailPage() {
                    release. Works with mouse and touch. */}
               <button
                 type="button"
-                onClick={(e) => {
-                  // If a long-press was in progress, endPTT already handled it.
-                  if (endPTT({ asClick: false })) {
-                    e.preventDefault();
+                onClick={() => {
+                  // Pointer/touch gestures resolve the tap in endPTTGesture; a
+                  // mouse release fires a synthetic click right after, which we
+                  // swallow here. Only a keyboard activation (Enter/Space) with
+                  // no preceding press should fall through to toggleMute.
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
                     return;
                   }
                   void toggleMute();
                 }}
                 onMouseDown={startPTT}
-                onMouseUp={() => endPTT()}
-                onMouseLeave={() => endPTT()}
+                onMouseUp={endPTTGesture}
+                onMouseLeave={endPTTGesture}
                 onTouchStart={(e) => {
                   e.preventDefault();
                   startPTT();
                 }}
                 onTouchEnd={(e) => {
                   e.preventDefault();
-                  endPTT();
+                  endPTTGesture();
                 }}
                 onTouchCancel={() => endPTT()}
                 aria-label={

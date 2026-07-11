@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-export default function AdminLoginPage() {
+function AdminLoginInner() {
+  const params = useSearchParams();
+  const errorParam = params.get("error");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    errorParam === "not_admin"
+      ? "That Google account isn't authorized for admin access."
+      : errorParam ?? "",
+  );
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const router = useRouter();
 
@@ -89,6 +96,22 @@ export default function AdminLoginPage() {
     }
   };
 
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback?admin=1`;
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (oauthError) throw oauthError;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed.");
+      setGoogleLoading(false);
+    }
+  };
+
   if (checking) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -115,6 +138,21 @@ export default function AdminLoginPage() {
               {error}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={handleGoogle}
+            disabled={googleLoading}
+            className="w-full mb-4 py-3 flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm font-medium hover:border-[#c9a96e]/50 transition-all disabled:opacity-50"
+          >
+            {googleLoading ? "Redirecting…" : "Continue with Google"}
+          </button>
+
+          <div className="flex items-center gap-3 mb-6">
+            <span className="h-px flex-1 bg-white/10" />
+            <span className="text-xs text-[#888]">or</span>
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
 
           <div className="mb-6">
             <label className="block text-sm text-[#888] mb-2">
@@ -144,5 +182,19 @@ export default function AdminLoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#c9a96e]/20 border-t-[#c9a96e] rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <AdminLoginInner />
+    </Suspense>
   );
 }

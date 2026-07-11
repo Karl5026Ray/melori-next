@@ -13,7 +13,14 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 let _browserClient: SupabaseClient | null = null;
 function getBrowserClient(): SupabaseClient {
 if (!_browserClient) {
-_browserClient = createClient(supabaseUrl, supabaseAnonKey);
+_browserClient = createClient(supabaseUrl, supabaseAnonKey, {
+auth: {
+flowType: "pkce",
+autoRefreshToken: true,
+persistSession: true,
+detectSessionInUrl: true,
+},
+});
 }
 return _browserClient;
 }

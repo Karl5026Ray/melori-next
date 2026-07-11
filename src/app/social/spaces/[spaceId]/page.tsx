@@ -57,6 +57,15 @@ export default function SpaceDetailPage() {
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
+  // Targeted reaction bursts, keyed by the target participant's user id. Each
+  // value is a list of unique burst keys ("<ts>-<seq>:<emoji>"). Rendered over
+  // that person's avatar in StageGrid, separate from the center-screen bursts.
+  const [targetedReactions, setTargetedReactions] = useState<
+    Record<string, string[]>
+  >({});
+  // The participant whose per-person reaction picker is currently open (null =
+  // closed).
+  const [reactTarget, setReactTarget] = useState<SpaceParticipant | null>(null);
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
   // Real-time set of user_ids currently speaking (LiveKit identity == user id).
   // Primary driver for the speaking ring so EVERY speaker shows it, not just us.
@@ -527,6 +536,44 @@ export default function SpaceDetailPage() {
     [spaceId, spawnReaction],
   );
 
+  // Spawn a floating emoji burst over a specific participant's avatar. Mirrors
+  // spawnReaction but keyed by the target user id so StageGrid can render each
+  // person's bursts locally. Fades after ~2s; the seq counter keeps keys unique.
+  const spawnTargetedReaction = useCallback(
+    (targetId: string, emoji: string) => {
+      const key = `${Date.now()}-${reactionSeqRef.current++}:${emoji}`;
+      setTargetedReactions((prev) => ({
+        ...prev,
+        [targetId]: [...(prev[targetId] ?? []), key],
+      }));
+      setTimeout(() => {
+        setTargetedReactions((prev) => {
+          const remaining = (prev[targetId] ?? []).filter((r) => r !== key);
+          const next = { ...prev };
+          if (remaining.length) next[targetId] = remaining;
+          else delete next[targetId];
+          return next;
+        });
+      }, 2000);
+    },
+    [],
+  );
+
+  // Per-person reaction: animate over the target's avatar locally, then fan out
+  // over PubNub carrying the target's user id so everyone sees it on that
+  // avatar. Purely visual — never persisted.
+  const sendReactionTo = useCallback(
+    (targetId: string, emoji: string) => {
+      spawnTargetedReaction(targetId, emoji);
+      void pubnubPublishSignal(spaceId, {
+        type: "reaction",
+        emoji,
+        target: targetId,
+      });
+    },
+    [spaceId, spawnTargetedReaction],
+  );
+
   // ---- Agora audio lifecycle -----------------------------------------------
   // We (re)join whenever role changes. Audience → subscriber, speaker/host →
   // publisher. Superfan+ only (server enforces on token endpoint).
@@ -631,9 +678,14 @@ export default function SpaceDetailPage() {
           },
           onSignal: (signal) => {
             if (cancelled) return;
-            // A peer reacted — mirror their emoji into our floating burst.
+            // A peer reacted — mirror their emoji. Targeted reactions animate
+            // over that person's avatar; untargeted ones use the center burst.
             if (signal.type === "reaction" && signal.emoji) {
-              spawnReaction(signal.emoji);
+              if (signal.target) {
+                spawnTargetedReaction(signal.target, signal.emoji);
+              } else {
+                spawnReaction(signal.emoji);
+              }
               return;
             }
             // A peer raised (or lowered) their hand. Supabase Realtime still
@@ -659,7 +711,7 @@ export default function SpaceDetailPage() {
       cancelled = true;
       void pubnubLeave();
     };
-  }, [isJoined, user?.id, spaceId, router, spawnReaction]);
+  }, [isJoined, user?.id, spaceId, router, spawnReaction, spawnTargetedReaction]);
 
   // Heartbeat every 60s so `reap_idle_spaces` doesn't kill a live room.
   useEffect(() => {
@@ -942,7 +994,7 @@ export default function SpaceDetailPage() {
                     </span>
                   )}
                 </div>
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={speakers} />
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
 
                 {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
                   <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
@@ -1064,7 +1116,7 @@ export default function SpaceDetailPage() {
                 <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
                   Audience ({audience.length})
                 </h3>
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={audience} size="sm" />
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={audience} size="sm" onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
               </div>
             </>
           )}
@@ -1105,23 +1157,74 @@ export default function SpaceDetailPage() {
         </div>
       )}
 
+      {/* Per-person reaction picker: tap an avatar to react to that person. */}
+      {reactTarget && (
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+          onClick={() => setReactTarget(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`React to ${reactTarget.user?.display_name ?? "participant"}`}
+        >
+          <div
+            className="w-full max-w-sm rounded-t-2xl border border-melori-border bg-melori-void p-5 shadow-xl sm:rounded-2xl animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <img
+                src={reactTarget.user?.avatar_url || "/favicon.png"}
+                className="w-10 h-10 rounded-full object-cover"
+                alt=""
+              />
+              <p className="text-sm font-semibold text-melori-text truncate">
+                React to {reactTarget.user?.display_name ?? "this person"}
+              </p>
+            </div>
+            <div className="flex items-center justify-between gap-1">
+              {["❤️", "🔥", "👏", "🎵", "😂", "🙌"].map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    const targetId =
+                      reactTarget.user?.id ?? reactTarget.user_id;
+                    if (targetId) sendReactionTo(targetId, emoji);
+                    setReactTarget(null);
+                  }}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center text-2xl rounded-full hover:bg-white/5 hover:scale-125 transition-transform"
+                  aria-label={`React ${emoji} to ${reactTarget.user?.display_name ?? "participant"}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isJoined && (
         <div className="border-t border-melori-border p-4 md:p-6 bg-melori-void/95 backdrop-blur shrink-0">
-          <div className="max-w-2xl mx-auto flex items-center justify-between">
+          {/* Control bar: the mic sits ALONE, centered and prominent. The Leave
+             button is pinned to the bottom-left and the secondary controls
+             (raise-hand / End Space + reactions) to the bottom-right, so
+             nothing flanks the mic. */}
+          <div className="max-w-2xl mx-auto relative flex items-center justify-center min-h-[64px]">
+            {/* Leave — bottom-left corner. */}
             <button
               onClick={handleLeave}
-              className="px-6 py-3 rounded-full bg-melori-elevated border border-melori-border text-sm font-medium hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition flex items-center gap-2"
+              className="absolute left-0 top-1/2 -translate-y-1/2 px-4 py-3 min-h-[44px] rounded-full bg-melori-elevated border border-melori-border text-sm font-medium hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition flex items-center gap-2"
             >
               <LogOut className="w-4 h-4" />
-              Leave Quietly
+              <span className="hidden sm:inline">Leave Quietly</span>
             </button>
 
-            <div className="flex items-center gap-3">
-              {/* Mic button.
+            {/* Mic button — centered focal control. Only speakers (canParticipate)
+               see it; listeners get the reactions control only.
                  - Tap: toggle mute (classic behavior).
                  - Press & hold: push-to-talk. Unmutes for as long as you're
                    holding it, then restores the previous mute state on
                    release. Works with mouse and touch. */}
+            {canParticipate && (
               <button
                 type="button"
                 onClick={() => {
@@ -1153,23 +1256,27 @@ export default function SpaceDetailPage() {
                     : "Mute (tap) or hold to talk"
                 }
                 title="Tap to toggle mute · Press and hold to talk"
-                className={`p-3 rounded-full border border-melori-border transition select-none touch-none ${
+                className={`p-5 rounded-full border shadow-lg transition select-none touch-none ${
                   isMuted
-                    ? "bg-red-500/20 text-red-400"
-                    : "bg-melori-elevated text-melori-muted"
+                    ? "bg-red-500/20 text-red-400 border-red-500/30"
+                    : "bg-melori-purple text-white border-melori-purple"
                 }`}
               >
                 {isMuted ? (
-                  <MicOff className="w-5 h-5" />
+                  <MicOff className="w-7 h-7" />
                 ) : (
-                  <Mic className="w-5 h-5" />
+                  <Mic className="w-7 h-7" />
                 )}
               </button>
+            )}
 
+            {/* Right corner: raise-hand / End Space + quick reactions. */}
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
               {!isHost && (
                 <button
                   onClick={toggleHand}
-                  className={`p-3 rounded-full border transition ${
+                  aria-label="Raise hand"
+                  className={`p-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full border transition ${
                     hasRaisedHand
                       ? "bg-melori-warning/20 text-melori-warning border-melori-warning/30"
                       : "bg-melori-elevated text-melori-muted border-melori-border"
@@ -1183,16 +1290,16 @@ export default function SpaceDetailPage() {
                 <button
                   type="button"
                   onClick={handleEndSpace}
-                  className="px-4 py-3 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium hover:bg-red-500/30 transition"
+                  className="px-4 py-3 min-h-[44px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium hover:bg-red-500/30 transition"
                 >
                   End Space
                 </button>
               )}
 
-              {/* Quick reactions. Renders an emoji picker menu on click. */}
+              {/* Quick reactions (global, center-screen burst). Emoji picker on click. */}
               <div className="relative">
                 <details className="group">
-                  <summary className="list-none cursor-pointer p-3 rounded-full bg-melori-elevated border border-melori-border text-melori-muted hover:text-melori-text transition flex items-center justify-center">
+                  <summary className="list-none cursor-pointer p-3 min-w-[44px] min-h-[44px] rounded-full bg-melori-elevated border border-melori-border text-melori-muted hover:text-melori-text transition flex items-center justify-center">
                     <Plus className="w-5 h-5" />
                   </summary>
                   <div className="absolute right-0 bottom-full mb-2 flex gap-1 rounded-full border border-melori-border bg-melori-void px-2 py-2 shadow-xl">

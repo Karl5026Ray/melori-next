@@ -27,6 +27,7 @@ function ArtistAvatar({ src, name }: { src: string | null; name: string }) {
     <CoverImage
       src={src}
       alt={name}
+      name={name}
       className="h-7 w-7 shrink-0"
       rounded="rounded-full"
     />

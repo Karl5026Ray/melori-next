@@ -7,6 +7,19 @@ interface CoverImageProps {
   alt: string;
   className?: string;
   rounded?: string;
+  // When set and no image is available, the placeholder shows the initials
+  // derived from this name (e.g. an artist/profile name) instead of the
+  // generic music-note glyph.
+  name?: string;
+}
+
+// First letter of the name, or the first letters of the first two words.
+// Returns "" when there's nothing usable so callers fall back to the glyph.
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
 
 // Renders a cover/avatar image with a branded gradient placeholder when the
@@ -17,45 +30,68 @@ export default function CoverImage({
   alt,
   className = "",
   rounded = "rounded-lg",
+  name,
 }: CoverImageProps) {
   const [failed, setFailed] = useState(false);
   const showPlaceholder = !src || failed;
 
   if (showPlaceholder) {
+    const initials = name ? getInitials(name) : "";
     return (
       <div
         className={`flex items-center justify-center bg-gradient-to-br from-brand-accent/30 to-brand-primary/40 ${rounded} ${className}`}
         aria-label={alt}
         role="img"
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          className="h-1/3 w-1/3 text-white/70"
-          aria-hidden
-        >
-          <path
-            d="M9 18V5l12-2v13"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle
-            cx="6"
-            cy="18"
-            r="3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-          <circle
-            cx="18"
-            cy="16"
-            r="3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-        </svg>
+        {initials ? (
+          // SVG <text> so the initials scale with the container at any size.
+          <svg
+            viewBox="0 0 100 100"
+            className="h-full w-full"
+            aria-hidden
+          >
+            <text
+              x="50"
+              y="52"
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={initials.length > 1 ? 42 : 52}
+              fontWeight="700"
+              fill="#ffffff"
+            >
+              {initials}
+            </text>
+          </svg>
+        ) : (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-1/3 w-1/3 text-white/70"
+            aria-hidden
+          >
+            <path
+              d="M9 18V5l12-2v13"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle
+              cx="6"
+              cy="18"
+              r="3"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <circle
+              cx="18"
+              cy="16"
+              r="3"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+          </svg>
+        )}
       </div>
     );
   }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
-import ReleaseCard from "@/components/ReleaseCard";
+import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
 import { getArtistBySlug } from "@/lib/data";
 import type { ReleaseListItem } from "@/lib/data";
@@ -103,15 +103,7 @@ export default async function ArtistDetailPage({
         {/* Discography */}
         <section className="py-12">
           <h2 className="mb-6 text-2xl font-bold">Discography</h2>
-          {releaseItems.length === 0 ? (
-            <p className="text-text-secondary">No releases yet.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {releaseItems.map((release) => (
-                <ReleaseCard key={release.id} release={release} />
-              ))}
-            </div>
-          )}
+          <ArtistDiscography releases={releaseItems} />
         </section>
       </div>
     </article>

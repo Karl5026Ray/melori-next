@@ -3,6 +3,11 @@
 import { useMemo, useState } from "react";
 import ReleaseCard from "@/components/ReleaseCard";
 import type { ReleaseListItem } from "@/lib/data";
+import {
+RELEASE_SORT_OPTIONS,
+sortReleases,
+type ReleaseSort,
+} from "@/lib/releaseSort";
 
 type TypeFilter = "all" | "album" | "single";
 
@@ -14,6 +19,7 @@ releases: ReleaseListItem[];
 const [query, setQuery] = useState("");
 const [genre, setGenre] = useState("all");
 const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+const [sort, setSort] = useState<ReleaseSort>("alpha");
 
 const genres = useMemo(() => {
 const set = new Set<string>();
@@ -44,6 +50,11 @@ r.title.toLowerCase().includes(q) ||
 return matchesType && matchesGenre && matchesQuery;
 });
 }, [releases, query, genre, typeFilter]);
+
+const sorted = useMemo(
+() => sortReleases(filtered, sort),
+[filtered, sort]
+);
 
 const tabs: { key: TypeFilter; label: string; count: number }[] = [
 { key: "all", label: "All Releases", count: releases.length },
@@ -93,12 +104,26 @@ className="rounded-md border border-input-border bg-brand-surface px-4 py-2 text
 ))}
 </select>
 )}
+<label className="flex items-center gap-2 text-sm text-text-secondary">
+<span>Sort</span>
+<select
+value={sort}
+onChange={(e) => setSort(e.target.value as ReleaseSort)}
+className="rounded-md border border-input-border bg-brand-surface px-4 py-2 text-text-primary focus:border-brand-primary focus:outline-none"
+>
+{RELEASE_SORT_OPTIONS.map((opt) => (
+<option key={opt.value} value={opt.value}>
+{opt.label}
+</option>
+))}
+</select>
+</label>
 </div>
-{filtered.length === 0 ? (
+{sorted.length === 0 ? (
 <p className="text-text-secondary">No releases match your search.</p>
 ) : (
 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-{filtered.map((release) => (
+{sorted.map((release) => (
 <ReleaseCard key={release.id} release={release} />
 ))}
 </div>

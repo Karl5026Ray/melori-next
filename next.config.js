@@ -67,6 +67,9 @@ const nextConfig = {
       { source: '/members',   destination: '/membership',    permanent: true  },
       // Kimi also flagged /portal — safest landing for that is auth.
       { source: '/portal',    destination: '/social/auth',   permanent: false },
+      // Releases live under /albums/[slug]; /releases/* previously 404'd.
+      { source: '/releases/:slug', destination: '/albums/:slug', permanent: true },
+      { source: '/releases',       destination: '/music',       permanent: true },
     ];
   },
   async rewrites() {

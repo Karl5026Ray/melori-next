@@ -17,7 +17,8 @@ import {
   leavePresence as pubnubLeave,
   publishSignal as pubnubPublishSignal,
 } from "@/lib/pubnubClient";
-import { Space, SpaceParticipant } from "@/types/social";
+import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
+import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
 import {
@@ -696,6 +697,14 @@ export default function SpaceDetailPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-lg truncate">{space.title}</h2>
+              {(() => {
+                const format = getRoomFormatConfig(space.room_format);
+                return (
+                  <Badge variant={format.variant} className="shrink-0">
+                    {format.label}
+                  </Badge>
+                );
+              })()}
               {liveHere !== null && (
                 <span
                   className="shrink-0 inline-flex items-center gap-1 rounded-full bg-melori-purple/15 px-2 py-0.5 text-[11px] font-medium text-melori-purple"

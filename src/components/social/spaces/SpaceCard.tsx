@@ -1,16 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Space } from "@/types/social";
+import { Space, getRoomFormatConfig } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
 import { Users, Radio, CalendarClock, X } from "lucide-react"; import { useState, type MouseEvent } from "react"; import { useRouter } from "next/navigation"; import { supabase } from "@/lib/supabase"; import { useAuth } from "@/components/social/providers/AuthProvider";
-
-const typeConfig = {
-  listening: { variant: "green" as const, label: "Listening" },
-  discussion: { variant: "purple" as const, label: "Discussion" },
-  creation: { variant: "pink" as const, label: "Creation" },
-  dj_set: { variant: "orange" as const, label: "DJ Set" },
-};
 
 function formatSchedule(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -28,7 +21,7 @@ function formatSchedule(iso: string | null | undefined): string {
 }
 
 export function SpaceCard({ space }: { space: Space }) {
-  const type = typeConfig[space.type] || typeConfig.discussion;
+  const format = getRoomFormatConfig(space.room_format);
   const host = space.host;
   const isScheduled = space.status === "scheduled"; const { user } = useAuth(); const router = useRouter(); const [ending, setEnding] = useState(false); const isHost = !!user && user.id === space.host_id; const handleEndSpace = async (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); if (!isHost || ending) return; if (typeof window !== "undefined" && !window.confirm("End this space for everyone?")) return; setEnding(true); try { await supabase.from("spaces").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", space.id); router.refresh(); } catch { setEnding(false); } };
 
@@ -70,7 +63,7 @@ export function SpaceCard({ space }: { space: Space }) {
                 {host?.display_name || "Unknown"}
               </span>
             </p>
-            <Badge variant={type.variant}>{type.label}</Badge>
+            <Badge variant={format.variant}>{format.label}</Badge>
           </div>
         </div>
 

@@ -14,6 +14,11 @@ import { Profile } from "@/types/social";
 interface AuthContextType {
   user: Profile | null;
   isLoading: boolean;
+  // Set when the `profiles` fetch itself ERRORED (PostgREST 4xx, RLS denial,
+  // network throw) — as opposed to a genuinely absent profile row (which leaves
+  // `user` null with no error). Consumers can surface this instead of silently
+  // treating a logged-in member as signed-out. Null when the last load succeeded.
+  profileError: string | null;
   signOut: () => Promise<void>;
   // Re-reads the signed-in user's `profiles` row and updates context.
   // Call after any mutation that changes the current user's profile so the
@@ -28,6 +33,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
+  profileError: null,
   signOut: async () => {},
   refreshUser: async () => {},
   applyUser: () => {},
@@ -40,6 +46,7 @@ export function SocialAuthProvider({
 }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   // Track the current user id in a ref so callbacks stay stable while still
   // seeing the latest value.
   const userIdRef = useRef<string | null>(null);
@@ -59,18 +66,43 @@ export function SocialAuthProvider({
     // membership-server.ts and /api/user/me, which reads them defensively). Naming
     // them in an explicit select made every profile fetch error out — the exact
     // failure this comment warns about.
-    const { data } = await supabase
-      .from("profiles")
-      .select(
-        "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
-      )
-      .eq("id", id)
-      .maybeSingle();
-    if (data) {
-      setUser({
-        ...data,
-        display_name: data.display_name || data.full_name || data.username,
-      } as Profile);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(
+          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
+        )
+        .eq("id", id)
+        .maybeSingle();
+
+      // A real query failure (PostgREST 4xx, RLS denial) must NOT be conflated
+      // with a legitimately absent profile row (`data === null && !error`).
+      // Record + log it instead of silently leaving `user` null, which would
+      // bounce a logged-in member to /social/auth with no diagnostic signal.
+      if (error) {
+        console.error(
+          `[SocialAuth] loadProfile failed: ${error.message}`,
+          {
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          },
+        );
+        setProfileError(error.message);
+        return;
+      }
+
+      setProfileError(null);
+      if (data) {
+        setUser({
+          ...data,
+          display_name: data.display_name || data.full_name || data.username,
+        } as Profile);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[SocialAuth] loadProfile failed: ${message}`, err);
+      setProfileError(message);
     }
   }, []);
 
@@ -164,7 +196,7 @@ export function SocialAuthProvider({
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, signOut, refreshUser, applyUser }}
+      value={{ user, isLoading, profileError, signOut, refreshUser, applyUser }}
     >
       {children}
     </AuthContext.Provider>

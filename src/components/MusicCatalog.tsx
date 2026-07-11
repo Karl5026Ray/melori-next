@@ -11,6 +11,25 @@ type ReleaseSort,
 
 type TypeFilter = "all" | "album" | "single";
 
+// Common music genres always offered in the filter, even when no published
+// release currently uses them. Casing matches the values stored on releases
+// so the `r.genre === genre` filter keeps working. A canonical genre with no
+// releases simply yields the existing empty-state message.
+const CANONICAL_GENRES = [
+"Hip Hop",
+"R&B",
+"Pop",
+"Rock",
+"Electronic",
+"Jazz",
+"Country",
+"Gospel",
+"Reggae",
+"Latin",
+"Classical",
+"Soul",
+];
+
 export default function MusicCatalog({
 releases,
 }: {
@@ -22,11 +41,15 @@ const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 const [sort, setSort] = useState<ReleaseSort>("alpha");
 
 const genres = useMemo(() => {
-const set = new Set<string>();
-for (const r of releases) {
-if (r.genre) set.add(r.genre);
+// Merge the canonical list with genres actually present on releases,
+// deduped case-insensitively (first spelling wins), then sorted.
+const byKey = new Map<string, string>();
+for (const g of [...CANONICAL_GENRES, ...releases.map((r) => r.genre)]) {
+if (!g) continue;
+const key = g.toLowerCase();
+if (!byKey.has(key)) byKey.set(key, g);
 }
-return Array.from(set).sort();
+return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b));
 }, [releases]);
 
 const albumCount = useMemo(
@@ -90,7 +113,6 @@ onChange={(e) => setQuery(e.target.value)}
 placeholder="Search by title or artist…"
 className="w-full rounded-md border border-input-border bg-brand-surface px-4 py-2 text-text-primary placeholder:text-text-secondary focus:border-brand-primary focus:outline-none sm:max-w-sm"
 />
-{genres.length > 0 && (
 <select
 value={genre}
 onChange={(e) => setGenre(e.target.value)}
@@ -103,7 +125,6 @@ className="rounded-md border border-input-border bg-brand-surface px-4 py-2 text
 </option>
 ))}
 </select>
-)}
 <label className="flex items-center gap-2 text-sm text-text-secondary">
 <span>Sort</span>
 <select

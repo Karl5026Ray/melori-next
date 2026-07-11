@@ -129,6 +129,7 @@ export default function FeaturedSpotlight({ fallback }: { fallback: Artist }) {
         <CoverImage
           src={spotlight.avatar_url}
           alt={spotlight.name}
+          name={spotlight.name}
           className="h-40 w-40 shrink-0"
           rounded="rounded-full"
         />

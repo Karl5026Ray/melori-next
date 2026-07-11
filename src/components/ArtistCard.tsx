@@ -11,6 +11,7 @@ export default function ArtistCard({ artist }: { artist: Artist }) {
       <CoverImage
         src={artist.avatar_url}
         alt={artist.name}
+        name={artist.name}
         className="h-28 w-28"
         rounded="rounded-full"
       />

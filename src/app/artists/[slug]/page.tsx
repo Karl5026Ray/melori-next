@@ -77,6 +77,7 @@ export default async function ArtistDetailPage({
           <CoverImage
             src={artist.avatar_url}
             alt={artist.name}
+            name={artist.name}
             className="h-32 w-32 shrink-0 border-4 border-brand-background sm:h-40 sm:w-40"
             rounded="rounded-full"
           />

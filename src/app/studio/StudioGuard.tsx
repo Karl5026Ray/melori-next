@@ -30,7 +30,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role, membership_tier, membership_status, membership_expires_at")
+        .select("role, membership_status")
         .eq("id", session.user.id)
         .maybeSingle();
 

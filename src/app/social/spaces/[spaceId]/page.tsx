@@ -57,6 +57,9 @@ export default function SpaceDetailPage() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
+  // Real-time set of user_ids currently speaking (LiveKit identity == user id).
+  // Primary driver for the speaking ring so EVERY speaker shows it, not just us.
+  const [speakingIds, setSpeakingIds] = useState<Set<string>>(new Set());
   const [liveHere, setLiveHere] = useState<number | null>(null);
   const [peerHandToast, setPeerHandToast] = useState<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -537,6 +540,7 @@ export default function SpaceDetailPage() {
           channel: space.agora_channel!,           spaceType: space.type,
           role,
           spaceId,
+          onActiveSpeakersChange: (identities: string[]) => setSpeakingIds(new Set(identities)),
           onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),         onError: (err) => {
             if (
               /NotAllowedError|Permission|permission denied/i.test(
@@ -713,10 +717,18 @@ export default function SpaceDetailPage() {
     };
   }, []);
 
-  const speakers = participants.filter(
+  // Drive is_speaking from the real-time client set (authoritative: every client
+  // hears the whole room via ActiveSpeakersChanged), so the ring shows for
+  // everyone who is speaking and clears when they stop — not stuck on a stale DB
+  // value. StageGrid still gates on !is_muted, so muted users never show a ring.
+  const withSpeaking = participants.map((p) => ({
+    ...p,
+    is_speaking: speakingIds.has(p.user_id),
+  }));
+  const speakers = withSpeaking.filter(
     (p) => p.role === "host" || p.role === "speaker"
   );
-  const audience = participants.filter((p) => p.role === "audience");
+  const audience = withSpeaking.filter((p) => p.role === "audience");
   const raisedHands = participants.filter(
     (p) => p.has_raised_hand && p.role === "audience"
   );

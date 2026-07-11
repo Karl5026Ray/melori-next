@@ -53,6 +53,11 @@ export interface JoinOptions {
   audioProfile?: AudioProfile;
   onRemoteUserSpeaking?: (identity: string, speaking: boolean) => void;
   onLocalSpeakingChange?: (isSpeaking: boolean) => void;
+  // Full set of currently-active speaker identities (LiveKit identity == auth
+  // user id). Emitted on every ActiveSpeakersChanged so the UI can show the
+  // speaking ring for EVERYONE and clear it when they stop — this is the
+  // primary, real-time driver (the DB is_speaking write is only a fallback).
+  onActiveSpeakersChange?: (identities: string[]) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
   onError?: (err: Error) => void;
@@ -65,6 +70,9 @@ interface ActiveSession {
   role: LiveKitRole;
   profile: AudioProfile;
   localAudioTrack: AnyTrack | null;
+  // HTMLAudioElements created by attaching remote audio tracks, kept so we can
+  // remove them from the DOM on leave/disconnect and not leak playing audio.
+  remoteAudioEls: HTMLMediaElement[];
   cleanups: Array<() => void>;
 }
 
@@ -75,6 +83,7 @@ let session: ActiveSession = {
   role: "subscriber",
   profile: "voice",
   localAudioTrack: null,
+  remoteAudioEls: [],
   cleanups: [],
 };
 
@@ -161,7 +170,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   }
 
   const lk = await import("livekit-client");
-  const { Room, RoomEvent, AudioPresets } = lk as any;
+  const { Room, RoomEvent, AudioPresets, Track } = lk as any;
 
   const profile =
     opts.audioProfile || audioProfileForType(opts.spaceType);
@@ -186,13 +195,25 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       stopLocalTrackOnUnpublish: true,
     });
 
+    // Track who was speaking last tick so we can emit BOTH true and false
+    // transitions for remote users (the raw event only lists active speakers).
+    let prevSpeakingIds = new Set<string>();
     const onActiveSpeakers = (speakers: Array<{ identity: string }>) => {
       const speakingIds = new Set(speakers.map((s) => s.identity));
-      speakers.forEach((s) => {
-        if (s.identity !== creds.identity) {
-          opts.onRemoteUserSpeaking?.(s.identity, true);
+      // Full active set — primary driver so every speaker's ring shows/clears.
+      opts.onActiveSpeakersChange?.(Array.from(speakingIds));
+      // Per-remote transitions (fire false when someone stops speaking).
+      speakingIds.forEach((id) => {
+        if (id !== creds.identity && !prevSpeakingIds.has(id)) {
+          opts.onRemoteUserSpeaking?.(id, true);
         }
       });
+      prevSpeakingIds.forEach((id) => {
+        if (id !== creds.identity && !speakingIds.has(id)) {
+          opts.onRemoteUserSpeaking?.(id, false);
+        }
+      });
+      prevSpeakingIds = speakingIds;
       const localSpeaking = speakingIds.has(creds.identity);
       opts.onLocalSpeakingChange?.(localSpeaking);
       void writeLocalSpeaking(opts.spaceId, creds.identity, localSpeaking);
@@ -215,7 +236,59 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     room.on(RoomEvent.Disconnected, onDisconnected);
     session.cleanups.push(() => room.off(RoomEvent.Disconnected, onDisconnected));
 
+    // Remote audio playback. LiveKit does NOT auto-play subscribed tracks even
+    // with autoSubscribe:true — the client must attach() each remote audio
+    // track to an <audio> element and play it. This runs for EVERYONE
+    // (publishers and audience/subscribers) so all participants hear speakers.
+    const AUDIO_KIND = Track?.Kind?.Audio ?? "audio";
+    const attachAudio = (track: AnyTrack, participant: { identity: string }) => {
+      if (typeof document === "undefined") return; // SSR guard
+      if (track?.kind !== AUDIO_KIND) return;
+      const el = track.attach() as HTMLMediaElement;
+      el.setAttribute("data-lk-audio", participant.identity);
+      document.body.appendChild(el);
+      session.remoteAudioEls.push(el);
+      // Some browsers gate autoplay behind a user gesture. The join is normally
+      // triggered by a click, but if play() still rejects it's a known browser
+      // autoplay limitation — log and carry on rather than crash.
+      try {
+        const p = el.play?.();
+        if (p && typeof p.catch === "function") {
+          p.catch((e: unknown) => console.warn("[spaces] remote audio autoplay blocked", e));
+        }
+      } catch (e) {
+        console.warn("[spaces] remote audio play() failed", e);
+      }
+    };
+
+    const onTrackSubscribed = (track: AnyTrack, _pub: unknown, participant: { identity: string }) => {
+      attachAudio(track, participant);
+    };
+    room.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
+    session.cleanups.push(() => room.off(RoomEvent.TrackSubscribed, onTrackSubscribed));
+
+    const onTrackUnsubscribed = (track: AnyTrack) => {
+      try {
+        (track?.detach?.() as HTMLMediaElement[] | undefined)?.forEach((el) => {
+          session.remoteAudioEls = session.remoteAudioEls.filter((e) => e !== el);
+          el.remove();
+        });
+      } catch {
+        /* ignore cleanup errors */
+      }
+    };
+    room.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
+    session.cleanups.push(() => room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed));
+
     await room.connect(creds.url, creds.token, { autoSubscribe: true });
+
+    // Attach any remote audio tracks that were already subscribed before our
+    // handler was registered (e.g. participants already in the room on join).
+    room.remoteParticipants.forEach((p: any) => {
+      p.trackPublications.forEach((pub: any) => {
+        if (pub.track && pub.kind === AUDIO_KIND) attachAudio(pub.track, p);
+      });
+    });
 
     session.room = room;
     session.spaceId = opts.spaceId;
@@ -294,6 +367,16 @@ export async function leaveChannel(): Promise<void> {
   } catch {
     /* idempotent */
   }
+  // Detach and remove all remote audio elements so nothing keeps playing.
+  session.remoteAudioEls.forEach((el) => {
+    try {
+      el.pause?.();
+      el.srcObject = null;
+      el.remove();
+    } catch {
+      /* ignore */
+    }
+  });
   session = {
     room: null,
     spaceId: null,
@@ -301,6 +384,7 @@ export async function leaveChannel(): Promise<void> {
     role: "subscriber",
     profile: "voice",
     localAudioTrack: null,
+    remoteAudioEls: [],
     cleanups: [],
   };
 }

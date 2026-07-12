@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
+import { syncArtistAvatarFromProfile } from "@/lib/sync-artist-avatar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -126,6 +127,11 @@ export async function PUT(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message ?? "Failed to save settings" }, { status: 500 });
+  }
+
+  // Keep a linked artist row's avatar in sync with the profile photo.
+  if ("avatar_url" in update) {
+    await syncArtistAvatarFromProfile(userId, update.avatar_url as string | null);
   }
 
   return NextResponse.json({ profile: data });

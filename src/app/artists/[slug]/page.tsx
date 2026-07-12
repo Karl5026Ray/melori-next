@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
+import ProfileGallery from "@/components/ProfileGallery";
 import { getArtistBySlug } from "@/lib/data";
 import type { ReleaseListItem } from "@/lib/data";
 
@@ -106,6 +107,11 @@ export default async function ArtistDetailPage({
           <h2 className="mb-6 text-2xl font-bold">Discography</h2>
           <ArtistDiscography releases={releaseItems} />
         </section>
+
+        {/* Photos — only renders when this artist's profile has gallery photos */}
+        {artist.profile_id && (
+          <ProfileGallery profileId={artist.profile_id} className="pb-12" />
+        )}
       </div>
     </article>
   );

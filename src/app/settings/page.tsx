@@ -28,6 +28,10 @@ type ProfileRow = {
   notifications_email?: boolean | null;
 };
 
+type GalleryPhoto = { id: string; image_url: string; sort_order: number };
+
+const MAX_GALLERY = 12;
+
 export default function SettingsPage() {
   const router = useRouter();
   const [state, setState] = useState<
@@ -36,6 +40,8 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [email, setEmail] = useState<string>("");
+  const [tier, setTier] = useState<string>("free");
+  const [role, setRole] = useState<string>("free");
 
   // Editable fields
   const [displayName, setDisplayName] = useState("");
@@ -51,6 +57,16 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Password change (superfan/artist only)
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  // Photo gallery (superfan/artist only)
+  const [gallery, setGallery] = useState<GalleryPhoto[]>([]);
+  const [galleryBusy, setGalleryBusy] = useState(false);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const load = async (): Promise<void> => {
     setState("checking");
@@ -79,18 +95,32 @@ export default function SettingsPage() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Could not load your settings.");
       }
-      const { profile: p, email: apiEmail } = (await res.json()) as {
+      const {
+        profile: p,
+        email: apiEmail,
+        role: apiRole,
+        tier: apiTier,
+      } = (await res.json()) as {
         profile: ProfileRow;
         email: string | null;
+        role?: string | null;
+        tier?: string | null;
       };
       setProfile(p ?? null);
       setEmail(apiEmail ?? session.user.email ?? "");
+      setRole((apiRole ?? p?.membership_tier ?? "free").toString());
+      setTier((apiTier ?? "free").toString());
       setDisplayName(p?.display_name ?? "");
       setUsername(p?.username ?? "");
       setBio(p?.bio ?? "");
       setAvatarUrl(p?.avatar_url ?? null);
       setNotifEmail(p?.notifications_email !== false); // default true
       setState("ready");
+
+      // Gallery is gated to superfan/artist; only fetch when eligible.
+      if (apiTier === "superfan" || apiTier === "artist") {
+        void loadGallery();
+      }
     } catch (err: any) {
       setLoadError(err?.message ?? "Could not load your settings.");
       setState("load-error");
@@ -216,6 +246,128 @@ export default function SettingsPage() {
     router.replace("/social/auth");
   };
 
+  const handleChangePassword = async () => {
+    setError(null);
+    setSuccess(null);
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error: updErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updErr) throw new Error(updErr.message);
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccess("Password updated.");
+    } catch (err: any) {
+      setError(err?.message ?? "Could not update password.");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const loadGallery = async (): Promise<void> => {
+    try {
+      const res = await authFetch("/api/user/gallery");
+      if (!res.ok) return;
+      const { photos } = (await res.json()) as { photos: GalleryPhoto[] };
+      setGallery(Array.isArray(photos) ? photos : []);
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const handlePickGalleryPhoto = () => galleryInputRef.current?.click();
+
+  const handleGalleryFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setSuccess(null);
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Photo must be 5 MB or smaller.");
+      return;
+    }
+    if (gallery.length >= MAX_GALLERY) {
+      setError(`Gallery is full (max ${MAX_GALLERY} photos).`);
+      return;
+    }
+
+    setGalleryBusy(true);
+    try {
+      const urlRes = await authFetch("/api/user/gallery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      if (!urlRes.ok) {
+        const d = await urlRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not get upload URL");
+      }
+      const { signedUrl, publicUrl } = await urlRes.json();
+
+      const putRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!putRes.ok) throw new Error("Upload failed — please try again.");
+
+      const saveRes = await authFetch("/api/user/gallery", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicUrl }),
+      });
+      if (!saveRes.ok) {
+        const d = await saveRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not save photo");
+      }
+      const { photo } = (await saveRes.json()) as { photo: GalleryPhoto };
+      setGallery((prev) => [...prev, photo]);
+      setSuccess("Photo added.");
+    } catch (err: any) {
+      setError(err?.message ?? "Photo upload failed.");
+    } finally {
+      setGalleryBusy(false);
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveGalleryPhoto = async (id: string) => {
+    setError(null);
+    setSuccess(null);
+    setGalleryBusy(true);
+    try {
+      const res = await authFetch("/api/user/gallery", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not remove photo");
+      }
+      setGallery((prev) => prev.filter((p) => p.id !== id));
+    } catch (err: any) {
+      setError(err?.message ?? "Could not remove photo.");
+    } finally {
+      setGalleryBusy(false);
+    }
+  };
+
   if (state === "load-error") {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
@@ -246,8 +398,11 @@ export default function SettingsPage() {
     );
   }
 
-  const tier = profile?.membership_tier ?? "free";
+  const membershipTier = profile?.membership_tier ?? "free";
   const status = profile?.membership_status ?? "inactive";
+  // Password + Gallery sections are for paid tiers only: superfan tier OR
+  // artist role (admins resolve to the 'artist' tier and also qualify).
+  const canManage = tier === "superfan" || tier === "artist" || role === "artist";
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -401,6 +556,107 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Password — superfan/artist only */}
+        {canManage && (
+          <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+            <h2 className="text-lg font-semibold mb-5">Password</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+                  New password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+                  placeholder="At least 8 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-[#888] mb-1">
+                  Confirm password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+                  placeholder="Re-enter new password"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={savingPassword}
+                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm disabled:opacity-50"
+              >
+                {savingPassword ? "Updating…" : "Update password"}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Photo Gallery — superfan/artist only */}
+        {canManage && (
+          <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Photo Gallery</h2>
+              <span className="text-xs text-[#888]">
+                {gallery.length}/{MAX_GALLERY}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
+              {gallery.map((photo) => (
+                <div
+                  key={photo.id}
+                  className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-black/40"
+                >
+                  <img
+                    src={photo.image_url}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveGalleryPhoto(photo.id)}
+                    disabled={galleryBusy}
+                    aria-label="Remove photo"
+                    className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white text-lg leading-none hover:bg-red-500/80 disabled:opacity-50"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {gallery.length < MAX_GALLERY && (
+                <button
+                  type="button"
+                  onClick={handlePickGalleryPhoto}
+                  disabled={galleryBusy}
+                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-xs text-[#888] hover:border-[#c9a96e]/50 hover:text-[#c9a96e] transition disabled:opacity-50"
+                >
+                  <Camera className="h-5 w-5" />
+                  {galleryBusy ? "Working…" : "Add photo"}
+                </button>
+              )}
+            </div>
+            <p className="mt-3 text-xs text-[#666]">
+              Up to {MAX_GALLERY} photos · images only · 5 MB max each.
+            </p>
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleGalleryFileChange}
+            />
+          </section>
+        )}
+
         {/* Membership */}
         <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-5">Membership</h2>
@@ -410,7 +666,7 @@ export default function SettingsPage() {
                 Tier
               </p>
               <p className="text-xl font-bold capitalize text-[#c9a96e] mt-1">
-                {tier}
+                {membershipTier}
               </p>
             </div>
             <div>

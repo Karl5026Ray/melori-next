@@ -48,9 +48,10 @@ Stream freely. Support directly.{" "}
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
 An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep the majority of every sale.
 </p>
-<div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+<div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
 <Link href="/membership" className="rounded-full border border-brand-border px-7 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/5">Become an Artist</Link>
+<Link href="/social/spaces" className="rounded-full border border-brand-border px-7 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/5">Spaces</Link>
 </div>
 </div>
 </section>

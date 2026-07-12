@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { Radio } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
+import ProfileGallery from "@/components/ProfileGallery";
 
 export default function ProfilePage() {
   const { user, applyUser, refreshUser } = useAuth();
@@ -97,6 +98,8 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+
+        <ProfileGallery profileId={view.id} className="mb-6" />
 
         <div className="glass rounded-2xl p-6">
           <h3 className="font-bold mb-4">Recent Activity</h3>

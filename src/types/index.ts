@@ -15,6 +15,7 @@ export interface Artist {
   genre_id: number | null;
   avatar_url: string | null;
   cover_image_url: string | null;
+  profile_id?: string | null;
   is_verified: boolean;
   is_published: boolean;
   is_featured?: boolean;

@@ -108,6 +108,12 @@ export async function POST(req: NextRequest) {
     if (existing.role === "free" && desiredRole !== "free") {
       updates.role = desiredRole;
     }
+    // Every signed-in member is verified automatically. If an older row is
+    // somehow unverified, promote it on sign-in so the badge is universal and
+    // never requires a manual admin toggle.
+    if ((existing as { verified?: boolean }).verified !== true) {
+      updates.verified = true;
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ profile: existing, created: false });
@@ -138,8 +144,8 @@ export async function POST(req: NextRequest) {
       // field (gating keys off `role`), so mark it active on creation so the
       // member list / admin panel reflect reality.
       membership_status: "active",
-      // New members are verified automatically (previously required a manual
-      // admin toggle). Keeps the verified badge consistent for all signups.
+      // Every new member is verified automatically on signup — no manual admin
+      // toggle needed. Signing up / signing in always yields a verified badge.
       verified: true,
     })
     .select("id, username, full_name, role")

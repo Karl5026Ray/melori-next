@@ -74,12 +74,12 @@ export default async function ArtistDetailPage({
       <div className="max-w-6xl mx-auto px-6">
         {/* Horizontal header: photo next to name across the top.
             Stacks vertically on mobile, side-by-side from sm up. */}
-        <div className="-mt-16 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:gap-6 sm:text-left">
+        <div className="relative z-10 -mt-20 flex flex-col items-center gap-4 text-center sm:-mt-24 sm:flex-row sm:items-end sm:gap-6 sm:text-left">
           <CoverImage
             src={artist.avatar_url}
             alt={artist.name}
             name={artist.name}
-            className="h-32 w-32 shrink-0 border-4 border-brand-background sm:h-40 sm:w-40"
+            className="h-32 w-32 shrink-0 border-4 border-brand-background bg-brand-background shadow-xl sm:h-40 sm:w-40"
             rounded="rounded-full"
           />
           <div className="min-w-0 sm:pb-3">

@@ -316,7 +316,7 @@ export default function CreatePostButton() {
         type="button"
         onClick={handleFabClick}
         aria-label="Post to feed"
-        className="fixed bottom-20 right-4 md:bottom-8 md:right-8 z-40 flex items-center justify-center w-14 h-14 rounded-full btn-primary shadow-2xl shadow-melori-purple/40 hover:scale-105 transition"
+        className="fixed bottom-44 right-4 md:bottom-28 md:right-8 z-[60] flex items-center justify-center w-14 h-14 rounded-full btn-primary shadow-2xl shadow-melori-purple/40 hover:scale-105 transition"
       >
         <Plus className="w-7 h-7" />
       </button>

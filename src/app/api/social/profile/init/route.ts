@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
   // overwrite a chosen username.
   const { data: existing } = await supabase
     .from("profiles")
-    .select("id, username, full_name, role")
+    .select("id, username, full_name, role, membership_status")
     .eq("id", userId)
     .maybeSingle();
 
@@ -95,6 +95,14 @@ export async function POST(req: NextRequest) {
       if (finalUsername) updates.username = finalUsername;
     }
     if (!existing.full_name && rawUsername) updates.full_name = rawUsername;
+    // A returning signed-in member is live: promote a missing/non-active status
+    // to active so the member list reflects reality. (Gating keys off `role`,
+    // so this only affects the displayed status.)
+    const currentStatus = (existing as { membership_status?: string | null })
+      .membership_status;
+    if ((currentStatus ?? "").toLowerCase() !== "active") {
+      updates.membership_status = "active";
+    }
     // Never downgrade; only fill role if the current row is "free" and the
     // caller explicitly chose artist/superfan on the signup form.
     if (existing.role === "free" && desiredRole !== "free") {
@@ -126,6 +134,10 @@ export async function POST(req: NextRequest) {
       username: finalUsername,
       full_name: rawUsername || null,
       role: desiredRole,
+      // A signed-in account is a live member. `membership_status` is a display
+      // field (gating keys off `role`), so mark it active on creation so the
+      // member list / admin panel reflect reality.
+      membership_status: "active",
     })
     .select("id, username, full_name, role")
     .single();

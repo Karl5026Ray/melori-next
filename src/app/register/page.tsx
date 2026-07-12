@@ -43,9 +43,13 @@ function RegisterInner() {
   const handleGoogle = async () => {
     setError("");
     try {
+      // Route Google through the dedicated /auth/callback page, which runs
+      // exchangeCodeForSession client-side (same localStorage that holds the
+      // PKCE code verifier). Redirecting straight to `next` skips the exchange
+      // and throws "PKCE code verifier not found in storage".
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}${next}`
+          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
           : undefined;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",

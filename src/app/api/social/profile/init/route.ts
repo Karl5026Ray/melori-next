@@ -138,6 +138,9 @@ export async function POST(req: NextRequest) {
       // field (gating keys off `role`), so mark it active on creation so the
       // member list / admin panel reflect reality.
       membership_status: "active",
+      // New members are verified automatically (previously required a manual
+      // admin toggle). Keeps the verified badge consistent for all signups.
+      verified: true,
     })
     .select("id, username, full_name, role")
     .single();

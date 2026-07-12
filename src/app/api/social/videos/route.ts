@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { getRequestMembership } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -30,15 +30,17 @@ export async function GET() {
   }
 }
 
-// POST /api/social/videos — persist a video row after the file has been PUT to
-// the `social-videos` bucket via /api/studio/upload-url (type: "video"). Only
-// artists may publish. user_id is always the caller's uid so a client cannot
-// post on someone else's behalf.
+// POST /api/social/videos — persist a video/audio row after the file has been
+// PUT to the `social-videos` bucket via /api/social/upload-url. Any signed-in
+// user may publish. user_id is always the caller's uid so a client cannot post
+// on someone else's behalf.
 //
-// Body: { title, video_url, description?, thumbnail_url? }
+// Body: { title, video_url, description?, thumbnail_url?, media_type? }
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
-  if (isGuardFailure(guard)) return guard;
+  const { userId } = await getRequestMembership(req);
+  if (!userId) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
 
   try {
     const body = await req.json().catch(() => ({}) as Record<string, unknown>);
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
       typeof body.thumbnail_url === "string" && body.thumbnail_url
         ? body.thumbnail_url
         : null;
+    const mediaType = body.media_type === "audio" ? "audio" : "video";
 
     if (!title) {
       return NextResponse.json(
@@ -71,11 +74,12 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
       .from("social_videos")
       .insert({
-        user_id: guard.membership.userId,
+        user_id: userId,
         title,
         description,
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
+        media_type: mediaType,
       })
       .select("*")
       .single();

@@ -133,6 +133,7 @@ export interface SocialVideo {
   description: string | null;
   video_url: string;
   thumbnail_url: string | null;
+  media_type: "video" | "audio";
   likes_count: number;
   comments_count: number;
   created_at: string;

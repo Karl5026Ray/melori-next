@@ -18,9 +18,12 @@ interface VideoCardProps {
 
 export function VideoCard({ video, isActive }: VideoCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
+
+  const isAudio = video.media_type === "audio";
 
   useEffect(() => {
     const el = videoRef.current;
@@ -32,6 +35,17 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       el.currentTime = 0;
     }
   }, [isActive]);
+
+  // Pause audio posts when they scroll out of view (never autoplay with sound;
+  // the listener taps <audio controls> to start).
+  useEffect(() => {
+    if (!isAudio) return;
+    const el = audioRef.current;
+    if (!el) return;
+    if (!isActive) {
+      el.pause();
+    }
+  }, [isActive, isAudio]);
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
@@ -45,28 +59,53 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
 
   return (
     <div className="relative h-full w-full bg-melori-void">
-      <video
-        ref={videoRef}
-        src={video.video_url}
-        loop
-        muted={isMuted}
-        playsInline
-        className="h-full w-full object-cover"
-        poster={video.thumbnail_url || undefined}
-      />
+      {isAudio ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
+          <div className="absolute inset-0 bg-gradient-to-br from-melori-purple/30 via-melori-void to-melori-pink/20" />
+          {video.thumbnail_url ? (
+            <img
+              src={video.thumbnail_url}
+              alt=""
+              className="relative w-56 h-56 max-w-[70vw] max-h-[70vw] rounded-2xl object-cover shadow-2xl"
+            />
+          ) : (
+            <div className="relative w-56 h-56 max-w-[70vw] max-h-[70vw] rounded-2xl bg-gradient-to-br from-melori-purple to-melori-pink flex items-center justify-center shadow-2xl">
+              <Music className="w-20 h-20 text-white/80" />
+            </div>
+          )}
+          <audio
+            ref={audioRef}
+            src={video.video_url}
+            controls
+            className="relative mt-6 w-full max-w-sm"
+          />
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          src={video.video_url}
+          loop
+          muted={isMuted}
+          playsInline
+          className="h-full w-full object-cover"
+          poster={video.thumbnail_url || undefined}
+        />
+      )}
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 pointer-events-none" />
 
-      <button
-        onClick={toggleMute}
-        className="absolute top-4 right-4 p-2 bg-black/30 backdrop-blur rounded-full text-white"
-      >
-        {isMuted ? (
-          <VolumeX className="w-5 h-5" />
-        ) : (
-          <Volume2 className="w-5 h-5" />
-        )}
-      </button>
+      {!isAudio && (
+        <button
+          onClick={toggleMute}
+          className="absolute top-4 right-4 p-2 bg-black/30 backdrop-blur rounded-full text-white"
+        >
+          {isMuted ? (
+            <VolumeX className="w-5 h-5" />
+          ) : (
+            <Volume2 className="w-5 h-5" />
+          )}
+        </button>
+      )}
 
       <div className="absolute bottom-20 left-4 right-20 text-white">
         <div className="flex items-center gap-2 mb-2">

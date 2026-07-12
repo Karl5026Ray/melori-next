@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { VideoFeed } from "@/components/social/video/VideoFeed";
+import CreatePostButton from "@/components/social/video/CreatePostButton";
 
 // Rendered per-request: this page queries Supabase at request time, so it must
 // not be statically prerendered at build time (env vars are runtime-only).
@@ -25,6 +26,7 @@ export default async function VideoPage() {
   return (
     <div className="flex-1 overflow-hidden relative bg-black">
       <VideoFeed initialVideos={videos} />
+      <CreatePostButton />
     </div>
   );
 }

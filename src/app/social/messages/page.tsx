@@ -72,7 +72,7 @@ export default function MessagesPage() {
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 pb-28 md:pb-2">
           {loading ? (
             <div className="text-center py-8 text-melori-muted text-sm">
               Loading…

@@ -225,7 +225,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-melori-border p-4 bg-melori-void shrink-0">
+      <div className="border-t border-melori-border p-4 bg-melori-void shrink-0 mb-28 md:mb-0">
         {user && !canParticipate ? (
           <UpgradePrompt action="reply" />
         ) : (

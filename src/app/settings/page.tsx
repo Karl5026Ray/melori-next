@@ -68,6 +68,11 @@ export default function SettingsPage() {
   const [galleryBusy, setGalleryBusy] = useState(false);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
+  // Artist banner (artist role only) — artists.cover_image_url
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
   const load = async (): Promise<void> => {
     setState("checking");
     setLoadError(null);
@@ -120,6 +125,10 @@ export default function SettingsPage() {
       // Gallery is gated to superfan/artist; only fetch when eligible.
       if (apiTier === "superfan" || apiTier === "artist") {
         void loadGallery();
+      }
+      // Banner is artist-only; fetch the current cover_image_url once.
+      if (apiRole === "artist") {
+        void loadBanner();
       }
     } catch (err: any) {
       setLoadError(err?.message ?? "Could not load your settings.");
@@ -368,6 +377,76 @@ export default function SettingsPage() {
     }
   };
 
+  const loadBanner = async (): Promise<void> => {
+    try {
+      const res = await authFetch("/api/artist/profile-media");
+      if (!res.ok) return;
+      const { artist } = (await res.json()) as {
+        artist: { cover_image_url: string | null } | null;
+      };
+      setBannerUrl(artist?.cover_image_url ?? null);
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const handlePickBanner = () => bannerInputRef.current?.click();
+
+  const handleBannerFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setSuccess(null);
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Banner must be 8 MB or smaller.");
+      return;
+    }
+
+    setBannerUploading(true);
+    try {
+      const urlRes = await authFetch("/api/artist/profile-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, slot: "cover" }),
+      });
+      if (!urlRes.ok) {
+        const d = await urlRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not get upload URL");
+      }
+      const { signedUrl, publicUrl } = await urlRes.json();
+
+      const putRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!putRes.ok) throw new Error("Upload failed — please try again.");
+
+      const saveRes = await authFetch("/api/artist/profile-media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicUrl, slot: "cover" }),
+      });
+      if (!saveRes.ok) {
+        const d = await saveRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not save banner");
+      }
+      setBannerUrl(publicUrl);
+      setSuccess("Banner updated.");
+    } catch (err: any) {
+      setError(err?.message ?? "Banner upload failed.");
+    } finally {
+      setBannerUploading(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = "";
+    }
+  };
+
   if (state === "load-error") {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
@@ -524,6 +603,46 @@ export default function SettingsPage() {
             </button>
           </div>
         </section>
+
+        {/* Artist Banner — artist accounts only (artists.cover_image_url) */}
+        {role === "artist" && (
+          <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+            <h2 className="text-lg font-semibold mb-5">Artist Banner</h2>
+            <div className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#c9a96e]/20 to-[#0a0a0a] aspect-[16/5]">
+              {bannerUrl ? (
+                <img
+                  src={bannerUrl}
+                  alt="Artist banner"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-[#888]">
+                  No banner yet
+                </div>
+              )}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-xs text-[#666]">
+                Recommended ~1600×500 · images only · 8 MB max.
+              </p>
+              <button
+                type="button"
+                onClick={handlePickBanner}
+                disabled={bannerUploading}
+                className="shrink-0 px-5 py-2.5 rounded-full bg-white/5 border border-white/10 text-white font-medium text-sm hover:bg-white/10 transition disabled:opacity-50"
+              >
+                {bannerUploading ? "Uploading…" : "Change banner"}
+              </button>
+            </div>
+            <input
+              ref={bannerInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleBannerFileChange}
+            />
+          </section>
+        )}
 
         {/* Notifications */}
         <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">

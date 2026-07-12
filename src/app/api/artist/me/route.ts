@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const [{ data: artist }, { data: profile }] = await Promise.all([
     supabase
       .from("artists")
-      .select("id, name, slug, avatar_url, bio, is_verified")
+      .select("id, name, slug, avatar_url, cover_image_url, bio, is_verified")
       .eq("profile_id", userId)
       .maybeSingle(),
     supabase

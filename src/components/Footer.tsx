@@ -23,7 +23,7 @@ export default function Footer() {
         {/* Links */}
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           {footerLinks.map((link, i) => (
-<span key={link.label} className="flex items-center gap-x-6">
+<span key={link.label} className="flex items-center gap-x-2">
 {i > 0 && (
 <span aria-hidden="true" className="text-text-secondary/40 select-none">·</span>
 )}

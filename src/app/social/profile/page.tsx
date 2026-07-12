@@ -1,14 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { Radio } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
 import ProfileGallery from "@/components/ProfileGallery";
+import { authFetch } from "@/lib/authClient";
 
 export default function ProfilePage() {
   const { user, applyUser, refreshUser } = useAuth();
   const [editing, setEditing] = useState(false);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+
+  // Resolve the signed-in user's artist row (by profile_id === their id) to
+  // show their banner. Non-artists get a null banner → neutral placeholder.
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+    (async () => {
+      try {
+        const res = await authFetch("/api/artist/me");
+        if (!res.ok) return;
+        const { artist } = (await res.json()) as {
+          artist: { cover_image_url: string | null } | null;
+        };
+        if (active) setBannerUrl(artist?.cover_image_url ?? null);
+      } catch {
+        /* ignore — placeholder stays */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   if (!user) {
     return (
@@ -22,8 +46,15 @@ export default function ProfilePage() {
 
   return (
     <div className="flex-1 overflow-y-auto animate-fade-in">
-      <div className="relative h-48 md:h-64 bg-gradient-to-br from-melori-purple/20 to-melori-pink/20">
-        <div className="absolute inset-0 bg-melori-void/20" />
+      <div className="relative h-40 sm:h-56 md:h-64 bg-gradient-to-br from-melori-purple/20 to-melori-pink/20">
+        {bannerUrl && (
+          <img
+            src={bannerUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-melori-void to-transparent" />
       </div>
 
       <div className="max-w-3xl mx-auto px-4 md:px-8 -mt-16 relative z-10 pb-24 md:pb-8">

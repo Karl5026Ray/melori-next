@@ -11,6 +11,7 @@ import type { Artist } from "@/types";
 type Spotlight = {
   name: string;
   avatar_url: string | null;
+  cover_image_url: string | null;
   bio: string | null;
   is_verified: boolean;
   href: string;
@@ -22,6 +23,7 @@ type MeResponse = {
         name: string;
         slug: string;
         avatar_url: string | null;
+        cover_image_url: string | null;
         bio: string | null;
         is_verified: boolean;
       }
@@ -41,6 +43,7 @@ function fallbackSpotlight(artist: Artist): Spotlight {
   return {
     name: artist.name,
     avatar_url: artist.avatar_url,
+    cover_image_url: artist.cover_image_url,
     bio: artist.bio,
     is_verified: artist.is_verified,
     href: `/artists/${artist.slug}`,
@@ -53,6 +56,7 @@ function mineFromMe(me: MeResponse): Spotlight | null {
     return {
       name: me.artist.name,
       avatar_url: me.artist.avatar_url,
+      cover_image_url: me.artist.cover_image_url,
       bio: me.artist.bio,
       is_verified: me.artist.is_verified,
       href: "/social/profile",
@@ -68,6 +72,7 @@ function mineFromMe(me: MeResponse): Spotlight | null {
     return {
       name,
       avatar_url: me.profile.avatar_url,
+      cover_image_url: null,
       bio: me.profile.bio,
       is_verified: false,
       href: "/social/profile",
@@ -125,6 +130,16 @@ export default function FeaturedSpotlight({ fallback }: { fallback: Artist }) {
       href={spotlight.href}
       className="group block overflow-hidden rounded-2xl border border-brand-border bg-brand-surface transition-colors hover:border-brand-primary"
     >
+      {spotlight.cover_image_url && (
+        <div className="relative h-32 w-full overflow-hidden sm:h-44">
+          <img
+            src={spotlight.cover_image_url}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-brand-surface to-transparent" />
+        </div>
+      )}
       <div className="flex flex-col items-center gap-6 p-8 text-center sm:flex-row sm:text-left">
         <CoverImage
           src={spotlight.avatar_url}

@@ -107,7 +107,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         </button>
       )}
 
-      <div className="absolute bottom-20 left-4 right-20 text-white">
+      <div className="absolute bottom-28 md:bottom-20 left-4 right-20 text-white">
         <div className="flex items-center gap-2 mb-2">
           <img
             src={video.user?.avatar_url || "/favicon.png"}
@@ -133,7 +133,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         </div>
       </div>
 
-      <div className="absolute right-4 bottom-20 flex flex-col items-center gap-6">
+      <div className="absolute right-4 bottom-28 md:bottom-20 flex flex-col items-center gap-6">
         <button
           onClick={handleLike}
           className="flex flex-col items-center gap-1 text-white"

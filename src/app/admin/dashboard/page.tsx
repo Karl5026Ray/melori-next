@@ -391,6 +391,12 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
             + New Artist
           </Link>
           <Link
+            href="/settings#artist-banner"
+            className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer"
+          >
+            Edit My Banner
+          </Link>
+          <Link
             href="/admin/email-blast"
             className="px-4 py-2 bg-white/5 text-[#ccc] rounded-lg text-sm font-medium hover:bg-white/10 transition-all cursor-pointer"
           >

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
+import ShareButton from "@/components/ShareButton";
 import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
 import ProfileGallery from "@/components/ProfileGallery";
@@ -82,7 +83,7 @@ export default async function ArtistDetailPage({
             className="h-32 w-32 shrink-0 border-4 border-brand-background bg-brand-background shadow-xl sm:h-40 sm:w-40"
             rounded="rounded-full"
           />
-          <div className="min-w-0 sm:pb-3">
+          <div className="flex min-w-0 items-center gap-3 sm:pb-3">
             <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:justify-start sm:text-4xl lg:text-5xl">
               <span className="truncate">{artist.name}</span>
               {artist.is_verified && (
@@ -91,6 +92,12 @@ export default async function ArtistDetailPage({
                 </span>
               )}
             </h1>
+            <ShareButton
+              url={`https://melorimusic.org/artists/${artist.slug}`}
+              title={`${artist.name} on MELORI MUSIC`}
+              text={`Check out ${artist.name} on MELORI MUSIC — stream their music free and support them directly.`}
+              label={`Share ${artist.name}`}
+            />
           </div>
         </div>
 

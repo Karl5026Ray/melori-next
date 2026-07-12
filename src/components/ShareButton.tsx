@@ -14,12 +14,31 @@ import { useEffect, useRef, useState } from "react";
  * the native share sheet, so we surface that first when available.
  */
 
-const SHARE_URL = "https://melorimusic.org";
-const SHARE_TITLE = "MELORI MUSIC";
-const SHARE_TEXT =
+const DEFAULT_URL = "https://melorimusic.org";
+const DEFAULT_TITLE = "MELORI MUSIC";
+const DEFAULT_TEXT =
   "Stream the full catalog free and support independent artists directly on MELORI MUSIC.";
 
-export default function ShareButton() {
+interface ShareButtonProps {
+  // What to share. Defaults to the Melori site. Pass these to share a specific
+  // page such as an artist profile.
+  url?: string;
+  title?: string;
+  text?: string;
+  // Accessible label for the trigger button.
+  label?: string;
+}
+
+export default function ShareButton({
+  url,
+  title,
+  text,
+  label,
+}: ShareButtonProps = {}) {
+  const SHARE_URL = url ?? DEFAULT_URL;
+  const SHARE_TITLE = title ?? DEFAULT_TITLE;
+  const SHARE_TEXT = text ?? DEFAULT_TEXT;
+  const ARIA_LABEL = label ?? "Share Melori Music";
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [canNativeShare, setCanNativeShare] = useState(false);
@@ -96,7 +115,7 @@ export default function ShareButton() {
       <button
         type="button"
         onClick={handleClick}
-        aria-label="Share Melori Music"
+        aria-label={ARIA_LABEL}
         aria-haspopup="menu"
         aria-expanded={open}
         className="flex h-11 w-11 items-center justify-center rounded-full border border-brand-border text-text-primary transition-colors hover:bg-white/5"

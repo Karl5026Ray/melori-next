@@ -444,12 +444,20 @@ export default function Header() {
               )}
             </div>
           ) : (
-            <Link
-              href="/social/auth"
-              className="rounded-md border border-brand-border px-4 py-1.5 text-text-primary transition-colors hover:text-brand-primary"
-            >
-              Log In
-            </Link>
+            <>
+              <Link
+                href="/social/auth"
+                className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+              >
+                Log In
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-md border border-brand-primary px-4 py-1.5 font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-black"
+              >
+                Sign Up Free
+              </Link>
+            </>
           )}
 
           <Link
@@ -603,11 +611,11 @@ export default function Header() {
                   Log In
                 </Link>
                 <Link
-                  href="/membership"
+                  href="/register"
                   onClick={() => setOpen(false)}
                   className="rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
                 >
-                  Sign Up
+                  Sign Up Free
                 </Link>
               </div>
             )}

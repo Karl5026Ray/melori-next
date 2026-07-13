@@ -51,8 +51,8 @@ An independent music platform where fans stream the full catalog for free and su
 </p>
 <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
+<Link href="/register" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Sign Up Free</Link>
 <Link href="/membership" className="rounded-full border border-brand-border px-7 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/5">Become an Artist</Link>
-<Link href="/social/spaces" className="rounded-full border border-brand-border px-7 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/5">Spaces</Link>
 <ShareButton />
 </div>
 </div>

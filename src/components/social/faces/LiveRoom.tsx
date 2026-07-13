@@ -1,24 +1,21 @@
 "use client";
 
-// MM Faces — Solo Live room (TikTok-style).
+// MM Faces — LIVE VIDEO room engine (all three modes).
 //
-// One host broadcasts camera + mic; any number of viewers watch, comment, and
-// react. This is the working engine; Duo Live / 8-Person Live extend the same
-// component by seating additional publisher tiles (the video client already
-// supports multiple remote video tiles via onRemoteVideo).
+//   • Live         (live_solo)  — one host on camera; viewers watch/comment/react.
+//   • Duo Live      (live_duo)   — host + one guest on camera (2 tiles).
+//   • 8-Person Live (live_group) — host + up to N guests (auto-grid, up to 8 tiles).
 //
-// Layout (mobile-first, TikTok-inspired):
-//   - Full-bleed video stage (host camera fills the screen).
-//   - Top-left: LIVE pill + live viewer count.
-//   - Top-right: close/leave.
-//   - Bottom-left: floating comment stream (reuses SpaceCommentSection data).
-//   - Right rail: reaction (heart) button with floating burst animation.
-//   - Host dock (bottom): mic toggle, camera toggle, flip camera, End Live.
+// One engine, three configs. Tiles are laid out with the TikTok/KIMI auto-grid
+// math (1→1x1, 2→2 cols, ≤4→2x2, ≤6→3x2, else 3x3). Guests raise a hand to
+// request camera; the host approves (promote to "speaker" = publisher). This
+// reuses the SAME server model as audio MM Spaces: `space_participants.role`
+// + has_raised_hand, the host-only PATCH moderation endpoint, and the
+// Superfan-gated /api/livekit-token (publisher only for host/speaker).
 //
-// Brand: Melori orange (brand-primary) accents on the dark surface, matching
-// the rest of the app and the nav redesign — NOT the purple social palette.
+// Brand: Melori orange accents on dark — matches the rest of the app.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -28,6 +25,7 @@ import {
   setCameraEnabled,
   setMicEnabled,
   switchCamera,
+  becomePublisher,
   type VideoTier,
   type RemoteVideo,
 } from "@/lib/livekitVideoClient";
@@ -46,7 +44,12 @@ import {
   Radio,
   Loader2,
   Users,
+  Hand,
+  Check,
+  UserPlus,
 } from "lucide-react";
+
+export type LiveMode = "live_solo" | "live_duo" | "live_group";
 
 interface LiveRoomProps {
   spaceId: string;
@@ -56,11 +59,31 @@ interface LiveRoomProps {
   hostAvatar?: string | null;
   tier: VideoTier;
   durationMinutes: number | null;
+  mode: LiveMode;
+  maxOnCamera: number; // host + guests ceiling (1 for solo, 2 duo, up to 8 group)
 }
 
 interface FloatingHeart {
   id: number;
   left: number;
+}
+
+// A tile = one on-camera participant (host or guest) plus their attached
+// <video> element (or null while their camera is off / loading).
+interface Tile {
+  identity: string;
+  name: string;
+  isLocal: boolean;
+  el: HTMLVideoElement | null;
+}
+
+// Auto-layout grid (KIMI/TikTok math), returned as a Tailwind grid class.
+function gridClassFor(count: number): string {
+  if (count <= 1) return "grid-cols-1 grid-rows-1";
+  if (count === 2) return "grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1";
+  if (count <= 4) return "grid-cols-2 grid-rows-2";
+  if (count <= 6) return "grid-cols-2 grid-rows-3 sm:grid-cols-3 sm:grid-rows-2";
+  return "grid-cols-2 grid-rows-4 sm:grid-cols-3 sm:grid-rows-3";
 }
 
 export default function LiveRoom({
@@ -71,55 +94,95 @@ export default function LiveRoom({
   hostAvatar,
   tier,
   durationMinutes,
+  mode,
+  maxOnCamera,
 }: LiveRoomProps) {
   const router = useRouter();
   const { user } = useAuth();
   const isHost = !!user && user.id === hostId;
+  const isSolo = mode === "live_solo";
 
-  const stageRef = useRef<HTMLDivElement | null>(null);
   const heartSeq = useRef(0);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   const [connecting, setConnecting] = useState(true);
-  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [viewerCount, setViewerCount] = useState(1);
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
-  const [hostLive, setHostLive] = useState(true);
+  const [tiles, setTiles] = useState<Tile[]>([]);
+  const [onCamera, setOnCamera] = useState<boolean>(isHost); // am I publishing?
+  const [handRaised, setHandRaised] = useState(false);
+  const [requests, setRequests] = useState<
+    { user_id: string; name: string; avatar: string | null }[]
+  >([]);
+  const [showRequests, setShowRequests] = useState(false);
 
-  // Place a video element into the stage (host tile). For Solo Live there is a
-  // single stage tile: the host's camera. Host sees their own; viewers see the
-  // host's remote track.
-  const mountStageVideo = useCallback((el: HTMLVideoElement) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    el.className = "absolute inset-0 h-full w-full object-cover";
-    // Clear any prior video then mount.
-    stage
-      .querySelectorAll("video[data-stage-tile]")
-      .forEach((v) => v.remove());
-    el.setAttribute("data-stage-tile", "1");
-    stage.appendChild(el);
+  // Keep the local <video> for re-attach when tiles re-render.
+  const localElRef = useRef<HTMLVideoElement | null>(null);
+  const remoteEls = useRef<Map<string, HTMLVideoElement>>(new Map());
+
+  const upsertTile = useCallback((t: Tile) => {
+    setTiles((prev) => {
+      const idx = prev.findIndex((x) => x.identity === t.identity);
+      if (idx === -1) return [...prev, t];
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...t };
+      return next;
+    });
+  }, []);
+
+  const removeTile = useCallback((identity: string) => {
+    setTiles((prev) => prev.filter((x) => x.identity !== identity));
+    remoteEls.current.delete(identity);
   }, []);
 
   const handleLeave = useCallback(async () => {
     if (endTimerRef.current) clearTimeout(endTimerRef.current);
     await leaveVideoRoom();
-    // Host ending the live also ends the room row.
     if (isHost) {
       try {
         await authFetch(`/api/social/spaces/${spaceId}/end`, { method: "POST" });
       } catch {
         /* best-effort */
       }
+    } else if (user) {
+      // Mark my participant row as left.
+      try {
+        await supabase
+          .from("space_participants")
+          .update({ left_at: new Date().toISOString() })
+          .eq("space_id", spaceId)
+          .eq("user_id", user.id)
+          .is("left_at", null);
+      } catch {
+        /* best-effort */
+      }
     }
     router.push("/social/live");
-  }, [isHost, spaceId, router]);
+  }, [isHost, spaceId, router, user]);
 
-  // Connect on mount.
+  // Ensure a participant row exists for anyone who joins (audience by default;
+  // host row is 'host'). Enables the raise-hand / promote flow.
+  useEffect(() => {
+    if (!user) return;
+    void supabase
+      .from("space_participants")
+      .upsert(
+        {
+          space_id: spaceId,
+          user_id: user.id,
+          role: isHost ? "host" : "audience",
+          left_at: null,
+        },
+        { onConflict: "space_id,user_id" },
+      );
+  }, [user, spaceId, isHost]);
+
+  // Connect to the LiveKit room on mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -130,18 +193,26 @@ export default function LiveRoom({
           role: isHost ? "publisher" : "subscriber",
           tier,
           onLocalVideo: (el) => {
-            if (isHost) mountStageVideo(el);
-          },
-          onRemoteVideo: (rv: RemoteVideo) => {
-            // Viewers see the host's remote camera as the stage.
-            if (!isHost && rv.identity === hostId) {
-              mountStageVideo(rv.element);
-              setHostLive(true);
+            localElRef.current = el;
+            if (user) {
+              upsertTile({
+                identity: user.id,
+                name: hostName === "You" || isHost ? "You" : "You",
+                isLocal: true,
+                el,
+              });
             }
           },
-          onRemoteVideoRemoved: (identity) => {
-            if (!isHost && identity === hostId) setHostLive(false);
+          onRemoteVideo: (rv: RemoteVideo) => {
+            remoteEls.current.set(rv.identity, rv.element);
+            upsertTile({
+              identity: rv.identity,
+              name: rv.identity === hostId ? hostName : rv.name,
+              isLocal: false,
+              el: rv.element,
+            });
           },
+          onRemoteVideoRemoved: (identity) => removeTile(identity),
           onParticipantCountChange: (n) => setViewerCount(n),
           onReconnecting: () => setReconnecting(true),
           onReconnected: () => setReconnecting(false),
@@ -150,18 +221,18 @@ export default function LiveRoom({
           },
         });
         if (cancelled) return;
-        setConnected(true);
-        // Unlock audio playback (viewers need this to hear the host).
         await ensureVideoAudio();
 
-        // Free-tier duration cap: auto-end after the limit.
+        // If I'm the host, seed my own tile even before camera frames arrive.
+        if (isHost && user) {
+          upsertTile({ identity: user.id, name: "You", isLocal: true, el: localElRef.current });
+        }
+
+        // Free-tier duration cap (host auto-ends).
         if (durationMinutes && isHost) {
-          endTimerRef.current = setTimeout(
-            () => {
-              void handleLeave();
-            },
-            durationMinutes * 60 * 1000,
-          );
+          endTimerRef.current = setTimeout(() => {
+            void handleLeave();
+          }, durationMinutes * 60 * 1000);
         }
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? "Could not join the live room");
@@ -178,10 +249,138 @@ export default function LiveRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spaceId, isHost, hostId, tier, durationMinutes]);
 
-  // Broadcast + receive heart reactions over a lightweight realtime channel.
-  const reactionChannelRef = useRef<ReturnType<
-    typeof supabase.channel
-  > | null>(null);
+  // Host: subscribe to raise-hand requests (audience with has_raised_hand).
+  useEffect(() => {
+    if (!isHost) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from("space_participants")
+        .select("user_id, has_raised_hand, role, user:profiles(display_name, avatar_url)")
+        .eq("space_id", spaceId)
+        .eq("has_raised_hand", true)
+        .eq("role", "audience")
+        .is("left_at", null);
+      setRequests(
+        (data ?? []).map((r: any) => ({
+          user_id: r.user_id,
+          name: r.user?.display_name ?? "Guest",
+          avatar: r.user?.avatar_url ?? null,
+        })),
+      );
+    };
+    void load();
+    const ch = supabase
+      .channel(`faces_requests:${spaceId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "space_participants", filter: `space_id=eq.${spaceId}` },
+        () => void load(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [isHost, spaceId]);
+
+  // Guest: watch my own row — when host promotes me to speaker, go on camera.
+  useEffect(() => {
+    if (isHost || !user) return;
+    const ch = supabase
+      .channel(`faces_myrole:${spaceId}:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "space_participants",
+          filter: `space_id=eq.${spaceId}`,
+        },
+        (payload: any) => {
+          const row = payload.new;
+          if (row?.user_id !== user.id) return;
+          if (row.role === "speaker" && !onCamera) {
+            void goOnCamera();
+          }
+          if (row.role === "audience" && onCamera) {
+            // Demoted — stop publishing.
+            void setCameraEnabled(false);
+            void setMicEnabled(false);
+            setOnCamera(false);
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, user, spaceId, onCamera]);
+
+  // Promote to publisher (re-mint token with canPublish, enable cam+mic).
+  const goOnCamera = useCallback(async () => {
+    try {
+      const el = await becomePublisher();
+      setOnCamera(true);
+      setHandRaised(false);
+      if (el && user) {
+        localElRef.current = el;
+        upsertTile({ identity: user.id, name: "You", isLocal: true, el });
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Could not turn on your camera");
+    }
+  }, [user, upsertTile]);
+
+  // Guest raises / lowers hand to request coming on camera.
+  const toggleHand = useCallback(async () => {
+    if (!user) return;
+    const next = !handRaised;
+    setHandRaised(next);
+    await supabase
+      .from("space_participants")
+      .update({ has_raised_hand: next })
+      .eq("space_id", spaceId)
+      .eq("user_id", user.id)
+      .is("left_at", null);
+  }, [handRaised, user, spaceId]);
+
+  // Host approves a guest → promote to speaker (they auto-go-on-camera).
+  const approveGuest = useCallback(
+    async (guestId: string) => {
+      // Enforce the on-camera ceiling.
+      const onCamCount = tiles.length + 1;
+      if (onCamCount >= maxOnCamera) {
+        setError(`This room seats up to ${maxOnCamera} on camera.`);
+        return;
+      }
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${guestId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "speaker" }),
+        },
+      );
+    },
+    [spaceId, tiles.length, maxOnCamera],
+  );
+
+  const removeGuest = useCallback(
+    async (guestId: string) => {
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${guestId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "audience" }),
+        },
+      );
+    },
+    [spaceId],
+  );
+
+  // --- Reactions -------------------------------------------------------
+  const reactionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   useEffect(() => {
     const ch = supabase.channel(`faces_reactions:${spaceId}`, {
       config: { broadcast: { self: false } },
@@ -197,20 +396,14 @@ export default function LiveRoom({
 
   const spawnHeart = useCallback(() => {
     const id = ++heartSeq.current;
-    const left = 20 + Math.random() * 50; // px offset within the rail
+    const left = 20 + Math.random() * 50;
     setHearts((h) => [...h, { id, left }]);
-    setTimeout(() => {
-      setHearts((h) => h.filter((x) => x.id !== id));
-    }, 2200);
+    setTimeout(() => setHearts((h) => h.filter((x) => x.id !== id)), 2200);
   }, []);
 
   const sendHeart = useCallback(() => {
     spawnHeart();
-    reactionChannelRef.current?.send({
-      type: "broadcast",
-      event: "heart",
-      payload: {},
-    });
+    reactionChannelRef.current?.send({ type: "broadcast", event: "heart", payload: {} });
   }, [spawnHeart]);
 
   const toggleMic = useCallback(async () => {
@@ -225,37 +418,65 @@ export default function LiveRoom({
     await setCameraEnabled(next);
   }, [camOn]);
 
+  // Attach each tile's <video> into its container div after render.
+  useEffect(() => {
+    tiles.forEach((t) => {
+      const container = videoRefs.current.get(t.identity);
+      const el = t.isLocal ? localElRef.current : remoteEls.current.get(t.identity);
+      if (container && el && el.parentElement !== container) {
+        el.className = "absolute inset-0 h-full w-full object-cover";
+        container.querySelectorAll("video").forEach((v) => v.remove());
+        container.appendChild(el);
+      }
+    });
+  }, [tiles]);
+
+  const gridClass = useMemo(() => gridClassFor(Math.max(1, tiles.length)), [tiles.length]);
+  const showStageFallback = tiles.length === 0;
+
   return (
     <div className="fixed inset-0 z-[60] bg-black">
-      {/* Video stage */}
-      <div ref={stageRef} className="absolute inset-0 bg-black">
-        {/* Fallback when no video is mounted yet */}
-        {(!hostLive || (isHost && !camOn)) && (
+      {/* Video stage — single tile (solo) or auto-grid (duo/group) */}
+      <div className="absolute inset-0 bg-black p-0.5">
+        {showStageFallback ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-brand-surface to-black">
             {hostAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={hostAvatar}
-                alt={hostName}
-                className="h-24 w-24 rounded-full border-2 border-brand-primary object-cover"
-              />
+              <img src={hostAvatar} alt={hostName} className="h-24 w-24 rounded-full border-2 border-brand-primary object-cover" />
             ) : (
               <div className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-brand-primary bg-brand-muted text-3xl font-bold text-text-primary">
                 {hostName.charAt(0).toUpperCase()}
               </div>
             )}
             <p className="text-text-secondary">
-              {isHost
-                ? camOn
-                  ? "Starting your camera…"
-                  : "Your camera is off"
-                : `${hostName} isn't on camera right now`}
+              {isHost ? "Starting your camera…" : `${hostName} isn't on camera yet`}
             </p>
+          </div>
+        ) : (
+          <div className={`grid h-full w-full gap-0.5 ${gridClass}`}>
+            {tiles.map((t) => (
+              <div
+                key={t.identity}
+                ref={(node) => {
+                  videoRefs.current.set(t.identity, node);
+                }}
+                className="relative overflow-hidden rounded-lg bg-brand-surface"
+              >
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-muted text-lg font-bold text-text-primary">
+                    {t.name.charAt(0).toUpperCase()}
+                  </div>
+                </div>
+                <span className="absolute bottom-2 left-2 z-10 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
+                  {t.identity === hostId ? `${t.name} · Host` : t.name}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Dark gradient scrims for legibility */}
+      {/* Scrims */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 to-transparent" />
 
@@ -265,27 +486,39 @@ export default function LiveRoom({
           <div className="flex items-center gap-2 rounded-full bg-black/40 px-3 py-1.5 backdrop-blur">
             {hostAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={hostAvatar}
-                alt={hostName}
-                className="h-7 w-7 rounded-full object-cover"
-              />
+              <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
             ) : (
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
                 {hostName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="max-w-[9rem] truncate text-sm font-semibold text-white">
-              {hostName}
-            </span>
+            <span className="max-w-[9rem] truncate text-sm font-semibold text-white">{hostName}</span>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-primary px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
             <Radio className="h-3 w-3" />
             Live
           </span>
+          {!isSolo && (
+            <span className="hidden rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium text-white backdrop-blur sm:inline">
+              {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {isHost && !isSolo && (
+            <button
+              onClick={() => setShowRequests((s) => !s)}
+              className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+            >
+              <UserPlus className="h-4 w-4" />
+              {requests.length > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
+                  {requests.length}
+                </span>
+              )}
+            </button>
+          )}
           <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur">
             <Users className="h-4 w-4" />
             {viewerCount}
@@ -302,10 +535,36 @@ export default function LiveRoom({
 
       {/* Title */}
       <div className="absolute left-4 top-16 max-w-[70%]">
-        <p className="truncate text-sm font-medium text-white/90 drop-shadow">
-          {title}
-        </p>
+        <p className="truncate text-sm font-medium text-white/90 drop-shadow">{title}</p>
       </div>
+
+      {/* Guest requests panel (host) */}
+      {isHost && !isSolo && showRequests && (
+        <div className="absolute right-4 top-16 z-20 w-64 rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+          <p className="mb-2 text-sm font-semibold text-text-primary">Requests to join</p>
+          {requests.length === 0 ? (
+            <p className="text-xs text-text-secondary">No requests right now.</p>
+          ) : (
+            <ul className="space-y-2">
+              {requests.map((r) => (
+                <li key={r.user_id} className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                    {r.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{r.name}</span>
+                  <button
+                    onClick={() => approveGuest(r.user_id)}
+                    aria-label="Approve"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary text-white hover:bg-brand-primary-dark"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Status overlays */}
       {(connecting || reconnecting) && (
@@ -315,41 +574,30 @@ export default function LiveRoom({
         </div>
       )}
       {error && (
-        <div className="absolute left-1/2 top-1/2 w-[min(90%,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
+        <div className="absolute left-1/2 top-1/2 z-30 w-[min(90%,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
           <p className="text-sm text-text-secondary">{error}</p>
           <div className="mt-4 flex justify-center gap-3">
-            <button
-              onClick={() => router.refresh()}
-              className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark"
-            >
-              Try again
+            <button onClick={() => setError(null)} className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark">
+              Dismiss
             </button>
-            <Link
-              href="/social/live"
-              className="rounded-full border border-brand-border px-4 py-2 text-sm font-semibold text-text-primary hover:border-brand-primary"
-            >
+            <Link href="/social/live" className="rounded-full border border-brand-border px-4 py-2 text-sm font-semibold text-text-primary hover:border-brand-primary">
               Back to MM Faces
             </Link>
           </div>
         </div>
       )}
 
-      {/* Comment stream — bottom-left, TikTok-style. Reuses the space comments
-          data source (same spaces row). */}
-      <div className="absolute bottom-24 left-0 z-10 max-h-[38%] w-full max-w-sm overflow-hidden px-4 md:bottom-28">
+      {/* Comment stream */}
+      <div className="absolute bottom-24 left-0 z-10 max-h-[36%] w-full max-w-sm overflow-hidden px-4 md:bottom-28">
         <div className="faces-comment-shell">
           <SpaceCommentSection spaceId={spaceId} />
         </div>
       </div>
 
-      {/* Reaction rail — floating hearts */}
+      {/* Reaction hearts */}
       <div className="pointer-events-none absolute bottom-24 right-4 h-56 w-20 md:bottom-28">
         {hearts.map((h) => (
-          <span
-            key={h.id}
-            className="faces-heart absolute bottom-0 text-2xl"
-            style={{ left: h.left }}
-          >
+          <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
             ❤️
           </span>
         ))}
@@ -357,56 +605,48 @@ export default function LiveRoom({
 
       {/* Bottom controls */}
       <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 p-4 pb-6">
-        {isHost ? (
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
+          {/* Camera/mic controls show for host OR an on-camera guest */}
+          {onCamera && (
+            <>
+              <button
+                onClick={toggleMic}
+                aria-label={micOn ? "Mute mic" : "Unmute mic"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+              >
+                {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              </button>
+              <button
+                onClick={toggleCam}
+                aria-label={camOn ? "Turn camera off" : "Turn camera on"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+              >
+                {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+              </button>
+              <button
+                onClick={() => void switchCamera()}
+                aria-label="Flip camera"
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+              >
+                <SwitchCamera className="h-5 w-5" />
+              </button>
+            </>
+          )}
+          {/* Viewer in duo/group can raise a hand to request camera */}
+          {!isHost && !onCamera && !isSolo && (
             <button
-              onClick={toggleMic}
-              aria-label={micOn ? "Mute mic" : "Unmute mic"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${
-                micOn
-                  ? "bg-white/15 text-white hover:bg-white/25"
-                  : "bg-brand-primary text-white"
-              }`}
+              onClick={toggleHand}
+              className={`flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
             >
-              {micOn ? (
-                <Mic className="h-5 w-5" />
-              ) : (
-                <MicOff className="h-5 w-5" />
-              )}
+              <Hand className="h-5 w-5" />
+              {handRaised ? "Requested" : "Join on camera"}
             </button>
-            <button
-              onClick={toggleCam}
-              aria-label={camOn ? "Turn camera off" : "Turn camera on"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${
-                camOn
-                  ? "bg-white/15 text-white hover:bg-white/25"
-                  : "bg-brand-primary text-white"
-              }`}
-            >
-              {camOn ? (
-                <VideoIcon className="h-5 w-5" />
-              ) : (
-                <VideoOff className="h-5 w-5" />
-              )}
-            </button>
-            <button
-              onClick={() => void switchCamera()}
-              aria-label="Flip camera"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-            >
-              <SwitchCamera className="h-5 w-5" />
-            </button>
-          </div>
-        ) : (
-          <div />
-        )}
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           {isHost && (
-            <button
-              onClick={handleLeave}
-              className="rounded-full bg-brand-primary px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
-            >
+            <button onClick={handleLeave} className="rounded-full bg-brand-primary px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark">
               End Live
             </button>
           )}

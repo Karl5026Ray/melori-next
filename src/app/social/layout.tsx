@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/social/layout/Sidebar";
-import { MobileNav } from "@/components/social/layout/MobileNav";
 import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 
 export const metadata: Metadata = {
@@ -20,7 +19,6 @@ export default function SocialLayout({
         <Sidebar />
         <div className="flex-1 flex flex-col relative">{children}</div>
       </div>
-      <MobileNav />
     </SocialAuthProvider>
   );
 }

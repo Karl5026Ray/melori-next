@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { isArtistSubscriber } from "@/lib/membership";
-import LiveRoom from "@/components/social/faces/LiveRoom";
+import LiveRoom, { type LiveMode } from "@/components/social/faces/LiveRoom";
 import type { VideoTier } from "@/lib/livekitVideoClient";
 import { Loader2 } from "lucide-react";
 
@@ -24,6 +24,8 @@ interface RoomRow {
   status: string;
   host_id: string;
   duration_minutes: number | null;
+  max_capacity: number | null;
+  host_settings: { max_on_camera?: number } | null;
   host?: {
     id: string;
     display_name: string | null;
@@ -48,6 +50,7 @@ export default function LiveRoomPage() {
         .from("spaces")
         .select(
           `id, title, topic, room_format, status, host_id, duration_minutes,
+           max_capacity, host_settings,
            host:profiles(id, display_name, avatar_url)`,
         )
         .eq("id", roomId)
@@ -144,6 +147,17 @@ export default function LiveRoomPage() {
   const hostName =
     room.host?.display_name || (isHost ? "You" : "Host") || "Host";
 
+  const mode: LiveMode =
+    room.room_format === "live_duo"
+      ? "live_duo"
+      : room.room_format === "live_group"
+        ? "live_group"
+        : "live_solo";
+  const maxOnCamera =
+    room.host_settings?.max_on_camera ??
+    room.max_capacity ??
+    (mode === "live_duo" ? 2 : mode === "live_group" ? 8 : 1);
+
   return (
     <LiveRoom
       spaceId={room.id}
@@ -153,6 +167,8 @@ export default function LiveRoomPage() {
       hostAvatar={room.host?.avatar_url}
       tier={tier}
       durationMinutes={room.duration_minutes}
+      mode={mode}
+      maxOnCamera={maxOnCamera}
     />
   );
 }

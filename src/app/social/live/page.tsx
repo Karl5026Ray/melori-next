@@ -45,14 +45,14 @@ const MODES = [
     icon: Video,
     label: "Duo Live",
     desc: "Bring one guest on with you — a split-screen live session for collabs, interviews, and back-to-backs.",
-    live: false,
+    live: true,
   },
   {
     key: "live_group",
     icon: Users,
     label: "8-Person Live",
     desc: "Host a room with up to eight faces — panels, cyphers, listening hangs, and watch parties.",
-    live: false,
+    live: true,
   },
 ];
 

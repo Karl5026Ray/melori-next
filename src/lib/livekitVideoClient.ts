@@ -79,6 +79,9 @@ interface ActiveVideoSession {
   remoteVideoEls: Map<string, HTMLVideoElement>;
   remoteAudioEls: HTMLMediaElement[];
   cleanups: Array<() => void>;
+  // Remembered so a subscriber can later upgrade to publisher (becomePublisher)
+  // by reconnecting with the same callbacks but a publisher token.
+  lastOpts: JoinVideoOptions | null;
 }
 
 let session: ActiveVideoSession = {
@@ -91,6 +94,7 @@ let session: ActiveVideoSession = {
   remoteVideoEls: new Map(),
   remoteAudioEls: [],
   cleanups: [],
+  lastOpts: null,
 };
 
 async function fetchToken(spaceId: string, role: VideoRole) {
@@ -122,6 +126,7 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
 
   const tier: VideoTier = opts.tier || "free";
   const limits = VIDEO_TIER_LIMITS[tier];
+  session.lastOpts = opts;
 
   try {
     const creds = await fetchToken(opts.spaceId, opts.role);
@@ -392,6 +397,7 @@ export async function leaveVideoRoom(): Promise<void> {
       /* ignore */
     }
   });
+  const keepOpts = session.lastOpts;
   session = {
     room: null,
     spaceId: null,
@@ -402,7 +408,28 @@ export async function leaveVideoRoom(): Promise<void> {
     remoteVideoEls: new Map(),
     remoteAudioEls: [],
     cleanups: [],
+    lastOpts: keepOpts,
   };
+}
+
+// Upgrade an already-connected subscriber (a viewer the host just approved)
+// into a publisher. LiveKit bakes publish permission into the JWT, so we
+// reconnect with a freshly-minted publisher token, reusing the original join
+// callbacks. Returns the local <video> element once the camera is live.
+export async function becomePublisher(): Promise<HTMLVideoElement | null> {
+  const prev = session.lastOpts;
+  if (!prev) throw new Error("Not connected to a live room");
+  let localEl: HTMLVideoElement | null = null;
+  await joinVideoRoom({
+    ...prev,
+    role: "publisher",
+    onLocalVideo: (el) => {
+      localEl = el;
+      prev.onLocalVideo?.(el);
+    },
+  });
+  await ensureVideoAudio();
+  return localEl ?? session.localVideoEl;
 }
 
 export function getVideoSession() {

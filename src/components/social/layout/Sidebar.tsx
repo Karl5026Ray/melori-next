@@ -5,24 +5,25 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   Radio,
+  Video,
   MessageSquare,
-  Compass,
+  MessagesSquare,
   User,
   LogOut,
-  Music,
-  Plus,
   Home,
-  MessagesSquare,
-  Hand,
+  Plus,
 } from "lucide-react";
 
+// Slimmed, orange-branded social nav. We keep only the destinations people
+// actually use day to day; Waves and the standalone Video page are reachable
+// from within Community/Faces and the mobile launcher, so they no longer clutter
+// this rail. Brand orange (#ff5500) replaces the old purple accents.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
-  { href: "/social/spaces", label: "Spaces", icon: Radio },
+  { href: "/social/spaces", label: "MM Spaces", icon: Radio },
+  { href: "/social/live", label: "MM Faces", icon: Video },
   { href: "/social/community", label: "Community", icon: MessagesSquare },
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
-  { href: "/social/waves", label: "Waves", icon: Hand },
-  { href: "/social/video", label: "Video", icon: Compass },
 ];
 
 export function Sidebar() {
@@ -30,24 +31,25 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
 
   return (
-    <aside className="hidden md:flex w-64 flex-col border-r border-melori-border bg-melori-void z-20 shrink-0">
+    <aside className="hidden md:flex w-60 flex-col border-r border-brand-border bg-brand-background z-20 shrink-0">
       <div className="p-6 pb-4">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-melori-purple to-melori-pink flex items-center justify-center shadow-lg">
-            <Music className="w-5 h-5 text-white" />
-          </div>
+        <Link href="/" className="flex items-center gap-3 mb-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/logo.png" alt="Melori" className="w-10 h-10 object-contain" />
           <div>
-            <h1 className="font-bold text-lg tracking-tight">MM Social</h1>
-            <p className="text-xs text-melori-muted">Spaces &amp; more</p>
+            <h1 className="font-bold text-lg tracking-tight text-text-primary">
+              MM Social
+            </h1>
+            <p className="text-xs text-text-secondary">Spaces &amp; Faces</p>
           </div>
-        </div>
+        </Link>
 
         <Link
-          href="/social/spaces/create"
-          className="btn-primary w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-6"
+          href="/social/live"
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-6 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
         >
           <Plus className="w-4 h-4" />
-          Start a Space
+          Go Live
         </Link>
 
         <nav className="space-y-1">
@@ -60,8 +62,8 @@ export function Sidebar() {
                 href={item.href}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium text-sm ${
                   isActive
-                    ? "bg-melori-purple/10 text-melori-purple"
-                    : "text-melori-muted hover:bg-melori-elevated hover:text-melori-text"
+                    ? "bg-brand-primary/10 text-brand-primary"
+                    : "text-text-secondary hover:bg-brand-surface hover:text-text-primary"
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -71,36 +73,37 @@ export function Sidebar() {
           })}
           <Link
             href="/"
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium text-sm text-melori-muted hover:bg-melori-elevated hover:text-melori-text"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium text-sm text-text-secondary hover:bg-brand-surface hover:text-text-primary"
           >
             <Home className="w-5 h-5" />
-            Back to MELORI
+            Back to Melori
           </Link>
         </nav>
       </div>
 
-      <div className="mt-auto p-4 border-t border-melori-border">
+      <div className="mt-auto p-4 border-t border-brand-border">
         {user ? (
           <div className="space-y-3">
-            <div className="glass rounded-xl p-3 flex items-center gap-3">
+            <div className="rounded-xl p-3 flex items-center gap-3 bg-brand-surface">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={user.avatar_url || "/favicon.png"}
-                className="w-10 h-10 rounded-full border-2 border-melori-purple object-cover"
+                className="w-10 h-10 rounded-full border-2 border-brand-primary object-cover"
                 alt={user.display_name}
               />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
+                <p className="text-sm font-medium truncate text-text-primary">
                   {user.display_name}
                 </p>
-                <p className="text-xs text-melori-purple flex items-center gap-1 capitalize">
-                  <span className="w-1.5 h-1.5 rounded-full bg-melori-purple" />
+                <p className="text-xs text-brand-primary flex items-center gap-1 capitalize">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
                   {user.role}
                 </p>
               </div>
             </div>
             <button
               onClick={signOut}
-              className="w-full p-2 hover:bg-red-500/10 rounded-lg transition flex items-center justify-center gap-2 text-xs text-melori-muted hover:text-red-400"
+              className="w-full p-2 hover:bg-red-500/10 rounded-lg transition flex items-center justify-center gap-2 text-xs text-text-secondary hover:text-red-400"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
@@ -109,7 +112,7 @@ export function Sidebar() {
         ) : (
           <Link
             href="/social/auth"
-            className="btn-primary w-full py-3 rounded-xl font-semibold text-sm text-center block"
+            className="w-full py-3 rounded-xl font-semibold text-sm text-center block bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
           >
             Sign In
           </Link>

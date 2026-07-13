@@ -125,3 +125,24 @@ a {
   box-shadow: 0 10px 40px rgba(139, 92, 246, 0.15);
   border-color: rgba(139, 92, 246, 0.3);
 }
+
+/* MM Faces — live video room */
+.faces-heart {
+  animation: facesHeartRise 2.2s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes facesHeartRise {
+  0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+  12%  { opacity: 1; transform: translateY(-10px) scale(1); }
+  100% { transform: translateY(-200px) scale(1.1) rotate(12deg); opacity: 0; }
+}
+/* Comment stream inside the live stage: transparent, no card chrome, light
+   text over video, and no fixed page layout — it floats over the stage. */
+.faces-comment-shell :is(section, form) { background: transparent !important; }
+.faces-comment-shell { color: #fff; }
+.faces-comment-shell input,
+.faces-comment-shell textarea {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+}

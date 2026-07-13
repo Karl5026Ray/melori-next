@@ -55,7 +55,7 @@ export default function MissionPage() {
               {
                 num: "01",
                 title: "Transparent Monetization",
-                desc: "Artists keep 90% of every sale. Melori takes a flat, transparent 10% to cover hosting, payment processing, and platform costs — no opaque distribution algorithms or intermediary gatekeeping determining compensation.",
+                desc: "Artists keep 100% of every music sale — Melori takes no cut. Only Stripe's standard payment processing fee is deducted. No opaque distribution algorithms, no intermediary gatekeeping determining your compensation.",
               },
               {
                 num: "02",

@@ -9,15 +9,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/artist/purchase/checkout
-// Additive artist-attributed music purchase using Stripe destination charges so
-// the sale is split 90% artist / 10% platform. Body: { releaseId } or
-// { trackId }. Price is read authoritatively from the DB (never trusted from the
-// client). The release's artist must have an onboarded Connect account with
-// payouts enabled; otherwise we return a clear error and DO NOT charge — the
-// existing purchase flows are left untouched.
+// Additive artist-attributed music purchase using Stripe destination charges.
+// The artist keeps 100% of the sale minus Stripe's processing fee — Melori
+// takes NO platform cut on music sales. Body: { releaseId } or { trackId }.
+// Price is read authoritatively from the DB (never trusted from the client).
+// The release's artist must have an onboarded Connect account with payouts
+// enabled; otherwise we return a clear error and DO NOT charge — the existing
+// purchase flows are left untouched.
 //
-// application_fee_amount = round(total * 0.10) (platform 10%)
-// transfer_data.destination = artist connected account (artist keeps 90%)
+// application_fee_amount = 0 (Melori keeps nothing on music sales)
+// on_behalf_of = artist connected account -> the artist's account is the
+//   settlement account, so STRIPE'S PROCESSING FEE (2.9% + $0.30) is deducted
+//   from the artist's balance and the artist receives the remainder.
+// transfer_data.destination = artist connected account (funds routed to artist)
 
 interface Body {
   releaseId?: number | string;
@@ -137,7 +141,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const applicationFee = Math.round(totalCents * 0.1); // platform 10%
+  // Music sales: Melori takes 0% platform fee. The artist absorbs Stripe's
+  // processing fee (via on_behalf_of making them the settlement account) and
+  // receives the entire remainder.
+  const applicationFee = 0;
   const origin = approvedOrigin(req);
 
   // Attach buyer identity if signed in (optional for one-off purchases).
@@ -162,7 +169,10 @@ export async function POST(req: NextRequest) {
         },
       ],
       payment_intent_data: {
-        application_fee_amount: applicationFee,
+        // No platform fee on music sales. on_behalf_of makes the artist's
+        // connected account the settlement/merchant-of-record account, so
+        // Stripe's processing fee is borne by the artist, not Melori.
+        on_behalf_of: payout.stripe_connect_account_id,
         transfer_data: { destination: payout.stripe_connect_account_id },
       },
       success_url: `${origin}/studio?purchase=success`,

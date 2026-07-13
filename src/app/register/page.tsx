@@ -189,7 +189,7 @@ function RegisterInner() {
       After you join, set up payouts to get paid
     </p>
     <p className="mt-1 text-xs text-[#888]">
-      Artists keep 90% of every sale. Once your account is created,
+      Artists keep 100% of every sale (only Stripe&apos;s processing fee is deducted). Once your account is created,
       head to Artist Studio &rarr; Payouts to connect Stripe. Have these
       ready:
     </p>

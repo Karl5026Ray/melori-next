@@ -49,13 +49,15 @@ export async function POST(req: Request) {
 
     // Create the Express connected account only if we don't already have one.
     if (!accountId) {
-      // Destination-charge model: the platform creates the charge and routes
-      // 90% to the artist via `transfer_data.destination` + a 10%
-      // `application_fee_amount` (see api/artist/purchase/checkout). In that
-      // model the connected account only needs the `transfers` capability.
-    // Request both `card_payments` and `transfers`: Stripe requires
-    // platform approval for `transfers` without `card_payments`, which
-    // otherwise makes accounts.create throw in live mode.
+      // Destination-charge model with on_behalf_of: the platform creates the
+      // charge but routes 100% to the artist via `transfer_data.destination`
+      // with NO `application_fee_amount` (see api/artist/purchase/checkout).
+      // `on_behalf_of` makes the artist the settlement account so Stripe's
+      // processing fee is borne by the artist. This requires the connected
+      // account to hold the `card_payments` capability (requested below).
+    // Request both `card_payments` and `transfers`: card_payments is required
+    // for on_behalf_of settlement; Stripe also requires platform approval for
+    // `transfers` without `card_payments` in live mode.
       const account = await stripe.accounts.create({
         type: "express",
         country: "US",

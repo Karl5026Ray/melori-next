@@ -107,7 +107,8 @@ export default function PayoutsPanel() {
         <h2 className="text-lg font-semibold mb-1">Get paid</h2>
         <p className="text-[#888] text-sm">
           Set up Stripe payouts to receive money from your music sales. You keep
-          90% of every sale; Melori keeps 10%.
+          100% of every sale — Melori takes no cut. Only Stripe&apos;s payment
+          processing fee is deducted.
         </p>
       </div>
 

@@ -7,8 +7,9 @@ interface Analytics {
   totalStreams: number;
   totalDownloads: number;
   totalRevenue: number;
-  artistShare: number; // 90%
-  platformShare: number; // 10%
+  artistShare: number; // 100% minus Stripe processing fee
+  platformShare: number; // always 0 — Melori takes no cut on music sales
+  processingFees?: number; // estimated Stripe processing fee
   tracksCount: number;
   topTrack: { title: string; streams: number } | null;
   monthlyData: { month: string; revenue: number; streams: number }[];
@@ -44,6 +45,7 @@ export default function AnalyticsPanel() {
     totalRevenue: 0,
     artistShare: 0,
     platformShare: 0,
+    processingFees: 0,
     tracksCount: 0,
     topTrack: null,
     monthlyData: [],
@@ -74,21 +76,16 @@ export default function AnalyticsPanel() {
         <div className="flex h-8 rounded-full overflow-hidden mb-3">
           <div
             className="bg-[#c9a96e] flex items-center justify-center text-xs font-bold text-[#0a0a0a]"
-            style={{ width: "90%" }}
+            style={{ width: "100%" }}
           >
-            You: 90%
-          </div>
-          <div
-            className="bg-white/10 flex items-center justify-center text-xs font-bold text-white"
-            style={{ width: "10%" }}
-          >
-            Platform: 10%
+            You keep 100% (minus payment processing)
           </div>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[#c9a96e]">Your earnings: ${stats.artistShare.toFixed(2)}</span>
-          <span className="text-[#888]">Platform fee: ${stats.platformShare.toFixed(2)}</span>
+          <span className="text-[#888]">Payment processing: ${(stats.processingFees ?? 0).toFixed(2)}</span>
         </div>
+        <p className="text-xs text-[#666] mt-2">Melori takes 0% on music sales. You receive the full price minus Stripe&apos;s payment processing fee.</p>
       </div>
 
       {/* Stats Grid */}
@@ -97,7 +94,7 @@ export default function AnalyticsPanel() {
           { label: "Total Streams", value: stats.totalStreams.toLocaleString(), icon: "▶️" },
           { label: "Downloads", value: stats.totalDownloads.toLocaleString(), icon: "⬇️" },
           { label: "Total Revenue", value: `$${stats.totalRevenue.toFixed(2)}`, icon: "💰" },
-          { label: "Your Share (90%)", value: `$${stats.artistShare.toFixed(2)}`, icon: "🎤" },
+          { label: "Your Earnings", value: `$${stats.artistShare.toFixed(2)}`, icon: "🎤" },
         ].map((stat) => (
           <div key={stat.label} className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-5 text-center">
             <div className="text-2xl mb-2">{stat.icon}</div>

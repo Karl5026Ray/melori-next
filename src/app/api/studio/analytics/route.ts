@@ -47,12 +47,19 @@ export async function GET(req: NextRequest) {
       0
     );
 
+    // Melori takes 0% on music sales. The artist keeps the full sale price
+    // minus Stripe's processing fee (~2.9% + $0.30 per transaction). We show
+    // an estimated net using the percentage component; the $0.30 fixed part is
+    // per-transaction and reconciled precisely by Stripe on payout.
+    const STRIPE_PCT = 0.029;
+    const estimatedProcessingFees = totalRevenue * STRIPE_PCT;
     return NextResponse.json({
       totalStreams,
       totalDownloads,
       totalRevenue,
-      artistShare: totalRevenue * 0.9,
-      platformShare: totalRevenue * 0.1,
+      artistShare: totalRevenue - estimatedProcessingFees,
+      platformShare: 0,
+      processingFees: estimatedProcessingFees,
       tracksCount: tracksCount || 0,
       topTrack: null,
       monthlyData: [],

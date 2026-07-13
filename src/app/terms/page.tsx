@@ -41,10 +41,10 @@ export default function TermsPage() {
               For artists
             </h2>
             <p>
-              You retain 100% ownership of your music. We take 10% of sales to
-              cover hosting, payment processing, and platform costs. You
-              receive 90%. Payouts are processed monthly via Stripe Connect or
-              bank transfer.
+              You retain 100% ownership of your music. Melori takes no platform
+              fee on music sales — you receive the full sale price minus
+              Stripe&apos;s standard payment processing fee. Payouts are
+              processed via Stripe Connect.
             </p>
           </section>
 

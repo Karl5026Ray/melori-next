@@ -57,7 +57,7 @@ export default function ProfilePage() {
         <div className="absolute inset-0 bg-gradient-to-t from-melori-void to-transparent" />
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 md:px-8 -mt-16 relative z-10 pb-24 md:pb-8">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 -mt-16 relative z-10 pb-28 md:pb-8">
         <div className="flex flex-col md:flex-row items-start md:items-end gap-4 mb-6">
           <div className="relative">
             <img

@@ -47,7 +47,7 @@ Stream freely. Support directly.{" "}
 <span className="whitespace-nowrap">Create endlessly.</span>
 </p>
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
-An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep the majority of every sale.
+An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep 100% of every sale.
 </p>
 <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
@@ -86,7 +86,7 @@ An independent music platform where fans stream the full catalog for free and su
 </div>
 <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
 <h3 className="text-lg font-semibold text-text-primary">Create &amp; earn</h3>
-<p className="mt-2 text-sm text-text-secondary">Upload your music, keep the majority of every sale, and build a fanbase that pays you fairly.</p>
+<p className="mt-2 text-sm text-text-secondary">Upload your music, keep 100% of every sale, and build a fanbase that pays you fairly.</p>
 </div>
 </div>
 </section>

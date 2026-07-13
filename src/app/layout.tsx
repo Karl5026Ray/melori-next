@@ -4,6 +4,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
+import MobileTabBar from "@/components/MobileTabBar";
 import PlayerProvider from "@/components/player/PlayerProvider";
 import { SITE_URL } from "@/lib/site";
 
@@ -57,9 +58,15 @@ export default function RootLayout({
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col">
         <PlayerProvider>
           <Header />
-          <main className="flex-1 pb-24">{children}</main>
+          {/* Extra bottom padding on mobile so content clears the fixed
+             audio player (stacked at bottom-14) + the mobile tab bar (h-14).
+             Desktop keeps pb-24 since only the player is fixed there. */}
+          <main className="flex-1 pb-44 md:pb-24">{children}</main>
           <Footer />
+          {/* AudioPlayer stacks ABOVE the mobile tab bar (bottom-14) on
+             mobile so the two fixed bars never overlap; flush bottom on md+. */}
           <AudioPlayer />
+          <MobileTabBar />
         </PlayerProvider>
       </body>
     </html>

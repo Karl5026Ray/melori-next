@@ -68,7 +68,7 @@ export default function AudioPlayer() {
   const fraction = duration > 0 ? currentTime / duration : 0;
 
   return (
-    <div className="fixed bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+    <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur">
       {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
       {current && sampleEnded && (
         <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">

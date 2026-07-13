@@ -34,27 +34,43 @@ function ArtistAvatar({ src, name }: { src: string | null; name: string }) {
   );
 }
 
-// Grouped desktop nav. Videos (YouTube) is its own entry under "Music".
-// MM Social and Studio live under "Community"; Store is a standalone tab;
-// Mission + Membership under "About". Donate stays a standalone CTA.
+// Desktop nav restructured per the KIMI "progressive disclosure" spec
+// (Discover / Community / For Artists buckets), but adapted to Melori's REAL
+// App Router routes and brand colors — never the off-brand KIMI light-theme
+// code. Each item below points at a route that actually exists in src/app.
+// The Artists dropdown (data-driven) + About group + Sign Up/Donate CTAs stay
+// so the primary CTAs remain visible (discoverability guardrail).
 const navGroups: NavGroup[] = [
   {
-    label: "Music",
+    // Discover = everything about finding music.
+    label: "Discover",
     items: [
-      { label: "Music", href: "/music" },
-{ label: "Albums", href: "/music?type=album" },
-{ label: "Singles", href: "/music?type=single" },
+      { label: "All Music", href: "/music" },
+      { label: "Albums", href: "/music?type=album" },
+      { label: "Singles", href: "/music?type=single" },
       { label: "Videos", href: "/video" },
+      { label: "Featured Artist", href: "/featured-artist" },
     ],
   },
   {
+    // Community = the social layer.
     label: "Community",
     items: [
       // MM Spaces = the Clubhouse-style audio spaces.
       { label: "MM Spaces", href: "/social/spaces" },
       // MM Faces = the social LIVE video system (Live, Duo Live, 8-Person Live).
       { label: "MM Faces", href: "/social/live" },
+      { label: "Waves", href: "/social/waves" },
       { label: "Comments", href: "/social/community" },
+    ],
+  },
+  {
+    // For Artists = tools + onboarding for creators.
+    label: "For Artists",
+    items: [
+      { label: "Become an Artist", href: "/register" },
+      { label: "Artist Studio", href: "/studio" },
+      { label: "Store", href: "/store" },
     ],
   },
   {
@@ -66,10 +82,9 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const standaloneLinks: NavItem[] = [
-  { label: "Featured Artist", href: "/featured-artist" },
-  { label: "Store", href: "/store" },
-];
+// Standalones folded into the buckets above (Featured Artist -> Discover,
+// Store -> For Artists) to honor the "never more than ~4 top-level items" rule.
+const standaloneLinks: NavItem[] = [];
 
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
@@ -518,8 +533,12 @@ export default function Header() {
           id="mobile-nav"
           className="md:hidden border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
           style={{
+            // Reserve room for: top bar (4rem) + fixed audio player (~112px,
+            // 152px with the sample-upgrade banner) + the mobile bottom tab
+            // bar (h-14 = 56px). 224px total keeps a comfortable gap so the
+            // drawer never hides behind the player or the tab bar.
             maxHeight:
-              "calc(100dvh - 4rem - 168px - env(safe-area-inset-bottom))",
+              "calc(100dvh - 4rem - 224px - env(safe-area-inset-bottom))",
           }}
         >
           <div

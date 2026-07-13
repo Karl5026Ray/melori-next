@@ -66,8 +66,8 @@ export default async function MembershipPage() {
         )}
 
         <p className="mt-12 text-center text-sm text-text-secondary">
-          Cancel anytime. No hidden fees. 90% of every paid membership goes
-          directly to artists.
+          Cancel anytime. No hidden fees. Your membership keeps Melori running
+          and lets artists keep 100% of every music sale.
         </p>
       </section>
 

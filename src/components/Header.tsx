@@ -50,7 +50,10 @@ const navGroups: NavGroup[] = [
   {
     label: "Community",
     items: [
-      { label: "MM Social", href: "/social/spaces" },
+      // MM Spaces = the Clubhouse-style audio spaces.
+      { label: "MM Spaces", href: "/social/spaces" },
+      // MM Faces = the social LIVE video system (Live, Duo Live, 8-Person Live).
+      { label: "MM Faces", href: "/social/live" },
       { label: "Comments", href: "/social/community" },
     ],
   },

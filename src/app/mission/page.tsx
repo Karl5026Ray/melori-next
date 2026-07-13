@@ -19,11 +19,11 @@ export default function MissionPage() {
     <div className="bg-brand-background text-text-primary">
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
-        <div className="max-w-4xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-4xl mx-auto px-6 py-24">
           <h1 className="text-4xl md:text-5xl font-bold text-text-primary mb-8">
             Mission Statement
           </h1>
-          <div className="space-y-6 text-lg md:text-xl text-text-secondary max-w-3xl mx-auto leading-relaxed">
+          <div className="space-y-6 text-lg md:text-xl text-text-secondary max-w-3xl leading-relaxed text-left">
             <p>
               Melori is the creative infrastructure for independent musicians
               &mdash; not a streaming catalog, not a marketplace, but a

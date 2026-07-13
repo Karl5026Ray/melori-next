@@ -97,13 +97,22 @@ export default function TierGrid({ tiers }: { tiers: Tier[] }) {
               role="tab"
               aria-selected={billing === "yearly"}
               onClick={() => setBilling("yearly")}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
                 billing === "yearly"
                   ? "bg-brand-primary text-white"
                   : "text-text-secondary hover:text-text-primary"
               }`}
             >
               Yearly
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  billing === "yearly"
+                    ? "bg-white/25 text-white"
+                    : "bg-brand-primary/15 text-brand-primary"
+                }`}
+              >
+                Save ~17%
+              </span>
             </button>
           </div>
         </div>
@@ -161,8 +170,8 @@ export default function TierGrid({ tiers }: { tiers: Tier[] }) {
                   <p className="mt-1 text-sm text-text-secondary">
                     or ${yearly.toFixed(2)}/year
                     {yearlySavings > 0 && (
-                      <span className="ml-2 text-brand-primary font-medium">
-                        save {yearlySavings}%
+                      <span className="ml-2 rounded-full bg-brand-primary/15 px-2 py-0.5 text-xs font-semibold text-brand-primary">
+                        Save {yearlySavings}% yearly
                       </span>
                     )}
                   </p>

@@ -4,12 +4,15 @@ import type { ReleaseListItem } from "@/lib/data";
 // client-safe (it never pulls in the server-only admin client).
 
 // Sort options shared by the /music catalog and artist discography.
-// Default is alphabetical by title (A→Z, case-insensitive).
-export type ReleaseSort = "alpha" | "release_date" | "artist";
+// Default is newest first (most recent releases surface at the top).
+export type ReleaseSort = "release_date" | "alpha" | "artist";
+
+// The first entry is the default sort used across the catalog and discography.
+export const DEFAULT_RELEASE_SORT: ReleaseSort = "release_date";
 
 export const RELEASE_SORT_OPTIONS: { value: ReleaseSort; label: string }[] = [
+  { value: "release_date", label: "Newest" },
   { value: "alpha", label: "Alphabetical" },
-  { value: "release_date", label: "Release date" },
   { value: "artist", label: "Artist name" },
 ];
 

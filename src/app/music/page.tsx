@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import MusicCatalog from "@/components/MusicCatalog";
-import StudioTrackGrid from "@/components/StudioTrackGrid";
+import MusicPageClient from "@/components/MusicPageClient";
 import { getReleases, getPublishedStudioTracks } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +37,7 @@ export default async function MusicPage() {
       <p className="mt-2 mb-8 text-text-secondary">
         Browse every release on MELORI Music.
       </p>
-      <StudioTrackGrid tracks={studioTracks} />
-      <div className="mt-16">
-        <MusicCatalog releases={releases} />
-      </div>
+      <MusicPageClient releases={releases} studioTracks={studioTracks} />
     </div>
   );
 }

@@ -4,19 +4,20 @@ import { useMemo, useState } from "react";
 import ReleaseCard from "@/components/ReleaseCard";
 import type { ReleaseListItem } from "@/lib/data";
 import {
+  DEFAULT_RELEASE_SORT,
   RELEASE_SORT_OPTIONS,
   sortReleases,
   type ReleaseSort,
 } from "@/lib/releaseSort";
 
 // Client-side discography grid with a sort control, matching the /music
-// catalog. Default sort is Alphabetical by title.
+// catalog. Default sort is Newest first.
 export default function ArtistDiscography({
   releases,
 }: {
   releases: ReleaseListItem[];
 }) {
-  const [sort, setSort] = useState<ReleaseSort>("alpha");
+  const [sort, setSort] = useState<ReleaseSort>(DEFAULT_RELEASE_SORT);
 
   const sorted = useMemo(() => sortReleases(releases, sort), [releases, sort]);
 

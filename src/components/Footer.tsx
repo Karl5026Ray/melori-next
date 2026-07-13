@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 const footerLinks = [
+  { label: "Music", href: "/music" },
   { label: "Mission", href: "/mission" },
   { label: "Membership", href: "/membership" },
   { label: "Donate", href: "/donate" },

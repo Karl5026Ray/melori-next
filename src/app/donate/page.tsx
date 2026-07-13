@@ -63,8 +63,9 @@ export default function DonatePage() {
             Support Melori Music
           </h1>
           <p className="text-lg text-text-secondary max-w-2xl mx-auto">
-            Every dollar helps us pay artists, build new features, and keep
-            independent music thriving. Thank you.
+            Artists keep 100% of every sale — Melori takes no cut. Your donation
+            funds the platform itself: the servers, the tools, and the new
+            features that keep independent music thriving. Thank you.
           </p>
         </div>
       </section>

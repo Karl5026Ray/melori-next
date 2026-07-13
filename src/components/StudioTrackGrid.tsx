@@ -20,11 +20,17 @@ import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider"
 // unified audio pipeline so listen events actually get logged.
 export default function StudioTrackGrid({
   tracks,
+  externalQuery,
 }: {
   tracks: StudioTrackListItem[];
+  // When provided, the built-in search box is hidden and this value drives
+  // filtering instead — lets the /music page share ONE search input across
+  // this list and the release catalog (no more two search bars on one page).
+  externalQuery?: string;
 }) {
   const { current, isPlaying, playQueue } = usePlayer();
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const query = externalQuery ?? localQuery;
 
   // Filter the collection by title or artist — mirrors the admin Uploads
   // Collection search so the public list behaves the same way. Case-
@@ -65,15 +71,17 @@ export default function StudioTrackGrid({
         </p>
       </div>
 
-      <div className="mb-6">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by title or artist…"
-          className="w-full rounded-md border border-input-border bg-brand-surface px-4 py-2 text-text-primary placeholder:text-text-secondary focus:border-brand-primary focus:outline-none sm:max-w-sm"
-        />
-      </div>
+      {externalQuery === undefined && (
+        <div className="mb-6">
+          <input
+            type="search"
+            value={localQuery}
+            onChange={(e) => setLocalQuery(e.target.value)}
+            placeholder="Search by title or artist…"
+            className="w-full rounded-md border border-input-border bg-brand-surface px-4 py-2 text-text-primary placeholder:text-text-secondary focus:border-brand-primary focus:outline-none sm:max-w-sm"
+          />
+        </div>
+      )}
 
       {visibleTracks.length === 0 ? (
         <p className="text-text-secondary">No uploads match your search.</p>

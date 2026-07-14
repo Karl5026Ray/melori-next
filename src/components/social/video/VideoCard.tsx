@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import {
   Heart,
@@ -109,14 +110,32 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
 
       <div className="absolute bottom-28 md:bottom-20 left-4 right-20 text-white">
         <div className="flex items-center gap-2 mb-2">
-          <img
-            src={video.user?.avatar_url || "/favicon.png"}
-            className="w-8 h-8 rounded-full border border-white/30 object-cover"
-            alt=""
-          />
-          <span className="font-semibold text-sm">
-            @{video.user?.display_name}
-          </span>
+          {video.user?.username ? (
+            <Link
+              href={`/social/profile/${video.user.username}`}
+              className="flex items-center gap-2 transition-opacity hover:opacity-80"
+            >
+              <img
+                src={video.user?.avatar_url || "/favicon.png"}
+                className="w-8 h-8 rounded-full border border-white/30 object-cover"
+                alt=""
+              />
+              <span className="font-semibold text-sm">
+                @{video.user?.display_name || video.user?.username}
+              </span>
+            </Link>
+          ) : (
+            <>
+              <img
+                src={video.user?.avatar_url || "/favicon.png"}
+                className="w-8 h-8 rounded-full border border-white/30 object-cover"
+                alt=""
+              />
+              <span className="font-semibold text-sm">
+                @{video.user?.display_name}
+              </span>
+            </>
+          )}
           {video.user?.role && (
             <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full capitalize">
               {video.user?.role}

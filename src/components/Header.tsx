@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import LocalNav from "@/components/nav/LocalNav";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -72,7 +73,6 @@ export default function Header() {
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
   const [accountOpen, setAccountOpen] = useState(false); // desktop account menu
-  const [mSelectorOpen, setMSelectorOpen] = useState(false); // M-logo selector menu
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -86,18 +86,11 @@ export default function Header() {
         setOpenGroup(null);
         setAccountOpen(false);
       }
-      // The M selector lives outside navRef (top-left), so close it on any
-      // click that isn't inside its own menu.
-      const target = e.target as HTMLElement;
-      if (!target.closest("[data-m-selector]")) {
-        setMSelectorOpen(false);
-      }
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpenGroup(null);
         setAccountOpen(false);
-        setMSelectorOpen(false);
       }
     }
     document.addEventListener("mousedown", onClick);
@@ -218,69 +211,25 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative h-16 flex items-center justify-between gap-3">
-        {/* M SELECTOR — the logo is a click-dropdown (Home + Melori Mirror)
-           rather than a plain Home link, so Mirror is reachable straight from
-           the brand mark while Home stays one tap away. */}
-        <div className="relative shrink-0" data-m-selector>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setMSelectorOpen((v) => !v);
-            }}
-            aria-expanded={mSelectorOpen}
-            aria-haspopup="menu"
-            aria-label="Melori menu"
-            className="flex items-center gap-2 rounded-md transition-opacity hover:opacity-90"
-          >
-            <Image
-              src="/logo/logo.png"
-              alt="MELORI Music"
-              width={36}
-              height={36}
-              priority
-            />
-            <span className="hidden sm:inline font-bold tracking-wide">
-              MELORI MUSIC
-            </span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              className={`h-3.5 w-3.5 text-text-secondary transition-transform ${
-                mSelectorOpen ? "rotate-180" : ""
-              }`}
-              aria-hidden
-            >
-              <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-            </svg>
-          </button>
-          {mSelectorOpen && (
-            <div
-              role="menu"
-              className="absolute left-0 mt-2 min-w-48 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl"
-            >
-              <Link
-                href="/"
-                role="menuitem"
-                onClick={() => setMSelectorOpen(false)}
-                className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-              >
-                Home
-              </Link>
-              <Link
-                href="/social/mirror"
-                role="menuitem"
-                onClick={() => setMSelectorOpen(false)}
-                className="flex items-center gap-2 px-4 py-2.5 font-semibold text-brand-primary transition-colors hover:bg-white/5"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" />
-                Melori Mirror
-              </Link>
-            </div>
-          )}
-        </div>
+        {/* Brand M — a plain Home link. Melori Mirror now lives in the
+           bottom-bar launcher (MobileTabBar), NOT on the brand mark. */}
+        <Link
+          href="/"
+          onClick={() => setOpen(false)}
+          aria-label="Melori — Home"
+          className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
+        >
+          <Image
+            src="/logo/logo.png"
+            alt="MELORI Music"
+            width={36}
+            height={36}
+            priority
+          />
+          <span className="hidden sm:inline font-bold tracking-wide">
+            MELORI MUSIC
+          </span>
+        </Link>
 
         {/* Desktop nav */}
         <nav
@@ -681,6 +630,10 @@ export default function Header() {
           </div>
         </nav>
       )}
+
+      {/* Context-aware local nav bar: shows ONLY the current section's items
+         so each page sheds unrelated clutter. Renders nothing on Home. */}
+      <LocalNav />
     </header>
   );
 }

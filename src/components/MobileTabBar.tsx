@@ -14,6 +14,7 @@ import {
   Hand,
   Clapperboard,
   Music,
+  Sparkles,
   X,
 } from "lucide-react";
 
@@ -99,15 +100,16 @@ export default function MobileTabBar() {
     setLauncherOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while the sheet is open.
+  // Lock body scroll while the sheet is open. On close we always CLEAR the
+  // lock (restore to "") rather than to a captured previous value — capturing
+  // a stale "hidden" (e.g. if another overlay had locked scroll) used to leave
+  // the page permanently unscrollable, which reads as a frozen screen.
   useEffect(() => {
-    if (launcherOpen) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
-    }
+    if (!launcherOpen) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [launcherOpen]);
 
   const tabs: Tab[] = [
@@ -125,6 +127,7 @@ export default function MobileTabBar() {
 
   // Launcher destinations — everything that used to crowd the side menu, one tap away.
   const launcherLinks: { label: string; href: string; icon: React.ReactNode; desc: string }[] = [
+    { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
     { label: "Profile", href: user ? "/social/profile" : "/social/auth", icon: <UserIcon className="h-5 w-5" />, desc: "Your page" },
     { label: "MM Spaces", href: "/social/spaces", icon: <Radio className="h-5 w-5" />, desc: "Live audio rooms" },
     { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
@@ -154,7 +157,9 @@ export default function MobileTabBar() {
             onClick={() => setLauncherOpen(false)}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-brand-border bg-brand-surface p-5 pb-8 shadow-2xl animate-[sheetUp_.22s_ease-out]">
+          {/* pb leaves room for the bottom tab bar (h-14 = 56px) which now
+             floats above this sheet, so sheet content never hides behind it. */}
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-brand-border bg-brand-surface p-5 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1rem)] shadow-2xl animate-[sheetUp_.22s_ease-out]">
             <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-brand-muted" />
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -226,8 +231,12 @@ export default function MobileTabBar() {
         </div>
       )}
 
+      {/* z-[70] keeps this bar (and its center M) ABOVE the launcher overlay
+         (z-[60]) so the M always toggles the sheet closed. Previously the open
+         sheet covered the M, so tapping it did nothing — the screen felt
+         frozen and the only exit was the backdrop or X. */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur"
+        className="md:hidden fixed bottom-0 inset-x-0 z-[70] border-t border-brand-border bg-brand-surface/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         aria-label="Primary"
       >

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ReportButton from "@/components/social/ReportButton";
 
 // Public "Photos" section rendered on artist pages and social profiles.
 // Fetches the profile's gallery from the public read route and renders a
@@ -56,12 +57,23 @@ export default function ProfileGallery({
       <h2 className="mb-4 text-2xl font-bold">{heading}</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {photos.map((p) => (
-          <button
+          <div
             key={p.id}
-            type="button"
-            onClick={() => setActive(p.image_url)}
             className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-white/10 bg-white/5"
           >
+            {/* Report control — visible on hover, top-right. */}
+            <div className="absolute right-2 top-2 z-10 rounded-full bg-black/50 p-1.5 opacity-0 backdrop-blur transition group-hover:opacity-100">
+              <ReportButton
+                contentType="gallery"
+                contentId={p.id}
+                reportedUser={profileId}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setActive(p.image_url)}
+              className="h-full w-full"
+            >
             {p.media_type === "video" ? (
               <>
                 <video
@@ -86,7 +98,8 @@ export default function ProfileGallery({
                 className="h-full w-full object-cover transition group-hover:scale-105"
               />
             )}
-          </button>
+            </button>
+          </div>
         ))}
       </div>
 

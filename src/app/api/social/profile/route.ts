@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
 import { syncArtistAvatarFromProfile } from "@/lib/sync-artist-avatar";
+import { moderateText, moderateImage } from "@/lib/moderation";
+import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,6 +111,46 @@ export async function PATCH(req: NextRequest) {
       { error: "No fields to update" },
       { status: 400 },
     );
+  }
+
+  // --- Content moderation on profile fields ------------------------------
+  // Bio + display_name are text-screened; avatar/banner images are screened.
+  // Pornographic content is refused; borderline is allowed but flagged.
+  const bioText = typeof update.bio === "string" ? update.bio : "";
+  const nameText = typeof update.display_name === "string" ? update.display_name : "";
+  const profileText = [nameText, bioText].filter(Boolean).join("\n").trim();
+  if (profileText) {
+    const mod = await moderateText(profileText);
+    if (mod.decision === "quarantine") {
+      await recordModeration({ contentType: "bio", contentId: userId, authorId: userId, result: mod, excerpt: profileText });
+      return NextResponse.json(
+        { error: "This profile text can't be saved. It appears to contain explicit sexual content, which isn't permitted." },
+        { status: 422 },
+      );
+    }
+    if (mod.decision === "flag") {
+      update.bio_moderation_status = "flagged";
+      update.bio_moderation_reason = mod.reason;
+      await recordModeration({ contentType: "bio", contentId: userId, authorId: userId, result: mod, excerpt: profileText });
+    } else if ("bio" in update) {
+      update.bio_moderation_status = "clean";
+      update.bio_moderation_reason = null;
+    }
+  }
+  for (const field of ["avatar_url", "banner_url"] as const) {
+    const url = typeof update[field] === "string" ? (update[field] as string) : "";
+    if (!url) continue;
+    const mod = await moderateImage(url);
+    if (mod.decision === "quarantine") {
+      await recordModeration({ contentType: field === "avatar_url" ? "avatar" : "banner", authorId: userId, result: mod, mediaUrl: url });
+      return NextResponse.json(
+        { error: `This ${field === "avatar_url" ? "profile photo" : "banner"} can't be saved. It appears to contain explicit sexual content, which isn't permitted.` },
+        { status: 422 },
+      );
+    }
+    if (mod.decision === "flag") {
+      await recordModeration({ contentType: field === "avatar_url" ? "avatar" : "banner", authorId: userId, result: mod, mediaUrl: url });
+    }
   }
 
   const supabase = getSupabaseAdmin();

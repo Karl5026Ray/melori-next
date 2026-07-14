@@ -821,6 +821,14 @@ function ModerationSection() {
         </button>
       </div>
 
+      <Link
+        href="/admin/moderation"
+        className="mb-4 flex items-center justify-between rounded-xl border border-[#ff5500]/40 bg-[#ff5500]/10 px-4 py-3 text-sm font-semibold text-[#ff5500] hover:bg-[#ff5500]/20"
+      >
+        <span>🛡️ Content safety queue — quarantined media &amp; user reports</span>
+        <span aria-hidden>→</span>
+      </Link>
+
       {loading ? (
         <p className="text-[#888] text-sm">Loading…</p>
       ) : comments.length === 0 ? (

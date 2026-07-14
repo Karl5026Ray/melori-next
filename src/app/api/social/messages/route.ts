@@ -3,6 +3,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUuid } from "@/lib/validators";
+import { moderateText, statusForDecision } from "@/lib/moderation";
+import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,12 +97,37 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // --- Content moderation -----------------------------------------------
+    // Text is screened before it is delivered. Sexual/pornographic text is
+    // refused (not permitted); other harmful content is delivered but flagged
+    // for admin review. Fails safe: if moderation is unavailable the message
+    // sends normally.
+    const mod = await moderateText(content);
+    if (mod.decision === "quarantine") {
+      await recordModeration({
+        contentType: "message",
+        authorId: membership.userId,
+        result: mod,
+        excerpt: content,
+      });
+      return NextResponse.json(
+        {
+          error:
+            "This message can't be sent. It appears to contain explicit sexual content, which isn't permitted.",
+        },
+        { status: 422 },
+      );
+    }
+    const moderationStatus = statusForDecision(mod.decision);
+
     const { data, error } = await supabase
       .from("messages")
       .insert({
         conversation_id: conversationId,
         sender_id: membership.userId,
         content,
+        moderation_status: moderationStatus,
+        moderation_reason: mod.reason,
       })
       .select()
       .single();
@@ -108,6 +135,16 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("Send message error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (mod.decision === "flag") {
+      await recordModeration({
+        contentType: "message",
+        contentId: data.id,
+        authorId: membership.userId,
+        result: mod,
+        excerpt: content,
+      });
     }
 
     return NextResponse.json({ message: data });

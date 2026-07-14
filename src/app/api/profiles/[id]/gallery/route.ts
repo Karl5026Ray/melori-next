@@ -26,10 +26,14 @@ export async function GET(
   }
 
   const supabase = getSupabaseAdmin();
+  // Public view: only content that has cleared moderation. 'clean' and
+  // 'flagged' (explicit/borderline, visible pending review) show; 'quarantined',
+  // 'removed', and unreviewed 'pending_review' videos are hidden from the public.
   const { data, error } = await supabase
     .from("profile_gallery")
     .select("id, image_url, media_type, sort_order")
     .eq("profile_id", profileId)
+    .in("moderation_status", ["clean", "flagged"])
     .order("sort_order", { ascending: true });
 
   if (error) {

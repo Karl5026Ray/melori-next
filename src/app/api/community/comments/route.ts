@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { moderateText, statusForDecision } from "@/lib/moderation";
+import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +17,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("community_comments")
       .select("id, user_id, author_name, body, created_at")
+      .in("moderation_status", ["clean", "flagged"])
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -86,12 +89,33 @@ export async function POST(req: NextRequest) {
       (profile?.username as string) ||
       "Superfan";
 
+    // --- Content moderation: refuse pornographic text, flag other harms ----
+    const mod = await moderateText(text);
+    if (mod.decision === "quarantine") {
+      await recordModeration({
+        contentType: "comment",
+        authorId: membership.userId,
+        result: mod,
+        excerpt: text,
+      });
+      return NextResponse.json(
+        {
+          error:
+            "This comment can't be posted. It appears to contain explicit sexual content, which isn't permitted.",
+        },
+        { status: 422 },
+      );
+    }
+    const moderationStatus = statusForDecision(mod.decision);
+
     const { data, error } = await supabase
       .from("community_comments")
       .insert({
         user_id: membership.userId,
         author_name: authorName,
         body: text,
+        moderation_status: moderationStatus,
+        moderation_reason: mod.reason,
       })
       .select("id, user_id, author_name, body, created_at")
       .single();
@@ -99,6 +123,16 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("Community comment insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (mod.decision === "flag") {
+      await recordModeration({
+        contentType: "comment",
+        contentId: data.id,
+        authorId: membership.userId,
+        result: mod,
+        excerpt: text,
+      });
     }
 
     return NextResponse.json({ comment: data });

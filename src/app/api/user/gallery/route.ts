@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { tierOf } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { moderateImage, statusForDecision } from "@/lib/moderation";
+import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -189,6 +191,44 @@ export async function PATCH(req: Request) {
     );
   }
 
+  // --- Content moderation -------------------------------------------------
+  // Photos are screened by OpenAI image moderation before they go public.
+  //   * Pornography / nudity  -> REFUSED outright + storage object deleted
+  //     (owner policy: not permitted, never public).
+  //   * Explicit / borderline -> inserted but moderation_status='flagged'
+  //     (stays visible; queued for admin review).
+  // Videos can't be frame-inspected in the serverless runtime, so they enter
+  // as 'pending_review' (visible but always eyed by an admin).
+  let moderationStatus = "clean";
+  let moderationReason: string | null = null;
+  if (mediaType === "photo") {
+    const mod = await moderateImage(publicUrl);
+    if (mod.decision === "quarantine") {
+      // Purge the offending file so it is never reachable.
+      const path = storagePathFromUrl(publicUrl);
+      if (path) await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+      await recordModeration({
+        contentType: "gallery",
+        authorId: userId,
+        result: mod,
+        mediaUrl: publicUrl,
+      });
+      return NextResponse.json(
+        {
+          error:
+            "This image can't be added. It appears to contain explicit sexual content, which isn't permitted.",
+        },
+        { status: 422 },
+      );
+    }
+    moderationStatus = statusForDecision(mod.decision);
+    moderationReason = mod.reason;
+  } else {
+    // video
+    moderationStatus = "pending_review";
+    moderationReason = "Video pending automated frame review";
+  }
+
   const { data, error } = await supabase
     .from("profile_gallery")
     .insert({
@@ -196,6 +236,8 @@ export async function PATCH(req: Request) {
       image_url: publicUrl,
       media_type: mediaType,
       sort_order: count ?? 0,
+      moderation_status: moderationStatus,
+      moderation_reason: moderationReason,
     })
     .select("id, image_url, media_type, sort_order")
     .single();
@@ -206,6 +248,22 @@ export async function PATCH(req: Request) {
       { error: error?.message ?? "Failed to save media" },
       { status: 500 },
     );
+  }
+
+  // Queue flagged / pending items for admin review (best-effort).
+  if (moderationStatus === "flagged" || moderationStatus === "pending_review") {
+    await recordModeration({
+      contentType: mediaType === "video" ? "video" : "gallery",
+      contentId: data.id,
+      authorId: userId,
+      result: {
+        decision: moderationStatus === "flagged" ? "flag" : "clean",
+        reason: moderationReason,
+        categories: null,
+        degraded: false,
+      },
+      mediaUrl: publicUrl,
+    });
   }
 
   return NextResponse.json({ photo: data });

@@ -17,14 +17,32 @@
   --input-border: #383838;
 }
 
+html {
+  /* Always reserve room for the vertical scrollbar so the layout width never
+     changes between short and tall pages. This is what causes the annoying
+     left-right "sway" when navigating: the scrollbar appears on a tall page,
+     shrinking the viewport by ~15px and shifting all centered content. With a
+     stable gutter the page stays put. */
+  scrollbar-gutter: stable;
+  overflow-x: hidden;
+  overflow-y: scroll; /* fallback for browsers without scrollbar-gutter */
+}
+
 html,
 body {
   background-color: var(--brand-background);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
-/* Prevent horizontal scroll / left-right sliding on mobile */
-overflow-x: hidden;
-max-width: 100%;
+  /* Prevent horizontal scroll / left-right sliding on mobile */
+  overflow-x: hidden;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* Any element that opts into horizontal scrolling (carousels, tab strips)
+   must not leak that scroll up to the page. */
+* {
+  min-width: 0;
 }
 
 a {

@@ -103,7 +103,7 @@ export default function ProfileGallery({
               controls
               autoPlay
               playsInline
-              className="max-h-full max-w-full rounded-2xl object-contain"
+              className="h-auto max-h-[90vh] w-auto max-w-[92vw] rounded-2xl object-contain"
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
@@ -111,7 +111,8 @@ export default function ProfileGallery({
             <img
               src={active}
               alt=""
-              className="max-h-full max-w-full rounded-2xl object-contain"
+              onClick={(e) => e.stopPropagation()}
+              className="h-auto max-h-[90vh] w-auto max-w-[92vw] rounded-2xl object-contain"
             />
           )}
           <button

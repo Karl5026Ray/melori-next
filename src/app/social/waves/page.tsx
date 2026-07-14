@@ -349,21 +349,46 @@ export default function WavesPage() {
                       key={m.id}
                       className="flex items-center gap-3 rounded-xl border border-melori-border bg-melori-void/40 p-2.5"
                     >
-                      <img
-                        src={m.avatar_url || "/favicon.png"}
-                        className="w-10 h-10 rounded-full object-cover shrink-0"
-                        alt=""
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          <p className="font-semibold text-sm truncate">
-                            {name}
-                          </p>
-                          {m.verified && (
-                            <Check className="w-3.5 h-3.5 text-melori-purple shrink-0" />
-                          )}
-                        </div>
-                      </div>
+                      {m.username ? (
+                        <Link
+                          href={`/social/profile/${m.username}`}
+                          className="flex flex-1 min-w-0 items-center gap-3 transition-opacity hover:opacity-80"
+                        >
+                          <img
+                            src={m.avatar_url || "/favicon.png"}
+                            className="w-10 h-10 rounded-full object-cover shrink-0"
+                            alt=""
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1">
+                              <p className="font-semibold text-sm truncate">
+                                {name}
+                              </p>
+                              {m.verified && (
+                                <Check className="w-3.5 h-3.5 text-melori-purple shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        </Link>
+                      ) : (
+                        <>
+                          <img
+                            src={m.avatar_url || "/favicon.png"}
+                            className="w-10 h-10 rounded-full object-cover shrink-0"
+                            alt=""
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1">
+                              <p className="font-semibold text-sm truncate">
+                                {name}
+                              </p>
+                              {m.verified && (
+                                <Check className="w-3.5 h-3.5 text-melori-purple shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
                       {status === "sent" ? (
                         <span className="text-xs font-semibold text-melori-success flex items-center gap-1 shrink-0">
                           <Check className="w-3.5 h-3.5" />

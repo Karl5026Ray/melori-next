@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ImagePlus, Loader2, Trash2, Play, X } from "lucide-react";
+import { ImagePlus, Loader2, Trash2, Play, X, GripVertical } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 
 // Owner-facing, editable media gallery shown on the user's own profile page.
@@ -33,6 +33,10 @@ export default function ProfileGalleryEditor({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Item | null>(null);
+  // Index of the tile currently being dragged, and the index it's hovering
+  // over, so we can show a live insertion preview and reorder on drop.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -139,26 +143,90 @@ export default function ProfileGalleryEditor({
     }
   };
 
+  // Persist the current order to the server. The PATCH endpoint accepts an
+  // `order` array of ids and rewrites sort_order to match.
+  const persistOrder = async (ordered: Item[]) => {
+    const res = await authFetch("/api/user/gallery", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: ordered.map((it) => it.id) }),
+    });
+    if (!res.ok) setError("Could not save the new order.");
+  };
+
+  // Move the item at `from` to `to`, update local state optimistically, and
+  // persist. Used by both mouse drag-and-drop and touch reordering.
+  const moveItem = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    setItems((prev) => {
+      if (from >= prev.length || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      void persistOrder(next);
+      return next;
+    });
+  };
+
+  const handleDrop = (to: number) => {
+    if (dragIndex !== null) moveItem(dragIndex, to);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
   const isFull = items.length >= max;
+  const canReorder = items.length > 1;
 
   return (
     <section className={`glass rounded-2xl p-6 ${className}`}>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-1 flex items-center justify-between">
         <h3 className="font-bold">Photos &amp; Videos</h3>
         <span className="text-xs text-melori-muted">
           {items.length} / {max} slots
         </span>
       </div>
+      {canReorder && (
+        <p className="mb-4 text-xs text-melori-muted">
+          Drag any tile to reorder how your media appears.
+        </p>
+      )}
+      {!canReorder && <div className="mb-4" />}
 
       {loading ? (
         <div className="py-8 text-center text-sm text-melori-muted">Loading…</div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
-            {items.map((it) => (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {items.map((it, index) => (
               <div
                 key={it.id}
-                className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-brand-border bg-melori-void/40"
+                data-tile-index={index}
+                draggable={canReorder}
+                onDragStart={(e) => {
+                  setDragIndex(index);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (overIndex !== index) setOverIndex(index);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop(index);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={`group relative aspect-[3/4] overflow-hidden rounded-xl border bg-melori-void/40 transition ${
+                  dragIndex === index
+                    ? "border-brand-primary opacity-40"
+                    : overIndex === index && dragIndex !== null
+                      ? "border-brand-primary ring-2 ring-brand-primary"
+                      : "border-brand-border"
+                } ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
               >
                 <button
                   type="button"
@@ -199,6 +267,35 @@ export default function ProfileGalleryEditor({
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
+
+                {/* Drag handle — also drives touch reordering on mobile. */}
+                {canReorder && (
+                  <div
+                    role="button"
+                    aria-label="Drag to reorder"
+                    onTouchStart={() => setDragIndex(index)}
+                    onTouchMove={(e) => {
+                      const t = e.touches[0];
+                      const el = document
+                        .elementFromPoint(t.clientX, t.clientY)
+                        ?.closest("[data-tile-index]") as HTMLElement | null;
+                      if (el) {
+                        const to = Number(el.dataset.tileIndex);
+                        if (!Number.isNaN(to) && to !== overIndex) setOverIndex(to);
+                      }
+                    }}
+                    onTouchEnd={() => {
+                      if (overIndex !== null) handleDrop(overIndex);
+                      else {
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }
+                    }}
+                    className="absolute left-1.5 top-1.5 flex h-7 w-7 touch-none items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </div>
+                )}
               </div>
             ))}
 

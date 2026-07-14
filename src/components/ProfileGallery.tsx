@@ -54,7 +54,7 @@ export default function ProfileGallery({
   return (
     <section className={className}>
       <h2 className="mb-4 text-2xl font-bold">{heading}</h2>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {photos.map((p) => (
           <button
             key={p.id}

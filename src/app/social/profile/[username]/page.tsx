@@ -5,7 +5,8 @@
 // the read + follow view of everyone else. If a viewer lands on their own
 // username, we point them at the editable self page.
 
-import { useEffect, useState, use as usePromise } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
 import FollowButton from "@/components/social/FollowButton";
@@ -30,12 +31,12 @@ type ViewerState = {
   signedIn: boolean;
 };
 
-export default function PublicProfilePage({
-  params,
-}: {
-  params: Promise<{ username: string }>;
-}) {
-  const { username } = usePromise(params);
+export default function PublicProfilePage() {
+  // On Next.js 14 the client-component route param is read via the
+  // useParams() hook (NOT React.use(params), which is a Next 15 convention
+  // and throws React error #438 here because params is a plain object).
+  const params = useParams<{ username: string }>();
+  const username = params.username;
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [loading, setLoading] = useState(true);

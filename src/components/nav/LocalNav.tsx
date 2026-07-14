@@ -34,45 +34,33 @@ export default function LocalNav() {
   if (ctx.items.length === 0) return null;
 
   return (
-    // DESKTOP ONLY. On mobile the section's items live inside the hamburger
-    // drawer (Header.tsx renders getNavContext(pathname) as a "This section"
-    // group), so we hide this bar entirely below `sm` — no more side-scroll and
-    // no duplicate row of chips. Karl asked to "return to the dropdown
-    // hamburger menu on mobile", so mobile has a single unified menu.
     <nav
       aria-label="Section"
-      className="sticky top-16 z-30 hidden border-b border-brand-border bg-brand-background/80 backdrop-blur sm:block"
+      className="sticky top-16 z-30 border-b border-brand-border bg-brand-background/80 backdrop-blur"
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="flex flex-row items-center gap-1">
-          {/* Context label — the "you are here" cue, inline with the tabs. */}
-          <span className="shrink-0 py-2.5 mr-2 text-[11px] font-semibold uppercase tracking-wide text-text-secondary/50">
-            {ctx.label}
-          </span>
+      <div className="max-w-6xl mx-auto flex items-center gap-1 overflow-x-auto px-4 sm:px-6">
+        {/* Context label — the "you are here" cue. */}
+        <span className="mr-2 shrink-0 py-2.5 text-xs font-semibold uppercase tracking-wide text-text-secondary/50">
+          {ctx.label}
+        </span>
 
-          {/* Single-line underline tabs. */}
-          <div className="flex flex-nowrap gap-1">
-            {ctx.items.map((item) => {
-              const active = isActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={
-                    "whitespace-nowrap text-sm transition-colors " +
-                    "border-b-2 px-3 py-2.5 " +
-                    (active
-                      ? "border-brand-primary font-semibold text-brand-primary"
-                      : "border-transparent text-text-secondary hover:text-brand-primary")
-                  }
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
+        {ctx.items.map((item) => {
+          const active = isActive(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors ${
+                active
+                  ? "border-brand-primary font-semibold text-brand-primary"
+                  : "border-transparent text-text-secondary hover:text-brand-primary"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

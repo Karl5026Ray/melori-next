@@ -3,18 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import LocalNav from "@/components/nav/LocalNav";
-import { getNavContext } from "@/components/nav/navContexts";
-
-/** True when a section item should show as the current page (mirrors LocalNav). */
-function isSectionActive(pathname: string, href: string): boolean {
-  const base = href.split("?")[0];
-  if (base === "/") return pathname === "/";
-  return pathname === base || pathname.startsWith(base + "/");
-}
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -87,28 +78,6 @@ export default function Header() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isArtist, setIsArtist] = useState(false);
   const navRef = useRef<HTMLElement>(null);
-
-  // Current-section context. On mobile these items used to live in the
-  // separate LocalNav bar (a side-scroll / chip row); they now fold into this
-  // hamburger drawer as the "This section" group so mobile has ONE menu.
-  const pathname = usePathname() ?? "/";
-  const sectionCtx = getNavContext(pathname);
-
-  // When the current section already appears as a persistent global accordion
-  // group, we drop that global group from the mobile drawer to avoid showing
-  // the same section twice (the "This section" block above already surfaces
-  // its items). Maps a section context id -> the global navGroups label it
-  // duplicates. "Listening" maps to "Discover" (same intent, different label).
-  const sectionToGlobalLabel: Record<string, string | undefined> = {
-    listening: "Discover",
-    community: "Community",
-    artist: "For Artists",
-    about: "About",
-  };
-  const duplicateGlobalLabel =
-    sectionCtx.items.length > 0
-      ? sectionToGlobalLabel[sectionCtx.id]
-      : undefined;
 
   // Close desktop dropdowns on outside click / Escape.
   useEffect(() => {
@@ -591,47 +560,10 @@ export default function Header() {
               </div>
             )}
 
-            {/* THIS SECTION — the current page's context items (Community,
-               Listening, For Artists, …). On mobile these replace the old
-               LocalNav side-scroll bar. Rendered as a highlighted block at the
-               top of the menu, always expanded, with the active item marked, so
-               tapping the hamburger surfaces the most relevant links first.
-               Hidden on Home / neutral contexts (no items). */}
-            {sectionCtx.items.length > 0 && (
-              <div className="mb-1 rounded-lg border border-brand-border/70 bg-white/[0.03] p-1">
-                <p className="px-2 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-primary/80">
-                  {sectionCtx.label}
-                </p>
-                {sectionCtx.items.map((item) => {
-                  const active = isSectionActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setOpen(false)}
-                      aria-current={active ? "page" : undefined}
-                      className={
-                        "block rounded-md px-2 py-2.5 text-sm transition-colors " +
-                        (active
-                          ? "bg-brand-primary/15 font-semibold text-brand-primary"
-                          : "text-text-secondary hover:bg-white/5 hover:text-brand-primary")
-                      }
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-
             {/* Nav groups as collapsible accordions. Collapsed by default so
                the drawer stays short; opening one closes any other (one open
-               at a time). Reuses the desktop chevron-rotate pattern.
-               We skip the group that duplicates the current section (its items
-               are already in the "This section" block above). */}
-            {navGroups
-              .filter((group) => group.label !== duplicateGlobalLabel)
-              .map((group) => {
+               at a time). Reuses the desktop chevron-rotate pattern. */}
+            {navGroups.map((group) => {
               const isOpen = openMobileGroup === group.label;
               return (
                 <div key={group.label} className="border-b border-brand-border/60">

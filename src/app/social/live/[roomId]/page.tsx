@@ -120,29 +120,9 @@ export default function LiveRoomPage() {
   }
 
   const isHost = user.id === room.host_id;
-  // Non-host viewers need Superfan-or-better (same gate as audio spaces). The
-  // host is always allowed into their own room.
-  if (!isHost && !canParticipate) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-brand-background px-4 py-24">
-        <div className="w-full max-w-md rounded-2xl border border-brand-border bg-brand-surface p-8 text-center">
-          <h1 className="text-xl font-bold text-text-primary">
-            Superfan required
-          </h1>
-          <p className="mt-2 text-sm text-text-secondary">
-            MM Faces live rooms are a Superfan perk. Upgrade to join the live.
-          </p>
-          <Link
-            href="/membership"
-            className="mt-5 inline-block rounded-full bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark"
-          >
-            See membership
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
+  // Option 1 (freemium): ANY signed-in user may WATCH a live room. Going on
+  // camera / speaking is the paid perk, enforced by the token endpoint and by
+  // hiding the publish controls for non-Superfans (canPublish below).
   const tier: VideoTier = isArtistSubscriber(user) ? "artist" : "free";
   const hostName =
     room.host?.display_name || (isHost ? "You" : "Host") || "Host";
@@ -169,6 +149,7 @@ export default function LiveRoomPage() {
       durationMinutes={room.duration_minutes}
       mode={mode}
       maxOnCamera={maxOnCamera}
+      canPublish={isHost || canParticipate}
     />
   );
 }

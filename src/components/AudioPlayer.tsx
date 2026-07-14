@@ -1,9 +1,27 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
+
+// Small chevron used by the collapse/expand toggle.
+function Chevron({ up }: { up: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`h-4 w-4 transition-transform ${up ? "" : "rotate-180"}`}
+    >
+      <polyline points="18 15 12 9 6 15" />
+    </svg>
+  );
+}
 
 function PlayPauseIcon({ playing }: { playing: boolean }) {
   if (playing) {
@@ -67,8 +85,58 @@ export default function AudioPlayer() {
 
   const fraction = duration > 0 ? currentTime / duration : 0;
 
+  // Collapsed state — lets the user tuck the bar away so it never blocks the
+  // mobile nav. Playback keeps running; only the UI shrinks to a peek strip.
+  // Persisted so the choice survives navigation/reloads.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("melori:player:collapsed") === "1");
+    } catch {}
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("melori:player:collapsed", next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  };
+
+  // Collapsed: a slim, dismissible peek strip. overflow-hidden guarantees it can
+  // never push the layout sideways and cover the nav buttons.
+  if (collapsed) {
+    return (
+      <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+        <div className="max-w-6xl mx-auto flex items-center gap-3 px-3 sm:px-6 py-1.5">
+          <button
+            type="button"
+            onClick={togglePlay}
+            disabled={!current}
+            aria-label={isPlaying ? "Pause" : "Play"}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark disabled:opacity-40"
+          >
+            <PlayPauseIcon playing={isPlaying} />
+          </button>
+          <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">
+            {current ? current.title : "Nothing playing"}
+          </span>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Expand player"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
+          >
+            <Chevron up />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+    <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur">
       {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
       {current && sampleEnded && (
         <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
@@ -173,6 +241,18 @@ export default function AudioPlayer() {
                 style={{ accentColor: "#ff5500" }}
               />
             </div>
+
+            {/* Collapse toggle — tucks the bar into a slim peek strip so it
+                never blocks the mobile navigation. */}
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Hide player"
+              title="Hide player"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
+            >
+              <Chevron up={false} />
+            </button>
           </div>
         </div>
 

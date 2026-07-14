@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AccessToken } from "livekit-server-sdk";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { isSuperfanOrBetter } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -18,17 +19,21 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
 //  - Server derives the room name from the space id (never trusts a client-
 //    supplied room string), preventing cross-space token hijack.
 //  - Verifies the space exists and is live/scheduled.
-//  - A publisher token is only issued to the host or an active speaker/host
-//    participant who is not host_muted; everyone else gets subscribe-only.
+//  - FREE-TIER ACCESS (Option 1): any signed-in user may join a room as a
+//    SUBSCRIBER (watch live video / listen to audio, comment, react). This is
+//    the growth + data hook.
+//  - PUBLISHING (camera/mic) requires a paid tier: a publisher token is only
+//    issued to the host, or to an active speaker who is ALSO Superfan-or-better
+//    and not host_muted. Everyone else gets subscribe-only.
 export async function POST(req: NextRequest) {
   try {
     if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
       return NextResponse.json({ error: "LiveKit is not configured" }, { status: 503 });
     }
 
-    const guard = await requireSuperfan(req);
+    const guard = await requireAuth(req);
     if (isGuardFailure(guard)) return guard;
-    const { userId } = guard.membership;
+    const { userId, profile: membershipProfile } = guard.membership;
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -65,6 +70,15 @@ export async function POST(req: NextRequest) {
     if (canPublish) {
       const isHost = space.host_id === userId;
       if (!isHost) {
+        // Publishing (going on camera / speaking) is a paid perk. A free user
+        // can still WATCH/LISTEN as a subscriber, but cannot publish even if a
+        // host tries to promote them.
+        if (!isSuperfanOrBetter(membershipProfile)) {
+          return NextResponse.json(
+            { error: "Going live is a Superfan perk", upgrade: "/membership" },
+            { status: 403 },
+          );
+        }
         const { data: participant } = await supabase
           .from("space_participants")
           .select("role, left_at, host_muted")

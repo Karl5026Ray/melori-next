@@ -576,9 +576,11 @@ export default function SpaceDetailPage() {
 
   // ---- Agora audio lifecycle -----------------------------------------------
   // We (re)join whenever role changes. Audience → subscriber, speaker/host →
-  // publisher. Superfan+ only (server enforces on token endpoint).
+  // publisher. Option 1 (freemium): any signed-in user joins as a SUBSCRIBER to
+  // LISTEN for free; only speakers/hosts publish, and the token endpoint gates
+  // publisher tokens to Superfan+ so free users can't obtain one.
   useEffect(() => {
-    if (!isJoined || !user || !space?.agora_channel || !canParticipate) return;
+    if (!isJoined || !user || !space?.agora_channel) return;
 
     const myPart = participants.find(
       (p) => p.user_id === user.id && !p.left_at,

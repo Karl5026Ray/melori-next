@@ -126,10 +126,8 @@ export default function SettingsPage() {
       if (apiTier === "superfan" || apiTier === "artist") {
         void loadGallery();
       }
-      // Banner is artist-only; fetch the current cover_image_url once.
-      if (apiRole === "artist") {
-        void loadBanner();
-      }
+      // Banner is available to every signed-in user (profiles.banner_url).
+      void loadBanner();
     } catch (err: any) {
       setLoadError(err?.message ?? "Could not load your settings.");
       setState("load-error");
@@ -604,10 +602,10 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Artist Banner — artist accounts + admins (artists.cover_image_url) */}
-        {(role === "artist" || role === "admin") && (
+        {/* Profile Banner — available to every signed-in user (profiles.banner_url) */}
+        {(
           <section id="artist-banner" className="mb-8 scroll-mt-24 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-            <h2 className="text-lg font-semibold mb-5">Artist Banner</h2>
+            <h2 className="text-lg font-semibold mb-5">Profile Banner</h2>
             <div className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#c9a96e]/20 to-[#0a0a0a] aspect-[16/5]">
               {bannerUrl ? (
                 <img

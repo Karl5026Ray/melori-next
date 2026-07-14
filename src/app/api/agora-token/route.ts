@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RtcTokenBuilder, RtcRole } from "agora-token";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { isSuperfanOrBetter } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -23,7 +24,8 @@ const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE ?? "";
 // verifies:
 //   - the space exists and is live/scheduled,
 //   - the caller is a host/speaker if requesting a publisher token,
-//   - the caller is at least a member (any auth'd Superfan) for subscribe.
+//   - FREE-TIER (Option 1): any signed-in user may SUBSCRIBE (listen) for free;
+//     publishing (speaking) additionally requires Superfan-or-better.
 // The channel string returned in the response is the canonical one; the
 // client always uses that.
 export async function POST(req: NextRequest) {
@@ -35,10 +37,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Voice/room access requires an active Superfan-or-better membership.
-    const guard = await requireSuperfan(req);
+    // Any signed-in user may join to listen. Publishing is gated below.
+    const guard = await requireAuth(req);
     if (isGuardFailure(guard)) return guard;
-    const { userId } = guard.membership;
+    const { userId, profile } = guard.membership;
 
     const body = await req.json().catch(() => ({}));
     // Accept `space_id` (preferred) or fall back to `channel` for the small
@@ -94,6 +96,13 @@ export async function POST(req: NextRequest) {
     if (role === "publisher") {
       const isHost = space.host_id === userId;
       if (!isHost) {
+        // Speaking is a paid perk — free users may listen but not publish.
+        if (!isSuperfanOrBetter(profile)) {
+          return NextResponse.json(
+            { error: "Speaking is a Superfan perk", upgrade: "/membership" },
+            { status: 403 },
+          );
+        }
         const { data: participant } = await supabase
           .from("space_participants")
           .select("role, left_at, host_muted")

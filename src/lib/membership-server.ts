@@ -76,6 +76,18 @@ export async function getRequestMembership(
 // Guards: return a NextResponse (401/403) when the caller is not authorized,
 // otherwise return the resolved membership so the handler can proceed.
 
+// Auth-only guard: any signed-in user passes (no tier requirement). Used for
+// free-tier read/watch/listen access where publishing is gated separately.
+export async function requireAuth(
+  request: Request,
+): Promise<{ membership: RequestMembership } | NextResponse> {
+  const membership = await getRequestMembership(request);
+  if (!membership.userId) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+  return { membership };
+}
+
 export async function requireSuperfan(
   request: Request,
 ): Promise<{ membership: RequestMembership } | NextResponse> {

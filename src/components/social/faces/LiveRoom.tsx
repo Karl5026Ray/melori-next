@@ -61,6 +61,7 @@ interface LiveRoomProps {
   durationMinutes: number | null;
   mode: LiveMode;
   maxOnCamera: number; // host + guests ceiling (1 for solo, 2 duo, up to 8 group)
+  canPublish: boolean; // may this viewer go on camera? (host or Superfan+)
 }
 
 interface FloatingHeart {
@@ -96,6 +97,7 @@ export default function LiveRoom({
   durationMinutes,
   mode,
   maxOnCamera,
+  canPublish,
 }: LiveRoomProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -632,8 +634,8 @@ export default function LiveRoom({
               </button>
             </>
           )}
-          {/* Viewer in duo/group can raise a hand to request camera */}
-          {!isHost && !onCamera && !isSolo && (
+          {/* Superfan viewer in duo/group can raise a hand to request camera */}
+          {!isHost && !onCamera && !isSolo && canPublish && (
             <button
               onClick={toggleHand}
               className={`flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
@@ -641,6 +643,16 @@ export default function LiveRoom({
               <Hand className="h-5 w-5" />
               {handRaised ? "Requested" : "Join on camera"}
             </button>
+          )}
+          {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
+          {!isHost && !onCamera && !isSolo && !canPublish && (
+            <Link
+              href="/membership"
+              className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-3 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-white/25"
+            >
+              <Hand className="h-5 w-5" />
+              Go Superfan to join on camera
+            </Link>
           )}
         </div>
 

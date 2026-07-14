@@ -1,62 +1,72 @@
 import { NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { ensureArtistRow } from "@/lib/artist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Profile media for the calling artist: avatar (profile picture) and
-// cover_image_url (top-bar / banner photo).
+// Universal profile media for ANY signed-in user: avatar (profile picture) and
+// banner (top-bar / cover photo). Previously this was artist-only and wrote to
+// the `artists` table, so Superfan/free users had no banner at all. It now
+// writes to the shared `profiles` table (avatar_url / banner_url) so every
+// member can personalise their profile — a low-friction growth hook that fits
+// the Option 1 freemium model.
 //
 // POST  -> returns a signed upload URL scoped to the caller's own folder.
 //          Body: { filename: string, slot: "avatar" | "cover" }
-// PATCH -> saves an already-uploaded public URL onto the artist row.
+// PATCH -> saves an already-uploaded public URL onto the caller's profile row.
 //          Body: { publicUrl: string, slot: "avatar" | "cover" }
 //
-// The artist row is matched by profile_id === the caller's user id, so an
-// artist can only ever change their own photos.
+// The profile row is matched by id === the caller's user id, so a user can
+// only ever change their own photos.
 
-// We store profile media in the existing `covers` bucket. The dedicated
-// `artist-media` bucket was never provisioned in production, so uploads to it
-// silently failed for admins who don't happen to have one created. `covers` is
-// already used by the admin cover-art flow AND the social avatar flow, so we
-// know it exists and is publicly readable.
+// We store profile media in the existing `covers` bucket, which already exists
+// and is publicly readable (used by the admin cover-art and social avatar
+// flows). The dedicated `artist-media` bucket was never provisioned in prod.
 const BUCKET = "covers";
 
-function slotColumn(slot: unknown): "avatar_url" | "cover_image_url" | null {
+// Map the client slot to the profiles column. "cover" is the banner photo.
+function slotColumn(slot: unknown): "avatar_url" | "banner_url" | null {
   if (slot === "avatar") return "avatar_url";
-  if (slot === "cover") return "cover_image_url";
+  if (slot === "cover") return "banner_url";
   return null;
 }
 
-// GET -> returns the caller artist's current avatar_url / cover_image_url so
-// the Studio page can preview what's already saved.
+// GET -> returns the caller's current avatar_url / banner_url so the editor can
+// preview what's already saved. Shape keeps the legacy `artist` key + a
+// cover_image_url alias so existing clients keep working during rollout.
 export async function GET(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const userId = guard.membership.userId!;
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
-    .from("artists")
-    .select("id, avatar_url, cover_image_url")
-    .eq("profile_id", userId)
+    .from("profiles")
+    .select("id, avatar_url, banner_url")
+    .eq("id", userId)
     .maybeSingle();
 
   if (error) {
-    console.error("Artist profile-media GET error:", error);
+    console.error("Profile-media GET error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const media = data ?? { id: userId, avatar_url: null, banner_url: null };
   return NextResponse.json({
-    artist: data ?? { id: null, avatar_url: null, cover_image_url: null },
+    media,
+    // Back-compat aliases for older Studio client builds still in flight.
+    artist: {
+      id: media.id,
+      avatar_url: media.avatar_url,
+      cover_image_url: media.banner_url,
+    },
   });
 }
 
 export async function POST(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const { filename, slot } = await req.json().catch(() => ({}) as any);
@@ -71,6 +81,8 @@ export async function POST(req: Request) {
   const userId = guard.membership.userId!;
   const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_");
   const kind = slot === "avatar" ? "avatar" : "cover";
+  // Keep the existing `artists/<userId>/...` path prefix so the PATCH
+  // ownership check and any already-uploaded assets stay valid.
   const path = `artists/${userId}/${kind}_${Date.now()}_${safeName}`;
 
   const supabase = getSupabaseAdmin();
@@ -79,7 +91,7 @@ export async function POST(req: Request) {
     .createSignedUploadUrl(path);
 
   if (error || !data?.signedUrl) {
-    console.error("Artist profile-media signed URL error:", error);
+    console.error("Profile-media signed URL error:", error);
     return NextResponse.json(
       { error: error?.message ?? "Failed to create upload URL" },
       { status: 500 },
@@ -97,7 +109,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const { publicUrl, slot } = await req.json().catch(() => ({}) as any);
@@ -112,10 +124,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Invalid publicUrl" }, { status: 400 });
   }
 
-  // The client PATCHes back a public URL it just received from our own
-  // POST handler. Reject anything that doesn't look like it came from our
-  // Supabase Storage `covers` bucket so a caller can't smuggle an arbitrary
-  // (e.g. phishing) image URL onto their public artist profile.
+  // The client PATCHes back a public URL it just received from our own POST
+  // handler. Reject anything that doesn't reference the caller's own storage
+  // folder so a caller can't smuggle an arbitrary (e.g. phishing) image URL
+  // onto their public profile.
   const userId = guard.membership.userId!;
   const expectedPathFragment = `/storage/v1/object/public/${BUCKET}/artists/${userId}/`;
   if (!publicUrl.includes(expectedPathFragment)) {
@@ -124,30 +136,29 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
+
   const supabase = getSupabaseAdmin();
-
-  const resolved = await ensureArtistRow(userId, {}, supabase);
-  if (!resolved.id) {
-    return NextResponse.json(
-      { error: resolved.error ?? "Could not create artist row" },
-      { status: 500 },
-    );
-  }
-
   const { data, error } = await supabase
-    .from("artists")
+    .from("profiles")
     .update({ [column]: publicUrl, updated_at: new Date().toISOString() })
-    .eq("id", resolved.id)
-    .select("id, avatar_url, cover_image_url")
+    .eq("id", userId)
+    .select("id, avatar_url, banner_url")
     .single();
 
   if (error || !data) {
-    console.error("Artist profile-media save error:", error);
+    console.error("Profile-media save error:", error);
     return NextResponse.json(
       { error: error?.message ?? "Failed to save photo" },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({ artist: data });
+  return NextResponse.json({
+    media: data,
+    artist: {
+      id: data.id,
+      avatar_url: data.avatar_url,
+      cover_image_url: data.banner_url,
+    },
+  });
 }

@@ -55,7 +55,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col">
+      <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
         <PlayerProvider>
           <Header />
           {/* Extra bottom padding on mobile so content clears the fixed

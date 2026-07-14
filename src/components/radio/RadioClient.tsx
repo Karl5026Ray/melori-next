@@ -88,7 +88,7 @@ export default function RadioClient() {
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-40 md:pb-8">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-24 md:pb-8">
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-primary to-brand-accent text-white">

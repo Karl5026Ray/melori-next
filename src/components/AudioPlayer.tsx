@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
@@ -85,6 +86,11 @@ export default function AudioPlayer() {
 
   const fraction = duration > 0 ? currentTime / duration : 0;
 
+  // Melori Radio runs its own dual-deck player, so the global bar would be a
+  // confusing second set of controls there. Hide it on that route.
+  const pathname = usePathname();
+  const onRadio = pathname?.startsWith("/social/radio");
+
   // Collapsed state — lets the user tuck the bar away so it never blocks the
   // mobile nav. Playback keeps running; only the UI shrinks to a peek strip.
   // Persisted so the choice survives navigation/reloads.
@@ -103,6 +109,9 @@ export default function AudioPlayer() {
       return next;
     });
   };
+
+  // On the Radio route the page owns playback — don't render a second player.
+  if (onRadio) return null;
 
   // Collapsed: a slim, dismissible peek strip. overflow-hidden guarantees it can
   // never push the layout sideways and cover the nav buttons.

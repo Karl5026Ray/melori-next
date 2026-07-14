@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * ShareButton — a compact "share" arrow that lets a visitor share the Melori
@@ -42,7 +43,40 @@ export default function ShareButton({
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [canNativeShare, setCanNativeShare] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
+    null,
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // The popover is rendered through a portal to <body> so it can never be
+  // clipped by an ancestor with `overflow-hidden` (the hero section is
+  // overflow-hidden, which previously cut the menu off after the first row).
+  useEffect(() => setMounted(true), []);
+
+  // Position the portalled menu just under the trigger, centered on it, and
+  // clamped to the viewport so it never runs off-screen.
+  const MENU_W = 192;
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const place = () => {
+      const r = btnRef.current!.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(8, r.left + r.width / 2 - MENU_W / 2),
+        window.innerWidth - MENU_W - 8,
+      );
+      setCoords({ top: r.bottom + 8, left });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     setCanNativeShare(
@@ -50,11 +84,18 @@ export default function ShareButton({
     );
   }, []);
 
-  // Close the popover on outside click / Escape.
+  // Close the popover on outside click / Escape. Because the menu is
+  // portalled outside `wrapRef`, we also treat clicks inside the menu itself
+  // as "inside."
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (
+        wrapRef.current &&
+        !wrapRef.current.contains(t) &&
+        (!menuRef.current || !menuRef.current.contains(t))
+      ) {
         setOpen(false);
       }
     };
@@ -115,6 +156,7 @@ export default function ShareButton({
       <button
         type="button"
         onClick={handleClick}
+        ref={btnRef}
         aria-label={ARIA_LABEL}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -141,10 +183,15 @@ export default function ShareButton({
         </svg>
       </button>
 
-      {open && (
+      {open &&
+        mounted &&
+        coords &&
+        createPortal(
         <div
+          ref={menuRef}
           role="menu"
-          className="absolute left-1/2 z-50 mt-2 w-48 -translate-x-1/2 rounded-2xl border border-brand-border bg-brand-surface p-2 shadow-xl"
+          style={{ position: "fixed", top: coords.top, left: coords.left, width: MENU_W }}
+          className="z-[100] rounded-2xl border border-brand-border bg-brand-surface p-2 shadow-xl"
         >
           <p className="px-2 py-1 text-xs font-semibold text-text-secondary">
             Share to
@@ -185,8 +232,9 @@ export default function ShareButton({
               For Instagram, open on your phone to use the share sheet.
             </p>
           )}
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }

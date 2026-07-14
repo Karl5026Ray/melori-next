@@ -176,7 +176,7 @@ export default function MobileTabBar() {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-2">
               {launcherLinks.map((l) => {
                 const active = pathname.startsWith(l.href) && l.href !== "/";
                 return (
@@ -184,21 +184,21 @@ export default function MobileTabBar() {
                     key={l.label}
                     href={l.href}
                     onClick={() => setLauncherOpen(false)}
-                    className={`flex flex-col items-center gap-2 rounded-2xl border p-3 text-center transition-colors ${
+                    title={l.desc}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-center transition-colors ${
                       active
                         ? "border-brand-primary bg-brand-primary/10"
                         : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
                     }`}
                   >
                     <span
-                      className={`flex h-11 w-11 items-center justify-center rounded-full ${
+                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
                         active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
                       }`}
                     >
                       {l.icon}
                     </span>
-                    <span className="text-xs font-semibold leading-tight text-text-primary">{l.label}</span>
-                    <span className="text-[10px] leading-tight text-text-secondary">{l.desc}</span>
+                    <span className="text-[11px] font-semibold leading-tight text-text-primary">{l.label}</span>
                   </Link>
                 );
               })}

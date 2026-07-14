@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ReleaseCard from "@/components/ReleaseCard";
 import type { ReleaseListItem } from "@/lib/data";
 import {
@@ -11,6 +12,13 @@ type ReleaseSort,
 } from "@/lib/releaseSort";
 
 type TypeFilter = "all" | "album" | "single";
+
+// The nav's Albums/Singles tabs link to /music?type=album|single. Normalize the
+// raw query value to a valid TypeFilter so an unexpected/absent param falls back
+// to "all".
+function normalizeType(raw: string | null | undefined): TypeFilter {
+  return raw === "album" || raw === "single" ? raw : "all";
+}
 
 // Common music genres always offered in the filter, even when no published
 // release currently uses them. Casing matches the values stored on releases
@@ -44,7 +52,29 @@ externalQuery?: string;
 const [localQuery, setLocalQuery] = useState("");
 const query = externalQuery ?? localQuery;
 const [genre, setGenre] = useState("all");
-const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+const router = useRouter();
+const pathname = usePathname();
+const searchParams = useSearchParams();
+// The release-type filter is driven by the URL so the nav's Albums/Singles
+// tabs (which are just /music?type=album|single links) actually take effect —
+// and so clicking one clears the other instead of feeling "stuck together".
+const urlType = normalizeType(searchParams.get("type"));
+const [typeFilter, setTypeFilter] = useState<TypeFilter>(urlType);
+// Client-side nav between ?type=album and ?type=single doesn't remount this
+// component, so keep local state in sync when the param changes.
+useEffect(() => {
+  setTypeFilter(urlType);
+}, [urlType]);
+// Clicking an in-page pill updates the URL (single source of truth); the
+// effect above then syncs typeFilter. Keeps pills and nav tabs consistent.
+const selectType = (t: TypeFilter) => {
+  setTypeFilter(t);
+  const params = new URLSearchParams(Array.from(searchParams.entries()));
+  if (t === "all") params.delete("type");
+  else params.set("type", t);
+  const qs = params.toString();
+  router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+};
 const [sort, setSort] = useState<ReleaseSort>(DEFAULT_RELEASE_SORT);
 
 const genres = useMemo(() => {
@@ -101,7 +131,7 @@ key={t.key}
 type="button"
 role="tab"
 aria-selected={typeFilter === t.key}
-onClick={() => setTypeFilter(t.key)}
+onClick={() => selectType(t.key)}
 className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
 typeFilter === t.key
 ? "bg-brand-primary text-white"

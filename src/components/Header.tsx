@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import LocalNav from "@/components/nav/LocalNav";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -34,6 +33,9 @@ const navGroups: NavGroup[] = [
     items: [
       // Melori Mirror = the TikTok "For You"-style feed + who's live now.
       { label: "Melori Mirror", href: "/social/mirror" },
+      // Radio = the non-stop crossfade mix. Lives here so it's reachable from
+      // the menu on every screen size (not just the mobile bottom-bar M-menu).
+      { label: "Radio", href: "/social/radio" },
       // MM Spaces = the Clubhouse-style audio spaces.
       { label: "MM Spaces", href: "/social/spaces" },
       // MM Faces = the social LIVE video system (Live, Duo Live, 8-Person Live).
@@ -231,67 +233,16 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* Desktop nav */}
+        {/* Desktop bar: single hamburger (below) drives ALL section nav on
+           every screen size, matching the simpler menu Karl preferred. Here we
+           keep only the account menu + primary CTAs visible so signing in /
+           donating stays one click away. The old Discover/Community/For
+           Artists/About dropdown row was removed — those groups now live inside
+           the hamburger drawer. */}
         <nav
           ref={navRef}
           className="hidden md:flex items-center gap-2 lg:gap-4 text-sm"
         >
-          {navGroups.map((group) => {
-            const isOpen = openGroup === group.label;
-            return (
-              <div key={group.label} className="relative">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenGroup((cur) =>
-                      cur === group.label ? null : group.label
-                    )
-                  }
-                  aria-expanded={isOpen}
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  {group.label}
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    className={`h-3.5 w-3.5 transition-transform ${
-                      isOpen ? "rotate-180" : ""
-                    }`}
-                    aria-hidden
-                  >
-                    <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-                  </svg>
-                </button>
-                {isOpen && (
-                  <div className="absolute left-0 mt-2 min-w-44 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
-                    {group.items.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setOpenGroup(null)}
-                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {standaloneLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="rounded-md px-2 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
-            >
-              {link.label}
-            </Link>
-          ))}
-
           {user ? (
             <div className="relative">
               <button
@@ -414,7 +365,7 @@ export default function Header() {
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           aria-controls="mobile-nav"
-          className="md:hidden flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+          className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
         >
           <svg
             viewBox="0 0 24 24"
@@ -449,7 +400,7 @@ export default function Header() {
       {open && (
         <nav
           id="mobile-nav"
-          className="md:hidden border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
+          className="border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
           style={{
             // Reserve room for: top bar (4rem) + fixed audio player (~112px,
             // 152px with the sample-upgrade banner) + the mobile bottom tab
@@ -631,9 +582,6 @@ export default function Header() {
         </nav>
       )}
 
-      {/* Context-aware local nav bar: shows ONLY the current section's items
-         so each page sheds unrelated clutter. Renders nothing on Home. */}
-      <LocalNav />
     </header>
   );
 }

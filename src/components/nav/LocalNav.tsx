@@ -80,7 +80,11 @@ export default function LocalNav() {
   return (
     <nav
       aria-label="Section"
-      className="sticky top-16 z-30 border-b border-brand-border bg-brand-background/80 backdrop-blur"
+      // Mobile already reaches every one of these destinations from the bottom
+      // tab bar's M-menu launcher, so this scrolling context bar is pure
+      // duplication on small screens (Karl: "they are all the same thing in too
+      // many places"). Hide it below md; desktop keeps it unchanged.
+      className="hidden md:block sticky top-16 z-30 border-b border-brand-border bg-brand-background/80 backdrop-blur"
     >
       <div
         ref={scrollerRef}

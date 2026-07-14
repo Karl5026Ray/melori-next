@@ -108,7 +108,19 @@ export function useRadioMixer(pool: RadioTrack[]) {
   const preloadedNextUrlRef = useRef<string | null>(null);
   const userPausedRef = useRef(false);
   const volumeRef = useRef(1);
-  const sampleCapRef = useRef<number | null>(null);
+  // Sample cap is per-DECK, not global. Preloading the next track onto the idle
+  // deck must NOT overwrite the currently-audible deck's cap — doing so made the
+  // tick fire advance() against a stale cap, which chained into a runaway
+  // advance→reload loop that stalled playback after the first track. Keyed by
+  // the deck element itself so each deck carries its own preview window.
+  const capByDeckRef = useRef<WeakMap<HTMLAudioElement, number | null>>(
+    new WeakMap(),
+  );
+  // Guards a single in-flight advance so the 200ms tick can't stack multiple
+  // overlapping advances (the real cause of the repeated re-fetch loop).
+  const advancingRef = useRef(false);
+  // Bounds dead-track skipping so an all-unplayable pool can't recurse forever.
+  const deadSkipsRef = useRef(0);
 
   const [state, setState] = useState<RadioState>({
     ready: false,
@@ -223,8 +235,16 @@ export function useRadioMixer(pool: RadioTrack[]) {
   const advance = useCallback(
     async (immediate = false) => {
       if (fadingRef.current && !immediate) return;
+      // One advance at a time. Without this, the 200ms tick fired advance()
+      // repeatedly while the first was still awaiting loadDeck, hammering the
+      // stream endpoint for the same track and never actually progressing.
+      if (advancingRef.current) return;
+      advancingRef.current = true;
       const q = queueRef.current;
-      if (!q.length) return;
+      if (!q.length) {
+        advancingRef.current = false;
+        return;
+      }
 
       // Reshuffle when we reach the end (fresh "set").
       let nextIdx = idxRef.current + 1;
@@ -233,11 +253,17 @@ export function useRadioMixer(pool: RadioTrack[]) {
         nextIdx = 0;
       }
       const nextTrack = queueRef.current[nextIdx];
-      if (!nextTrack) return;
+      if (!nextTrack) {
+        advancingRef.current = false;
+        return;
+      }
 
       const cur = active();
       const nxt = idle();
-      if (!cur || !nxt) return;
+      if (!cur || !nxt) {
+        advancingRef.current = false;
+        return;
+      }
 
       // Heavier fade at set boundaries.
       const atSetBoundary = nextIdx % SET_SIZE === 0;
@@ -249,14 +275,28 @@ export function useRadioMixer(pool: RadioTrack[]) {
 
       const s = await loadDeck(nxt, nextTrack);
       if (!s?.url) {
-        // Skip a dead track: recurse forward without stacking fades.
+        // Skip a dead track: step the index forward and retry, but bound the
+        // recursion so a fully-unplayable pool can't spin forever.
         idxRef.current = nextIdx;
+        deadSkipsRef.current += 1;
         clearFade();
+        if (deadSkipsRef.current > queueRef.current.length) {
+          deadSkipsRef.current = 0;
+          advancingRef.current = false;
+          patch({ error: "No playable tracks right now." });
+          return;
+        }
+        advancingRef.current = false;
         void advance(true);
         return;
       }
-      sampleCapRef.current =
-        typeof s.previewEnd === "number" ? s.previewEnd : null;
+      deadSkipsRef.current = 0;
+      // Store the NEXT track's cap on the NEXT (idle) deck only — never touch
+      // the currently-audible deck's cap while it's still playing out.
+      capByDeckRef.current.set(
+        nxt,
+        typeof s.previewEnd === "number" ? s.previewEnd : null,
+      );
 
       nxt.volume = 0;
       try {
@@ -281,6 +321,7 @@ export function useRadioMixer(pool: RadioTrack[]) {
           cur.pause();
           activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
           idxRef.current = nextIdx;
+          advancingRef.current = false;
           patch({
             current: queueRef.current[nextIdx] ?? null,
             next:
@@ -303,7 +344,11 @@ export function useRadioMixer(pool: RadioTrack[]) {
     const tick = () => {
       const cur = active();
       if (!cur) return;
-      const cap = sampleCapRef.current;
+      // Read the cap belonging to THIS (currently-audible) deck. Using a
+      // per-deck value means preloading the next track never corrupts the cap
+      // the tick checks against — the old shared ref did, which is what drove
+      // the runaway advance loop.
+      const cap = capByDeckRef.current.get(cur) ?? null;
       const dur = cap ?? (Number.isFinite(cur.duration) ? cur.duration : 0);
       setState((s) => ({
         ...s,
@@ -363,8 +408,10 @@ export function useRadioMixer(pool: RadioTrack[]) {
       void advance(true);
       return;
     }
-    sampleCapRef.current =
-      typeof s.previewEnd === "number" ? s.previewEnd : null;
+    capByDeckRef.current.set(
+      cur,
+      typeof s.previewEnd === "number" ? s.previewEnd : null,
+    );
     cur.volume = volumeRef.current;
     try {
       userPausedRef.current = false;
@@ -423,8 +470,10 @@ export function useRadioMixer(pool: RadioTrack[]) {
         void (async () => {
           const s = await loadDeck(cur, queueRef.current[0]);
           if (s?.url) {
-            sampleCapRef.current =
-              typeof s.previewEnd === "number" ? s.previewEnd : null;
+            capByDeckRef.current.set(
+              cur,
+              typeof s.previewEnd === "number" ? s.previewEnd : null,
+            );
             cur.volume = volumeRef.current;
             userPausedRef.current = false;
             await cur.play().catch(() => undefined);

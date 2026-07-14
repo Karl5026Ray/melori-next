@@ -12,6 +12,7 @@ import {
   LogOut,
   Home,
   Plus,
+  Sparkles,
 } from "lucide-react";
 
 // Slimmed, orange-branded social nav. We keep only the destinations people
@@ -20,6 +21,7 @@ import {
 // this rail. Brand orange (#ff5500) replaces the old purple accents.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
+  { href: "/social/mirror", label: "Melori Mirror", icon: Sparkles },
   { href: "/social/spaces", label: "MM Spaces", icon: Radio },
   { href: "/social/live", label: "MM Faces", icon: Video },
   { href: "/social/community", label: "Community", icon: MessagesSquare },

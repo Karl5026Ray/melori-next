@@ -18,14 +18,32 @@
 }
 
 html {
-  /* Always reserve room for the vertical scrollbar so the layout width never
-     changes between short and tall pages. This is what causes the annoying
-     left-right "sway" when navigating: the scrollbar appears on a tall page,
-     shrinking the viewport by ~15px and shifting all centered content. With a
-     stable gutter the page stays put. */
+  /* CENTERING WITHOUT SWAY
+     ----------------------
+     The left-right "sway" when navigating happens when a vertical scrollbar
+     appears on a tall page and disappears on a short one: the viewport width
+     changes by ~15px and every mx-auto container shifts.
+
+     `scrollbar-gutter: stable` reserves the gutter permanently on all modern
+     browsers, so the content width never changes and centered layouts stay
+     rock-steady. We do NOT also set `overflow-y: scroll` here: combining the
+     two double-reserves space (gutter + a forced track) on Chromium/Firefox
+     and reintroduces a small offset. The forced scrollbar is applied ONLY as
+     an @supports fallback below, for browsers that lack scrollbar-gutter.
+
+     `overflow-x: hidden` is intentionally kept OFF <html>: setting it on the
+     root element silently disables `position: sticky` for all descendants
+     (needed for sticky headers / the Mirror ring row). We contain horizontal
+     overflow on <body> instead, which does not break sticky. */
   scrollbar-gutter: stable;
-  overflow-x: hidden;
-  overflow-y: scroll; /* fallback for browsers without scrollbar-gutter */
+}
+
+/* Fallback for older engines without scrollbar-gutter (e.g. Safari < 16):
+   force a permanent scrollbar track so the width still never changes. */
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
 }
 
 html,
@@ -33,10 +51,14 @@ body {
   background-color: var(--brand-background);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
-  /* Prevent horizontal scroll / left-right sliding on mobile */
-  overflow-x: hidden;
   max-width: 100%;
   width: 100%;
+}
+
+body {
+  /* Prevent horizontal scroll / left-right sliding on mobile. Contained on
+     <body> (not <html>) so descendant `position: sticky` keeps working. */
+  overflow-x: hidden;
 }
 
 /* Any element that opts into horizontal scrolling (carousels, tab strips)

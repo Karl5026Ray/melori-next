@@ -94,6 +94,22 @@ export default function Header() {
   const pathname = usePathname() ?? "/";
   const sectionCtx = getNavContext(pathname);
 
+  // When the current section already appears as a persistent global accordion
+  // group, we drop that global group from the mobile drawer to avoid showing
+  // the same section twice (the "This section" block above already surfaces
+  // its items). Maps a section context id -> the global navGroups label it
+  // duplicates. "Listening" maps to "Discover" (same intent, different label).
+  const sectionToGlobalLabel: Record<string, string | undefined> = {
+    listening: "Discover",
+    community: "Community",
+    artist: "For Artists",
+    about: "About",
+  };
+  const duplicateGlobalLabel =
+    sectionCtx.items.length > 0
+      ? sectionToGlobalLabel[sectionCtx.id]
+      : undefined;
+
   // Close desktop dropdowns on outside click / Escape.
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -610,8 +626,12 @@ export default function Header() {
 
             {/* Nav groups as collapsible accordions. Collapsed by default so
                the drawer stays short; opening one closes any other (one open
-               at a time). Reuses the desktop chevron-rotate pattern. */}
-            {navGroups.map((group) => {
+               at a time). Reuses the desktop chevron-rotate pattern.
+               We skip the group that duplicates the current section (its items
+               are already in the "This section" block above). */}
+            {navGroups
+              .filter((group) => group.label !== duplicateGlobalLabel)
+              .map((group) => {
               const isOpen = openMobileGroup === group.label;
               return (
                 <div key={group.label} className="border-b border-brand-border/60">

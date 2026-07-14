@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // Finds an existing 1:1 conversation between the caller and recipient, or
 // creates one. Refuses if either party has blocked the other.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
   const me = membership.userId;
@@ -86,5 +86,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ conversation_id: result.id });
+  // Message-request gating (IG-style). A brand-new 1:1 opens as a REQUEST
+  // (status='pending') so it lands in the recipient's Requests tab — unless the
+  // recipient already follows the initiator, in which case they've shown intent
+  // and the thread opens as a normal accepted conversation. Existing threads are
+  // never downgraded.
+  if (result.created) {
+    const { data: recipFollowsMe } = await supabase
+      .from("follows")
+      .select("id")
+      .eq("follower_id", recipientId)
+      .eq("following_id", me)
+      .maybeSingle();
+
+    const status = recipFollowsMe ? "accepted" : "pending";
+    await supabase
+      .from("conversations")
+      .update({ status, requested_by: me })
+      .eq("id", result.id);
+
+    return NextResponse.json({
+      conversation_id: result.id,
+      status,
+      is_request: status === "pending",
+    });
+  }
+
+  return NextResponse.json({ conversation_id: result.id, status: "accepted" });
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUuid } from "@/lib/validators";
 
@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 const MAX_MESSAGE_CHARS = 2000;
 
 // POST /api/social/messages — Send a message / reply in a conversation.
-// Commenting/replying is participation and requires an active Superfan-or-better
-// member. The sender is taken from the verified token, never the request body.
+// Option 1 (freemium): messaging is free for any signed-in user. The sender is
+// taken from the verified token, never the request body.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 

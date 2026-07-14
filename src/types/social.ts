@@ -123,6 +123,7 @@ export interface Message {
   content: string;
   created_at: string;
   is_edited: boolean;
+  deleted_at?: string | null;
 }
 
 export interface SocialVideo {

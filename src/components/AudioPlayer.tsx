@@ -56,6 +56,17 @@ function NextIcon() {
   );
 }
 
+function RadioIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+      <path d="M4.5 10.5 16 5" />
+      <rect x="3" y="10" width="18" height="10" rx="2" />
+      <circle cx="16" cy="15" r="2.5" />
+      <path d="M7 15h.01" />
+    </svg>
+  );
+}
+
 function VolumeIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -77,6 +88,10 @@ export default function AudioPlayer() {
     sampleEnded,
     hasNext,
     hasPrev,
+    radioMode,
+    radioLoading,
+    startRadio,
+    stopRadio,
     togglePlay,
     next,
     prev,
@@ -179,6 +194,11 @@ export default function AudioPlayer() {
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 truncate text-sm font-medium text-text-primary">
                     <span className="truncate">{current.title}</span>
+                    {radioMode && (
+                      <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
+                        Radio
+                      </span>
+                    )}
                     {isSample && (
                       <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
                         Preview
@@ -231,6 +251,29 @@ export default function AudioPlayer() {
               className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary disabled:opacity-30"
             >
               <NextIcon />
+            </button>
+
+            {/* Radio on/off toggle — turns the whole catalog into a non-stop
+                shuffle right here in the bar (no separate page). Highlighted
+                when active. */}
+            <button
+              type="button"
+              onClick={() => (radioMode ? stopRadio() : startRadio("all"))}
+              aria-label={radioMode ? "Turn radio off" : "Turn radio on"}
+              aria-pressed={radioMode}
+              title={radioMode ? "Radio on — tap to stop" : "Turn on Radio (non-stop shuffle)"}
+              className={`flex h-9 items-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                radioMode
+                  ? "bg-brand-primary/20 text-brand-primary"
+                  : "text-text-secondary hover:text-brand-primary"
+              }`}
+            >
+              {radioLoading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-primary/40 border-t-brand-primary" />
+              ) : (
+                <RadioIcon />
+              )}
+              <span className="hidden text-xs font-semibold sm:inline">Radio</span>
             </button>
 
             {/* Volume — hidden on very small screens */}

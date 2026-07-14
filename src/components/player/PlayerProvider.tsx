@@ -57,6 +57,13 @@ interface PlayerContextValue {
   isSample: boolean;
   // True once a free preview has hit its 30s cap and playback was stopped.
   sampleEnded: boolean;
+  // Radio mode: the shared player is fed the whole shuffled catalog and
+  // auto-reshuffles forever, so "Radio" is just a toggle on the one bar the
+  // user already sees — no separate page or second audio engine.
+  radioMode: boolean;
+  radioLoading: boolean;
+  startRadio: (mode?: "all" | "foryou") => void;
+  stopRadio: () => void;
   playQueue: (tracks: PlayerTrack[], startIndex: number) => void;
   togglePlay: () => void;
   next: () => void;
@@ -110,6 +117,14 @@ export default function PlayerProvider({
   const [error, setError] = useState<string | null>(null);
   const [isSample, setIsSample] = useState(false);
   const [sampleEnded, setSampleEnded] = useState(false);
+  const [radioMode, setRadioMode] = useState(false);
+  const [radioLoading, setRadioLoading] = useState(false);
+  // Mirror radioMode into a ref so the (stable) auto-advance handler can read
+  // the latest value without being torn down/rebound on every toggle.
+  const radioModeRef = useRef(false);
+  useEffect(() => {
+    radioModeRef.current = radioMode;
+  }, [radioMode]);
 
   // --- single shared <audio> element + event wiring ---
   useEffect(() => {
@@ -327,6 +342,10 @@ export default function PlayerProvider({
     (tracks: PlayerTrack[], startIndex: number) => {
       const target = tracks[startIndex];
       if (!target) return;
+      // A deliberate track/queue selection exits radio mode so we don't
+      // reshuffle away from what the user just chose.
+      setRadioMode(false);
+      radioModeRef.current = false;
       // Clicking the already-active track toggles play/pause. Compare via
       // trackKey so legacy id=5 and studio id="5" never masquerade as each
       // other on mixed lists.
@@ -346,8 +365,74 @@ export default function PlayerProvider({
     [current, activateIndex, togglePlay],
   );
 
+  // --- Radio mode -----------------------------------------------------------
+  // Fisher–Yates shuffle (no adjacent-artist repair here; the bar is a simple
+  // sequential player — good enough for a "turn radio on" toggle).
+  function shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  const startRadio = useCallback(
+    async (mode: "all" | "foryou" = "all") => {
+      setRadioLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/radio/pool?mode=${mode}`, {
+          cache: "no-store",
+          headers: await authHeaders(),
+        });
+        if (!res.ok) throw new Error("pool request failed");
+        const data: {
+          tracks?: Array<{
+            id: number | string;
+            sourceType?: TrackSource;
+            title: string;
+            artistName: string | null;
+            coverUrl: string | null;
+          }>;
+        } = await res.json();
+        const pool = (data.tracks ?? []).map<PlayerTrack>((t) => ({
+          id: t.id,
+          title: t.title,
+          artistName: t.artistName,
+          coverUrl: t.coverUrl,
+          sourceType: t.sourceType ?? "legacy",
+        }));
+        if (!pool.length) {
+          setError("No tracks available for radio right now.");
+          return;
+        }
+        setRadioMode(true);
+        radioModeRef.current = true;
+        activateIndex(shuffle(pool), 0, true);
+      } catch {
+        setError("Couldn't start radio.");
+      } finally {
+        setRadioLoading(false);
+      }
+    },
+    [activateIndex],
+  );
+
+  const stopRadio = useCallback(() => {
+    setRadioMode(false);
+    radioModeRef.current = false;
+    const audio = audioRef.current;
+    if (audio) {
+      userPausedRef.current = true;
+      audio.pause();
+    }
+  }, []);
+
   const next = useCallback(() => {
     if (index + 1 < queue.length) activateIndex(queue, index + 1, true);
+    else if (radioModeRef.current && queue.length)
+      activateIndex(shuffle(queue), 0, true);
   }, [index, queue, activateIndex]);
 
   const seek = useCallback((fraction: number) => {
@@ -377,6 +462,9 @@ export default function PlayerProvider({
       if (userPausedRef.current) return;
       if (index + 1 < queue.length) {
         activateIndex(queue, index + 1, true);
+      } else if (radioModeRef.current && queue.length) {
+        // Radio mode never ends: reshuffle the whole catalog and keep going.
+        activateIndex(shuffle(queue), 0, true);
       } else {
         // Last track finished: stop cleanly but keep it shown, paused at its
         // end. Do NOT reset progress or clear `current` (no placeholder wipe).
@@ -399,6 +487,10 @@ export default function PlayerProvider({
         error,
         isSample,
         sampleEnded,
+        radioMode,
+        radioLoading,
+        startRadio,
+        stopRadio,
         hasNext: index + 1 < queue.length,
         hasPrev: queue.length > 1 && index > 0,
         playQueue,

@@ -45,6 +45,10 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         { label: "MM Faces", href: "/social/live" },
         { label: "Waves", href: "/social/waves" },
         { label: "Comments", href: "/social/community" },
+        // Social video clips (distinct from music Videos under /video). Was
+        // orphaned — reachable only from the mobile launcher — so surface it
+        // in the Community rail too.
+        { label: "Clips", href: "/social/video" },
       ],
     },
     test: (p) => p.startsWith("/social"),
@@ -113,7 +117,11 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       label: "Listening",
       items: [
         { label: "All Music", href: "/music" },
-        { label: "Albums", href: "/albums" },
+        // Point at the music catalog's album filter, NOT /albums — /albums has
+        // only a [slug] detail route (no index page), so a bare /albums 404s
+        // (and Next prefetch surfaced it as a console 404 on every Listening
+        // page). This matches the Header's Discover -> Albums target.
+        { label: "Albums", href: "/music?type=album" },
         { label: "Singles", href: "/music?type=single" },
         { label: "Videos", href: "/video" },
         { label: "Featured Artist", href: "/featured-artist" },

@@ -77,6 +77,11 @@ create trigger saved_playlist_tracks_touch_trg
   after insert or delete on public.saved_playlist_tracks
   for each row execute function public.saved_playlist_touch();
 
+-- Trigger-only helper: never call it directly via the REST RPC surface. The
+-- trigger runs as the table owner regardless, so revoke EXECUTE from the API
+-- roles (closes db-linter lints 0028/0029 for this function).
+revoke execute on function public.saved_playlist_touch() from anon, authenticated, public;
+
 -- ---------------------------------------------------------------------
 -- RLS
 -- ---------------------------------------------------------------------

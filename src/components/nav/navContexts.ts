@@ -41,6 +41,7 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       label: "Community",
       items: [
         { label: "Melori Mirror", href: "/social/mirror" },
+        { label: "Radio", href: "/social/radio" },
         { label: "MM Spaces", href: "/social/spaces" },
         { label: "MM Faces", href: "/social/live" },
         { label: "Waves", href: "/social/waves" },

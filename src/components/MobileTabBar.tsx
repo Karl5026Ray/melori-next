@@ -8,12 +8,11 @@ import { supabase } from "@/lib/supabase";
 import {
   User as UserIcon,
   Radio,
+  RadioTower,
   Video,
   MessagesSquare,
   MessageSquare,
   Hand,
-  Clapperboard,
-  Music,
   Sparkles,
   X,
 } from "lucide-react";
@@ -128,13 +127,13 @@ export default function MobileTabBar() {
   // Launcher destinations — everything that used to crowd the side menu, one tap away.
   const launcherLinks: { label: string; href: string; icon: React.ReactNode; desc: string }[] = [
     { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
+    { label: "Radio", href: "/social/radio", icon: <Radio className="h-5 w-5" />, desc: "Non-stop mix" },
     { label: "Profile", href: user ? "/social/profile" : "/social/auth", icon: <UserIcon className="h-5 w-5" />, desc: "Your page" },
-    { label: "MM Spaces", href: "/social/spaces", icon: <Radio className="h-5 w-5" />, desc: "Live audio rooms" },
+    { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
     { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
     { label: "Community", href: "/social/community", icon: <MessagesSquare className="h-5 w-5" />, desc: "Posts & feed" },
     { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
     { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
-    { label: "Videos", href: "/social/video", icon: <Clapperboard className="h-5 w-5" />, desc: "Watch clips" },
   ];
 
   function isActive(tab: Tab): boolean {

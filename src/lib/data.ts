@@ -228,6 +228,218 @@ export async function getPublishedStudioTracks(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Melori Radio — the shared track pool.
+//
+// The radio plays EVERY published track across the whole site in one mixed
+// rotation, so it unions the two audio sources into a single normalized shape:
+//   - legacy `tracks` (integer id, streamed via /api/tracks/[id]/stream)
+//   - `studio_tracks` (uuid id, streamed via /api/studio/tracks/[id]/stream)
+// We only return metadata here (title/artist/cover/duration/genre) plus the
+// id + sourceType; the actual audio URL is fetched per-track at play time via
+// the existing signed-URL stream endpoints, so membership/preview gating is
+// applied automatically and identically to the rest of the site.
+export interface RadioTrack {
+  id: number | string;
+  sourceType: "legacy" | "studio";
+  title: string;
+  artistName: string | null;
+  coverUrl: string | null;
+  album: string | null;
+  genre: string | null;
+  durationSeconds: number | null;
+  // Owning artist's profile id, when known. Used to match against the
+  // listener's follow graph for the "For You" station.
+  ownerProfileId?: string | null;
+  // Personalization score ("For You" station only). Higher = surface sooner /
+  // more often. Absent/0 for the plain all-catalog shuffle.
+  score?: number;
+}
+
+export async function getRadioPool(): Promise<RadioTrack[]> {
+  const supabase = getSupabaseAdmin();
+
+  // Legacy published tracks, joined out to release (cover/title) + artist name
+  // + owning artist profile_id (for follow-graph matching).
+  const legacyPromise = supabase
+    .from("tracks")
+    .select(
+      "id, title, duration_seconds, is_published, moderation_status, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
+    )
+    .eq("is_published", true)
+    .or("moderation_status.is.null,moderation_status.eq.clean");
+
+  // Studio published tracks (profile_id = uploader).
+  const studioPromise = supabase
+    .from("studio_tracks")
+    .select(
+      "id, title, artist, album, genre, cover_url, duration, status, profile_id",
+    )
+    .eq("status", "published");
+
+  const [legacyRes, studioRes] = await Promise.all([
+    legacyPromise,
+    studioPromise,
+  ]);
+
+  const pool: RadioTrack[] = [];
+
+  if (!legacyRes.error && legacyRes.data) {
+    for (const row of legacyRes.data as any[]) {
+      const rel = firstOrSelf(row.release);
+      // Skip tracks whose parent release is unpublished.
+      if (rel && rel.is_published === false) continue;
+      const artist = rel ? firstOrSelf(rel.artist) : null;
+      const genre = artist ? firstOrSelf(artist.genre) : null;
+      pool.push({
+        id: row.id as number,
+        sourceType: "legacy",
+        title: row.title ?? "Untitled",
+        artistName: artist?.name ?? null,
+        coverUrl: rel?.cover_art_url ?? null,
+        album: rel?.title ?? null,
+        genre: genre?.name ?? null,
+        ownerProfileId: artist?.profile_id ?? null,
+        durationSeconds:
+          typeof row.duration_seconds === "number"
+            ? row.duration_seconds
+            : null,
+      });
+    }
+  } else if (legacyRes.error) {
+    console.error("getRadioPool legacy error", legacyRes.error.message);
+  }
+
+  if (!studioRes.error && studioRes.data) {
+    for (const row of studioRes.data as any[]) {
+      pool.push({
+        id: row.id as string,
+        sourceType: "studio",
+        title: row.title ?? "Untitled",
+        artistName: row.artist ?? null,
+        coverUrl: row.cover_url ?? null,
+        album: row.album ?? null,
+        genre: row.genre ?? null,
+        ownerProfileId: row.profile_id ?? null,
+        durationSeconds:
+          typeof row.duration === "number" ? row.duration : null,
+      });
+    }
+  } else if (studioRes.error) {
+    console.error("getRadioPool studio error", studioRes.error.message);
+  }
+
+  return pool;
+}
+
+// The "For You" station. Scores every track in the pool from the listener's
+// own signals and returns tracks carrying a `score` the client uses for a
+// WEIGHTED shuffle (higher score = more likely to surface sooner / more often).
+// It stays a radio, not a ranked list.
+//
+// Signals (all from existing tables, no new schema):
+//   +6  track by an artist the listener FOLLOWS (follows -> artist profile_id)
+//   +3  track in a GENRE the listener has engaged with (follows/listens), scaled
+//   +2  track the listener has LISTENED to before (recency-weighted)
+//   +   small random jitter so discovery tracks still surface (radio feel)
+//
+// Graceful fallback: a logged-out user, or one with no follows/listens, gets
+// the plain pool back unscored (identical to All Tracks) so there's never a
+// dead "nothing personalized yet" state — the UI just shows a gentle hint.
+export async function getPersonalizedRadioPool(
+  userId: string | null,
+): Promise<{ tracks: RadioTrack[]; personalized: boolean }> {
+  const pool = await getRadioPool();
+  if (!userId || pool.length === 0) {
+    return { tracks: pool, personalized: false };
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  // 1) Who does the listener follow? (following_id are profile ids)
+  const followsRes = await supabase
+    .from("follows")
+    .select("following_id")
+    .eq("follower_id", userId);
+  const followedProfileIds = new Set<string>(
+    (followsRes.data ?? []).map((r: any) => r.following_id).filter(Boolean),
+  );
+
+  // 2) What has the listener played? Resolve to track ids + recency.
+  const listensRes = await supabase
+    .from("track_listens")
+    .select("legacy_track_id, studio_track_id, listened_at")
+    .eq("listener_id", userId)
+    .order("listened_at", { ascending: false })
+    .limit(500);
+  const listenedLegacy = new Map<number, number>(); // id -> recency weight
+  const listenedStudio = new Map<string, number>();
+  const now = Date.now();
+  for (const r of (listensRes.data ?? []) as any[]) {
+    // Recency weight: 1.0 for today, decaying to ~0.3 over ~60 days.
+    const t = r.listened_at ? new Date(r.listened_at).getTime() : now;
+    const days = Math.max(0, (now - t) / 86_400_000);
+    const w = Math.max(0.3, 1 - days / 90);
+    if (r.legacy_track_id != null) {
+      listenedLegacy.set(
+        r.legacy_track_id,
+        Math.max(listenedLegacy.get(r.legacy_track_id) ?? 0, w),
+      );
+    }
+    if (r.studio_track_id != null) {
+      listenedStudio.set(
+        r.studio_track_id,
+        Math.max(listenedStudio.get(r.studio_track_id) ?? 0, w),
+      );
+    }
+  }
+
+  const hasSignal =
+    followedProfileIds.size > 0 ||
+    listenedLegacy.size > 0 ||
+    listenedStudio.size > 0;
+  if (!hasSignal) {
+    return { tracks: pool, personalized: false };
+  }
+
+  // 3) Build a genre-affinity map from the tracks tied to the listener's
+  //    follows + listens, so we can boost OTHER tracks in those genres.
+  const genreAffinity = new Map<string, number>();
+  for (const t of pool) {
+    const followed =
+      t.ownerProfileId != null && followedProfileIds.has(t.ownerProfileId);
+    const listened =
+      (t.sourceType === "legacy" &&
+        listenedLegacy.has(t.id as number)) ||
+      (t.sourceType === "studio" && listenedStudio.has(t.id as string));
+    if ((followed || listened) && t.genre) {
+      genreAffinity.set(t.genre, (genreAffinity.get(t.genre) ?? 0) + 1);
+    }
+  }
+  const maxGenre = Math.max(1, ...Array.from(genreAffinity.values()));
+
+  // 4) Score every track.
+  const scored = pool.map((t) => {
+    let score = 0;
+    if (t.ownerProfileId != null && followedProfileIds.has(t.ownerProfileId)) {
+      score += 6;
+    }
+    const listenW =
+      t.sourceType === "legacy"
+        ? listenedLegacy.get(t.id as number)
+        : listenedStudio.get(t.id as string);
+    if (listenW) score += 2 * listenW;
+    if (t.genre && genreAffinity.has(t.genre)) {
+      score += 3 * (genreAffinity.get(t.genre)! / maxGenre);
+    }
+    // Discovery jitter so unheard tracks still appear.
+    score += Math.random() * 1.5;
+    return { ...t, score };
+  });
+
+  return { tracks: scored, personalized: true };
+}
+
 export async function getReleaseBySlug(slug: string): Promise<{
   release: Release;
   artist: ArtistRef | null;

@@ -26,6 +26,7 @@ async function getInitialFeed() {
          id, display_name, username, avatar_url, verified, role
        )`,
     )
+    .gt("expires_at", new Date().toISOString()) // 24h rotation (migration 020)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit + 1);

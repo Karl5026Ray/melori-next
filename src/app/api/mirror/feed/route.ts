@@ -13,10 +13,12 @@ export const dynamic = "force-dynamic";
 // Pagination is KEYSET (not offset): we page on (created_at DESC, id DESC).
 // Offset pagination drifts as new posts arrive at the top; keyset is stable.
 //
-// GROUNDWORK for the Kimi "24-hour rotation" plan: social_videos has no
-// expires_at yet, so nothing is filtered by expiry today. When the feed_items
-// / expires_at migration lands, add `.gt("expires_at", nowIso)` here and the
-// rotation switches on with no client change.
+// 24-HOUR ROTATION (Kimi feed-architecture plan, migration 020): social_videos
+// now has expires_at (created_at + 24h via a BEFORE INSERT trigger). We return
+// only rows whose expires_at is still in the future, so the Mirror feed rotates
+// automatically after 24h. A pg_cron job also sweeps expired rows into
+// social_videos_archive every 10 min, so even between sweeps an expired post is
+// never shown here.
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
            id, display_name, username, avatar_url, verified, role
          )`,
       )
+      .gt("expires_at", new Date().toISOString()) // 24h rotation filter
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .limit(limit + 1); // fetch one extra to know if another page exists

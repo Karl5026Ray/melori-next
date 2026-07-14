@@ -93,6 +93,7 @@ export default function Header() {
       if (e.key === "Escape") {
         setOpenGroup(null);
         setAccountOpen(false);
+        setOpen(false);
       }
     }
     document.addEventListener("mousedown", onClick);
@@ -102,6 +103,17 @@ export default function Header() {
       document.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  // Lock body scroll while the slide-in drawer is open so the page behind it
+  // stays put (a contained off-canvas panel, not a page that keeps scrolling).
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
 
   // Track Supabase auth state so the header can show Log In vs. an account menu.
   useEffect(() => {
@@ -385,38 +397,59 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Mobile menu panel.
-         - Uses 100dvh (dynamic viewport height) so mobile Safari/Chrome URL
-           bar collapsing/expanding doesn't push the drawer under the fixed
-           audio player.
-         - Height is capped above the fixed audio player (approx 112px normal,
-           152px with sample-preview upgrade banner). Reserving 168px leaves
-           a comfortable gap on all states.
-         - The Log In / account block is pinned at the TOP of the drawer so
-           it's always the first thing you see when you tap the hamburger,
-           regardless of scroll position.
-         - The panel itself is scrollable so overflow content is always
-           reachable. */}
-      {open && (
-        <nav
-          id="mobile-nav"
-          className="border-t border-brand-border bg-brand-background overflow-y-auto overscroll-contain"
+      {/* Slide-in navigation drawer (left side).
+         Karl's ask: one contained menu that slides in from the left over a dim
+         backdrop — not a drop-down bolted under the header, and not two
+         separate places to reach sections. The same drawer now drives ALL
+         section nav on every screen size.
+         - Backdrop scrim: dims + click-to-close the page behind it.
+         - Panel: fixed to the LEFT edge, full height, slides in via translate-x.
+         - Uses 100dvh so mobile URL-bar collapse doesn't misalign it.
+         - Account/Log-In block pinned at the top; body below scrolls. */}
+      {/* Backdrop */}
+      <div
+        onClick={() => setOpen(false)}
+        aria-hidden
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      />
+      {/* Left drawer panel */}
+      <nav
+        id="mobile-nav"
+        aria-label="Main menu"
+        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Drawer header: brand + close button so the panel feels self-contained. */}
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-brand-border px-4">
+          <Link
+            href="/"
+            onClick={() => setOpen(false)}
+            aria-label="Melori — Home"
+            className="flex items-center gap-2"
+          >
+            <Image src="/logo/logo.png" alt="MELORI Music" width={32} height={32} />
+            <span className="font-bold tracking-wide">MELORI MUSIC</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close menu"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-5 w-5" aria-hidden>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div
+          className="flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-2"
           style={{
-            // Reserve room for: top bar (4rem) + fixed audio player (~112px,
-            // 152px with the sample-upgrade banner) + the mobile bottom tab
-            // bar (h-14 = 56px). 224px total keeps a comfortable gap so the
-            // drawer never hides behind the player or the tab bar.
-            maxHeight:
-              "calc(100dvh - 4rem - 224px - env(safe-area-inset-bottom))",
+            paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
           }}
         >
-          <div
-            className="max-w-6xl mx-auto px-4 py-2 flex flex-col"
-            style={{
-              paddingBottom:
-                "calc(env(safe-area-inset-bottom) + 1rem)",
-            }}
-          >
             {/* Account / Log In — pinned to the top of the drawer so it's
                visible immediately without scrolling. */}
             {user ? (
@@ -578,9 +611,8 @@ export default function Header() {
             >
               Donate
             </Link>
-          </div>
-        </nav>
-      )}
+        </div>
+      </nav>
 
     </header>
   );

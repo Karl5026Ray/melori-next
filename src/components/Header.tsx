@@ -225,25 +225,54 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative h-16 flex items-center justify-between gap-3">
-        {/* Brand M — a plain Home link. Melori Mirror now lives in the
-           bottom-bar launcher (MobileTabBar), NOT on the brand mark. */}
-        <Link
-          href="/"
-          onClick={() => setOpen(false)}
-          aria-label="Melori — Home"
-          className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
-        >
-          <Image
-            src="/logo/logo.png"
-            alt="MELORI Music"
-            width={36}
-            height={36}
-            priority
-          />
-          <span className="hidden sm:inline font-bold tracking-wide">
-            MELORI MUSIC
-          </span>
-        </Link>
+        {/* Left cluster: hamburger toggle FIRST, then the brand mark. The menu
+           opens from the left, so its trigger lives on the left too. */}
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            aria-controls="mobile-nav"
+            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="h-6 w-6"
+              aria-hidden
+            >
+              {open ? (
+                <path d="M6 6l12 12M18 6L6 18" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              )}
+            </svg>
+          </button>
+
+          {/* Brand M — a plain Home link. Melori Mirror now lives in the
+             bottom-bar launcher (MobileTabBar), NOT on the brand mark. */}
+          <Link
+            href="/"
+            onClick={() => setOpen(false)}
+            aria-label="Melori — Home"
+            className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
+          >
+            <Image
+              src="/logo/logo.png"
+              alt="MELORI Music"
+              width={36}
+              height={36}
+              priority
+            />
+            <span className="hidden sm:inline font-bold tracking-wide">
+              MELORI MUSIC
+            </span>
+          </Link>
+        </div>
 
         {/* Desktop bar: single hamburger (below) drives ALL section nav on
            every screen size, matching the simpler menu Karl preferred. Here we
@@ -366,35 +395,8 @@ export default function Header() {
             Donate
           </Link>
         </nav>
-
-        {/* Mobile hamburger toggle. Log In / Account controls live INSIDE the
-           drawer (pinned at the top of the drawer so they're always the first
-           thing visible when it opens), so we no longer render a duplicate
-           Sign In pill on the top bar. */}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-          aria-controls="mobile-nav"
-          className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            className="h-6 w-6"
-            aria-hidden
-          >
-            {open ? (
-              <path d="M6 6l12 12M18 6L6 18" />
-            ) : (
-              <path d="M4 7h16M4 12h16M4 17h16" />
-            )}
-          </svg>
-        </button>
+        {/* Hamburger toggle moved to the LEFT cluster (top of file), next to
+           the brand mark, since the drawer opens from the left. */}
       </div>
 
       {/* Slide-in navigation drawer (left side).

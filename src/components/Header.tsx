@@ -5,34 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import CoverImage from "@/components/CoverImage";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
-type ArtistLink = {
-  id: number;
-  name: string;
-  slug: string;
-  avatar_url: string | null;
-};
-
-// How many artists to show in the nav dropdown before the "View all" link.
-const ARTIST_DROPDOWN_LIMIT = 8;
-
-// Small round avatar for the Artists dropdown rows. Uses CoverImage (plain
-// <img> + branded placeholder) so we don't have to allowlist the Supabase
-// storage host in next.config.
-function ArtistAvatar({ src, name }: { src: string | null; name: string }) {
-  return (
-    <CoverImage
-      src={src}
-      alt={name}
-      name={name}
-      className="h-7 w-7 shrink-0"
-      rounded="rounded-full"
-    />
-  );
-}
 
 // Desktop nav restructured per the KIMI "progressive disclosure" spec
 // (Discover / Community / For Artists buckets), but adapted to Melori's REAL
@@ -56,6 +31,8 @@ const navGroups: NavGroup[] = [
     // Community = the social layer.
     label: "Community",
     items: [
+      // Melori Mirror = the TikTok "For You"-style feed + who's live now.
+      { label: "Melori Mirror", href: "/social/mirror" },
       // MM Spaces = the Clubhouse-style audio spaces.
       { label: "MM Spaces", href: "/social/spaces" },
       // MM Faces = the social LIVE video system (Live, Duo Live, 8-Person Live).
@@ -65,12 +42,15 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    // For Artists = tools + onboarding for creators.
+    // For Artists = tools + onboarding for creators. The old standalone
+    // "Artists" dropdown is folded in here as "Current Artists" (see below),
+    // sitting right next to "Become an Artist" so discovery + onboarding live
+    // together. Store was promoted to a top-level nav item.
     label: "For Artists",
     items: [
       { label: "Become an Artist", href: "/register" },
+      { label: "Current Artists", href: "/artists" },
       { label: "Artist Studio", href: "/studio" },
-      { label: "Store", href: "/store" },
     ],
   },
   {
@@ -82,39 +62,22 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-// Standalones folded into the buckets above (Featured Artist -> Discover,
-// Store -> For Artists) to honor the "never more than ~4 top-level items" rule.
-const standaloneLinks: NavItem[] = [];
+// Store promoted to a top-level nav item (per Karl's request it replaces the
+// old standalone "Artists" link, which is now folded into For Artists as
+// "Current Artists"). Featured Artist stays under Discover.
+const standaloneLinks: NavItem[] = [{ label: "Store", href: "/store" }];
 
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
   const [accountOpen, setAccountOpen] = useState(false); // desktop account menu
+  const [mSelectorOpen, setMSelectorOpen] = useState(false); // M-logo selector menu
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isArtist, setIsArtist] = useState(false);
-  const [artists, setArtists] = useState<ArtistLink[]>([]);
   const navRef = useRef<HTMLElement>(null);
-
-  // Load published artists once for the nav "Artists" dropdown. Data-driven so
-  // newly published artists appear automatically. Failure is non-fatal — the
-  // dropdown still offers the "View all artists" link.
-  useEffect(() => {
-    let active = true;
-    fetch("/api/artists")
-      .then((res) => (res.ok ? res.json() : { artists: [] }))
-      .then((data: { artists?: ArtistLink[] }) => {
-        if (active) setArtists(data.artists ?? []);
-      })
-      .catch(() => {
-        if (active) setArtists([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // Close desktop dropdowns on outside click / Escape.
   useEffect(() => {
@@ -123,11 +86,18 @@ export default function Header() {
         setOpenGroup(null);
         setAccountOpen(false);
       }
+      // The M selector lives outside navRef (top-left), so close it on any
+      // click that isn't inside its own menu.
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-m-selector]")) {
+        setMSelectorOpen(false);
+      }
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpenGroup(null);
         setAccountOpen(false);
+        setMSelectorOpen(false);
       }
     }
     document.addEventListener("mousedown", onClick);
@@ -248,18 +218,69 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 bg-brand-background/90 backdrop-blur border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative h-16 flex items-center justify-between gap-3">
-        <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 shrink-0">
-          <Image
-            src="/logo/logo.png"
-            alt="MELORI Music"
-            width={36}
-            height={36}
-            priority
-          />
-          <span className="hidden sm:inline font-bold tracking-wide">
-            MELORI MUSIC
-          </span>
-        </Link>
+        {/* M SELECTOR — the logo is a click-dropdown (Home + Melori Mirror)
+           rather than a plain Home link, so Mirror is reachable straight from
+           the brand mark while Home stays one tap away. */}
+        <div className="relative shrink-0" data-m-selector>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setMSelectorOpen((v) => !v);
+            }}
+            aria-expanded={mSelectorOpen}
+            aria-haspopup="menu"
+            aria-label="Melori menu"
+            className="flex items-center gap-2 rounded-md transition-opacity hover:opacity-90"
+          >
+            <Image
+              src="/logo/logo.png"
+              alt="MELORI Music"
+              width={36}
+              height={36}
+              priority
+            />
+            <span className="hidden sm:inline font-bold tracking-wide">
+              MELORI MUSIC
+            </span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              className={`h-3.5 w-3.5 text-text-secondary transition-transform ${
+                mSelectorOpen ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            >
+              <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+            </svg>
+          </button>
+          {mSelectorOpen && (
+            <div
+              role="menu"
+              className="absolute left-0 mt-2 min-w-48 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl"
+            >
+              <Link
+                href="/"
+                role="menuitem"
+                onClick={() => setMSelectorOpen(false)}
+                className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+              >
+                Home
+              </Link>
+              <Link
+                href="/social/mirror"
+                role="menuitem"
+                onClick={() => setMSelectorOpen(false)}
+                className="flex items-center gap-2 px-4 py-2.5 font-semibold text-brand-primary transition-colors hover:bg-white/5"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" />
+                Melori Mirror
+              </Link>
+            </div>
+          )}
+        </div>
 
         {/* Desktop nav */}
         <nav
@@ -311,58 +332,6 @@ export default function Header() {
               </div>
             );
           })}
-
-          {/* Artists dropdown — data-driven list of published artists with
-             photos, plus a "View all artists" link. */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() =>
-                setOpenGroup((cur) => (cur === "Artists" ? null : "Artists"))
-              }
-              aria-expanded={openGroup === "Artists"}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
-            >
-              Artists
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                className={`h-3.5 w-3.5 transition-transform ${
-                  openGroup === "Artists" ? "rotate-180" : ""
-                }`}
-                aria-hidden
-              >
-                <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-              </svg>
-            </button>
-            {openGroup === "Artists" && (
-              <div className="absolute left-0 mt-2 min-w-60 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
-                {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
-                  <Link
-                    key={artist.id}
-                    href={`/artists/${artist.slug}`}
-                    onClick={() => setOpenGroup(null)}
-                    className="flex items-center gap-3 px-4 py-2 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                  >
-                    <ArtistAvatar
-                      src={artist.avatar_url}
-                      name={artist.name}
-                    />
-                    <span className="truncate">{artist.name}</span>
-                  </Link>
-                ))}
-                <Link
-                  href="/artists"
-                  onClick={() => setOpenGroup(null)}
-                  className="block border-t border-brand-border px-4 py-2.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                >
-                  View all artists
-                </Link>
-              </div>
-            )}
-          </div>
 
           {standaloneLinks.map((link) => (
             <Link
@@ -690,57 +659,6 @@ export default function Header() {
                 </div>
               );
             })}
-
-            {/* Artists — collapsible accordion holding the data-driven list of
-               published artists (photos) plus the "View all artists" link. */}
-            <div className="border-b border-brand-border/60">
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenMobileGroup((cur) =>
-                    cur === "Artists" ? null : "Artists"
-                  )
-                }
-                aria-expanded={openMobileGroup === "Artists"}
-                className="flex w-full items-center justify-between py-3 text-left text-xs font-semibold uppercase tracking-wide text-text-secondary/60 transition-colors hover:text-brand-primary"
-              >
-                Artists
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  className={`h-4 w-4 transition-transform ${
-                    openMobileGroup === "Artists" ? "rotate-180" : ""
-                  }`}
-                  aria-hidden
-                >
-                  <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-                </svg>
-              </button>
-              {openMobileGroup === "Artists" && (
-                <div className="pb-2">
-                  {artists.slice(0, ARTIST_DROPDOWN_LIMIT).map((artist) => (
-                    <Link
-                      key={artist.id}
-                      href={`/artists/${artist.slug}`}
-                      onClick={() => setOpen(false)}
-                      className="flex items-center gap-3 py-2.5 pl-3 text-text-secondary transition-colors hover:text-brand-primary"
-                    >
-                      <ArtistAvatar src={artist.avatar_url} name={artist.name} />
-                      <span className="truncate">{artist.name}</span>
-                    </Link>
-                  ))}
-                  <Link
-                    href="/artists"
-                    onClick={() => setOpen(false)}
-                    className="block py-2.5 pl-3 font-semibold text-text-secondary transition-colors hover:text-brand-primary"
-                  >
-                    View all artists
-                  </Link>
-                </div>
-              )}
-            </div>
 
             {standaloneLinks.map((link) => (
               <Link

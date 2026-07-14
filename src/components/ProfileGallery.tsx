@@ -7,7 +7,12 @@ import { useEffect, useState } from "react";
 // responsive grid with a simple tap-to-enlarge lightbox. Renders nothing when
 // the profile has no photos, so callers can drop it in unconditionally.
 
-type Photo = { id: string; image_url: string; sort_order: number };
+type Photo = {
+  id: string;
+  image_url: string;
+  media_type?: "photo" | "video";
+  sort_order: number;
+};
 
 export default function ProfileGallery({
   profileId,
@@ -55,15 +60,32 @@ export default function ProfileGallery({
             key={p.id}
             type="button"
             onClick={() => setActive(p.image_url)}
-            className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-white/5"
+            className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-white/10 bg-white/5"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={p.image_url}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover transition group-hover:scale-105"
-            />
+            {p.media_type === "video" ? (
+              <>
+                <video
+                  src={p.image_url}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full object-cover transition group-hover:scale-105"
+                />
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur">
+                    ▶
+                  </span>
+                </span>
+              </>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={p.image_url}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover transition group-hover:scale-105"
+              />
+            )}
           </button>
         ))}
       </div>
@@ -75,12 +97,23 @@ export default function ProfileGallery({
           role="dialog"
           aria-modal="true"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={active}
-            alt=""
-            className="max-h-full max-w-full rounded-2xl object-contain"
-          />
+          {/\.(mp4|webm|mov|m4v)(\?|$)/i.test(active) ? (
+            <video
+              src={active}
+              controls
+              autoPlay
+              playsInline
+              className="max-h-full max-w-full rounded-2xl object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={active}
+              alt=""
+              className="max-h-full max-w-full rounded-2xl object-contain"
+            />
+          )}
           <button
             type="button"
             onClick={() => setActive(null)}

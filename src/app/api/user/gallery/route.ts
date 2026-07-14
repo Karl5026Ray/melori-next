@@ -1,20 +1,32 @@
 import { NextResponse } from "next/server";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { tierOf } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Personal photo gallery for superfan/artist accounts (max 12 photos).
-// Images live in the public `covers` bucket under gallery/{userId}/… .
-// All DB access here uses the service-role client (bypasses RLS); the
-// requireSuperfan guard restricts every method to superfan-or-better callers.
+// Personal media gallery for EVERY signed-in account (photos or vertical
+// videos), editable straight from the profile page. Slot limits are tier-based
+// so free accounts get a taste and paid tiers get room to express a brand:
+//   free      -> 4 slots
+//   superfan  -> 20 slots
+//   artist    -> 20 slots
+// Media lives in the public `covers` bucket under gallery/{userId}/… .
+// All DB access uses the service-role client (bypasses RLS); requireAuth
+// restricts every method to the signed-in owner acting on their own rows.
 
 const BUCKET = "covers";
-const MAX_PHOTOS = 12;
+
+// Per-tier slot allowance. Photos and vertical videos share the same pool.
+function maxSlotsFor(profile: Parameters<typeof tierOf>[0]): number {
+  const tier = tierOf(profile); // "free" | "superfan" | "artist"
+  if (tier === "superfan" || tier === "artist") return 20;
+  return 4; // free
+}
 
 // True when the query error means the table hasn't been created yet, so reads
-// can degrade to an empty gallery instead of a 500 (migration 018 pending).
+// can degrade to an empty gallery instead of a 500.
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return (
@@ -24,8 +36,7 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
 }
 
 // Extract the object path inside the `covers` bucket from a public URL so we
-// can best-effort delete the stored file. Returns null if it doesn't reference
-// this bucket.
+// can best-effort delete the stored file.
 function storagePathFromUrl(url: string): string | null {
   const marker = `/storage/v1/object/public/${BUCKET}/`;
   const idx = url.indexOf(marker);
@@ -34,39 +45,55 @@ function storagePathFromUrl(url: string): string | null {
 }
 
 export async function GET(req: Request) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const userId = guard.membership.userId!;
+  const max = maxSlotsFor(guard.membership.profile);
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("profile_gallery")
-    .select("id, image_url, sort_order")
+    .select("id, image_url, media_type, sort_order")
     .eq("profile_id", userId)
     .order("sort_order", { ascending: true });
 
   if (error) {
-    if (isMissingTable(error)) return NextResponse.json({ photos: [] });
+    if (isMissingTable(error)) {
+      return NextResponse.json({ photos: [], max, used: 0 });
+    }
     console.error("Gallery GET error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ photos: data ?? [] });
+  return NextResponse.json({
+    photos: data ?? [],
+    max,
+    used: (data ?? []).length,
+  });
 }
 
 export async function POST(req: Request) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const { filename, contentType } = await req.json().catch(() => ({}) as any);
   if (!filename || typeof filename !== "string") {
     return NextResponse.json({ error: "filename is required" }, { status: 400 });
   }
-  if (contentType && typeof contentType === "string" && !contentType.startsWith("image/")) {
-    return NextResponse.json({ error: "Only image uploads are allowed" }, { status: 400 });
+  // Accept images OR videos (vertical clips). Anything else is rejected.
+  const isImage =
+    typeof contentType === "string" && contentType.startsWith("image/");
+  const isVideo =
+    typeof contentType === "string" && contentType.startsWith("video/");
+  if (contentType && !isImage && !isVideo) {
+    return NextResponse.json(
+      { error: "Only image or video uploads are allowed" },
+      { status: 400 },
+    );
   }
 
   const userId = guard.membership.userId!;
+  const max = maxSlotsFor(guard.membership.profile);
   const supabase = getSupabaseAdmin();
 
   const { count, error: countError } = await supabase
@@ -77,9 +104,9 @@ export async function POST(req: Request) {
     console.error("Gallery count error:", countError);
     return NextResponse.json({ error: countError.message }, { status: 500 });
   }
-  if ((count ?? 0) >= MAX_PHOTOS) {
+  if ((count ?? 0) >= max) {
     return NextResponse.json(
-      { error: `Gallery is full (max ${MAX_PHOTOS} photos).` },
+      { error: `Your gallery is full (max ${max} slots for your plan).` },
       { status: 400 },
     );
   }
@@ -108,11 +135,12 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const body = await req.json().catch(() => ({}) as any);
   const userId = guard.membership.userId!;
+  const max = maxSlotsFor(guard.membership.profile);
   const supabase = getSupabaseAdmin();
 
   // Reorder mode: persist a new sort_order for the caller's own rows.
@@ -134,6 +162,7 @@ export async function PATCH(req: Request) {
 
   // Insert mode: add a new row for an already-uploaded public URL.
   const publicUrl = String(body?.publicUrl ?? "").trim();
+  const mediaType = body?.media_type === "video" ? "video" : "photo";
   if (!publicUrl) {
     return NextResponse.json({ error: "publicUrl is required" }, { status: 400 });
   }
@@ -153,23 +182,28 @@ export async function PATCH(req: Request) {
     .from("profile_gallery")
     .select("id", { count: "exact", head: true })
     .eq("profile_id", userId);
-  if ((count ?? 0) >= MAX_PHOTOS) {
+  if ((count ?? 0) >= max) {
     return NextResponse.json(
-      { error: `Gallery is full (max ${MAX_PHOTOS} photos).` },
+      { error: `Your gallery is full (max ${max} slots for your plan).` },
       { status: 400 },
     );
   }
 
   const { data, error } = await supabase
     .from("profile_gallery")
-    .insert({ profile_id: userId, image_url: publicUrl, sort_order: count ?? 0 })
-    .select("id, image_url, sort_order")
+    .insert({
+      profile_id: userId,
+      image_url: publicUrl,
+      media_type: mediaType,
+      sort_order: count ?? 0,
+    })
+    .select("id, image_url, media_type, sort_order")
     .single();
 
   if (error || !data) {
     console.error("Gallery insert error:", error);
     return NextResponse.json(
-      { error: error?.message ?? "Failed to save photo" },
+      { error: error?.message ?? "Failed to save media" },
       { status: 500 },
     );
   }
@@ -178,7 +212,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const { id } = await req.json().catch(() => ({}) as any);

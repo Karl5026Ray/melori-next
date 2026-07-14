@@ -28,7 +28,7 @@ export async function GET(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("profile_gallery")
-    .select("id, image_url, sort_order")
+    .select("id, image_url, media_type, sort_order")
     .eq("profile_id", profileId)
     .order("sort_order", { ascending: true });
 

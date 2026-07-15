@@ -20,16 +20,20 @@ interface VideoCardProps {
 }
 
 export function VideoCard({ video, isActive }: VideoCardProps) {
+  const isAudio = video.media_type === "audio";
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [isMuted, setIsMuted] = useState(true);
+  // Video posts default muted (TikTok autoplay pattern — browsers block
+  // autoplay-with-sound). Audio-only posts default UNMUTED: a muted audio post
+  // is pointless, and the native <audio controls> bar is the manual fallback
+  // if the browser blocks unmuted autoplay.
+  const [isMuted, setIsMuted] = useState(!isAudio);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [likePending, setLikePending] = useState(false);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [commentsOpen, setCommentsOpen] = useState(false);
-
-  const isAudio = video.media_type === "audio";
 
   // Load the caller's like state + the live count for this card. Runs once per
   // video id; logged-out users just get liked=false and the public count.
@@ -48,22 +52,30 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     };
   }, [video.id]);
 
+  // Drive playback for the ACTIVE media element (video OR audio). Browsers block
+  // autoplay-with-sound, so we always start muted and rely on the user's
+  // mute toggle (a user gesture) to unmute. Video posts start playing muted on
+  // scroll; audio posts also auto-start here (this was the bug — the <audio>
+  // element was never told to play, so audio-only cards were silent until you
+  // manually hit the native play button).
   useEffect(() => {
-    const el = videoRef.current;
+    const el = isAudio ? audioRef.current : videoRef.current;
     if (!el) return;
+
     if (isActive) {
-      el.play().catch(() => {});
+      // Guarantee a mutable-autoplay-safe start: mute, rewind, then play.
+      el.muted = isMuted;
+      const p = el.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
     } else {
       el.pause();
       el.currentTime = 0;
     }
-  }, [isActive]);
+  }, [isActive, isAudio, isMuted]);
 
-  // Audio posts: pause AND reset when they scroll out of view so the card is
-  // ready to play from the top the next time it becomes active. Also reset the
-  // playhead when a clip finishes, otherwise the native controls sit in the
-  // "ended" state and tapping play does nothing (Bug: "won't stop on the
-  // correct spot / then won't play").
+  // Audio posts: reset the playhead when a clip finishes, otherwise the native
+  // controls sit in the "ended" state and tapping play does nothing (Bug:
+  // "won't stop on the correct spot / then won't play").
   useEffect(() => {
     if (!isAudio) return;
     const el = audioRef.current;
@@ -74,20 +86,35 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       el.currentTime = 0;
     };
     el.addEventListener("ended", handleEnded);
-
-    if (!isActive) {
-      el.pause();
-      el.currentTime = 0;
-    }
-
     return () => {
       el.removeEventListener("ended", handleEnded);
     };
-  }, [isActive, isAudio]);
+  }, [isAudio]);
 
+  // Keep the imperative `muted` property in sync with React state for BOTH
+  // media elements. The <video muted={...}> attribute is unreliable after
+  // hydration in React, so we set the DOM property directly here.
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = isMuted;
+    if (audioRef.current) audioRef.current.muted = isMuted;
+  }, [isMuted]);
+
+  // Toggle mute using the functional updater so we never read stale `isMuted`.
+  // Unmuting here is a genuine user gesture, so the browser will allow audible
+  // playback. We also (re)start playback in case the element was paused.
   const toggleMute = () => {
-    setIsMuted(!isMuted);
-    if (videoRef.current) videoRef.current.muted = !isMuted;
+    setIsMuted((prev) => {
+      const next = !prev;
+      const el = isAudio ? audioRef.current : videoRef.current;
+      if (el) {
+        el.muted = next;
+        if (!next) {
+          const p = el.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        }
+      }
+      return next;
+    });
   };
 
   // Persisted like toggle. Optimistically flip the UI, POST to the API, then

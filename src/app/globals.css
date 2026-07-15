@@ -123,8 +123,23 @@ a {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .mobile-nav-gradient { background: linear-gradient(to top, #0a0a0f 60%, transparent); }
+/* One-card-at-a-time vertical feed (Melori Mirror). `mandatory` + `snap-stop:
+   always` make the feed reliably STOP on exactly the next card (never coasting
+   past or landing between two). This pairs with the container being sized to
+   the real visible viewport (100dvh - header) so a card is exactly one screen
+   tall — the two together are what fixed the earlier "doesn't stop on the next
+   / too big" behaviour. */
 .video-snap { scroll-snap-type: y mandatory; scroll-snap-stop: always; }
 .video-snap > * { scroll-snap-align: start; }
+
+/* Melori Mirror viewport height. Fills the area between the fixed 4rem header
+   and the fixed bottom bars. Mobile: audio player + tab bar (root layout uses
+   pb-44 = 11rem). Desktop (md+, >=768px): only the player (pb-24 = 6rem). Using
+   dvh so mobile URL-bar collapse doesn't over/under-size the cards. */
+.mirror-viewport { height: calc(100dvh - 4rem - 11rem); }
+@media (min-width: 768px) {
+  .mirror-viewport { height: calc(100dvh - 4rem - 6rem); }
+}
 .msg-bubble-sent {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   border-bottom-right-radius: 4px;

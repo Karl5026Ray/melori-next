@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
@@ -17,10 +17,33 @@ import {
 interface VideoCardProps {
   video: SocialVideo;
   isActive: boolean;
+  // Distance (in cards) from the currently-active card. 0 = active, 1 =
+  // immediate neighbour, etc. Used to decide when it is safe to fully reset a
+  // paused video's playhead without causing a reload-flash if the user flicks
+  // straight back to it.
+  distance?: number;
 }
 
-export function VideoCard({ video, isActive }: VideoCardProps) {
+// Resolve a media URL to something the browser can actually load. Video posts
+// store full https URLs, but audio posts historically stored a BARE Supabase
+// storage object path (e.g. "artist/album/01-track.mp3") which the <audio>
+// element resolved relative to the page — producing a 404 HTML response and the
+// "Unable to play media" error. The rows have been migrated to full URLs, but
+// this stays as a defensive guard so any future bare path (audio only) still
+// plays. Guarded on `isAudioType` so a bare VIDEO path is never mis-prefixed
+// with the audio bucket.
+function resolveMediaUrl(url: string, isAudioType: boolean): string {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url; // already a full URL
+  if (!isAudioType) return url; // don't guess a bucket for non-audio
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const path = url.replace(/^\/+/, "");
+  return `${base}/storage/v1/object/public/audio-files/${path}`;
+}
+
+function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const isAudio = video.media_type === "audio";
+  const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -29,15 +52,26 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   // is pointless, and the native <audio controls> bar is the manual fallback
   // if the browser blocks unmuted autoplay.
   const [isMuted, setIsMuted] = useState(!isAudio);
+  // For audio posts: true when the browser BLOCKED unmuted autoplay so we fell
+  // back to muted (or paused). Drives a "tap to play with sound" affordance.
+  const [needsUnmuteTap, setNeedsUnmuteTap] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [likePending, setLikePending] = useState(false);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
-  // Load the caller's like state + the live count for this card. Runs once per
-  // video id; logged-out users just get liked=false and the public count.
+  // Load the caller's like state + the live count for this card. Deferred until
+  // the card is at (or adjacent to) the active position, and fetched only once.
+  // Previously this fired on mount for EVERY card, so scrolling and infinite
+  // scroll spawned a request storm of like-lookups for off-screen cards. We now
+  // fetch lazily and remember we've done it via `likeLoadedRef`.
+  const likeLoadedRef = useRef(false);
   useEffect(() => {
+    if (likeLoadedRef.current) return;
+    // Only load for the active card or its immediate neighbours.
+    if (distance > 1) return;
+    likeLoadedRef.current = true;
     let cancelled = false;
     authFetch(`/api/social/videos/${video.id}/like`)
       .then((r) => (r.ok ? r.json() : null))
@@ -46,32 +80,88 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         setIsLiked(!!d.liked);
         if (typeof d.likesCount === "number") setLikesCount(d.likesCount);
       })
-      .catch(() => {});
+      .catch(() => {
+        // Allow a retry on a later pass if this attempt failed.
+        likeLoadedRef.current = false;
+      });
     return () => {
       cancelled = true;
     };
-  }, [video.id]);
+  }, [video.id, distance]);
 
   // Drive playback for the ACTIVE media element (video OR audio). Browsers block
   // autoplay-with-sound, so we always start muted and rely on the user's
-  // mute toggle (a user gesture) to unmute. Video posts start playing muted on
-  // scroll; audio posts also auto-start here (this was the bug — the <audio>
-  // element was never told to play, so audio-only cards were silent until you
-  // manually hit the native play button).
+  // mute toggle (a user gesture) to unmute. Audio posts auto-start here too so
+  // the "music frames" play on scroll without needing the native play button.
+  //
+  // IMPORTANT: this effect depends ONLY on `isActive`/`isAudio` — NOT on
+  // `distance` or `isMuted`. `distance` changes on every scroll tick, and if
+  // playback were re-driven (or a cleanup pause fired) on each change, the
+  // active audio/video would stutter and, for <audio>, effectively never play.
   useEffect(() => {
     const el = isAudio ? audioRef.current : videoRef.current;
     if (!el) return;
 
-    if (isActive) {
-      // Guarantee a mutable-autoplay-safe start: mute, rewind, then play.
-      el.muted = isMuted;
+    if (!isActive) {
+      el.pause();
+      return;
+    }
+
+    if (!isAudio) {
+      // Video: always starts muted (handled by state), just play.
       const p = el.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
-    } else {
-      el.pause();
-      el.currentTime = 0;
+      return;
     }
-  }, [isActive, isAudio, isMuted]);
+
+    // Audio post: try to autoplay UNMUTED (product requirement). Browsers block
+    // autoplay-with-sound without a prior user gesture, so if the unmuted play()
+    // rejects we fall back to muted autoplay (a silent-but-live player is better
+    // than a dead one, and it builds Chrome's media-engagement score) and raise
+    // a "tap to play with sound" affordance. Once the user has interacted the
+    // browser lets sound through and the tap clears the flag.
+    let cancelled = false;
+    el.muted = false;
+    setIsMuted(false);
+    const p = el.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        if (!cancelled) setNeedsUnmuteTap(false);
+      }).catch(() => {
+        if (cancelled) return;
+        // Unmuted autoplay blocked — retry muted so the clip still runs.
+        el.muted = true;
+        setIsMuted(true);
+        setNeedsUnmuteTap(true);
+        const p2 = el.play();
+        if (p2 && typeof p2.catch === "function") p2.catch(() => {});
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, isAudio]);
+
+  // Playhead reset is its OWN effect, decoupled from play/pause. Only rewind a
+  // paused card once it is far (>1 card) from active — rewinding an adjacent
+  // card would force a reload-from-scratch (black flash) if the user flicks
+  // straight back to it.
+  useEffect(() => {
+    if (isActive) return;
+    const el = isAudio ? audioRef.current : videoRef.current;
+    if (!el) return;
+    if (distance > 1) el.currentTime = 0;
+  }, [isActive, isAudio, distance]);
+
+  // Pause on UNMOUNT only (empty deps) so React 19 Strict-Mode remounts and
+  // infinite-scroll unmounts can't leave ghost audio playing. This does NOT run
+  // on every scroll, so it never interrupts the active clip.
+  useEffect(() => {
+    return () => {
+      videoRef.current?.pause();
+      audioRef.current?.pause();
+    };
+  }, []);
 
   // Audio posts: reset the playhead when a clip finishes, otherwise the native
   // controls sit in the "ended" state and tapping play does nothing (Bug:
@@ -109,6 +199,9 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       if (el) {
         el.muted = next;
         if (!next) {
+          // Unmuting is a genuine user gesture, so playback is now allowed and
+          // any "tap to play with sound" prompt can go away.
+          setNeedsUnmuteTap(false);
           const p = el.play();
           if (p && typeof p.catch === "function") p.catch(() => {});
         }
@@ -166,18 +259,38 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           )}
           <audio
             ref={audioRef}
-            src={video.video_url}
+            src={mediaUrl}
             controls
+            // metadata only: full tracks can be several MB; we don't want a
+            // scroll through the feed to eagerly pull every track.
+            preload="metadata"
             className="relative mt-6 w-full max-w-sm"
           />
+
+          {/* If the browser blocked unmuted autoplay, offer an explicit
+              tap-to-play-with-sound button (a real <button>, so the click
+              counts as the user gesture that unblocks audible playback). */}
+          {needsUnmuteTap && (
+            <button
+              onClick={toggleMute}
+              className="relative mt-4 flex items-center gap-2 rounded-full bg-white/90 px-5 py-2.5 font-semibold text-melori-void shadow-lg"
+            >
+              <Volume2 className="h-5 w-5" />
+              Tap to play with sound
+            </button>
+          )}
         </div>
       ) : (
         <video
           ref={videoRef}
-          src={video.video_url}
+          src={mediaUrl}
           loop
           muted={isMuted}
           playsInline
+          // Only fetch metadata until the card is active; the poster covers the
+          // frame until the stream is ready, so we never flash a wrong/black
+          // frame during a fast scroll.
+          preload={isActive ? "auto" : "metadata"}
           // Content is predominantly portrait, so object-cover fills the frame
           // edge-to-edge (the TikTok look) with virtually no crop. object-top
           // biases any crop on the occasional landscape clip toward keeping the
@@ -280,3 +393,9 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     </div>
   );
 }
+
+// Memoized so growing the feed array during infinite scroll doesn't re-render
+// every already-mounted card (only cards whose isActive/distance actually
+// change re-render). This removes the layout-thrash that contributed to the
+// mid-scroll "jump".
+export const VideoCard = memo(VideoCardBase);

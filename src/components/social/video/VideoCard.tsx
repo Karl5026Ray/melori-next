@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
@@ -17,9 +17,14 @@ import {
 interface VideoCardProps {
   video: SocialVideo;
   isActive: boolean;
+  // Distance (in cards) from the currently-active card. 0 = active, 1 =
+  // immediate neighbour, etc. Used to decide when it is safe to fully reset a
+  // paused video's playhead without causing a reload-flash if the user flicks
+  // straight back to it.
+  distance?: number;
 }
 
-export function VideoCard({ video, isActive }: VideoCardProps) {
+function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const isAudio = video.media_type === "audio";
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -35,9 +40,17 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
-  // Load the caller's like state + the live count for this card. Runs once per
-  // video id; logged-out users just get liked=false and the public count.
+  // Load the caller's like state + the live count for this card. Deferred until
+  // the card is at (or adjacent to) the active position, and fetched only once.
+  // Previously this fired on mount for EVERY card, so scrolling and infinite
+  // scroll spawned a request storm of like-lookups for off-screen cards. We now
+  // fetch lazily and remember we've done it via `likeLoadedRef`.
+  const likeLoadedRef = useRef(false);
   useEffect(() => {
+    if (likeLoadedRef.current) return;
+    // Only load for the active card or its immediate neighbours.
+    if (distance > 1) return;
+    likeLoadedRef.current = true;
     let cancelled = false;
     authFetch(`/api/social/videos/${video.id}/like`)
       .then((r) => (r.ok ? r.json() : null))
@@ -46,11 +59,14 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         setIsLiked(!!d.liked);
         if (typeof d.likesCount === "number") setLikesCount(d.likesCount);
       })
-      .catch(() => {});
+      .catch(() => {
+        // Allow a retry on a later pass if this attempt failed.
+        likeLoadedRef.current = false;
+      });
     return () => {
       cancelled = true;
     };
-  }, [video.id]);
+  }, [video.id, distance]);
 
   // Drive playback for the ACTIVE media element (video OR audio). Browsers block
   // autoplay-with-sound, so we always start muted and rely on the user's
@@ -68,10 +84,21 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       const p = el.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     } else {
+      // Pause whenever inactive, but only REWIND when the card is far away
+      // (>1 card off). Resetting currentTime on an adjacent card forces a
+      // reload-from-scratch (black flash + re-decode) the instant the user
+      // flicks back to it. Leaving the last frame on neighbours makes flicking
+      // back-and-forth feel instant.
       el.pause();
-      el.currentTime = 0;
+      if (distance > 1) el.currentTime = 0;
     }
-  }, [isActive, isAudio, isMuted]);
+
+    // Cleanup: always pause on unmount so React 19 Strict-Mode remounts and
+    // infinite-scroll unmounts can't leave ghost audio playing.
+    return () => {
+      el.pause();
+    };
+  }, [isActive, isAudio, isMuted, distance]);
 
   // Audio posts: reset the playhead when a clip finishes, otherwise the native
   // controls sit in the "ended" state and tapping play does nothing (Bug:
@@ -178,6 +205,10 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           loop
           muted={isMuted}
           playsInline
+          // Only fetch metadata until the card is active; the poster covers the
+          // frame until the stream is ready, so we never flash a wrong/black
+          // frame during a fast scroll.
+          preload={isActive ? "auto" : "metadata"}
           // Content is predominantly portrait, so object-cover fills the frame
           // edge-to-edge (the TikTok look) with virtually no crop. object-top
           // biases any crop on the occasional landscape clip toward keeping the
@@ -280,3 +311,9 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     </div>
   );
 }
+
+// Memoized so growing the feed array during infinite scroll doesn't re-render
+// every already-mounted card (only cards whose isActive/distance actually
+// change re-render). This removes the layout-thrash that contributed to the
+// mid-scroll "jump".
+export const VideoCard = memo(VideoCardBase);

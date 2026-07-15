@@ -9,14 +9,18 @@ import { Compass } from "lucide-react";
 
 // Melori Mirror — the TikTok "For You"-style vertical feed.
 //
-// Design (validated against the Kimi feed-architecture chat + an independent
-// architecture review):
-//   - The "online now" ring row is the FIRST snap section INSIDE the vertical
-//     scroll container (not a position:sticky header — sticky inside a
-//     scroll-snap scroller half-snaps cards on iOS). It scroll-snaps to the
-//     top, then video cards follow as full-height snap items.
-//   - Reuses the same IntersectionObserver active-index pattern as VideoFeed so
-//     only the on-screen card plays.
+// Motion design (reworked 2026-07-15 after a diagnosis + independent KIMI
+// review of "moves funny" — twitchy, snap-back, wrong video):
+//   - The "online now" ring row is the FIRST snap section but is NO LONGER a
+//     nested vertical scroller. A nested `overflow-y` scroller inside a
+//     scroll-snap container corrupts the snap algorithm (half-snap/jump). The
+//     row now scrolls only horizontally; the section itself is a plain
+//     full-height snap item that never scrolls vertically on its own.
+//   - Active-card tracking is computed DETERMINISTICALLY from the container's
+//     scrollTop (round(scrollTop / cardHeight)), throttled with rAF — instead
+//     of a "set-only" IntersectionObserver that never cleared and let two
+//     adjacent cards fight over activeIndex. This removes the observer→state
+//     race that caused the twitch and the wrong video playing.
 //   - Keyset infinite scroll via /api/mirror/feed (?cursor=created_at_id).
 export default function MirrorFeed({
   initialVideos,
@@ -32,28 +36,50 @@ export default function MirrorFeed({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
 
-  // Active-card tracking: play only the card that is >=60% on screen.
+  // Active-card tracking, computed deterministically from scroll position.
+  //
+  // The feed's snap items are all exactly one viewport (`h-full`) tall and the
+  // online-now section is the first item, so the active VIDEO index is:
+  //   round(scrollTop / viewportHeight) - 1
+  // (the `-1` skips the online-now section at index 0). We clamp to the valid
+  // video range and set -1 while the online-now section itself is in view so no
+  // video plays behind it. A single rAF-throttled passive scroll listener keeps
+  // this cheap and avoids the multi-fire observer races.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const idx = Number(entry.target.getAttribute("data-index"));
-            if (!Number.isNaN(idx)) setActiveIndex(idx);
-          }
-        });
-      },
-      { root: container, threshold: 0.6 },
-    );
+    const compute = () => {
+      rafRef.current = null;
+      const vh = container.clientHeight || 1;
+      // Section 0 is the online-now row; videos start at scroll page 1.
+      const page = Math.round(container.scrollTop / vh);
+      const videoIdx = page - 1;
+      const clamped =
+        videoIdx < 0
+          ? -1
+          : Math.min(videoIdx, videos.length - 1);
+      setActiveIndex((prev) => (prev === clamped ? prev : clamped));
+    };
 
-    const children = container.querySelectorAll(".mirror-video-item");
-    children.forEach((child) => observer.observe(child));
-    return () => observer.disconnect();
-  }, [videos]);
+    const onScroll = () => {
+      if (rafRef.current != null) return;
+      rafRef.current = requestAnimationFrame(compute);
+    };
+
+    container.addEventListener("scroll", onScroll, { passive: true });
+    // Compute once on mount / when the list length changes.
+    compute();
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [videos.length]);
 
   // Keyset infinite scroll — load the next page when the sentinel appears.
   const loadMore = useCallback(async () => {
@@ -96,11 +122,12 @@ export default function MirrorFeed({
       ref={containerRef}
       className="absolute inset-0 h-full w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
     >
-      {/* First snap section: the online-now ring row + a title. Uses h-full (not
-          min-h-full) so it is exactly one viewport tall and does not push the
-          video items past the screen — that overflow is what made videos render
-          "too big". */}
-      <section className="video-snap-item flex h-full w-full flex-col overflow-y-auto">
+      {/* First snap section: the online-now ring row + a title. Exactly one
+          viewport tall (h-full) and — critically — NOT its own vertical
+          scroller. A nested overflow-y scroller here corrupts the parent's
+          scroll-snap (half-snap / jump), so vertical overflow is hidden and the
+          content is sized to fit. The ring row scrolls horizontally on its own. */}
+      <section className="video-snap-item flex h-full w-full flex-col overflow-y-hidden">
         <OnlineNowRow />
         {videos.length === 0 && (
           // Empty feed state (social_videos has no rows yet). Mirror still feels
@@ -135,7 +162,11 @@ export default function MirrorFeed({
           data-index={index}
           className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
         >
-          <VideoCard video={video} isActive={index === activeIndex} />
+          <VideoCard
+            video={video}
+            isActive={index === activeIndex}
+            distance={activeIndex < 0 ? 99 : Math.abs(index - activeIndex)}
+          />
         </div>
       ))}
 

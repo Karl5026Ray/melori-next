@@ -123,7 +123,13 @@ a {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .mobile-nav-gradient { background: linear-gradient(to top, #0a0a0f 60%, transparent); }
-.video-snap { scroll-snap-type: y mandatory; scroll-snap-stop: always; }
+/* One-card-at-a-time vertical feed (Melori Mirror). `mandatory` keeps the feed
+   landing exactly on one card at rest (the TikTok feel). `scroll-snap-stop:
+   always` was REMOVED (2026-07-15): it forbade skipping cards during a fast
+   flick, so momentum was caught and yanked back one card at a time — the
+   "snap-back / jerky" symptom. Without it, a fast flick coasts through several
+   cards and then snaps cleanly when momentum settles. */
+.video-snap { scroll-snap-type: y mandatory; }
 .video-snap > * { scroll-snap-align: start; }
 .msg-bubble-sent {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);

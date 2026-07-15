@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SocialVideo } from "@/types/social";
+import { authFetch } from "@/lib/authClient";
+import CommentSheet from "./CommentSheet";
 import {
   Heart,
   MessageCircle,
@@ -23,8 +25,28 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   const [isMuted, setIsMuted] = useState(true);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
+  const [likePending, setLikePending] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(video.comments_count);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const isAudio = video.media_type === "audio";
+
+  // Load the caller's like state + the live count for this card. Runs once per
+  // video id; logged-out users just get liked=false and the public count.
+  useEffect(() => {
+    let cancelled = false;
+    authFetch(`/api/social/videos/${video.id}/like`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return;
+        setIsLiked(!!d.liked);
+        if (typeof d.likesCount === "number") setLikesCount(d.likesCount);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [video.id]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -53,9 +75,35 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     if (videoRef.current) videoRef.current.muted = !isMuted;
   };
 
-  const handleLike = () => {
-    setIsLiked(!isLiked);
-    setLikesCount((prev) => (isLiked ? prev - 1 : prev + 1));
+  // Persisted like toggle. Optimistically flip the UI, POST to the API, then
+  // reconcile with the authoritative count. On failure or 401, roll back.
+  const handleLike = async () => {
+    if (likePending) return;
+    const prevLiked = isLiked;
+    const prevCount = likesCount;
+    setLikePending(true);
+    setIsLiked(!prevLiked);
+    setLikesCount((c) => (prevLiked ? c - 1 : c + 1));
+    try {
+      const res = await authFetch(`/api/social/videos/${video.id}/like`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        // 401 (signed out) or error → revert.
+        setIsLiked(prevLiked);
+        setLikesCount(prevCount);
+        if (res.status === 401) window.location.href = "/social/auth";
+        return;
+      }
+      const data = await res.json();
+      setIsLiked(!!data.liked);
+      if (typeof data.likesCount === "number") setLikesCount(data.likesCount);
+    } catch {
+      setIsLiked(prevLiked);
+      setLikesCount(prevCount);
+    } finally {
+      setLikePending(false);
+    }
   };
 
   return (
@@ -164,15 +212,25 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           />
           <span className="text-xs font-medium">{likesCount}</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-white">
+        <button
+          onClick={() => setCommentsOpen(true)}
+          className="flex flex-col items-center gap-1 text-white"
+        >
           <MessageCircle className="w-7 h-7" />
-          <span className="text-xs font-medium">{video.comments_count}</span>
+          <span className="text-xs font-medium">{commentsCount}</span>
         </button>
         <button className="flex flex-col items-center gap-1 text-white">
           <Share2 className="w-7 h-7" />
           <span className="text-xs font-medium">Share</span>
         </button>
       </div>
+
+      <CommentSheet
+        videoId={video.id}
+        open={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        onCountChange={setCommentsCount}
+      />
     </div>
   );
 }

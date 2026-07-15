@@ -14,6 +14,7 @@ import {
   decodeAudioFile,
   decodeAudioUrl,
   fetchJobStatus,
+  getStemDownloadUrl,
   laneColor,
   requestUploadUrls,
   subscribeJob,
@@ -400,22 +401,4 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
   );
 }
 
-// The humanizer-stems bucket is private (no public URL), so downloads and
-// A/B playback both need a short-lived signed URL minted server-side. See
-// /api/studio/humanize/sign — a small addition alongside upload-urls/create
-// that mirrors how /api/studio/track/[id] signs reads of the private
-// audio-files master.
-async function getStemDownloadUrl(path: string): Promise<string | null> {
-  try {
-    const res = await authFetch(
-      `/api/studio/humanize/sign?path=${encodeURIComponent(path)}`,
-      { method: "GET" },
-    );
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => ({}));
-    return data?.url ?? null;
-  } catch (err) {
-    console.error("Failed to sign stem download URL:", err);
-    return null;
-  }
-}
+

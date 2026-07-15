@@ -21,7 +21,7 @@ import {
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
-import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
+import RoomChat from "@/components/social/rooms/RoomChat";
 import {
   ArrowLeft,
   Share2,
@@ -1123,8 +1123,12 @@ export default function SpaceDetailPage() {
             </>
           )}
 
-          {/* Per-space comment thread. Public reads, Superfan+ posts. */}
-          <SpaceCommentSection spaceId={spaceId} />
+          {/* Shared room chat (auto-scroll, new-message pill, grouping, sticky
+              composer). Bounded height so its internal scroll + composer behave
+              inside the page's vertical flow. Public reads, Superfan+ posts. */}
+          <div className="mt-6 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-melori-border bg-melori-elevated/40">
+            <RoomChat spaceId={spaceId} accent="purple" className="flex-1" />
+          </div>
         </div>
       </div>
 

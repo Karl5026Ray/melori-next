@@ -26,13 +26,14 @@ import {
   setMicEnabled,
   switchCamera,
   becomePublisher,
+  publishLocalMedia,
   type VideoTier,
   type RemoteVideo,
 } from "@/lib/livekitVideoClient";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
+import RoomChat from "@/components/social/rooms/RoomChat";
 import {
   Mic,
   MicOff,
@@ -128,10 +129,22 @@ export default function LiveRoom({
     { user_id: string; name: string; avatar: string | null }[]
   >([]);
   const [showRequests, setShowRequests] = useState(false);
+  // Identities currently speaking (local + remote merged by the video client),
+  // drives the green ring on tiles.
+  const [speakers, setSpeakers] = useState<Set<string>>(new Set());
 
   // Keep the local <video> for re-attach when tiles re-render.
   const localElRef = useRef<HTMLVideoElement | null>(null);
   const remoteEls = useRef<Map<string, HTMLVideoElement>>(new Map());
+  // Mirror of `onCamera` so the join effect's permission callback (registered
+  // once) reads the current value without needing to re-subscribe.
+  const onCameraRef = useRef(isHost);
+  useEffect(() => {
+    onCameraRef.current = onCamera;
+  }, [onCamera]);
+  // Guards against going on camera twice when BOTH the Supabase role-watch and
+  // the LiveKit ParticipantPermissionsChanged event fire for the same approval.
+  const promotingRef = useRef(false);
 
   const upsertTile = useCallback((t: Tile) => {
     setTiles((prev) => {
@@ -223,6 +236,12 @@ export default function LiveRoom({
           onRemoteVideoRemoved: (identity) => removeTile(identity),
           onParticipantCountChange: (n) => setViewerCount(n),
           onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
+          onActiveSpeakersChange: (ids) => setSpeakers(new Set(ids)),
+          onLocalPermissionsChanged: (allowed) => {
+            // Server promoted me (host/mod approved my raised hand). Publish in
+            // place — no reconnect — per the runtime-permission flow.
+            if (allowed && !onCameraRef.current) void goOnCameraInPlace();
+          },
           onReconnecting: () => setReconnecting(true),
           onReconnected: () => setReconnecting(false),
           onError: (e) => {
@@ -308,7 +327,7 @@ export default function LiveRoom({
           const row = payload.new;
           if (row?.user_id !== user.id) return;
           if (row.role === "speaker" && !onCamera) {
-            void goOnCamera();
+            void goOnCameraInPlace();
           }
           if (row.role === "audience" && onCamera) {
             // Demoted — stop publishing.
@@ -325,10 +344,15 @@ export default function LiveRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, user, spaceId, onCamera]);
 
-  // Promote to publisher (re-mint token with canPublish, enable cam+mic).
-  const goOnCamera = useCallback(async () => {
+  // Go on camera WITHOUT reconnecting — used when the server flips our publish
+  // permission at runtime (ParticipantPermissionsChanged). Falls back to the
+  // reconnect path (becomePublisher) if in-place publish yields no track.
+  const goOnCameraInPlace = useCallback(async () => {
+    if (promotingRef.current || onCameraRef.current) return;
+    promotingRef.current = true;
     try {
-      const el = await becomePublisher();
+      let el = await publishLocalMedia();
+      if (!el) el = await becomePublisher();
       setOnCamera(true);
       setHandRaised(false);
       if (el && user) {
@@ -337,6 +361,8 @@ export default function LiveRoom({
       }
     } catch (e: any) {
       setError(e?.message ?? "Could not turn on your camera");
+    } finally {
+      promotingRef.current = false;
     }
   }, [user, upsertTile]);
 
@@ -482,7 +508,9 @@ export default function LiveRoom({
                 ref={(node) => {
                   videoRefs.current.set(t.identity, node);
                 }}
-                className="relative overflow-hidden rounded-lg bg-brand-surface"
+                className={`relative overflow-hidden rounded-lg bg-brand-surface ${
+                  speakers.has(t.identity) ? "speaking-ring-tile" : ""
+                }`}
               >
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-muted text-lg font-bold text-text-primary">
@@ -622,17 +650,17 @@ export default function LiveRoom({
         </button>
       )}
 
-      {/* Comment stream — bottom-anchored chat that auto-scrolls to the newest
-          message. Sits above the mobile tab bar + collapsed music bar and is
-          kept clear of the right-edge control rail. */}
-      <div className="absolute bottom-28 left-0 z-10 h-[38%] w-full max-w-[16rem] px-4 sm:max-w-sm">
-        <div className="faces-comment-shell h-full">
-          <SpaceCommentSection spaceId={spaceId} live />
+      {/* Comment stream — shared RoomChat (auto-scroll, new-message pill,
+          grouping, sticky composer). Fixed-height floating shell over the video
+          so the internal scroll + composer behave. Orange accent for Faces. */}
+      <div className="absolute bottom-24 left-0 z-10 flex h-[42%] w-full max-w-sm flex-col overflow-hidden px-4 md:bottom-28">
+        <div className="faces-comment-shell flex min-h-0 flex-1 flex-col">
+          <RoomChat spaceId={spaceId} accent="orange" className="flex-1" />
         </div>
       </div>
 
-      {/* Reaction hearts — float up just left of the control rail */}
-      <div className="pointer-events-none absolute bottom-28 right-16 h-56 w-16">
+      {/* Reaction hearts */}
+      <div className="pointer-events-none absolute bottom-24 right-4 h-56 w-20 md:bottom-28">
         {hearts.map((h) => (
           <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
             ❤️
@@ -640,77 +668,71 @@ export default function LiveRoom({
         ))}
       </div>
 
-      {/* Right-edge control rail (Reels/TikTok-style). Vertical stack so the
-          controls never form a wide bottom bar that overlaps the music bar or
-          the mobile tab bar (Bug D). */}
-      <div className="absolute bottom-28 right-2 z-20 flex flex-col items-center gap-3 sm:right-3">
-        {/* Camera/mic controls show for host OR an on-camera guest */}
-        {onCamera && (
-          <>
+      {/* Bottom controls */}
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 p-4 pb-6">
+        <div className="flex items-center gap-3">
+          {/* Camera/mic controls show for host OR an on-camera guest */}
+          {onCamera && (
+            <>
+              <button
+                onClick={toggleMic}
+                aria-label={micOn ? "Mute mic" : "Unmute mic"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+              >
+                {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              </button>
+              <button
+                onClick={toggleCam}
+                aria-label={camOn ? "Turn camera off" : "Turn camera on"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+              >
+                {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+              </button>
+              <button
+                onClick={() => void switchCamera()}
+                aria-label="Flip camera"
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+              >
+                <SwitchCamera className="h-5 w-5" />
+              </button>
+            </>
+          )}
+          {/* Superfan viewer in duo/group can raise a hand to request camera */}
+          {!isHost && !onCamera && !isSolo && canPublish && (
             <button
-              onClick={toggleMic}
-              aria-label={micOn ? "Mute mic" : "Unmute mic"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+              onClick={toggleHand}
+              className={`flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
             >
-              {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              <Hand className="h-5 w-5" />
+              {handRaised ? "Requested" : "Join on camera"}
             </button>
-            <button
-              onClick={toggleCam}
-              aria-label={camOn ? "Turn camera off" : "Turn camera on"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
+          )}
+          {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
+          {!isHost && !onCamera && !isSolo && !canPublish && (
+            <Link
+              href="/membership"
+              className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-3 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-white/25"
             >
-              {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-            </button>
-            <button
-              onClick={() => void switchCamera()}
-              aria-label="Flip camera"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-            >
-              <SwitchCamera className="h-5 w-5" />
-            </button>
-          </>
-        )}
+              <Hand className="h-5 w-5" />
+              Go Superfan to join on camera
+            </Link>
+          )}
+        </div>
 
-        {/* Superfan viewer in duo/group can raise a hand to request camera */}
-        {!isHost && !onCamera && !isSolo && canPublish && (
+        <div className="flex items-center gap-3">
+          {isHost && (
+            <button onClick={handleLeave} className="rounded-full bg-brand-primary px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark">
+              End Live
+            </button>
+          )}
           <button
-            onClick={toggleHand}
-            aria-label={handRaised ? "Cancel camera request" : "Join on camera"}
-            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
+            onClick={sendHeart}
+            aria-label="Send heart"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
           >
-            <Hand className="h-5 w-5" />
+            <Heart className="h-6 w-6" />
           </button>
-        )}
-        {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
-        {!isHost && !onCamera && !isSolo && !canPublish && (
-          <Link
-            href="/membership"
-            aria-label="Go Superfan to join on camera"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-          >
-            <Hand className="h-5 w-5" />
-          </Link>
-        )}
-
-        {/* React */}
-        <button
-          onClick={sendHeart}
-          aria-label="Send heart"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
-        >
-          <Heart className="h-6 w-6" />
-        </button>
-
-        {/* Host: end the broadcast */}
-        {isHost && (
-          <button
-            onClick={handleLeave}
-            aria-label="End live"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );

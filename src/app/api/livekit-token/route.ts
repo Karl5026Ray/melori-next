@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isSuperfanOrBetter } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: space } = await supabase
       .from("spaces")
-      .select("id, host_id, status, livekit_room")
+      .select("id, host_id, status, livekit_room, room_format")
       .eq("id", spaceId)
       .maybeSingle();
 
@@ -64,37 +64,47 @@ export async function POST(req: NextRequest) {
     }
 
     const roomName: string = space.livekit_room ?? `space_${space.id}`;
+    // Faces rooms (live_* room_format) are video; everything else is audio-only.
+    const withVideo = String(space.room_format ?? "").startsWith("live_");
 
-    // Resolve publish permission.
-    let canPublish = requestedRole === "publisher";
-    if (canPublish) {
-      const isHost = space.host_id === userId;
-      if (!isHost) {
-        // Publishing (going on camera / speaking) is a paid perk. A free user
-        // can still WATCH/LISTEN as a subscriber, but cannot publish even if a
-        // host tries to promote them.
-        if (!isSuperfanOrBetter(membershipProfile)) {
-          return NextResponse.json(
-            { error: "Going live is a Superfan perk", upgrade: "/membership" },
-            { status: 403 },
-          );
-        }
-        const { data: participant } = await supabase
-          .from("space_participants")
-          .select("role, left_at, host_muted")
-          .eq("space_id", space.id)
-          .eq("user_id", userId)
-          .is("left_at", null)
-          .maybeSingle();
-        const isSpeaker =
-          !!participant && (participant.role === "host" || participant.role === "speaker");
-        if (!isSpeaker) {
-          return NextResponse.json({ error: "Not a speaker in this space" }, { status: 403 });
-        }
-        if (participant.host_muted) {
-          return NextResponse.json({ error: "Muted by host", muted: true }, { status: 403 });
+    // ---- Server-authoritative role model ---------------------------------
+    // The SERVER decides who may publish, not the client's requested role.
+    // Anyone who is not the host / a moderator / an approved speaker joins as
+    // AUDIENCE (canPublish=false). This is the initial grant; a later approval
+    // flips canPublish at runtime via RoomServiceClient.updateParticipant (see
+    // src/lib/livekitServer.ts) with no token refresh.
+    const isHost = space.host_id === userId;
+    let socialRole: "audience" | "speaker" | "moderator" | "host" = "audience";
+    let onStage = false;
+
+    if (isHost) {
+      socialRole = "host";
+      onStage = true;
+    } else {
+      const { data: participant } = await supabase
+        .from("space_participants")
+        .select("role, left_at, host_muted, badge")
+        .eq("space_id", space.id)
+        .eq("user_id", userId)
+        .is("left_at", null)
+        .maybeSingle();
+      const isMod = participant?.badge === "mod" || participant?.badge === "cohost";
+      const isSpeaker = participant?.role === "speaker" || participant?.role === "host";
+      if (isMod || isSpeaker) {
+        // Going on stage (speaking / camera) is a Superfan perk. A free user
+        // can still WATCH/LISTEN as audience, but never receives a publish
+        // grant even if promoted in the DB.
+        if (isSuperfanOrBetter(membershipProfile) && !participant?.host_muted) {
+          socialRole = isMod ? "moderator" : "speaker";
+          onStage = true;
         }
       }
+    }
+
+    // A client that explicitly asked to only subscribe stays audience even if
+    // eligible for stage (e.g. joining muted); it can be promoted at runtime.
+    if (requestedRole === "subscriber") {
+      onStage = false;
     }
 
     // Attach display identity from profile for avatar-linked UI.
@@ -111,15 +121,27 @@ export async function POST(req: NextRequest) {
       identity: userId,
       name: displayName,
       ttl: expireTime,
-      metadata: JSON.stringify({ avatar_url: profile?.avatar_url ?? null }),
+      metadata: JSON.stringify({
+        avatar_url: profile?.avatar_url ?? null,
+        social_role: socialRole,
+      }),
     });
     at.addGrant({
       roomJoin: true,
       room: roomName,
       canSubscribe: true,
-      canPublish,
+      canPublish: onStage,
       canPublishData: true,
+      // Constrain WHAT a stage member may publish: audio-only for Spaces,
+      // audio+video for Faces. Empty for audience (belt-and-suspenders with
+      // canPublish=false).
+      canPublishSources: onStage
+        ? withVideo
+          ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
+          : [TrackSource.MICROPHONE]
+        : [],
     });
+    const canPublish = onStage;
 
     const token = await at.toJwt();
 

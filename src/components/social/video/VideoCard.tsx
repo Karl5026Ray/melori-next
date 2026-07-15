@@ -24,8 +24,26 @@ interface VideoCardProps {
   distance?: number;
 }
 
+// Resolve a media URL to something the browser can actually load. Video posts
+// store full https URLs, but audio posts historically stored a BARE Supabase
+// storage object path (e.g. "artist/album/01-track.mp3") which the <audio>
+// element resolved relative to the page — producing a 404 HTML response and the
+// "Unable to play media" error. The rows have been migrated to full URLs, but
+// this stays as a defensive guard so any future bare path (audio only) still
+// plays. Guarded on `isAudioType` so a bare VIDEO path is never mis-prefixed
+// with the audio bucket.
+function resolveMediaUrl(url: string, isAudioType: boolean): string {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url; // already a full URL
+  if (!isAudioType) return url; // don't guess a bucket for non-audio
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const path = url.replace(/^\/+/, "");
+  return `${base}/storage/v1/object/public/audio-files/${path}`;
+}
+
 function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const isAudio = video.media_type === "audio";
+  const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -34,6 +52,9 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   // is pointless, and the native <audio controls> bar is the manual fallback
   // if the browser blocks unmuted autoplay.
   const [isMuted, setIsMuted] = useState(!isAudio);
+  // For audio posts: true when the browser BLOCKED unmuted autoplay so we fell
+  // back to muted (or paused). Drives a "tap to play with sound" affordance.
+  const [needsUnmuteTap, setNeedsUnmuteTap] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [likePending, setLikePending] = useState(false);
@@ -81,12 +102,44 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     const el = isAudio ? audioRef.current : videoRef.current;
     if (!el) return;
 
-    if (isActive) {
+    if (!isActive) {
+      el.pause();
+      return;
+    }
+
+    if (!isAudio) {
+      // Video: always starts muted (handled by state), just play.
       const p = el.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
-    } else {
-      el.pause();
+      return;
     }
+
+    // Audio post: try to autoplay UNMUTED (product requirement). Browsers block
+    // autoplay-with-sound without a prior user gesture, so if the unmuted play()
+    // rejects we fall back to muted autoplay (a silent-but-live player is better
+    // than a dead one, and it builds Chrome's media-engagement score) and raise
+    // a "tap to play with sound" affordance. Once the user has interacted the
+    // browser lets sound through and the tap clears the flag.
+    let cancelled = false;
+    el.muted = false;
+    setIsMuted(false);
+    const p = el.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        if (!cancelled) setNeedsUnmuteTap(false);
+      }).catch(() => {
+        if (cancelled) return;
+        // Unmuted autoplay blocked — retry muted so the clip still runs.
+        el.muted = true;
+        setIsMuted(true);
+        setNeedsUnmuteTap(true);
+        const p2 = el.play();
+        if (p2 && typeof p2.catch === "function") p2.catch(() => {});
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [isActive, isAudio]);
 
   // Playhead reset is its OWN effect, decoupled from play/pause. Only rewind a
@@ -146,6 +199,9 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
       if (el) {
         el.muted = next;
         if (!next) {
+          // Unmuting is a genuine user gesture, so playback is now allowed and
+          // any "tap to play with sound" prompt can go away.
+          setNeedsUnmuteTap(false);
           const p = el.play();
           if (p && typeof p.catch === "function") p.catch(() => {});
         }
@@ -203,15 +259,31 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
           )}
           <audio
             ref={audioRef}
-            src={video.video_url}
+            src={mediaUrl}
             controls
+            // metadata only: full tracks can be several MB; we don't want a
+            // scroll through the feed to eagerly pull every track.
+            preload="metadata"
             className="relative mt-6 w-full max-w-sm"
           />
+
+          {/* If the browser blocked unmuted autoplay, offer an explicit
+              tap-to-play-with-sound button (a real <button>, so the click
+              counts as the user gesture that unblocks audible playback). */}
+          {needsUnmuteTap && (
+            <button
+              onClick={toggleMute}
+              className="relative mt-4 flex items-center gap-2 rounded-full bg-white/90 px-5 py-2.5 font-semibold text-melori-void shadow-lg"
+            >
+              <Volume2 className="h-5 w-5" />
+              Tap to play with sound
+            </button>
+          )}
         </div>
       ) : (
         <video
           ref={videoRef}
-          src={video.video_url}
+          src={mediaUrl}
           loop
           muted={isMuted}
           playsInline

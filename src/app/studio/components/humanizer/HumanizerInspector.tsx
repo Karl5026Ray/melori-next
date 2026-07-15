@@ -22,9 +22,6 @@ interface HumanizerInspectorProps {
   processing: boolean;
   canProcess: boolean;
   onProcessAll: () => void;
-  masterPath: string | null;
-  masterDownloadUrl: string | null;
-  onDownloadMaster: () => void;
 }
 
 // Right inspector panel — global preset radios, gated Forensic Resistance
@@ -44,9 +41,6 @@ export default function HumanizerInspector({
   processing,
   canProcess,
   onProcessAll,
-  masterPath,
-  masterDownloadUrl,
-  onDownloadMaster,
 }: HumanizerInspectorProps) {
   const detections = stems.map((s) => s.detection).filter((d): d is number => d != null);
   const avgDetection =
@@ -196,20 +190,6 @@ export default function HumanizerInspector({
         </div>
       )}
 
-      {/* Master download */}
-      {masterPath && (
-        <div className="rounded-2xl border border-green-500/25 bg-green-500/[0.05] p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-green-400">✓ Master ready</h3>
-          <button
-            type="button"
-            onClick={onDownloadMaster}
-            disabled={!masterDownloadUrl}
-            className="w-full py-2.5 rounded-lg bg-white/5 border border-white/10 hover:border-[#c9a96e]/40 text-sm font-semibold transition-all disabled:opacity-50"
-          >
-            ⬇ Download master
-          </button>
-        </div>
-      )}
     </div>
   );
 }

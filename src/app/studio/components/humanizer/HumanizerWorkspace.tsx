@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/authClient";
 import StemDropzone from "./StemDropzone";
 import StemLane from "./StemLane";
 import HumanizerInspector from "./HumanizerInspector";
+import FinalDraft from "./FinalDraft";
 import {
   DEFAULT_FORENSIC_INTENSITY,
   DEFAULT_PRESET,
@@ -224,14 +225,24 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
   }, []);
 
   const [masterDownloadUrl, setMasterDownloadUrl] = useState<string | null>(null);
+  const [masterAudioBuffer, setMasterAudioBuffer] = useState<AudioBuffer | null>(null);
   useEffect(() => {
     if (!job?.master_path) {
       setMasterDownloadUrl(null);
+      setMasterAudioBuffer(null);
       return;
     }
     void (async () => {
       const url = await getStemDownloadUrl(job.master_path!);
       setMasterDownloadUrl(url);
+      // Decode for the inline Final Draft player; failure just leaves it silent.
+      if (url) {
+        try {
+          setMasterAudioBuffer(await decodeAudioUrl(url));
+        } catch (err) {
+          console.error("Failed to decode master:", err);
+        }
+      }
     })();
   }, [job?.master_path]);
 
@@ -243,6 +254,37 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
     a.click();
   }, [masterDownloadUrl]);
 
+  // Download every finished stem (sequential to avoid the browser blocking a
+  // burst of simultaneous programmatic downloads).
+  const downloadAll = useCallback(async () => {
+    const done = stems.filter((s) => s.status === "done" && s.outPath);
+    for (const s of done) {
+      await downloadStem(s.outPath!, `${s.name}_humanized.wav`);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }, [stems, downloadStem]);
+
+  const jobDone = job?.status === "completed";
+
+  // Clear everything back to a clean slate: stop any in-flight watching, drop
+  // all stems, the job, master audio, and reset controls to defaults.
+  const resetAll = useCallback(() => {
+    stopWatching();
+    setStems([]);
+    setJobId(null);
+    setJob(null);
+    setProcessing(false);
+    setErrorMsg(null);
+    setMasterDownloadUrl(null);
+    setMasterAudioBuffer(null);
+    setPreset(DEFAULT_PRESET);
+    setForensicEnabled(false);
+    setForensicIntensity(DEFAULT_FORENSIC_INTENSITY);
+    setBlend(true);
+  }, []);
+
+  const canReset = stems.length > 0 || job != null;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -252,6 +294,23 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
             Upload your stems, humanize each one individually, then blend into a final master.
           </p>
         </div>
+        {canReset && (
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                processing &&
+                !window.confirm("Processing is still running. Start over and discard this job?")
+              ) {
+                return;
+              }
+              resetAll();
+            }}
+            className="shrink-0 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[#ccc] text-sm font-semibold hover:border-[#c9a96e]/40 hover:text-white transition-all"
+          >
+            ↺ Start over
+          </button>
+        )}
       </div>
 
       {errorMsg && (
@@ -278,15 +337,6 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
                     onRemove={removeStem}
                     onPresetOverride={setPresetOverride}
                   />
-                  {stem.status === "done" && stem.outPath && (
-                    <button
-                      type="button"
-                      onClick={() => downloadStem(stem.outPath!, `${stem.name}_humanized.wav`)}
-                      className="absolute right-2 bottom-1 text-[10px] font-semibold text-[#c9a96e] hover:text-white transition-colors"
-                    >
-                      ⬇ Download stem
-                    </button>
-                  )}
                 </div>
               ))}
               {stems.length >= MAX_STEMS && (
@@ -295,6 +345,20 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
                 </p>
               )}
             </div>
+          )}
+
+          {/* Final Draft — appears once the job completes: final master +
+              edited stems, all in one place. */}
+          {jobDone && (
+            <FinalDraft
+              masterPath={job?.master_path ?? null}
+              masterDownloadUrl={masterDownloadUrl}
+              masterAudioBuffer={masterAudioBuffer}
+              onDownloadMaster={downloadMaster}
+              stems={stems}
+              onDownloadStem={downloadStem}
+              onDownloadAll={downloadAll}
+            />
           )}
         </div>
 
@@ -312,9 +376,6 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
           processing={processing}
           canProcess={stems.length > 0}
           onProcessAll={processAll}
-          masterPath={job?.master_path ?? null}
-          masterDownloadUrl={masterDownloadUrl}
-          onDownloadMaster={downloadMaster}
         />
       </div>
     </div>

@@ -97,10 +97,18 @@ export default function CoverImage({
   }
 
   return (
+    // Kept as a plain <img> on purpose: `src` can be any host (Supabase,
+    // VPS, or external artist URLs) and callers size it with arbitrary
+    // classNames, so next/image's host allowlist + layout constraints would
+    // break the long tail. We still get most of the perf win cheaply via
+    // native lazy-loading + async decode, which reduces work on off-screen
+    // grid/card covers without any layout or host risk.
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className={`object-cover ${rounded} ${className}`}
     />

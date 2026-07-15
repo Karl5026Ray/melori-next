@@ -33,6 +33,8 @@ const navGroups: NavGroup[] = [
     items: [
       // Melori Mirror = the TikTok "For You"-style feed + who's live now.
       { label: "Melori Mirror", href: "/social/mirror" },
+      // Melori Connect = music-taste dating/matching (Superfan+).
+      { label: "Melori Connect", href: "/social/connect" },
       // Radio = the non-stop crossfade mix. Lives here so it's reachable from
       // the menu on every screen size (not just the mobile bottom-bar M-menu).
       { label: "Radio", href: "/social/radio" },

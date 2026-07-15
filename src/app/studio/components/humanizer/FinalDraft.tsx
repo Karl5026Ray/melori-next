@@ -26,7 +26,6 @@ interface FinalDraftProps {
 // links.
 export default function FinalDraft({
   masterPath,
-  masterDownloadUrl,
   masterAudioBuffer,
   onDownloadMaster,
   stems,
@@ -46,21 +45,20 @@ export default function FinalDraft({
       {/* Final product — the blended master */}
       {masterPath && (
         <div className="rounded-xl border border-[#c9a96e]/30 bg-[#c9a96e]/[0.06] p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-bold text-[#c9a96e]">Final Master</p>
-              <p className="text-xs text-[#888]">All humanized stems blended into one track</p>
-            </div>
-            <button
-              type="button"
-              onClick={onDownloadMaster}
-              disabled={!masterDownloadUrl}
-              className="shrink-0 px-4 py-2 rounded-lg bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] text-xs font-bold disabled:opacity-40 hover:-translate-y-0.5 transition-all"
-            >
-              ⬇ Download master
-            </button>
+          <div>
+            <p className="text-sm font-bold text-[#c9a96e]">Final Master</p>
+            <p className="text-xs text-[#888]">All humanized stems blended into one track</p>
           </div>
           <AudioPlayer buffer={masterAudioBuffer} label="Master" />
+          {/* Big, always-clickable download-now CTA — signed URL is minted on
+              click if it isn't cached yet, so there's no dead/greyed moment. */}
+          <button
+            type="button"
+            onClick={onDownloadMaster}
+            className="w-full py-3 rounded-lg bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] text-sm font-bold tracking-wide hover:-translate-y-0.5 transition-all"
+          >
+            ⬇ Download Final Master (.wav)
+          </button>
         </div>
       )}
 

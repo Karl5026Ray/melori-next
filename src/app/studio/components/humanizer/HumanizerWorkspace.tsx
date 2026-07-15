@@ -246,13 +246,20 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
     })();
   }, [job?.master_path]);
 
-  const downloadMaster = useCallback(() => {
-    if (!masterDownloadUrl) return;
+  // Download the master the instant the user clicks — use the cached signed URL
+  // if it's ready, otherwise mint one on demand so there's no dead moment right
+  // after the job completes.
+  const downloadMaster = useCallback(async () => {
+    let url = masterDownloadUrl;
+    if (!url && job?.master_path) {
+      url = await getStemDownloadUrl(job.master_path);
+    }
+    if (!url) return;
     const a = document.createElement("a");
-    a.href = masterDownloadUrl;
+    a.href = url;
     a.download = "master.wav";
     a.click();
-  }, [masterDownloadUrl]);
+  }, [masterDownloadUrl, job?.master_path]);
 
   // Download every finished stem (sequential to avoid the browser blocking a
   // burst of simultaneous programmatic downloads).
@@ -265,6 +272,15 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
   }, [stems, downloadStem]);
 
   const jobDone = job?.status === "completed";
+
+  // Scroll the Final Draft into view the moment the job completes, so the
+  // download is right in front of the user without hunting for it.
+  const finalDraftRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (jobDone && finalDraftRef.current) {
+      finalDraftRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [jobDone]);
 
   // Clear everything back to a clean slate: stop any in-flight watching, drop
   // all stems, the job, master audio, and reset controls to defaults.
@@ -350,6 +366,7 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
           {/* Final Draft — appears once the job completes: final master +
               edited stems, all in one place. */}
           {jobDone && (
+            <div ref={finalDraftRef}>
             <FinalDraft
               masterPath={job?.master_path ?? null}
               masterDownloadUrl={masterDownloadUrl}
@@ -359,6 +376,7 @@ export default function HumanizerWorkspace({ canForensic }: HumanizerWorkspacePr
               onDownloadStem={downloadStem}
               onDownloadAll={downloadAll}
             />
+            </div>
           )}
         </div>
 

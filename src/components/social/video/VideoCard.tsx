@@ -59,15 +59,30 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     }
   }, [isActive]);
 
-  // Pause audio posts when they scroll out of view (never autoplay with sound;
-  // the listener taps <audio controls> to start).
+  // Audio posts: pause AND reset when they scroll out of view so the card is
+  // ready to play from the top the next time it becomes active. Also reset the
+  // playhead when a clip finishes, otherwise the native controls sit in the
+  // "ended" state and tapping play does nothing (Bug: "won't stop on the
+  // correct spot / then won't play").
   useEffect(() => {
     if (!isAudio) return;
     const el = audioRef.current;
     if (!el) return;
+
+    const handleEnded = () => {
+      el.pause();
+      el.currentTime = 0;
+    };
+    el.addEventListener("ended", handleEnded);
+
     if (!isActive) {
       el.pause();
+      el.currentTime = 0;
     }
+
+    return () => {
+      el.removeEventListener("ended", handleEnded);
+    };
   }, [isActive, isAudio]);
 
   const toggleMute = () => {
@@ -136,7 +151,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           loop
           muted={isMuted}
           playsInline
-          className="h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-contain"
           poster={video.thumbnail_url || undefined}
         />
       )}

@@ -94,10 +94,13 @@ export default function MirrorFeed({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
+      className="absolute inset-0 h-full w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
     >
-      {/* First snap section: the online-now ring row + a title. */}
-      <section className="video-snap-item flex min-h-full w-full flex-col">
+      {/* First snap section: the online-now ring row + a title. Uses h-full (not
+          min-h-full) so it is exactly one viewport tall and does not push the
+          video items past the screen — that overflow is what made videos render
+          "too big". */}
+      <section className="video-snap-item flex h-full w-full flex-col overflow-y-auto">
         <OnlineNowRow />
         {videos.length === 0 && (
           // Empty feed state (social_videos has no rows yet). Mirror still feels
@@ -130,7 +133,7 @@ export default function MirrorFeed({
         <div
           key={video.id}
           data-index={index}
-          className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0"
+          className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
         >
           <VideoCard video={video} isActive={index === activeIndex} />
         </div>

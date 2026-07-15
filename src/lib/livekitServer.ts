@@ -97,6 +97,20 @@ export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean
   }
 }
 
+// End a live room server-side by disconnecting everyone still connected. Used
+// when a room is closed gracefully (e.g. the host left and there was no eligible
+// successor) so no straggler client keeps publishing into a dead room. Best-
+// effort: a missing/already-empty room is not an error.
+export async function endLiveKitRoom(roomName: string): Promise<void> {
+  try {
+    await client().deleteRoom(roomName);
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist/i.test(msg)) return;
+    console.warn("[livekitServer] deleteRoom failed", msg);
+  }
+}
+
 // Force-mute (or unmute) a participant's published microphone track server-side
 // so a demoted / host-muted speaker actually stops being heard even if their
 // client is slow to react. Best-effort: returns silently if they aren't

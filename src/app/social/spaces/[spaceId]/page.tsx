@@ -673,9 +673,27 @@ export default function SpaceDetailPage() {
             if (!cancelled) setLiveHere(state.occupancy);
           },
           onSystemSignal: (payload) => {
-            // Server told us the room ended (e.g. it emptied). Bounce out.
+            // Server told us the room ended (e.g. it emptied, or the host left
+            // with no eligible successor). Bounce out.
             if (payload?.event === "space-ended") {
               router.push("/social/spaces");
+              return;
+            }
+            // Host was transferred server-side (the previous host left). Refresh
+            // the space so host_id updates live — the new host's client starts
+            // showing host controls, everyone else re-badges. The participant
+            // realtime subscription already refreshed roles.
+            if (payload?.event === "host-changed") {
+              void supabase
+                .from("spaces")
+                .select(
+                  `*, host:profiles(id, display_name, avatar_url, role, verified)`,
+                )
+                .eq("id", spaceId)
+                .single()
+                .then(({ data }) => {
+                  if (data) setSpace(data as Space);
+                });
             }
           },
           onSignal: (signal) => {

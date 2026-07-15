@@ -35,13 +35,23 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { authFetch } from "@/lib/authClient";
-import { ArrowDown, Send } from "lucide-react";
+import { ArrowDown, Send, SmilePlus } from "lucide-react";
 
 export interface RoomSystemMessage {
   id: string;
   text: string;
   at: string; // ISO timestamp
 }
+
+// One reaction row (message × user × emoji). Kept flat so realtime INSERT/DELETE
+// events map straight onto add/remove without re-aggregating from the server.
+interface Reaction {
+  user_id: string;
+  emoji: string;
+}
+
+// The curated picker set — MUST match ALLOWED_EMOJI in the reactions API route.
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "🔥", "😮"];
 
 interface ChatComment {
   id: string;
@@ -94,6 +104,9 @@ export default function RoomChat({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [newCount, setNewCount] = useState(0);
+  // commentId -> its reaction rows; and which message's emoji picker is open.
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -192,6 +205,210 @@ export default function RoomChat({
       supabase.removeChannel(channel);
     };
   }, [spaceId, user]);
+
+  // Initial reactions load for the room (grouped per message client-side).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/social/spaces/${spaceId}/reactions`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.reactions)) {
+          const rows = data.reactions as Array<{
+            comment_id: string;
+            user_id: string;
+            emoji: string;
+          }>;
+          const map: Record<string, Reaction[]> = {};
+          for (const r of rows) {
+            (map[r.comment_id] ??= []).push({
+              user_id: r.user_id,
+              emoji: r.emoji,
+            });
+          }
+          setReactions(map);
+        }
+      } catch {
+        /* ignore — no reactions is fine */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId]);
+
+  // Realtime reactions: mirror INSERT/DELETE from every participant. This reuses
+  // the same Supabase Realtime path as the message feed above (postgres_changes)
+  // so reactions sync live without a separate transport. DELETE carries the full
+  // old row because the table is REPLICA IDENTITY FULL (migration 030).
+  useEffect(() => {
+    const channel = supabase
+      .channel(`room_reactions:${spaceId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "space_comment_reactions",
+          filter: `space_id=eq.${spaceId}`,
+        },
+        (payload) => {
+          const r = payload.new as {
+            comment_id: string;
+            user_id: string;
+            emoji: string;
+          };
+          setReactions((prev) => {
+            const list = prev[r.comment_id] ?? [];
+            if (list.some((x) => x.user_id === r.user_id && x.emoji === r.emoji)) {
+              return prev; // dedupe our own optimistic add / duplicate events
+            }
+            return {
+              ...prev,
+              [r.comment_id]: [...list, { user_id: r.user_id, emoji: r.emoji }],
+            };
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "space_comment_reactions",
+          filter: `space_id=eq.${spaceId}`,
+        },
+        (payload) => {
+          const r = payload.old as {
+            comment_id: string;
+            user_id: string;
+            emoji: string;
+          };
+          setReactions((prev) => {
+            const list = prev[r.comment_id];
+            if (!list) return prev;
+            return {
+              ...prev,
+              [r.comment_id]: list.filter(
+                (x) => !(x.user_id === r.user_id && x.emoji === r.emoji),
+              ),
+            };
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [spaceId]);
+
+  // Toggle the current user's reaction on a message. Optimistic: flip locally
+  // first, then persist via the API (which broadcasts to everyone else). The
+  // realtime echo of our own write is deduped above.
+  const toggleReaction = useCallback(
+    async (commentId: string, emoji: string) => {
+      if (!user) {
+        router.push("/social/auth");
+        return;
+      }
+      const uid = user.id;
+      setPickerFor(null);
+      setReactions((prev) => {
+        const list = prev[commentId] ?? [];
+        const mine = list.some((x) => x.user_id === uid && x.emoji === emoji);
+        return {
+          ...prev,
+          [commentId]: mine
+            ? list.filter((x) => !(x.user_id === uid && x.emoji === emoji))
+            : [...list, { user_id: uid, emoji }],
+        };
+      });
+      try {
+        const res = await authFetch(
+          `/api/social/spaces/${spaceId}/reactions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comment_id: commentId, emoji }),
+          },
+        );
+        if (res.status === 401) router.push("/social/auth");
+      } catch {
+        /* best-effort — realtime will reconcile if the write landed */
+      }
+    },
+    [user, spaceId, router],
+  );
+
+  // Reaction bar (grouped chips + add-reaction picker) rendered under a message.
+  const renderReactions = useCallback(
+    (commentId: string) => {
+      const list = reactions[commentId] ?? [];
+      const groups = new Map<string, { count: number; mine: boolean }>();
+      for (const r of list) {
+        const g = groups.get(r.emoji) ?? { count: 0, mine: false };
+        g.count += 1;
+        if (user && r.user_id === user.id) g.mine = true;
+        groups.set(r.emoji, g);
+      }
+      const open = pickerFor === commentId;
+      return (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {[...groups.entries()].map(([emoji, { count, mine }]) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => toggleReaction(commentId, emoji)}
+              aria-pressed={mine}
+              aria-label={`${mine ? "Remove your" : "Add"} ${emoji} reaction — ${count} ${count === 1 ? "person" : "people"}`}
+              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
+                mine
+                  ? "border-melori-purple bg-melori-purple/20 text-melori-text"
+                  : "border-melori-border/60 bg-melori-elevated/60 text-melori-muted hover:text-melori-text"
+              }`}
+            >
+              <span className="text-sm leading-none">{emoji}</span>
+              <span className="tabular-nums">{count}</span>
+            </button>
+          ))}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPickerFor((p) => (p === commentId ? null : commentId))}
+              aria-label="Add reaction"
+              aria-haspopup="true"
+              aria-expanded={open}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-melori-border/60 text-melori-muted transition hover:text-melori-text"
+            >
+              <SmilePlus className="h-3.5 w-3.5" />
+            </button>
+            {open && (
+              <div
+                role="menu"
+                className="absolute bottom-full left-0 z-20 mb-1 flex gap-1 rounded-full border border-melori-border bg-melori-elevated p-1 shadow-lg"
+              >
+                {REACTION_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => toggleReaction(commentId, emoji)}
+                    aria-label={`React with ${emoji}`}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-lg transition hover:bg-melori-purple/20"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    },
+    [reactions, pickerFor, user, toggleReaction],
+  );
 
   // Merge persisted messages + ephemeral system messages into one timeline,
   // sorted by time, with grouping flags computed on the message stream only.
@@ -295,6 +512,16 @@ export default function RoomChat({
 
   return (
     <div className={`relative flex min-h-0 flex-1 flex-col ${className}`}>
+      {/* Click-away for an open reaction picker. */}
+      {pickerFor && (
+        <button
+          type="button"
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={() => setPickerFor(null)}
+          className="fixed inset-0 z-10 cursor-default"
+        />
+      )}
       {/* Scrollable feed. bottom padding keeps the last message clear of input. */}
       <div
         ref={scrollRef}
@@ -327,6 +554,7 @@ export default function RoomChat({
                     <p className="whitespace-pre-wrap break-words text-sm text-melori-text">
                       {c.body}
                     </p>
+                    {renderReactions(c.id)}
                   </li>
                 );
               }
@@ -360,6 +588,7 @@ export default function RoomChat({
                     <p className="whitespace-pre-wrap break-words text-sm text-melori-text">
                       {c.body}
                     </p>
+                    {renderReactions(c.id)}
                   </div>
                 </li>
               );

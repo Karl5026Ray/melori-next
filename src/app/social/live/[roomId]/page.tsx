@@ -45,7 +45,7 @@ export default function LiveRoomPage() {
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    const fetchRoom = async () => {
       const { data, error: err } = await supabase
         .from("spaces")
         .select(
@@ -62,12 +62,38 @@ export default function LiveRoomPage() {
         setError("This live room has ended.");
         setRoom(data as unknown as RoomRow);
       } else {
+        setError(null);
         setRoom(data as unknown as RoomRow);
       }
       setLoading(false);
-    })();
+    };
+
+    fetchRoom();
+
+    // Server-authoritative host auto-promotion transfers spaces.host_id and
+    // flips a participant's role when the host leaves. Refetch the room on any
+    // participant change so the new host's client picks up host_id (→ host
+    // controls) live, and everyone sees a graceful "ended" state if the room
+    // was closed for lack of a successor.
+    const channel = supabase
+      .channel(`live_room:${roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "space_participants",
+          filter: `space_id=eq.${roomId}`,
+        },
+        () => {
+          void fetchRoom();
+        },
+      )
+      .subscribe();
+
     return () => {
       active = false;
+      supabase.removeChannel(channel);
     };
   }, [roomId]);
 

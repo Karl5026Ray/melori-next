@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
+import { promoteHostOnLeave } from "@/lib/roomHost";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,8 +9,10 @@ export const dynamic = "force-dynamic";
 // POST /api/social/spaces/[spaceId]/leave
 // Called from `pagehide`/`beforeunload` via sendBeacon so the server sees the
 // leave even if the tab crashes. Marks the caller left_at, and if the leaving
-// user was the last remaining host and the space has no other speakers, ends
-// the space (Clubhouse-style ephemerality).
+// user was the host, hands the room off to the oldest-tenured moderator (else
+// oldest speaker) via promoteHostOnLeave(); only when nobody is eligible does
+// the room end (Clubhouse-style ephemerality). All of this is decided
+// server-side — the client never reassigns host.
 //
 // This intentionally does NOT require Superfan — audience users can leave.
 // We just require a valid session so we can identify the leaver.
@@ -47,20 +50,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
   const isHostLeaving = space.host_id === userId;
   if (!isHostLeaving) return NextResponse.json({ ok: true });
 
-  // If no active speakers remain, end the space.
-  const { count } = await supabase
-    .from("space_participants")
-    .select("id", { count: "exact", head: true })
-    .eq("space_id", spaceId)
-    .in("role", ["host", "speaker"])
-    .is("left_at", null);
-
-  if ((count ?? 0) === 0) {
-    await supabase
-      .from("spaces")
-      .update({ status: "ended", ended_at: now })
-      .eq("id", spaceId);
-  }
-
-  return NextResponse.json({ ok: true });
+  // Host left: atomically promote the oldest moderator (else oldest speaker),
+  // or end the room gracefully if nobody is eligible. Race-safe across the
+  // duplicate signals a single leave produces (beacon + presence timeout).
+  const { outcome, newHostId } = await promoteHostOnLeave(spaceId, userId);
+  return NextResponse.json({ ok: true, outcome, newHostId });
 }

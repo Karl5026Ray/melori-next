@@ -32,7 +32,6 @@ import {
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { usePlayer } from "@/components/player/PlayerProvider";
 import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
 import {
   Mic,
@@ -49,7 +48,6 @@ import {
   Check,
   UserPlus,
   Volume2,
-  Music,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -104,21 +102,12 @@ export default function LiveRoom({
 }: LiveRoomProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const { isPlaying, togglePlay } = usePlayer();
   const isHost = !!user && user.id === hostId;
   const isSolo = mode === "live_solo";
 
-  // Prevent the background music bar from doubling up with live participant
-  // audio (Bug A/D): if music is playing when we enter the room, pause it once.
-  const pausedMusicRef = useRef(false);
-  useEffect(() => {
-    if (!pausedMusicRef.current && isPlaying) {
-      pausedMusicRef.current = true;
-      togglePlay();
-    }
-    // Run only on mount — the user may re-enable music from the collapsed bar.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Background music is paused on entry by AudioPlayer's room-route effect (it
+  // hides the floating player and pauses playback so it never fights the live
+  // audio), so there's nothing to do here.
 
   const heartSeq = useRef(0);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -439,14 +428,6 @@ export default function LiveRoom({
     }
   }, []);
 
-  // Ask the global music bar (AudioPlayer) to pop up from its collapsed peek
-  // strip. The player owns its own state; we just nudge it via a window event.
-  const toggleMusicBar = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("melori:music-bar:expand"));
-    }
-  }, []);
-
   const toggleMic = useCallback(async () => {
     const next = !micOn;
     setMicOn(next);
@@ -718,15 +699,6 @@ export default function LiveRoom({
           className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
         >
           <Heart className="h-6 w-6" />
-        </button>
-
-        {/* Bring up the (collapsed) background music bar */}
-        <button
-          onClick={toggleMusicBar}
-          aria-label="Show music player"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-        >
-          <Music className="h-5 w-5" />
         </button>
 
         {/* Host: end the broadcast */}

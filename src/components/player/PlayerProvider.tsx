@@ -66,6 +66,9 @@ interface PlayerContextValue {
   stopRadio: () => void;
   playQueue: (tracks: PlayerTrack[], startIndex: number) => void;
   togglePlay: () => void;
+  // Halt playback without toggling — used when entering a live room so
+  // background music never fights the room's own audio.
+  pause: () => void;
   next: () => void;
   prev: () => void;
   seek: (fraction: number) => void;
@@ -419,6 +422,14 @@ export default function PlayerProvider({
     [activateIndex],
   );
 
+  const pause = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio && !audio.paused) {
+      userPausedRef.current = true;
+      audio.pause();
+    }
+  }, []);
+
   const stopRadio = useCallback(() => {
     setRadioMode(false);
     radioModeRef.current = false;
@@ -495,6 +506,7 @@ export default function PlayerProvider({
         hasPrev: queue.length > 1 && index > 0,
         playQueue,
         togglePlay,
+        pause,
         next,
         prev,
         seek,

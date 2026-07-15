@@ -58,10 +58,10 @@ export default function RootLayout({
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
         <PlayerProvider>
           <Header />
-          {/* Extra bottom padding on mobile so content clears the fixed
-             audio player (stacked at bottom-14) + the mobile tab bar (h-14).
-             Desktop keeps pb-24 since only the player is fixed there. */}
-          <main className="flex-1 pb-44 md:pb-24">{children}</main>
+          {/* Bottom padding clears the fixed bars: on mobile the tab bar
+             (h-14) — the music transport now floats and overlays content — and
+             on desktop the full-width audio bar. */}
+          <main className="flex-1 pb-24">{children}</main>
           <Footer />
           {/* AudioPlayer stacks ABOVE the mobile tab bar (bottom-14) on
              mobile so the two fixed bars never overlap; flush bottom on md+. */}

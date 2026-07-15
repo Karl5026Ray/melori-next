@@ -166,6 +166,45 @@ export async function createHumanizeJob(params: {
   return data as { jobId: string };
 }
 
+// Lists the caller's own humanize jobs (default: completed only), newest
+// first — powers the persistent "My Humanized Tracks" library.
+export async function fetchHumanizeJobs(
+  opts: { status?: "completed" | "all"; limit?: number } = {},
+): Promise<HumanizeJob[]> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await authFetch(
+    `/api/studio/humanize/jobs${qs ? `?${qs}` : ""}`,
+    { method: "GET" },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Failed to load humanize jobs");
+  }
+  return (data.jobs ?? []) as HumanizeJob[];
+}
+
+// The humanizer-stems bucket is private (no public URL), so downloads and A/B
+// playback both need a short-lived signed URL minted server-side via
+// /api/studio/humanize/sign. Shared here so both the workspace and the
+// library use one implementation.
+export async function getStemDownloadUrl(path: string): Promise<string | null> {
+  try {
+    const res = await authFetch(
+      `/api/studio/humanize/sign?path=${encodeURIComponent(path)}`,
+      { method: "GET" },
+    );
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return data?.url ?? null;
+  } catch (err) {
+    console.error("Failed to sign stem download URL:", err);
+    return null;
+  }
+}
+
 export async function fetchJobStatus(jobId: string): Promise<HumanizeJob> {
   const res = await authFetch(`/api/studio/humanize/${jobId}`, { method: "GET" });
   const data = await res.json().catch(() => ({}));

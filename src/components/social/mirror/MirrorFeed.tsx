@@ -94,7 +94,12 @@ export default function MirrorFeed({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
+      // Lock the scroller to a definite viewport-based height. The social
+      // layout only sets min-height on ancestors, so h-full has no definite
+      // height to resolve against — each h-full snap item then collapses to
+      // the video's intrinsic size ("extra large" video bug). A fixed dvh
+      // height (minus the 4rem top nav) gives every snap item a real height.
+      className="h-[calc(100dvh-4rem)] w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
     >
       {/* First snap section: the online-now ring row + a title. */}
       <section className="video-snap-item flex min-h-full w-full flex-col">

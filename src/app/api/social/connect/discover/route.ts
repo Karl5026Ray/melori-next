@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   const { data: rows, error } = await supabase
     .from("dating_profiles")
     .select(
-      `user_id, headline, birthdate, gender, city, photos, prompts,
+      `user_id, headline, birthdate, gender, city, photos, videos, prompts,
        profile:profiles!dating_profiles_user_id_fkey(
          id, display_name, username, avatar_url, verified, role, bio
        )`,
@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
         gender: c.gender,
         city: c.city,
         photos: c.photos ?? [],
+        videos: c.videos ?? [],
         prompts: c.prompts ?? [],
         profile: c.profile,
         compatibility: typeof score === "number" ? score : 0,

@@ -42,7 +42,15 @@ export const ROOM_FORMAT_CONFIG: Record<
 export const ROOM_FORMAT_FALLBACK: RoomFormat = "discussion";
 
 export function getRoomFormatConfig(format: RoomFormat | null | undefined) {
-  return ROOM_FORMAT_CONFIG[format ?? ROOM_FORMAT_FALLBACK];
+  // Fall back for ANY value missing from the config — not just null/undefined.
+  // Legacy/mismatched rows can carry a room_format that isn't a known key (e.g.
+  // a SpaceType like "listening"); a bare lookup would return undefined and the
+  // callers (SpaceCard, room header) would then throw on `.variant`/`.label`,
+  // crashing the whole Spaces route into the global error boundary.
+  return (
+    (format ? ROOM_FORMAT_CONFIG[format] : undefined) ??
+    ROOM_FORMAT_CONFIG[ROOM_FORMAT_FALLBACK]
+  );
 }
 
 export interface Space {

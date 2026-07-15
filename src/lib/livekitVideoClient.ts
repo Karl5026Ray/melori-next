@@ -66,6 +66,10 @@ export interface JoinVideoOptions {
   onParticipantCountChange?: (count: number) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Called whenever the browser's autoplay policy changes whether remote audio
+  // can play. `canPlay === false` means the UI must show a tap-to-unmute
+  // affordance and call ensureVideoAudio() from that user gesture.
+  onAudioPlaybackChanged?: (canPlay: boolean) => void;
   onError?: (err: Error) => void;
 }
 
@@ -183,14 +187,18 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       } else if (track?.kind === AUDIO_KIND) {
         const el = track.attach() as HTMLMediaElement;
         el.setAttribute("data-lk-audio", participant.identity);
+        el.autoplay = true;
+        (el as HTMLAudioElement).muted = false;
         document.body.appendChild(el);
         session.remoteAudioEls.push(el);
         try {
           const p = el.play?.();
           if (p && typeof p.catch === "function") {
-            p.catch((e: unknown) =>
-              console.warn("[faces] remote audio autoplay blocked", e),
-            );
+            p.catch((e: unknown) => {
+              console.warn("[faces] remote audio autoplay blocked", e);
+              // Surface the blocked state so the UI can prompt for a gesture.
+              opts.onAudioPlaybackChanged?.(!!session.room?.canPlaybackAudio);
+            });
           }
         } catch (e) {
           console.warn("[faces] remote audio play() failed", e);
@@ -275,6 +283,19 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.Disconnected, onDisconnected),
     );
 
+    // --- Audio autoplay gate ---------------------------------------------
+    // Browsers block audio until a user gesture. LiveKit fires this whenever
+    // the ability to play changes; we relay it so the UI can show/hide a
+    // "tap to enable sound" prompt.
+    const onAudioPlaybackChanged = () =>
+      opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
+    if (RoomEvent.AudioPlaybackStatusChanged) {
+      room.on(RoomEvent.AudioPlaybackStatusChanged, onAudioPlaybackChanged);
+      session.cleanups.push(() =>
+        room.off(RoomEvent.AudioPlaybackStatusChanged, onAudioPlaybackChanged),
+      );
+    }
+
     await room.connect(creds.url, creds.token, { autoSubscribe: true });
 
     // Attach tracks already present before our handlers registered.
@@ -289,6 +310,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     session.identity = creds.identity;
     session.role = creds.role;
     session.tier = tier;
+
+    // Report the initial autoplay state so the UI can prompt immediately if the
+    // browser is holding audio back until a gesture.
+    opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
 
     // Publisher (host) turns on camera + mic. Viewers stay receive-only.
     if (creds.role === "publisher") {

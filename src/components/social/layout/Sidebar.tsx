@@ -13,6 +13,7 @@ import {
   Home,
   Plus,
   Sparkles,
+  Heart,
 } from "lucide-react";
 
 // Slimmed, orange-branded social nav. We keep only the destinations people
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/social/spaces", label: "MM Spaces", icon: Radio },
   { href: "/social/live", label: "MM Faces", icon: Video },
   { href: "/social/community", label: "Community", icon: MessagesSquare },
+  { href: "/social/connect", label: "Connect ♥", icon: Heart },
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
 ];
 

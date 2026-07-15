@@ -70,35 +70,45 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
 
   // Drive playback for the ACTIVE media element (video OR audio). Browsers block
   // autoplay-with-sound, so we always start muted and rely on the user's
-  // mute toggle (a user gesture) to unmute. Video posts start playing muted on
-  // scroll; audio posts also auto-start here (this was the bug — the <audio>
-  // element was never told to play, so audio-only cards were silent until you
-  // manually hit the native play button).
+  // mute toggle (a user gesture) to unmute. Audio posts auto-start here too so
+  // the "music frames" play on scroll without needing the native play button.
+  //
+  // IMPORTANT: this effect depends ONLY on `isActive`/`isAudio` — NOT on
+  // `distance` or `isMuted`. `distance` changes on every scroll tick, and if
+  // playback were re-driven (or a cleanup pause fired) on each change, the
+  // active audio/video would stutter and, for <audio>, effectively never play.
   useEffect(() => {
     const el = isAudio ? audioRef.current : videoRef.current;
     if (!el) return;
 
     if (isActive) {
-      // Guarantee a mutable-autoplay-safe start: mute, rewind, then play.
-      el.muted = isMuted;
       const p = el.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     } else {
-      // Pause whenever inactive, but only REWIND when the card is far away
-      // (>1 card off). Resetting currentTime on an adjacent card forces a
-      // reload-from-scratch (black flash + re-decode) the instant the user
-      // flicks back to it. Leaving the last frame on neighbours makes flicking
-      // back-and-forth feel instant.
       el.pause();
-      if (distance > 1) el.currentTime = 0;
     }
+  }, [isActive, isAudio]);
 
-    // Cleanup: always pause on unmount so React 19 Strict-Mode remounts and
-    // infinite-scroll unmounts can't leave ghost audio playing.
+  // Playhead reset is its OWN effect, decoupled from play/pause. Only rewind a
+  // paused card once it is far (>1 card) from active — rewinding an adjacent
+  // card would force a reload-from-scratch (black flash) if the user flicks
+  // straight back to it.
+  useEffect(() => {
+    if (isActive) return;
+    const el = isAudio ? audioRef.current : videoRef.current;
+    if (!el) return;
+    if (distance > 1) el.currentTime = 0;
+  }, [isActive, isAudio, distance]);
+
+  // Pause on UNMOUNT only (empty deps) so React 19 Strict-Mode remounts and
+  // infinite-scroll unmounts can't leave ghost audio playing. This does NOT run
+  // on every scroll, so it never interrupts the active clip.
+  useEffect(() => {
     return () => {
-      el.pause();
+      videoRef.current?.pause();
+      audioRef.current?.pause();
     };
-  }, [isActive, isAudio, isMuted, distance]);
+  }, []);
 
   // Audio posts: reset the playhead when a clip finishes, otherwise the native
   // controls sit in the "ended" state and tapping play does nothing (Bug:

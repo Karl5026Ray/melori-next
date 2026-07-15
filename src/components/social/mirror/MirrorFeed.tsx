@@ -120,7 +120,15 @@ export default function MirrorFeed({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 h-full w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
+      // Height is pinned to the DYNAMIC viewport (100dvh minus the 4rem header)
+      // rather than inheriting the parent's static 100vh chain. On mobile the
+      // URL bar collapse makes 100vh taller than what's visible, so each
+      // `h-full` snap card was taller than the screen — the feed "didn't stop"
+      // cleanly on the next card and looked "too big". `100dvh` tracks the
+      // actual visible area so every card is exactly one screen tall and snaps
+      // to a clean stop.
+      style={{ height: "calc(100dvh - 4rem)" }}
+      className="absolute inset-x-0 top-0 w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
     >
       {/* First snap section: the online-now ring row + a title. Exactly one
           viewport tall (h-full) and — critically — NOT its own vertical

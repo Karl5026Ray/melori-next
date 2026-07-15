@@ -589,10 +589,11 @@ export default function LiveRoom({
         </div>
       )}
 
-      {/* Comment stream */}
-      <div className="absolute bottom-24 left-0 z-10 max-h-[36%] w-full max-w-sm overflow-hidden px-4 md:bottom-28">
-        <div className="faces-comment-shell">
-          <SpaceCommentSection spaceId={spaceId} />
+      {/* Comment stream — bottom-anchored chat that auto-scrolls to the newest
+          message and keeps the feed above (never behind) the composer. */}
+      <div className="absolute bottom-24 left-0 z-10 h-[40%] w-full max-w-sm px-4 md:bottom-28">
+        <div className="faces-comment-shell h-full">
+          <SpaceCommentSection spaceId={spaceId} live />
         </div>
       </div>
 

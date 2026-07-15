@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -46,7 +46,17 @@ function displayName(c: SpaceComment): string {
 // Per-space comment thread rendered below the stage. Reads are public.
 // Posting requires Superfan+ (enforced server-side; the client falls back
 // to the upgrade prompt when the caller isn't eligible).
-export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
+export default function SpaceCommentSection({
+  spaceId,
+  // "live" renders the thread as a bottom-anchored chat (oldest → newest,
+  // newest at the bottom) inside its own scroll area, with the composer pinned
+  // below the feed. Used by the MM Faces live room overlay so incoming comments
+  // auto-scroll into view instead of being clipped/hidden behind the input.
+  live = false,
+}: {
+  spaceId: string;
+  live?: boolean;
+}) {
   const router = useRouter();
   const { user } = useAuth();
   const canParticipate = useCanParticipate();
@@ -55,6 +65,32 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Live-chat auto-scroll. We only stick to the bottom when the viewer is
+  // already near it, so reading back through history isn't yanked away by an
+  // incoming comment.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    nearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // In live mode, comments arrive newest-first (prepended in state) but render
+  // oldest-first so the newest sits at the bottom of the feed.
+  const orderedComments = live ? [...comments].slice().reverse() : comments;
+
+  // Scroll to the newest message on load and whenever a comment arrives, but
+  // only if the viewer is pinned near the bottom (or it's the initial paint).
+  useEffect(() => {
+    if (!live) return;
+    if (!nearBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [live, comments, loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +209,116 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
     setIsSubmitting(false);
   };
 
+  const renderComment = (c: SpaceComment) => {
+    const name = displayName(c);
+    const initial = name.charAt(0).toUpperCase();
+    const profileHref = c.username ? `/social/u/${c.username}` : undefined;
+    const Avatar = (
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-melori-purple/30 text-xs font-semibold">
+        {c.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={c.avatar_url}
+            alt={name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          initial
+        )}
+      </span>
+    );
+    return (
+      <li
+        key={c.id}
+        className="rounded-2xl border border-melori-border bg-melori-elevated/50 p-4"
+      >
+        <div className="flex items-center gap-2 mb-1">
+          {profileHref ? (
+            <a href={profileHref} className="shrink-0">
+              {Avatar}
+            </a>
+          ) : (
+            Avatar
+          )}
+          {profileHref ? (
+            <a
+              href={profileHref}
+              className="font-semibold text-sm hover:underline"
+            >
+              {name}
+            </a>
+          ) : (
+            <span className="font-semibold text-sm">{name}</span>
+          )}
+          <span className="text-xs text-melori-muted">
+            {relativeTime(c.created_at)}
+          </span>
+        </div>
+        <p className="text-sm text-melori-text whitespace-pre-wrap break-words">
+          {c.body}
+        </p>
+      </li>
+    );
+  };
+
+  const composer = canParticipate ? (
+    <form onSubmit={handleSubmit}>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={2}
+        maxLength={2000}
+        placeholder="Share a thought with the room…"
+        className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition resize-none"
+      />
+      {error && (
+        <p className="mt-2 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
+          {error}
+        </p>
+      )}
+      <div className="mt-2 flex justify-end">
+        <button
+          type="submit"
+          disabled={isSubmitting || !body.trim()}
+          className="btn-primary px-5 py-2 rounded-full font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? "Posting…" : "Post"}
+        </button>
+      </div>
+    </form>
+  ) : (
+    <UpgradePrompt action="comment" />
+  );
+
+  // Live room: bottom-anchored chat. The feed scrolls on its own and the
+  // composer is pinned below it (never overlapping), so incoming comments stay
+  // visible above the input and auto-scroll into view.
+  if (live) {
+    return (
+      <div className="flex h-full flex-col gap-2">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 min-h-0 overflow-y-auto pr-1"
+        >
+          {loading ? (
+            <p className="text-center text-sm text-melori-muted py-6">
+              Loading…
+            </p>
+          ) : orderedComments.length === 0 ? (
+            <p className="text-center text-sm text-melori-muted py-6">
+              No comments yet. Kick off the conversation.
+            </p>
+          ) : (
+            <ul className="space-y-3">{orderedComments.map(renderComment)}</ul>
+          )}
+          <div ref={bottomRef} />
+        </div>
+        <div className="shrink-0">{composer}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -181,36 +327,7 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
           Anyone can read. Posting is a Superfan feature.
         </p>
 
-        {canParticipate ? (
-          <form onSubmit={handleSubmit}>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={2}
-              maxLength={2000}
-              placeholder="Share a thought with the room…"
-              className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-melori-purple transition resize-none"
-            />
-            {error && (
-              <p className="mt-2 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
-                {error}
-              </p>
-            )}
-            <div className="mt-2 flex justify-end">
-              <button
-                type="submit"
-                disabled={isSubmitting || !body.trim()}
-                className="btn-primary px-5 py-2 rounded-full font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? "Posting…" : "Post"}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="mb-6">
-            <UpgradePrompt action="comment" />
-          </div>
-        )}
+        {canParticipate ? composer : <div className="mb-6">{composer}</div>}
       </div>
 
       {loading ? (
@@ -220,59 +337,7 @@ export default function SpaceCommentSection({ spaceId }: { spaceId: string }) {
           No comments yet. Kick off the conversation.
         </p>
       ) : (
-        <ul className="space-y-3">
-          {comments.map((c) => {
-            const name = displayName(c);
-            const initial = name.charAt(0).toUpperCase();
-            const profileHref = c.username ? `/social/u/${c.username}` : undefined;
-            const Avatar = (
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-melori-purple/30 text-xs font-semibold">
-                {c.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.avatar_url}
-                    alt={name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  initial
-                )}
-              </span>
-            );
-            return (
-              <li
-                key={c.id}
-                className="rounded-2xl border border-melori-border bg-melori-elevated/50 p-4"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  {profileHref ? (
-                    <a href={profileHref} className="shrink-0">
-                      {Avatar}
-                    </a>
-                  ) : (
-                    Avatar
-                  )}
-                  {profileHref ? (
-                    <a
-                      href={profileHref}
-                      className="font-semibold text-sm hover:underline"
-                    >
-                      {name}
-                    </a>
-                  ) : (
-                    <span className="font-semibold text-sm">{name}</span>
-                  )}
-                  <span className="text-xs text-melori-muted">
-                    {relativeTime(c.created_at)}
-                  </span>
-                </div>
-                <p className="text-sm text-melori-text whitespace-pre-wrap break-words">
-                  {c.body}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
+        <ul className="space-y-3">{comments.map(renderComment)}</ul>
       )}
     </div>
   );

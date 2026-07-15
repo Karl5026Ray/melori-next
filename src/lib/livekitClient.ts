@@ -58,6 +58,10 @@ export interface JoinOptions {
   // speaking ring for EVERYONE and clear it when they stop — this is the
   // primary, real-time driver (the DB is_speaking write is only a fallback).
   onActiveSpeakersChange?: (identities: string[]) => void;
+  // Fired when the LOCAL participant's publish permission changes at runtime
+  // (host/mod approved a raised hand via the server SDK). canPublish=true means
+  // the user may unmute and speak WITHOUT re-minting a token / reconnecting.
+  onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
   onError?: (err: Error) => void;
@@ -220,6 +224,23 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     };
     room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
     session.cleanups.push(() => room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers));
+
+    // Runtime promotion: host/mod approval flips canPublish server-side and
+    // LiveKit pushes this event. Bump the cached role so a later unmute doesn't
+    // needlessly re-mint a token, and let the UI reflect the new permission.
+    const onPermChanged = (
+      _prev: unknown,
+      participant: { isLocal?: boolean; permissions?: { canPublish?: boolean } },
+    ) => {
+      if (!participant?.isLocal) return;
+      const canPublish = !!participant.permissions?.canPublish;
+      session.role = canPublish ? "publisher" : "subscriber";
+      opts.onLocalPermissionsChanged?.(canPublish);
+    };
+    room.on(RoomEvent.ParticipantPermissionsChanged, onPermChanged);
+    session.cleanups.push(() =>
+      room.off(RoomEvent.ParticipantPermissionsChanged, onPermChanged),
+    );
 
     // Surface reconnection so brief network blips self-heal instead of
     // being treated as a fatal disconnect.

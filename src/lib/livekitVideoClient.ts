@@ -64,6 +64,14 @@ export interface JoinVideoOptions {
   // host's own preview tile.
   onLocalVideo?: (element: HTMLVideoElement) => void;
   onParticipantCountChange?: (count: number) => void;
+  // Full set of currently-active speaker identities (local INCLUDED — LiveKit's
+  // ActiveSpeakersChanged omits the local participant, so we merge it in here).
+  // Drives the speaker ring for every tile, host + viewers alike.
+  onActiveSpeakersChange?: (identities: string[]) => void;
+  // Fired when the LOCAL participant's publish permission changes at runtime
+  // (host/mod approved a stage request via the server SDK). canPublish=true
+  // means the viewer may now turn on camera/mic WITHOUT reconnecting.
+  onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
   // Called whenever the browser's autoplay policy changes whether remote audio
@@ -267,6 +275,58 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
     });
 
+    // --- Active speakers (rings) -----------------------------------------
+    // Merge the local participant in: LiveKit's ActiveSpeakersChanged payload
+    // does not include the local speaker, so the host would never get a ring
+    // without this. We union the event's identities with the local one when the
+    // local participant is speaking with an unmuted, published mic.
+    const emitSpeakers = (speakers: Array<{ identity: string }>) => {
+      const ids = new Set(speakers.map((s) => s.identity));
+      const lp = room.localParticipant;
+      const micPub =
+        lp?.getTrackPublication?.(Track?.Source?.Microphone ?? "microphone");
+      const localAudible = !!lp?.isSpeaking && !!micPub && !micPub.isMuted;
+      if (localAudible && lp?.identity) ids.add(lp.identity);
+      else if (lp?.identity) ids.delete(lp.identity);
+      opts.onActiveSpeakersChange?.(Array.from(ids));
+    };
+    const onActiveSpeakers = (speakers: Array<{ identity: string }>) =>
+      emitSpeakers(speakers);
+    room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
+    session.cleanups.push(() =>
+      room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers),
+    );
+    // Local speaking transitions aren't part of ActiveSpeakersChanged, so also
+    // recompute when the local mic is (un)published or (un)muted.
+    const refreshSpeakers = () => emitSpeakers(room.activeSpeakers ?? []);
+    room.on(RoomEvent.LocalTrackPublished, refreshSpeakers);
+    room.on(RoomEvent.LocalTrackUnpublished, refreshSpeakers);
+    room.on(RoomEvent.TrackMuted, refreshSpeakers);
+    room.on(RoomEvent.TrackUnmuted, refreshSpeakers);
+    session.cleanups.push(() => {
+      room.off(RoomEvent.LocalTrackPublished, refreshSpeakers);
+      room.off(RoomEvent.LocalTrackUnpublished, refreshSpeakers);
+      room.off(RoomEvent.TrackMuted, refreshSpeakers);
+      room.off(RoomEvent.TrackUnmuted, refreshSpeakers);
+    });
+
+    // --- Runtime permission change (server-driven promotion) --------------
+    // When a host/mod approves a stage request, the server flips canPublish via
+    // RoomServiceClient.updateParticipant and LiveKit pushes this event — no
+    // token refresh / reconnect needed. Surface it so the UI can enable media.
+    const onPermChanged = (
+      _prev: unknown,
+      participant: { isLocal?: boolean; permissions?: { canPublish?: boolean } },
+    ) => {
+      if (participant?.isLocal) {
+        opts.onLocalPermissionsChanged?.(!!participant.permissions?.canPublish);
+      }
+    };
+    room.on(RoomEvent.ParticipantPermissionsChanged, onPermChanged);
+    session.cleanups.push(() =>
+      room.off(RoomEvent.ParticipantPermissionsChanged, onPermChanged),
+    );
+
     // --- Reconnection + disconnect ---------------------------------------
     const onReconnecting = () => opts.onReconnecting?.();
     const onReconnected = () => opts.onReconnected?.();
@@ -455,6 +515,38 @@ export async function becomePublisher(): Promise<HTMLVideoElement | null> {
   });
   await ensureVideoAudio();
   return localEl ?? session.localVideoEl;
+}
+
+// Publish camera + mic on an ALREADY-CONNECTED participant whose permission was
+// just flipped to canPublish (server-driven promotion). No reconnect — this is
+// the preferred path over becomePublisher() once the client is in the room and
+// has received ParticipantPermissionsChanged. Returns the local <video> once
+// the camera track is live so the UI can show a self-tile.
+export async function publishLocalMedia(): Promise<HTMLVideoElement | null> {
+  if (!session.room) return null;
+  const lk = await import("livekit-client");
+  const { Track } = lk as any;
+  const SOURCE_CAMERA = Track?.Source?.Camera ?? "camera";
+  const lp = session.room.localParticipant;
+  await lp.setCameraEnabled(true);
+  await lp.setMicrophoneEnabled(true);
+  const camPub =
+    lp.getTrackPublication?.(SOURCE_CAMERA) ??
+    Array.from(lp.trackPublications?.values?.() ?? []).find(
+      (p: any) => p?.source === SOURCE_CAMERA,
+    );
+  const camTrack = camPub?.track ?? camPub?.videoTrack;
+  if (camTrack && typeof camTrack.attach === "function") {
+    const el = camTrack.attach() as HTMLVideoElement;
+    el.playsInline = true;
+    el.autoplay = true;
+    el.muted = true;
+    session.localVideoEl = el;
+    session.lastOpts?.onLocalVideo?.(el);
+    session.role = "publisher";
+    return el;
+  }
+  return session.localVideoEl;
 }
 
 export function getVideoSession() {

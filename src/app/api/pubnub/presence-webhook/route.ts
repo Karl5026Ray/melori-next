@@ -7,6 +7,7 @@ import {
   getChannelOccupancy,
   publishSystemSignal,
 } from "@/lib/pubnubServer";
+import { promoteHostOnLeave } from "@/lib/roomHost";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -150,8 +151,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, action, checked: false });
   }
 
+  // If the specific participant who left/timed-out is the room's HOST, hand the
+  // room off server-side (oldest moderator → oldest speaker → graceful end)
+  // BEFORE the emptiness check. promoteHostOnLeave() is atomic + idempotent, so
+  // the duplicate signals a single disconnect produces (browser beacon +
+  // PubNub timeout + interval) can only ever promote one successor.
+  let hostPromotion:
+    | { outcome: string; newHostId: string | null }
+    | undefined;
+  if ((action === "leave" || action === "timeout") && evt.uuid) {
+    const supabase = getSupabaseAdmin();
+    const { data: space } = await supabase
+      .from("spaces")
+      .select("host_id, status")
+      .eq("id", spaceId)
+      .maybeSingle();
+    if (space && space.status === "live" && space.host_id === evt.uuid) {
+      hostPromotion = await promoteHostOnLeave(spaceId, evt.uuid);
+    }
+  }
+
   const result = await endSpaceIfEmpty(spaceId, evt.occupancy);
-  return NextResponse.json({ ok: true, action, spaceId, ...result });
+  return NextResponse.json({ ok: true, action, spaceId, hostPromotion, ...result });
 }
 
 // PubNub's webhook validation sometimes issues a GET to confirm the endpoint

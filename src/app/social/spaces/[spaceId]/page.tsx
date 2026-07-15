@@ -21,7 +21,7 @@ import {
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
-import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
+import RoomChat from "@/components/social/rooms/RoomChat";
 import {
   ArrowLeft,
   Share2,
@@ -673,9 +673,27 @@ export default function SpaceDetailPage() {
             if (!cancelled) setLiveHere(state.occupancy);
           },
           onSystemSignal: (payload) => {
-            // Server told us the room ended (e.g. it emptied). Bounce out.
+            // Server told us the room ended (e.g. it emptied, or the host left
+            // with no eligible successor). Bounce out.
             if (payload?.event === "space-ended") {
               router.push("/social/spaces");
+              return;
+            }
+            // Host was transferred server-side (the previous host left). Refresh
+            // the space so host_id updates live — the new host's client starts
+            // showing host controls, everyone else re-badges. The participant
+            // realtime subscription already refreshed roles.
+            if (payload?.event === "host-changed") {
+              void supabase
+                .from("spaces")
+                .select(
+                  `*, host:profiles(id, display_name, avatar_url, role, verified)`,
+                )
+                .eq("id", spaceId)
+                .single()
+                .then(({ data }) => {
+                  if (data) setSpace(data as Space);
+                });
             }
           },
           onSignal: (signal) => {
@@ -1123,8 +1141,12 @@ export default function SpaceDetailPage() {
             </>
           )}
 
-          {/* Per-space comment thread. Public reads, Superfan+ posts. */}
-          <SpaceCommentSection spaceId={spaceId} />
+          {/* Shared room chat (auto-scroll, new-message pill, grouping, sticky
+              composer). Bounded height so its internal scroll + composer behave
+              inside the page's vertical flow. Public reads, Superfan+ posts. */}
+          <div className="mt-6 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-melori-border bg-melori-elevated/40">
+            <RoomChat spaceId={spaceId} accent="purple" className="flex-1" />
+          </div>
         </div>
       </div>
 

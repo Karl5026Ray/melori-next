@@ -13,10 +13,8 @@ export const dynamic = "force-dynamic";
 //
 // This intentionally does NOT require Superfan — audience users can leave.
 // We just require a valid session so we can identify the leaver.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   const { userId } = await getRequestMembership(req);
   if (!userId) {
     // sendBeacon can't retry; return 200 quietly so browsers stop caring.

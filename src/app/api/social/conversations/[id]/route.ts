@@ -15,10 +15,8 @@ export const dynamic = "force-dynamic";
 //   - `member_blocks` has RLS enabled with no SELECT policy,
 // so the browser (anon) client cannot read either table. Centralizing the read
 // here keeps the chat page correct regardless of those policies.
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { userId } = await getRequestMembership(req);
   if (!userId) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });

@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 
 // PATCH /api/admin/accounts/[id]
 // Body: { display_name?, username?, role?, membership_tier?, status? }
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await requireAdmin(req);
   if (isAdminGuardFailure(admin)) return admin;
 
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   const targetId = params.id;
 
-  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await req.json().catch(() => (({}) as Record<string, unknown>));
   const supabase = getSupabaseAdmin();
 
   const { data: current, error: readErr } = await supabase
@@ -117,7 +118,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE /api/admin/accounts/[id] — soft delete. Body: { reason? }
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await requireAdmin(req);
   if (isAdminGuardFailure(admin)) return admin;
 
@@ -125,7 +127,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
   const targetId = params.id;
-  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await req.json().catch(() => (({}) as Record<string, unknown>));
   const reason = trimOrNull(body.reason);
 
   const supabase = getSupabaseAdmin();

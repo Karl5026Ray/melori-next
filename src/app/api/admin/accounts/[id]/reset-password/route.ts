@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 // POST /api/admin/accounts/[id]/reset-password
 // Sets a new temporary password via the Admin API and returns it once for the
 // admin to share. Keeps scope tight — no forced-change flow.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await requireAdmin(req);
   if (isAdminGuardFailure(admin)) return admin;
 

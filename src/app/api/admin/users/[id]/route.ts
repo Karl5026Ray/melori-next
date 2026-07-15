@@ -25,7 +25,8 @@ async function verifyAdmin(req: NextRequest) {
 //   role: 'user' | 'superfan' | 'artist' | 'admin'
 //   verified: boolean
 //   link_artist_id: number | null  (associates this profile with an artist row)
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(
@@ -42,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
-  const body = await req.json().catch(() => ({}) as any);
+  const body = await req.json().catch(() => (({}) as any));
   const supabase = getSupabaseAdmin();
 
   const updates: Record<string, unknown> = {};

@@ -18,10 +18,8 @@ const EXPIRES_IN = 3600;
 //     has a dedicated `preview_url` clip we sign THAT (the full file is never
 //     handed out); otherwise we sign the full file but flag it as a sample so
 //     the player hard-caps playback at 30s.
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const id = Number(params.id);

@@ -12,10 +12,8 @@ const LIMIT = 5;
 // page's SuperfanButton dropdown. No auth required — only names, counts,
 // and favorite song titles are exposed (nothing that would identify a fan
 // by anything other than the display name they chose themselves).
-export async function GET(
-  _req: Request,
-  { params }: { params: { slug: string } },
-) {
+export async function GET(_req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const supabase = getSupabaseAdmin();
 
   try {

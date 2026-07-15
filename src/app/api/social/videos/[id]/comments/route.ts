@@ -12,10 +12,8 @@ const MAX_LEN = 2000;
 
 // GET /api/social/videos/[id]/comments — public. Newest first.
 // Joins the author profile so the client can render name + avatar.
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("social_video_comments")
@@ -42,10 +40,8 @@ export async function GET(
 // Author is taken from the verified token, never the body. Content is moderated
 // (explicit sexual content is refused; other harms are flagged). A DB trigger
 // keeps social_videos.comments_count in sync.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
@@ -63,7 +59,7 @@ export async function POST(
     );
   }
 
-  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await req.json().catch(() => (({}) as Record<string, unknown>));
   const text =
     typeof body.content === "string"
       ? body.content.trim()

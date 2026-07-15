@@ -11,8 +11,9 @@ export const dynamic = "force-dynamic";
 // Body: { host_muted?: boolean, role?: "audience"|"speaker", remove?: true }
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { spaceId: string; userId: string } },
+  props: { params: Promise<{ spaceId: string; userId: string }> }
 ) {
+  const params = await props.params;
   const { userId: callerId } = await getRequestMembership(req);
   if (!callerId) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });

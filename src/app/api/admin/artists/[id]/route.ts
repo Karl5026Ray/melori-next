@@ -20,10 +20,8 @@ async function verifyAdmin(req: NextRequest) {
 }
 
 // PATCH /api/admin/artists/[id] — update an artist.
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(
@@ -84,10 +82,8 @@ export async function PATCH(
 }
 
 // DELETE /api/admin/artists/[id] — remove an artist.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(

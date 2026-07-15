@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
 
 // GET /api/social/spaces/[spaceId]/comments — Public. Reading is free.
 // Returns newest first, up to 200.
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   const spaceId = String(params.spaceId ?? "").trim();
   if (!spaceId || !isUuid(spaceId)) {
     // Return an empty list rather than 400 so the client's polling doesn't
@@ -47,10 +45,8 @@ export async function GET(
 // POST /api/social/spaces/[spaceId]/comments — Superfan+ only. Author is
 // resolved from the verified bearer token; the request body only carries the
 // message text.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   const spaceId = String(params.spaceId ?? "").trim();
   if (!spaceId || !isUuid(spaceId)) {
     return NextResponse.json({ error: "Invalid spaceId" }, { status: 400 });

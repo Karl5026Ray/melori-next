@@ -12,10 +12,8 @@ export const dynamic = "force-dynamic";
 // initiator) may accept or decline it.
 //  - accept  -> status becomes 'accepted'; thread moves to the primary inbox.
 //  - decline -> status becomes 'declined'; thread is hidden from the recipient.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId!;

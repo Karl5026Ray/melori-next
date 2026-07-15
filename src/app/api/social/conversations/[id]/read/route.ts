@@ -8,10 +8,8 @@ export const dynamic = "force-dynamic";
 // PATCH /api/social/conversations/[id]/read
 // Marks the conversation as read for the caller. Anyone signed in and a member
 // can update their own last_read_at (used for unread badges + read receipts).
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { userId } = await getRequestMembership(req);
   if (!userId) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });

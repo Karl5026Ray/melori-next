@@ -21,10 +21,8 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 //
 // Listen logging fires only for authenticated superfans+ and excludes
 // self-listens by the owning artist, matching the legacy route.
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     if (!UUID_RE.test(params.id)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

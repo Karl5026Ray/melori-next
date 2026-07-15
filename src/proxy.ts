@@ -15,7 +15,7 @@ const ADMIN_SECRET_KEY = getAdminSecretKey();
 // public, and `/api/admin/*` routes verify the session themselves. The matcher
 // below scopes this middleware to `/admin/*` exclusively, so every other route
 // on the site (home, music, store, studio, social, existing APIs) is untouched.
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // The login page itself is always accessible.

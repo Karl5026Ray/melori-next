@@ -43,10 +43,8 @@ function pathFromPublicUrl(
 // optional thumbnail (in `covers`). The DB row is deleted first — even if
 // storage cleanup partially fails afterward, the video disappears from every
 // listing. Storage errors surface in the response so the client can log them.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
 

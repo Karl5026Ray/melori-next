@@ -6,10 +6,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // GET /api/tracks/[id] — single published track metadata (no signed audio URL).
-export async function GET(
-  _request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(_request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const id = Number(params.id);

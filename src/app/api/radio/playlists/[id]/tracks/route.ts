@@ -21,10 +21,8 @@ function parseRef(body: any): PlaylistTrackRef | null {
 // GET    /api/radio/playlists/[id]/tracks  -> { name, tracks } resolved to RadioTrack[]
 // POST   /api/radio/playlists/[id]/tracks  { sourceType, id } -> add a track
 // DELETE /api/radio/playlists/[id]/tracks  { sourceType, id } -> remove a track
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(request);
   if (isGuardFailure(guard)) return guard;
   const result = await getPlaylistTracks(guard.membership.userId!, params.id);
@@ -34,10 +32,8 @@ export async function GET(
   return NextResponse.json(result);
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(request);
   if (isGuardFailure(guard)) return guard;
   let ref: PlaylistTrackRef | null = null;
@@ -56,10 +52,8 @@ export async function POST(
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(request);
   if (isGuardFailure(guard)) return guard;
   let ref: PlaylistTrackRef | null = null;

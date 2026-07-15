@@ -29,10 +29,8 @@ const SUBSCRIBE_KEY = process.env.PUBNUB_SUBSCRIBE_KEY ?? "";
 // The client uses the returned token to subscribe (with presence) to
 // `space-<spaceId>`. Presence is what drives the room-vanish webhook, so the
 // Superfan gate here matches who is allowed in the room at all.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   if (!isPubNubConfigured()) {
     return NextResponse.json(
       { error: "PubNub is not configured" },

@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
 // message; it becomes a tombstone ("message deleted") for everyone in the
 // thread rather than being physically removed, so replies/threading stay
 // coherent. The delete toggle in the UI calls this per message.
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(_req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId!;

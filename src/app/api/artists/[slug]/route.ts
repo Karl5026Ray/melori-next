@@ -6,10 +6,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // GET /api/artists/[slug] — a single published artist plus their published releases.
-export async function GET(
-  _request: Request,
-  { params }: { params: { slug: string } },
-) {
+export async function GET(_request: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const { data: artist, error: artistError } = await supabaseAdmin

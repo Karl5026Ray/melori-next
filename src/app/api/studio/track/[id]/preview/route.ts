@@ -5,10 +5,8 @@ import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { assertTrackOwnership, isOwnershipFailure, OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // PATCH /api/studio/track/[id]/preview — Update preview settings
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
   try {

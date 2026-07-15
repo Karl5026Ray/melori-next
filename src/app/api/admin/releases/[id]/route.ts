@@ -25,10 +25,8 @@ async function verifyAdmin(req: NextRequest) {
 // unpublish it. Only whitelisted fields are accepted; everything else on the
 // body is ignored. Track titles and ordering are handled per-track via
 // /api/admin/tracks/[id].
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(
@@ -141,10 +139,8 @@ export async function PATCH(
 // up front and return a clear 409 instead of letting Postgres raise a 500.
 //
 // DB-row deletion only; storage files (cover art, audio) are left in place.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(

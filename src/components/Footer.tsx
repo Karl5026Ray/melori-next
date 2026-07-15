@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -13,7 +14,7 @@ const footerLinks = [
 
 // Basic social destinations for now (platform home pages). These can be
 // swapped for real Melori handles anytime by editing the href values.
-const socialLinks: { label: string; href: string; icon: JSX.Element }[] = [
+const socialLinks: { label: string; href: string; icon: ReactElement }[] = [
   {
     label: "Facebook",
     href: "https://facebook.com",

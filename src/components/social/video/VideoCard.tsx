@@ -151,7 +151,11 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           loop
           muted={isMuted}
           playsInline
-          className="absolute inset-0 h-full w-full object-contain"
+          // Content is predominantly portrait, so object-cover fills the frame
+          // edge-to-edge (the TikTok look) with virtually no crop. object-top
+          // biases any crop on the occasional landscape clip toward keeping the
+          // top of the frame, and object-center keeps portrait clips centered.
+          className="absolute inset-0 h-full w-full bg-black object-cover object-center"
           poster={video.thumbnail_url || undefined}
         />
       )}

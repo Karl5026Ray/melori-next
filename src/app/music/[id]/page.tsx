@@ -67,11 +67,12 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default async function StudioTrackPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function StudioTrackPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const track = await getPublishedStudioTrack(params.id);
   if (!track) notFound();
 
@@ -86,15 +87,14 @@ export default async function StudioTrackPage({
       >
         ← Back to Music
       </Link>
-
       <div className="mt-6 flex flex-col gap-6 sm:flex-row sm:items-start">
         {track.cover_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
+          (<img
             src={track.cover_url}
             alt={`${track.title} cover art`}
             className="h-48 w-48 flex-shrink-0 rounded-2xl object-cover shadow-lg"
-          />
+          />)
         ) : (
           <div className="flex h-48 w-48 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#c9a96e]/20 to-[#a08050]/20 text-6xl">
             🎵

@@ -20,10 +20,8 @@ async function verifyAdmin(req: NextRequest) {
 }
 
 // PATCH /api/admin/tracks/[id] — update editable fields (incl. preview window).
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(
@@ -192,10 +190,8 @@ function resolveStorageTarget(
 // row (the source of truth), THEN delete storage objects. If storage cleanup
 // partially fails we still return ok:true with a `storageErrors` array — the
 // row is already gone from every listing, and retrying the DELETE would 404.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(

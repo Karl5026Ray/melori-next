@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
 // Host-only. Currently supports:
 //   { action: "go_live" }  → scheduled → live
 //   { action: "end" }      → live → ended
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;

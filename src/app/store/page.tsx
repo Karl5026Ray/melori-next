@@ -45,11 +45,12 @@ async function getProducts(
   }
 }
 
-export default async function StorePage({
-  searchParams,
-}: {
-  searchParams: { category?: string; sort?: string };
-}) {
+export default async function StorePage(
+  props: {
+    searchParams: Promise<{ category?: string; sort?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const category = searchParams.category ?? "";
   const sort = (searchParams.sort as SortKey) ?? "newest";
   const products = await getProducts(category, sort);

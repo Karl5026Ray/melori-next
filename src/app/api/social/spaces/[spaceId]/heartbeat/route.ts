@@ -8,10 +8,8 @@ export const dynamic = "force-dynamic";
 // POST /api/social/spaces/[spaceId]/heartbeat
 // Bumps last_activity_at so the reap_idle_spaces cron doesn't kill a live room.
 // Also usable as a page-visible ping every ~60s from the client.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { spaceId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const params = await props.params;
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const callerId = guard.membership.userId!;

@@ -43,11 +43,12 @@ async function getRelated(
   }
 }
 
-export default async function ProductPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
+export default async function ProductPage(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+) {
+  const params = await props.params;
   const product = await getProduct(params.slug);
   if (!product) notFound();
 

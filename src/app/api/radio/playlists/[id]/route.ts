@@ -7,10 +7,8 @@ export const dynamic = "force-dynamic";
 
 // PATCH  /api/radio/playlists/[id]  { name } -> rename
 // DELETE /api/radio/playlists/[id]           -> delete
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(request);
   if (isGuardFailure(guard)) return guard;
   let name = "";
@@ -33,10 +31,8 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(request);
   if (isGuardFailure(guard)) return guard;
   const ok = await deletePlaylist(guard.membership.userId!, params.id);

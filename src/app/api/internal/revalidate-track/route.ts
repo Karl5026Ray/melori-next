@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     /* best-effort */
   }
 
-  if (artistId) revalidateTag(`artist-${artistId}`);
+  if (artistId) revalidateTag(`artist-${artistId}`, "max");
   revalidatePath("/browse");
   revalidatePath("/");
 

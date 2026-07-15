@@ -157,7 +157,7 @@ export async function POST(req: Request) {
 
   // Instant UI: bust caches so the track appears immediately on public pages.
   // (Client feeds using useRealtime<'tracks'> will also receive the INSERT event.)
-  revalidateTag(`artist-${artist.id}`);
+  revalidateTag(`artist-${artist.id}`, "max");
   revalidatePath("/browse");
   revalidatePath("/");
 

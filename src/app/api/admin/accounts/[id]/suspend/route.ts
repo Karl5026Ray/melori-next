@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 // POST /api/admin/accounts/[id]/suspend
 // Body: { suspended: boolean, reason? }
 // Toggles profiles.status between 'suspended' and 'active'.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await requireAdmin(req);
   if (isAdminGuardFailure(admin)) return admin;
 
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
   const targetId = params.id;
 
-  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await req.json().catch(() => (({}) as Record<string, unknown>));
   const suspended = body.suspended === true;
   const reason = trimOrNull(body.reason);
 

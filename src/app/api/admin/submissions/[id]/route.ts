@@ -25,7 +25,8 @@ async function verifyAdmin(req: NextRequest) {
 // On approve: create a lightweight release + track shell so the audio shows up
 // in the catalog. Admin can later fill in cover art, tracklist, price, etc.
 // via /admin/tracks. On reject: just mark the row and stash the reviewer note.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
   if (!ADMIN_SECRET) {
     return NextResponse.json(
@@ -38,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { action, notes } = await req.json().catch(() => ({}) as any);
+  const { action, notes } = await req.json().catch(() => (({}) as any));
   if (action !== "approve" && action !== "reject") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }

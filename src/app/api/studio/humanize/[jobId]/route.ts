@@ -8,10 +8,8 @@ export const dynamic = "force-dynamic";
 // GET /api/studio/humanize/[jobId] — polling fallback to Supabase Realtime.
 // Returns the caller's own humanize_jobs row (ownership enforced in
 // application code since this route uses the service-role client).
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { jobId: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ jobId: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
 

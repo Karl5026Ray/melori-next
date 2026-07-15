@@ -29,10 +29,8 @@ function revalidatePublicTrackPaths(trackId: string) {
 // download URL as `audioUrl` instead. Legacy rows written before this fix
 // only have `file_url` populated — fall back to it in that case so existing
 // tracks still load until they are replaced.
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
   try {
@@ -79,10 +77,8 @@ export async function GET(
 // Ownership: gated by requireArtist AND assertTrackOwnership so an artist can
 // only replace the master of their own track, matching every other studio
 // route. The final update is also scoped by OWNER_COLUMN as defense-in-depth.
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(req);
   if (isGuardFailure(guard)) return guard;
   try {
@@ -235,10 +231,8 @@ export async function PATCH(
 // objects. If the storage step fails we still return 200 with a `storageErrors`
 // array — the row is already gone, so retrying the DELETE would 404. The
 // admin can sweep any orphans separately; leaving the row behind is worse.
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireArtist(_req);
   if (isGuardFailure(guard)) return guard;
 

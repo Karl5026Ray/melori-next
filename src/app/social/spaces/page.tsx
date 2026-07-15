@@ -38,10 +38,11 @@ async function getSpaces(tab: Tab) {
 }
 
 interface PageProps {
-  searchParams?: { tab?: string };
+  searchParams?: Promise<{ tab?: string }>;
 }
 
-export default async function SpacesPage({ searchParams }: PageProps) {
+export default async function SpacesPage(props: PageProps) {
+  const searchParams = await props.searchParams;
   const tab: Tab = searchParams?.tab === "scheduled" ? "scheduled" : "live";
   const spaces = await getSpaces(tab);
 

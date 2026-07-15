@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "echo 'next lint was removed in Next 16; no standalone linter configured for this project' && exit 0",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts"
   },
@@ -20,11 +20,11 @@
     "jose": "^5.9.6",
     "livekit-client": "^2.5.7",
     "livekit-server-sdk": "^2.8.1",
-    "lucide-react": "^0.378.0",
-    "next": "^14.2.35",
+    "lucide-react": "^0.474.0",
+    "next": "16.2.10",
     "pubnub": "^8.10.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "resend": "^4.0.0",
     "stripe": "^16.6.0",
     "tailwind-merge": "^2.3.0"
@@ -32,12 +32,16 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.0",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.40",
+    "postcss": "^8.5.19",
     "tailwindcss": "^3.4.7",
     "tsx": "^4.23.0",
     "typescript": "^5.5.4"
+  },
+  "overrides": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3"
   }
 }

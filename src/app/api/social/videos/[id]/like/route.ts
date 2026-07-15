@@ -8,10 +8,8 @@ export const dynamic = "force-dynamic";
 // GET /api/social/videos/[id]/like
 // Returns whether the current caller likes this video + the live like count.
 // Auth-optional: logged-out callers get { liked: false } but still the count.
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const videoId = params.id;
   const supabase = getSupabaseAdmin();
 
@@ -48,10 +46,8 @@ export async function GET(
 // Any signed-in user may like. The like row's UNIQUE (video_id, user_id) makes
 // this idempotent, and DB triggers keep social_videos.likes_count in sync, so
 // we never mutate the counter by hand (no lost-update races).
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;

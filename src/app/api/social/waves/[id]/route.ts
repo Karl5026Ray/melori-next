@@ -10,10 +10,8 @@ export const dynamic = "force-dynamic";
 // Body: { action: "accept" | "decline" }
 // Recipient only. Accepting materializes a 1-1 conversation (reusing an
 // existing one if it already exists) and stashes it on the wave row.
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;

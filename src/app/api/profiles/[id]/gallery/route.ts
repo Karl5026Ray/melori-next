@@ -10,16 +10,11 @@ export const dynamic = "force-dynamic";
 // yet, so callers can simply hide the section when `photos` is empty.
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
-  return (
-    error.code === "42P01" ||
-    /relation .*profile_gallery.* does not exist/i.test(error.message ?? "")
-  );
+  return (error.code === "42P01" || /relation .*profile_gallery.* does not exist/i.test(error.message ?? ""));
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } },
-) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const profileId = params.id;
   if (!profileId) {
     return NextResponse.json({ photos: [] });

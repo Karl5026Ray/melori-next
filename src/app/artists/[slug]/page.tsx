@@ -10,11 +10,12 @@ import type { ReleaseListItem } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string };
-}): Promise<Metadata> {
+export async function generateMetadata(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+): Promise<Metadata> {
+  const params = await props.params;
   const data = await getArtistBySlug(params.slug).catch(() => null);
   if (!data) return { title: "Artist not found" };
 
@@ -36,11 +37,12 @@ export async function generateMetadata({
   };
 }
 
-export default async function ArtistDetailPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
+export default async function ArtistDetailPage(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+) {
+  const params = await props.params;
   const data = await getArtistBySlug(params.slug).catch(() => null);
   if (!data) notFound();
 

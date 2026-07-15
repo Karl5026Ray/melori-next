@@ -24,12 +24,13 @@ async function verifyAdmin(req: NextRequest) {
 //
 // Manual moderation lever. Only touches moderation_status (never is_published),
 // so an artist's published state is preserved and a takedown is one-field reversible.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { moderation_status, reason } = await req.json().catch(() => ({}) as any);
+  const { moderation_status, reason } = await req.json().catch(() => (({}) as any));
   const allowed = ["clean", "pending_review", "flagged", "removed"];
   if (!allowed.includes(moderation_status)) {
     return NextResponse.json({ error: "Invalid moderation_status" }, { status: 400 });
@@ -66,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // @ts-expect-error nested select shape
   const artistId: number | null = track?.releases?.artist_id ?? null;
-  if (artistId) revalidateTag(`artist-${artistId}`);
+  if (artistId) revalidateTag(`artist-${artistId}`, "max");
   revalidatePath("/browse");
   revalidatePath("/");
 

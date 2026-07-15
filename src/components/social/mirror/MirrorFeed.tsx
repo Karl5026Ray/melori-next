@@ -32,7 +32,9 @@ export default function MirrorFeed({
   const [videos, setVideos] = useState<SocialVideo[]>(initialVideos);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  // Start at 0 so the first video plays immediately on load (the scroller opens
+  // on it). The scroll listener keeps this in sync as the user moves.
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -40,13 +42,12 @@ export default function MirrorFeed({
 
   // Active-card tracking, computed deterministically from scroll position.
   //
-  // The feed's snap items are all exactly one viewport (`h-full`) tall and the
-  // online-now section is the first item, so the active VIDEO index is:
-  //   round(scrollTop / viewportHeight) - 1
-  // (the `-1` skips the online-now section at index 0). We clamp to the valid
-  // video range and set -1 while the online-now section itself is in view so no
-  // video plays behind it. A single rAF-throttled passive scroll listener keeps
-  // this cheap and avoids the multi-fire observer races.
+  // The snap scroller now contains ONLY the video cards (the online-now strip
+  // is a fixed header above it, not a snap page), and each card is exactly one
+  // scroller-viewport tall, so the active index is simply:
+  //   round(scrollTop / viewportHeight)
+  // A single rAF-throttled passive scroll listener keeps this cheap and avoids
+  // the multi-fire observer races that made the feed twitch.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -54,13 +55,8 @@ export default function MirrorFeed({
     const compute = () => {
       rafRef.current = null;
       const vh = container.clientHeight || 1;
-      // Section 0 is the online-now row; videos start at scroll page 1.
       const page = Math.round(container.scrollTop / vh);
-      const videoIdx = page - 1;
-      const clamped =
-        videoIdx < 0
-          ? -1
-          : Math.min(videoIdx, videos.length - 1);
+      const clamped = Math.max(0, Math.min(page, videos.length - 1));
       setActiveIndex((prev) => (prev === clamped ? prev : clamped));
     };
 
@@ -118,67 +114,74 @@ export default function MirrorFeed({
   }, [cursor, loadMore]);
 
   return (
+    // Outer column fills the visible viewport (100dvh minus the 4rem header).
+    // Row 1: a COMPACT online-now strip (auto height, not a full screen).
+    // Row 2: the video snap-scroller, which takes all remaining space and
+    // therefore opens ON THE FIRST VIDEO — previously the ring row was its own
+    // full-height snap page, so the feed opened on an near-empty screen and you
+    // had to scroll a whole viewport to see any content.
     <div
-      ref={containerRef}
-      // Height is pinned to the DYNAMIC viewport (100dvh minus the 4rem header)
-      // rather than inheriting the parent's static 100vh chain. On mobile the
-      // URL bar collapse makes 100vh taller than what's visible, so each
-      // `h-full` snap card was taller than the screen — the feed "didn't stop"
-      // cleanly on the next card and looked "too big". `100dvh` tracks the
-      // actual visible area so every card is exactly one screen tall and snaps
-      // to a clean stop.
-      style={{ height: "calc(100dvh - 4rem)" }}
-      className="absolute inset-x-0 top-0 w-full overflow-y-scroll video-snap hide-scrollbar bg-melori-void"
+      // Fill the space BETWEEN the fixed header (top, 4rem) and the fixed
+      // bottom bars. On mobile those are the audio player stacked above the
+      // tab bar (matches the root layout's mobile `pb-44` = 11rem); on desktop
+      // only the player is fixed (`md:pb-24` = 6rem). We subtract both so a
+      // card is exactly the visible area and its bottom isn't hidden behind the
+      // bars — that hidden strip is what still looked "a bit too big". `dvh`
+      // tracks the mobile URL-bar collapse. Height is set via the
+      // `--mirror-bottom` custom property so it can differ by breakpoint.
+      className="mirror-viewport absolute inset-x-0 top-0 flex w-full flex-col bg-melori-void"
     >
-      {/* First snap section: the online-now ring row + a title. Exactly one
-          viewport tall (h-full) and — critically — NOT its own vertical
-          scroller. A nested overflow-y scroller here corrupts the parent's
-          scroll-snap (half-snap / jump), so vertical overflow is hidden and the
-          content is sized to fit. The ring row scrolls horizontally on its own. */}
-      <section className="video-snap-item flex h-full w-full flex-col overflow-y-hidden">
+      {/* Compact live strip. Fixed, shrink-0, scrolls only horizontally. */}
+      <div className="shrink-0">
         <OnlineNowRow />
-        {videos.length === 0 && (
-          // Empty feed state (social_videos has no rows yet). Mirror still feels
-          // alive thanks to the live ring row above; here we invite the first
-          // post rather than showing a blank screen.
-          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-melori-elevated">
-              <Compass className="h-10 w-10 text-melori-muted" />
-            </div>
-            <h3 className="mb-2 text-xl font-bold text-white">
-              Mirror is warming up
-            </h3>
-            <p className="mb-6 max-w-sm text-melori-muted">
-              Melori Mirror shows what&apos;s happening on Melori right now.
-              Tap a ring above to join someone live, or post the first Mirror
-              video.
-            </p>
-            <Link
-              href="/social/video"
-              className="rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              Post the first video
-            </Link>
+      </div>
+
+      {videos.length === 0 ? (
+        // Empty feed state (social_videos has no rows yet) — fills the space
+        // below the strip so Mirror never shows a blank screen.
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-melori-elevated">
+            <Compass className="h-10 w-10 text-melori-muted" />
           </div>
-        )}
-      </section>
-
-      {/* Full-height video snap items. */}
-      {videos.map((video, index) => (
-        <div
-          key={video.id}
-          data-index={index}
-          className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
-        >
-          <VideoCard
-            video={video}
-            isActive={index === activeIndex}
-            distance={activeIndex < 0 ? 99 : Math.abs(index - activeIndex)}
-          />
+          <h3 className="mb-2 text-xl font-bold text-white">
+            Mirror is warming up
+          </h3>
+          <p className="mb-6 max-w-sm text-melori-muted">
+            Melori Mirror shows what&apos;s happening on Melori right now.
+            Tap a ring above to join someone live, or post the first Mirror
+            video.
+          </p>
+          <Link
+            href="/social/video"
+            className="rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Post the first video
+          </Link>
         </div>
-      ))}
+      ) : (
+        // The snap scroller: only video cards, each exactly one scroller
+        // viewport tall, so it opens on the first video and stops cleanly.
+        <div
+          ref={containerRef}
+          className="video-snap hide-scrollbar min-h-0 flex-1 overflow-y-scroll"
+        >
+          {videos.map((video, index) => (
+            <div
+              key={video.id}
+              data-index={index}
+              className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
+            >
+              <VideoCard
+                video={video}
+                isActive={index === activeIndex}
+                distance={Math.abs(index - activeIndex)}
+              />
+            </div>
+          ))}
 
-      {cursor && <div ref={sentinelRef} className="h-4 w-full" />}
+          {cursor && <div ref={sentinelRef} className="h-4 w-full" />}
+        </div>
+      )}
     </div>
   );
 }

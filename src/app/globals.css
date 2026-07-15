@@ -192,3 +192,42 @@ a {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+
+/* ============================================================ */
+/* PERF/UX QUICK WINS (perf/ux-quick-wins)                       */
+/* ============================================================ */
+
+/* Remove the ~300ms tap delay on mobile Safari/Chrome for anything
+   the user taps. Applied to interactive elements only so it doesn't
+   interfere with pinch-zoom on content/images. */
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+label {
+  touch-action: manipulation;
+}
+
+/* Branded skeleton loader for grid/card placeholders. Reserve the
+   card's box with an aspect-ratio wrapper, then apply `.skeleton`.
+   Colors reuse the existing brand surface tokens so it reads as Melori. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--brand-surface) 25%,
+    var(--brand-muted) 50%,
+    var(--brand-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* Respect reduced-motion preferences: hold a static shimmer frame. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

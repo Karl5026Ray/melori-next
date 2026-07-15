@@ -47,6 +47,16 @@ const SECURITY_HEADERS = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Image optimizer allowlist. Narrow on purpose: only the Supabase public
+  // storage host that actually serves Melori cover/artwork URLs. This unblocks
+  // migrating components to next/image incrementally WITHOUT a broad wildcard
+  // (a wildcard would let the optimizer be pointed at arbitrary hosts, which is
+  // a cost/security footgun). Add more specific hosts here only as needed.
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'ouvovhwizsuhjxxmccex.supabase.co' },
+    ],
+  },
   async headers() {
     return [
       {

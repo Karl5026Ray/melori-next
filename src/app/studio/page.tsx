@@ -6,6 +6,7 @@ import TrackUploader from "./components/TrackUploader";
 import VideoUploader from "./components/VideoUploader";
 import VideoList from "./components/VideoList";
 import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
+import HumanizerLibrary from "./components/humanizer/HumanizerLibrary";
 import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
@@ -251,7 +252,13 @@ export default function StudioPage() {
           <TrackList onEditWaveform={handleEditWaveform} />
         )}
         {activeTab === "humanizer" && (
-          <HumanizerWorkspace canForensic={canForensic} />
+          <div className="space-y-6">
+            <HumanizerWorkspace canForensic={canForensic} />
+            {/* Persistent download space: every completed job stays here for
+                re-download, so finished tracks aren't lost when the session's
+                in-workspace Final Draft panel resets. */}
+            <HumanizerLibrary />
+          </div>
         )}
         {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "superfans" && <SuperfansPanel />}

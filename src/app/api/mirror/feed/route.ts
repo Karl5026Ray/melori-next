@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
            id, display_name, username, avatar_url, verified, role
          )`,
       )
+      .eq("media_type", "video") // Mirror is a vertical VIDEO feed only
       .gt("expires_at", new Date().toISOString()) // 24h rotation filter
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })

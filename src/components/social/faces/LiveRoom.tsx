@@ -32,6 +32,7 @@ import {
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import { usePlayer } from "@/components/player/PlayerProvider";
 import SpaceCommentSection from "@/components/social/spaces/SpaceCommentSection";
 import {
   Mic,
@@ -47,6 +48,8 @@ import {
   Hand,
   Check,
   UserPlus,
+  Volume2,
+  Music,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -101,8 +104,21 @@ export default function LiveRoom({
 }: LiveRoomProps) {
   const router = useRouter();
   const { user } = useAuth();
+  const { isPlaying, togglePlay } = usePlayer();
   const isHost = !!user && user.id === hostId;
   const isSolo = mode === "live_solo";
+
+  // Prevent the background music bar from doubling up with live participant
+  // audio (Bug A/D): if music is playing when we enter the room, pause it once.
+  const pausedMusicRef = useRef(false);
+  useEffect(() => {
+    if (!pausedMusicRef.current && isPlaying) {
+      pausedMusicRef.current = true;
+      togglePlay();
+    }
+    // Run only on mount — the user may re-enable music from the collapsed bar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const heartSeq = useRef(0);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,6 +129,7 @@ export default function LiveRoom({
   const [reconnecting, setReconnecting] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
   const [tiles, setTiles] = useState<Tile[]>([]);
@@ -216,6 +233,7 @@ export default function LiveRoom({
           },
           onRemoteVideoRemoved: (identity) => removeTile(identity),
           onParticipantCountChange: (n) => setViewerCount(n),
+          onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
           onReconnecting: () => setReconnecting(true),
           onReconnected: () => setReconnecting(false),
           onError: (e) => {
@@ -349,9 +367,11 @@ export default function LiveRoom({
   // Host approves a guest → promote to speaker (they auto-go-on-camera).
   const approveGuest = useCallback(
     async (guestId: string) => {
-      // Enforce the on-camera ceiling.
-      const onCamCount = tiles.length + 1;
-      if (onCamCount >= maxOnCamera) {
+      // Enforce the on-camera ceiling. `tiles` already includes the host's own
+      // tile plus every on-camera guest, so it IS the current on-camera count —
+      // adding +1 here previously made a 2-seat Duo look full before the first
+      // guest could ever be approved.
+      if (tiles.length >= maxOnCamera) {
         setError(`This room seats up to ${maxOnCamera} on camera.`);
         return;
       }
@@ -407,6 +427,25 @@ export default function LiveRoom({
     spawnHeart();
     reactionChannelRef.current?.send({ type: "broadcast", event: "heart", payload: {} });
   }, [spawnHeart]);
+
+  // Autoplay unlock — must run from a user gesture. Retries startAudio() and
+  // re-plays every attached remote <audio>, then clears the prompt.
+  const enableSound = useCallback(async () => {
+    try {
+      await ensureVideoAudio();
+      setAudioBlocked(false);
+    } catch {
+      /* keep the prompt up so the user can retry */
+    }
+  }, []);
+
+  // Ask the global music bar (AudioPlayer) to pop up from its collapsed peek
+  // strip. The player owns its own state; we just nudge it via a window event.
+  const toggleMusicBar = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("melori:music-bar:expand"));
+    }
+  }, []);
 
   const toggleMic = useCallback(async () => {
     const next = !micOn;
@@ -589,16 +628,30 @@ export default function LiveRoom({
         </div>
       )}
 
+      {/* Tap-to-enable-sound — browsers gate autoplay until a user gesture, so
+          when LiveKit reports audio is blocked we show a visible prompt that
+          unlocks playback for every remote participant on tap (Bug A). */}
+      {audioBlocked && !connecting && (
+        <button
+          onClick={enableSound}
+          className="absolute left-1/2 top-28 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-brand-primary-dark"
+        >
+          <Volume2 className="h-4 w-4" />
+          Tap to enable sound
+        </button>
+      )}
+
       {/* Comment stream — bottom-anchored chat that auto-scrolls to the newest
-          message and keeps the feed above (never behind) the composer. */}
-      <div className="absolute bottom-24 left-0 z-10 h-[40%] w-full max-w-sm px-4 md:bottom-28">
+          message. Sits above the mobile tab bar + collapsed music bar and is
+          kept clear of the right-edge control rail. */}
+      <div className="absolute bottom-28 left-0 z-10 h-[38%] w-full max-w-[16rem] px-4 sm:max-w-sm">
         <div className="faces-comment-shell h-full">
           <SpaceCommentSection spaceId={spaceId} live />
         </div>
       </div>
 
-      {/* Reaction hearts */}
-      <div className="pointer-events-none absolute bottom-24 right-4 h-56 w-20 md:bottom-28">
+      {/* Reaction hearts — float up just left of the control rail */}
+      <div className="pointer-events-none absolute bottom-28 right-16 h-56 w-16">
         {hearts.map((h) => (
           <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
             ❤️
@@ -606,71 +659,86 @@ export default function LiveRoom({
         ))}
       </div>
 
-      {/* Bottom controls */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 p-4 pb-6">
-        <div className="flex items-center gap-3">
-          {/* Camera/mic controls show for host OR an on-camera guest */}
-          {onCamera && (
-            <>
-              <button
-                onClick={toggleMic}
-                aria-label={micOn ? "Mute mic" : "Unmute mic"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
-              >
-                {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              </button>
-              <button
-                onClick={toggleCam}
-                aria-label={camOn ? "Turn camera off" : "Turn camera on"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
-              >
-                {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              </button>
-              <button
-                onClick={() => void switchCamera()}
-                aria-label="Flip camera"
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-              >
-                <SwitchCamera className="h-5 w-5" />
-              </button>
-            </>
-          )}
-          {/* Superfan viewer in duo/group can raise a hand to request camera */}
-          {!isHost && !onCamera && !isSolo && canPublish && (
+      {/* Right-edge control rail (Reels/TikTok-style). Vertical stack so the
+          controls never form a wide bottom bar that overlaps the music bar or
+          the mobile tab bar (Bug D). */}
+      <div className="absolute bottom-28 right-2 z-20 flex flex-col items-center gap-3 sm:right-3">
+        {/* Camera/mic controls show for host OR an on-camera guest */}
+        {onCamera && (
+          <>
             <button
-              onClick={toggleHand}
-              className={`flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
+              onClick={toggleMic}
+              aria-label={micOn ? "Mute mic" : "Unmute mic"}
+              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
             >
-              <Hand className="h-5 w-5" />
-              {handRaised ? "Requested" : "Join on camera"}
+              {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
             </button>
-          )}
-          {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
-          {!isHost && !onCamera && !isSolo && !canPublish && (
-            <Link
-              href="/membership"
-              className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-3 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-white/25"
+            <button
+              onClick={toggleCam}
+              aria-label={camOn ? "Turn camera off" : "Turn camera on"}
+              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
             >
-              <Hand className="h-5 w-5" />
-              Go Superfan to join on camera
-            </Link>
-          )}
-        </div>
+              {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            </button>
+            <button
+              onClick={() => void switchCamera()}
+              aria-label="Flip camera"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+            >
+              <SwitchCamera className="h-5 w-5" />
+            </button>
+          </>
+        )}
 
-        <div className="flex items-center gap-3">
-          {isHost && (
-            <button onClick={handleLeave} className="rounded-full bg-brand-primary px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark">
-              End Live
-            </button>
-          )}
+        {/* Superfan viewer in duo/group can raise a hand to request camera */}
+        {!isHost && !onCamera && !isSolo && canPublish && (
           <button
-            onClick={sendHeart}
-            aria-label="Send heart"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
+            onClick={toggleHand}
+            aria-label={handRaised ? "Cancel camera request" : "Join on camera"}
+            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
           >
-            <Heart className="h-6 w-6" />
+            <Hand className="h-5 w-5" />
           </button>
-        </div>
+        )}
+        {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
+        {!isHost && !onCamera && !isSolo && !canPublish && (
+          <Link
+            href="/membership"
+            aria-label="Go Superfan to join on camera"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+          >
+            <Hand className="h-5 w-5" />
+          </Link>
+        )}
+
+        {/* React */}
+        <button
+          onClick={sendHeart}
+          aria-label="Send heart"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
+        >
+          <Heart className="h-6 w-6" />
+        </button>
+
+        {/* Bring up the (collapsed) background music bar */}
+        <button
+          onClick={toggleMusicBar}
+          aria-label="Show music player"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+        >
+          <Music className="h-5 w-5" />
+        </button>
+
+        {/* Host: end the broadcast */}
+        {isHost && (
+          <button
+            onClick={handleLeave}
+            aria-label="End live"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
     </div>
   );

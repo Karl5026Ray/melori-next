@@ -105,15 +105,30 @@ export default function AudioPlayer() {
   // confusing second set of controls there. Hide it on that route.
   const pathname = usePathname();
   const onRadio = pathname?.startsWith("/social/radio");
+  // Full-screen MM Faces live room (/social/live/<id>). The room UI owns the
+  // screen, so the music bar starts collapsed and out of the way here (Bug D).
+  const onLiveRoom = /^\/social\/live\/[^/]+/.test(pathname ?? "");
 
   // Collapsed state — lets the user tuck the bar away so it never blocks the
   // mobile nav. Playback keeps running; only the UI shrinks to a peek strip.
   // Persisted so the choice survives navigation/reloads.
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
+    // On a live-room screen the bar defaults to collapsed regardless of the
+    // saved preference so it never overlaps the video tiles / control rail.
+    if (onLiveRoom) {
+      setCollapsed(true);
+      return;
+    }
     try {
       setCollapsed(localStorage.getItem("melori:player:collapsed") === "1");
     } catch {}
+  }, [onLiveRoom]);
+  // The live room's "music" button asks us to pop open from the peek strip.
+  useEffect(() => {
+    const expand = () => setCollapsed(false);
+    window.addEventListener("melori:music-bar:expand", expand);
+    return () => window.removeEventListener("melori:music-bar:expand", expand);
   }, []);
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -128,11 +143,15 @@ export default function AudioPlayer() {
   // On the Radio route the page owns playback — don't render a second player.
   if (onRadio) return null;
 
+  // On the live-room screen the room is z-[60]; lift the bar above it (but below
+  // the mobile tab bar at z-[70]) so its controls stay reachable there.
+  const barZ = onLiveRoom ? "z-[62]" : "z-50";
+
   // Collapsed: a slim, dismissible peek strip. overflow-hidden guarantees it can
   // never push the layout sideways and cover the nav buttons.
   if (collapsed) {
     return (
-      <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+      <div className={`fixed bottom-14 md:bottom-0 inset-x-0 ${barZ} overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur`}>
         <div className="max-w-6xl mx-auto flex items-center gap-3 px-3 sm:px-6 py-1.5">
           <button
             type="button"
@@ -160,7 +179,7 @@ export default function AudioPlayer() {
   }
 
   return (
-    <div className="fixed bottom-14 md:bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+    <div className={`fixed bottom-14 md:bottom-0 inset-x-0 ${barZ} overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur`}>
       {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
       {current && sampleEnded && (
         <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">

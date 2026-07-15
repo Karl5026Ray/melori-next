@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
     // now instead of waiting for the next revalidate tick.
     revalidatePath("/");
     revalidatePath("/social/video");
+    revalidatePath("/social/mirror");
     revalidatePath("/video");
 
     return NextResponse.json({ ...data, success: true });

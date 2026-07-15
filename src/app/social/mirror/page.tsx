@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import MirrorFeed from "@/components/social/mirror/MirrorFeed";
-import CreatePostButton from "@/components/social/video/CreatePostButton";
+import MirrorUploadButton from "@/components/social/mirror/MirrorUploadButton";
 import type { Metadata } from "next";
 
 // Runtime-only (queries Supabase per request); never statically prerendered.
@@ -57,7 +57,7 @@ export default async function MirrorPage() {
         initialVideos={items as never}
         initialCursor={nextCursor}
       />
-      <CreatePostButton />
+      <MirrorUploadButton />
     </div>
   );
 }

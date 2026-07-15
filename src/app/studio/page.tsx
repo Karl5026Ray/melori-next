@@ -5,7 +5,7 @@ import Link from "next/link";
 import TrackUploader from "./components/TrackUploader";
 import VideoUploader from "./components/VideoUploader";
 import VideoList from "./components/VideoList";
-import WaveformEditor from "./components/WaveformEditor";
+import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
 import TrackList from "./components/TrackList";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
@@ -19,7 +19,7 @@ type Tab =
   | "upload"
   | "video"
   | "tracks"
-  | "waveform"
+  | "humanizer"
   | "analytics"
   | "superfans"
   | "schedule"
@@ -46,6 +46,12 @@ export default function StudioPage() {
   // Artist display name for the studio header. Falls back to full_name /
   // email localpart so the header still personalizes when display_name isn't set.
   const [artistName, setArtistName] = useState<string | null>(null);
+  // Whether this artist has an explicit admin grant for the Humanizer's
+  // forensic-resistance layer. Read directly from humanizer_access with the
+  // browser (anon) client — RLS's "own access read" policy scopes this to the
+  // signed-in user's own row, so no dedicated API route is needed just to
+  // read this one flag.
+  const [canForensic, setCanForensic] = useState(false);
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(async ({ data }) => {
@@ -64,6 +70,13 @@ export default function StudioPage() {
         profile?.full_name?.trim() ||
         (email ? email.split("@")[0] : null);
       setArtistName(resolved);
+
+      const { data: access } = await supabase
+        .from("humanizer_access")
+        .select("can_forensic")
+        .eq("user_id", uid)
+        .maybeSingle();
+      if (!cancelled) setCanForensic(access?.can_forensic === true);
     });
     return () => {
       cancelled = true;
@@ -72,7 +85,7 @@ export default function StudioPage() {
 
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
-    setActiveTab("waveform");
+    setActiveTab("humanizer");
   }, []);
 
   // Returning from the Stripe account link lands on /studio?connect=return|refresh
@@ -168,7 +181,7 @@ export default function StudioPage() {
     { id: "upload", label: "Upload", icon: "📤" },
     { id: "video", label: "Video", icon: "🎬" },
     { id: "tracks", label: "My Tracks", icon: "🎵" },
-    { id: "waveform", label: "Preview Editor", icon: "✂️" },
+    { id: "humanizer", label: "Humanizer", icon: "🎛️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
@@ -237,11 +250,8 @@ export default function StudioPage() {
         {activeTab === "tracks" && (
           <TrackList onEditWaveform={handleEditWaveform} />
         )}
-        {activeTab === "waveform" && (
-          <WaveformEditor
-            trackId={selectedTrackId}
-            onBack={() => setActiveTab("tracks")}
-          />
+        {activeTab === "humanizer" && (
+          <HumanizerWorkspace canForensic={canForensic} />
         )}
         {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "superfans" && <SuperfansPanel />}

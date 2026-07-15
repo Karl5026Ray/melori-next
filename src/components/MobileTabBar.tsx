@@ -10,10 +10,10 @@ import {
   Radio,
   RadioTower,
   Video,
-  MessagesSquare,
   MessageSquare,
   Hand,
   Sparkles,
+  Heart,
   X,
 } from "lucide-react";
 
@@ -131,7 +131,7 @@ export default function MobileTabBar() {
     { label: "Profile", href: user ? "/social/profile" : "/social/auth", icon: <UserIcon className="h-5 w-5" />, desc: "Your page" },
     { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
     { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
-    { label: "Community", href: "/social/community", icon: <MessagesSquare className="h-5 w-5" />, desc: "Posts & feed" },
+    { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
     { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
     { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
   ];

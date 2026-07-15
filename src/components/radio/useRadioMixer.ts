@@ -23,8 +23,11 @@ import type { RadioTrack } from "@/lib/data";
  * gating and free 30s previews are applied exactly as everywhere else.
  */
 
-const CROSSFADE_SEC = 4; // within-set fade
-const SET_CROSSFADE_SEC = 7; // heavier fade at set boundaries
+// Crossfade windows. Shortened (was 4s / 7s) because the blend lingered too
+// long — tracks talked over each other for several seconds. These give a tight,
+// clean DJ-style transition without a long overlap.
+const CROSSFADE_SEC = 2; // within-set fade
+const SET_CROSSFADE_SEC = 3.5; // heavier fade at set boundaries
 const SET_SIZE = 4; // tracks per "set" — mix harder after each set
 const FADE_TICK_MS = 50;
 

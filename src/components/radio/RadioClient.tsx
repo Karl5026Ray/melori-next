@@ -136,9 +136,9 @@ export default function RadioClient() {
   const showPicker = mode === "playlists" && !activePlaylistId;
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-24 md:pb-8">
+    <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-24 md:pb-8">
       {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-3">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-primary to-brand-accent text-white">
           <RadioIcon className="h-6 w-6" />
         </span>
@@ -151,7 +151,7 @@ export default function RadioClient() {
       </div>
 
       {/* Station toggle */}
-      <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-brand-border bg-white/[0.03] p-1">
+      <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-brand-border bg-white/[0.03] p-1">
         {(
           [
             { m: "foryou", label: "For You", icon: Sparkles },
@@ -223,8 +223,9 @@ export default function RadioClient() {
             </div>
           )}
 
-          {/* Now playing card */}
-          <div className="rounded-3xl border border-brand-border bg-brand-surface p-5">
+          {/* Now playing card. Compact padding so the whole player (cover →
+              controls → volume → up-next) fits on one screen without scrolling. */}
+          <div className="rounded-3xl border border-brand-border bg-brand-surface p-4">
             {loadingPool ? (
               <div className="flex h-64 items-center justify-center text-text-secondary">
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -251,8 +252,10 @@ export default function RadioClient() {
               </div>
             ) : (
               <>
-                {/* Cover */}
-                <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-brand-muted">
+                {/* Cover. Smaller cap (was max-w-xs / 20rem) and a hard vh cap so
+                    it never eats the whole viewport on short screens — that was
+                    what pushed the volume bar + up-next below the fold. */}
+                <div className="relative mx-auto aspect-square w-full max-w-[180px] max-h-[35vh] overflow-hidden rounded-2xl bg-brand-muted">
                   {current?.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -284,7 +287,7 @@ export default function RadioClient() {
                 </div>
 
                 {/* Track meta */}
-                <div className="mt-5 text-center">
+                <div className="mt-3 text-center">
                   <p className="truncate text-lg font-bold text-text-primary">
                     {current?.title ?? "—"}
                   </p>
@@ -303,7 +306,7 @@ export default function RadioClient() {
                 </div>
 
                 {/* Progress */}
-                <div className="mt-4">
+                <div className="mt-3">
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-brand-muted">
                     <div
                       className="h-full rounded-full bg-brand-primary transition-[width] duration-200"
@@ -317,7 +320,7 @@ export default function RadioClient() {
                 </div>
 
                 {/* Controls */}
-                <div className="mt-5 flex items-center justify-center gap-6">
+                <div className="mt-3 flex items-center justify-center gap-6">
                   <button
                     onClick={reshuffle}
                     aria-label="Reshuffle"
@@ -329,7 +332,7 @@ export default function RadioClient() {
                   <button
                     onClick={togglePlay}
                     aria-label={isPlaying ? "Pause" : "Play"}
-                    className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
                   >
                     {isLoading ? (
                       <Loader2 className="h-7 w-7 animate-spin" />
@@ -350,7 +353,7 @@ export default function RadioClient() {
                 </div>
 
                 {/* Volume */}
-                <div className="mt-5 flex items-center gap-3">
+                <div className="mt-3 flex items-center gap-3">
                   <button
                     onClick={() => setVolume(volume > 0 ? 0 : 1)}
                     aria-label={volume > 0 ? "Mute" : "Unmute"}
@@ -376,7 +379,7 @@ export default function RadioClient() {
 
                 {/* Up next */}
                 {next && (
-                  <div className="mt-5 flex items-center gap-3 rounded-2xl border border-brand-border bg-white/[0.03] p-3">
+                  <div className="mt-3 flex items-center gap-3 rounded-2xl border border-brand-border bg-white/[0.03] p-2.5">
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
                       Next
                     </span>
@@ -409,14 +412,14 @@ export default function RadioClient() {
                 {!state.tuned && (
                   <button
                     onClick={tuneIn}
-                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-brand-primary py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-brand-primary py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
                   >
                     <Play className="h-4 w-4" />
                     Tune In
                   </button>
                 )}
 
-                <p className="mt-4 text-center text-[11px] text-text-secondary">
+                <p className="mt-3 text-center text-[11px] text-text-secondary">
                   {state.queueLength} tracks in rotation · crossfaded, non-stop
                 </p>
               </>

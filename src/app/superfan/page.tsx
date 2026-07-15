@@ -10,9 +10,12 @@ import CoverImage from "@/components/CoverImage";
 import EditProfileModal from "@/components/social/EditProfileModal";
 import type { Profile } from "@/types/social";
 
-// /superfan — hub gated to Superfan+ (role in superfan/artist/admin). Free users
-// are sent to /membership. Data-driven where tables exist (early-access releases
-// feed), cleanly stubbed elsewhere. Never hangs: every state resolves.
+// /superfan — hub gated to Superfan+ (role in superfan/artist/admin). Anyone who
+// isn't a Superfan+ member is sent to /membership (the upgrade page): both
+// signed-out visitors AND signed-in Free users. /superfan is an upgrade
+// destination, so an unauthenticated visitor should see how to become a
+// Superfan — not a bare login wall. Data-driven where tables exist (early-access
+// releases feed), cleanly stubbed elsewhere. Never hangs: every state resolves.
 
 type Release = {
   id: string;
@@ -50,14 +53,18 @@ export default function SuperfanPage() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user) {
+        // Signed-out visitor on an upgrade page → show them the tiers/pricing
+        // so they can become a Superfan, rather than a context-free login wall.
         if (active) setState("signed-out");
-        router.replace("/social/auth?next=/superfan");
+        router.replace("/membership");
         return;
       }
 
       const meRes = await authFetch("/api/user/me");
       if (!meRes.ok) {
-        router.replace("/social/auth?next=/superfan");
+        // Session exists but we can't confirm the tier → treat as not-yet-a-member
+        // and route to the upgrade page.
+        router.replace("/membership");
         return;
       }
       const me = (await meRes.json()) as {

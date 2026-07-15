@@ -10,6 +10,7 @@ export interface Candidate {
   gender: string | null;
   city: string | null;
   photos: string[];
+  videos?: string[];
   prompts: { q?: string; a?: string }[] | unknown[];
   compatibility: number;
   profile: {
@@ -45,6 +46,7 @@ export default function SwipeCard({
   const startY = useRef(0);
   const dragging = useRef(false);
 
+  const video = candidate.videos?.[0] || null;
   const photo =
     candidate.photos?.[0] ||
     candidate.profile?.avatar_url ||
@@ -111,13 +113,26 @@ export default function SwipeCard({
         touchAction: "none",
       }}
     >
-      {/* Photo */}
-      <img
-        src={photo}
-        alt={name}
-        draggable={false}
-        className="h-full w-full object-cover"
-      />
+      {/* Media: intro video if present, otherwise lead photo */}
+      {video ? (
+        <video
+          src={video}
+          poster={photo}
+          autoPlay
+          muted
+          loop
+          playsInline
+          draggable={false}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <img
+          src={photo}
+          alt={name}
+          draggable={false}
+          className="h-full w-full object-cover"
+        />
+      )}
 
       {/* Compatibility chip */}
       <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold backdrop-blur">

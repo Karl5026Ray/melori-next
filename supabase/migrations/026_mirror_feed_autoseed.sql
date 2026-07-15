@@ -4,12 +4,16 @@
 --
 -- The 24h rotation (migration 020) sweeps social_videos rows out after 24h, but
 -- nothing was ever putting content IN, so the feed sat empty. This adds an
--- auto-seeder that tops the live feed up from the existing published-track
--- catalog (as audio posts) and an hourly pg_cron job that runs it, so the
--- Mirror always has fresh items around the clock.
+-- auto-seeder that tops the live feed up from existing content and an hourly
+-- pg_cron job that runs it, so the Mirror always has fresh items around the
+-- clock.
 --
--- Content source: published tracks that have a playable URL and belong to an
--- artist with a linked profile (so social_videos.user_id is a real user).
+-- Content sources (mixed media, round-robined so scarce video isn't drowned
+-- out by the much larger audio catalog):
+--   * AUDIO — published tracks with a playable URL, belonging to an artist with
+--     a linked profile (so social_videos.user_id is a real user).
+--   * VIDEO — intro clips on dating_profiles (public social-videos bucket),
+--     with the profile photo as the thumbnail.
 -- Idempotent: safe to re-run.
 -- =============================================================================
 
@@ -34,31 +38,56 @@ begin
     return 0;
   end if;
 
-  -- Pull `need` random usable tracks that aren't already live in the feed
-  -- (dedupe by video_url), and insert them as audio posts. The BEFORE INSERT
-  -- expiry trigger (migration 020) sets expires_at = now() + 24h automatically.
   with pool as (
+    -- AUDIO: published tracks
     select
-      a.profile_id                                  as user_id,
-      t.title                                       as title,
+      a.profile_id                                     as user_id,
+      t.title                                          as title,
       coalesce(nullif(t.preview_url, ''), t.audio_url) as media_url,
-      r.cover_art_url                               as thumb,
-      a.name                                        as artist_name
+      r.cover_art_url                                  as thumb,
+      a.name                                           as artist_name,
+      'audio'::text                                    as media_type
     from public.tracks t
     join public.releases r on r.id = t.release_id
     join public.artists  a on a.id = r.artist_id
     where t.is_published
       and a.profile_id is not null
       and coalesce(nullif(t.preview_url, ''), t.audio_url) is not null
+    union all
+    -- VIDEO: dating-profile intro clips
+    select
+      dp.user_id                                       as user_id,
+      coalesce(p.display_name, 'Intro') || ' — intro'  as title,
+      dp.videos[1]                                     as media_url,
+      (dp.photos)[1]                                   as thumb,
+      p.display_name                                   as artist_name,
+      'video'::text                                    as media_type
+    from public.dating_profiles dp
+    left join public.profiles p on p.id = dp.user_id
+    where array_length(dp.videos, 1) > 0
+      and dp.videos[1] is not null
   ),
-  fresh as (
+  -- Only items not already live (dedupe by url).
+  avail as (
     select * from pool p
     where not exists (
       select 1 from public.social_videos sv
       where sv.expires_at > now()
         and sv.video_url = p.media_url
     )
-    order by random()
+  ),
+  -- Rank within each media type so we can round-robin across types. This gives
+  -- scarce video content a fair share instead of being drowned out by the much
+  -- larger audio pool under a flat random() pick.
+  ranked as (
+    select *,
+           row_number() over (partition by media_type order by random()) as rn_in_type
+    from avail
+  ),
+  fresh as (
+    select user_id, title, media_url, thumb, artist_name, media_type
+    from ranked
+    order by rn_in_type, random()   -- interleave: 1st of each type, then 2nd, ...
     limit need
   ),
   ins as (
@@ -67,10 +96,13 @@ begin
     select
       user_id,
       title,
-      case when artist_name is not null then 'by ' || artist_name else null end,
+      case
+        when media_type = 'audio' and artist_name is not null then 'by ' || artist_name
+        else null
+      end,
       media_url,
       thumb,
-      'audio'
+      media_type
     from fresh
     returning 1
   )
@@ -81,7 +113,7 @@ end;
 $$;
 
 comment on function public.seed_mirror_feed(int) is
-  'Tops the live Melori Mirror feed up to target_count by inserting fresh audio posts from the published-track catalog. Called hourly by cron job mirror-feed-autoseed.';
+  'Tops the live Melori Mirror feed up to target_count by inserting fresh posts (audio tracks + profile intro videos, round-robined). Called hourly by cron job mirror-feed-autoseed.';
 
 -- Seed immediately so the feed is populated right now.
 select public.seed_mirror_feed(12);

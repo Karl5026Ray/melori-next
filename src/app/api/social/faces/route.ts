@@ -3,6 +3,10 @@ import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { isArtistSubscriber } from "@/lib/membership";
+import {
+  liveParticipantCounts,
+  withLiveParticipantCounts,
+} from "@/lib/spacePresence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +61,14 @@ export async function GET() {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ rooms: data ?? [] });
+    const rooms = data ?? [];
+    // spaces.participant_count is never written, so derive the live headcount
+    // (host + everyone who has joined) from the active roster instead.
+    const counts = await liveParticipantCounts(
+      supabase,
+      rooms.map((r) => r.id),
+    );
+    return NextResponse.json({ rooms: withLiveParticipantCounts(rooms, counts) });
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message ?? "Failed to list live rooms" },

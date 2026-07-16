@@ -150,6 +150,15 @@ export default function LiveRoom({
   // Identities currently speaking (local + remote merged by the video client),
   // drives the green ring on tiles.
   const [speakers, setSpeakers] = useState<Set<string>>(new Set());
+  // Room-level hearts (likes): a running total persisted server-side plus a live
+  // broadcast so every client animates + increments together.
+  const [heartCount, setHeartCount] = useState(0);
+  // Full in-room roster (everyone present, on camera or not) for the "who's
+  // here" sheet — sourced from the space_participants presence rows + profiles.
+  const [roster, setRoster] = useState<
+    { user_id: string; name: string; avatar: string | null; role: string; has_raised_hand: boolean }[]
+  >([]);
+  const [showRoster, setShowRoster] = useState(false);
 
   // Keep the local <video> for re-attach when tiles re-render.
   const localElRef = useRef<HTMLVideoElement | null>(null);
@@ -295,29 +304,37 @@ export default function LiveRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spaceId, isHost, hostId, tier, durationMinutes]);
 
-  // Host: subscribe to raise-hand requests (audience with has_raised_hand).
+  // Host: load raise-hand requests + the audience roster. Reads through the
+  // server route (service role) so it never depends on the anon client's RLS for
+  // other users' rows, then splits locally into raised-hand "requests" and the
+  // rest of the guest list. Kept fresh by BOTH Supabase realtime AND a slow poll
+  // — the poll is the safety net for environments where space_participants isn't
+  // in the realtime publication, which is why raised hands weren't reaching the
+  // host live.
   useEffect(() => {
     if (!isHost) return;
+    let active = true;
     const load = async () => {
-      // One query for every audience member; split locally into raised-hand
-      // "requests" and the rest of the guest list. Mirrors how MM Spaces derives
-      // its `raisedHands` + `audience` lists from the same participant rows.
-      const { data } = await supabase
-        .from("space_participants")
-        .select("user_id, has_raised_hand, role, user:profiles(display_name, avatar_url)")
-        .eq("space_id", spaceId)
-        .eq("role", "audience")
-        .is("left_at", null);
-      const rows = (data ?? []).map((r: any) => ({
-        user_id: r.user_id,
-        name: r.user?.display_name ?? "Guest",
-        avatar: r.user?.avatar_url ?? null,
-        raised: !!r.has_raised_hand,
-      }));
-      setRequests(rows.filter((r) => r.raised).map(({ raised: _r, ...rest }) => rest));
-      setAudience(rows.map(({ raised: _r, ...rest }) => rest));
+      try {
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        if (!res.ok) return;
+        const { participants } = await res.json();
+        if (!active) return;
+        const guests = (participants ?? []).filter((p: any) => p.role === "audience");
+        setRequests(
+          guests
+            .filter((p: any) => p.has_raised_hand)
+            .map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
+        );
+        setAudience(
+          guests.map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
+        );
+      } catch {
+        /* transient — the poll or realtime will retry */
+      }
     };
     void load();
+    const poll = setInterval(load, 8000);
     const ch = supabase
       .channel(`faces_requests:${spaceId}`)
       .on(
@@ -327,9 +344,37 @@ export default function LiveRoom({
       )
       .subscribe();
     return () => {
+      active = false;
+      clearInterval(poll);
       void supabase.removeChannel(ch);
     };
   }, [isHost, spaceId]);
+
+  // In-room roster ("who's here"): every active participant with a name +
+  // avatar, for the tappable Users badge sheet. Read through the server route
+  // (service role) so it isn't gated by the anon client's RLS. Refreshed when
+  // LiveKit reports a join/leave (viewerCount changes) and on a slow poll — the
+  // poll is the safety net when space_participants isn't in the realtime feed.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        if (!res.ok) return;
+        const { participants } = await res.json();
+        if (active) setRoster(participants ?? []);
+      } catch {
+        /* transient — the poll will retry */
+      }
+    };
+    void load();
+    const poll = setInterval(load, 10000);
+    return () => {
+      active = false;
+      clearInterval(poll);
+    };
+  }, [user, spaceId, viewerCount]);
 
   // Guest: watch my own row — when host promotes me to speaker, go on camera.
   useEffect(() => {
@@ -387,17 +432,24 @@ export default function LiveRoom({
     }
   }, [user, upsertTile]);
 
-  // Guest raises / lowers hand to request coming on camera.
+  // Guest raises / lowers hand to request coming on camera. Goes through the
+  // server (service role) rather than a direct client UPDATE: RLS blocks a
+  // viewer from writing their own participant row, which is why the raised hand
+  // never reached the host before. Optimistic, reverted on failure.
   const toggleHand = useCallback(async () => {
     if (!user) return;
     const next = !handRaised;
     setHandRaised(next);
-    await supabase
-      .from("space_participants")
-      .update({ has_raised_hand: next })
-      .eq("space_id", spaceId)
-      .eq("user_id", user.id)
-      .is("left_at", null);
+    try {
+      const res = await authFetch(`/api/social/spaces/${spaceId}/raise-hand`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raised: next }),
+      });
+      if (!res.ok) setHandRaised(!next);
+    } catch {
+      setHandRaised(!next);
+    }
   }, [handRaised, user, spaceId]);
 
   // Room is full when the current on-camera count (host + on-camera guests, i.e.
@@ -466,13 +518,38 @@ export default function LiveRoom({
     const ch = supabase.channel(`faces_reactions:${spaceId}`, {
       config: { broadcast: { self: false } },
     });
-    ch.on("broadcast", { event: "heart" }, () => spawnHeart()).subscribe();
+    ch.on("broadcast", { event: "heart" }, (msg: any) => {
+      spawnHeart();
+      // The sender includes the new running total; adopt it so every client's
+      // counter stays in lockstep without each having to re-fetch.
+      const total = Number(msg?.payload?.total);
+      if (Number.isFinite(total)) setHeartCount((c) => Math.max(c, total));
+    }).subscribe();
     reactionChannelRef.current = ch;
     return () => {
       void supabase.removeChannel(ch);
       reactionChannelRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId]);
+
+  // Seed the running heart total on mount (and after a reconnect remounts this)
+  // so the counter is populated immediately, not only after the next tap.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/social/spaces/${spaceId}/hearts`, { cache: "no-store" });
+        if (!res.ok) return;
+        const { hearts } = await res.json();
+        if (active && Number.isFinite(Number(hearts))) setHeartCount(Number(hearts));
+      } catch {
+        /* non-fatal — the counter just starts at 0 until the first tap */
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, [spaceId]);
 
   const spawnHeart = useCallback(() => {
@@ -482,10 +559,36 @@ export default function LiveRoom({
     setTimeout(() => setHearts((h) => h.filter((x) => x.id !== id)), 2200);
   }, []);
 
+  // Tap a heart: animate instantly, optimistically bump the counter, persist the
+  // increment server-side, then broadcast the authoritative new total so every
+  // other client animates + syncs. Reverts the optimistic bump on failure.
   const sendHeart = useCallback(() => {
     spawnHeart();
-    reactionChannelRef.current?.send({ type: "broadcast", event: "heart", payload: {} });
-  }, [spawnHeart]);
+    setHeartCount((c) => c + 1);
+    (async () => {
+      try {
+        const res = await authFetch(`/api/social/spaces/${spaceId}/hearts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ by: 1 }),
+        });
+        if (!res.ok) {
+          setHeartCount((c) => Math.max(0, c - 1));
+          return;
+        }
+        const { hearts } = await res.json();
+        const total = Number(hearts);
+        if (Number.isFinite(total)) setHeartCount(total);
+        reactionChannelRef.current?.send({
+          type: "broadcast",
+          event: "heart",
+          payload: { total: Number.isFinite(total) ? total : undefined },
+        });
+      } catch {
+        setHeartCount((c) => Math.max(0, c - 1));
+      }
+    })();
+  }, [spawnHeart, spaceId]);
 
   // Autoplay unlock — must run from a user gesture. Retries startAudio() and
   // re-plays every attached remote <audio>, then clears the prompt.
@@ -652,10 +755,14 @@ export default function LiveRoom({
               )}
             </button>
           )}
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur">
+          <button
+            onClick={() => setShowRoster((s) => !s)}
+            aria-label="Show who's here"
+            className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-black/60"
+          >
             <Users className="h-4 w-4" />
             {viewerCount}
-          </span>
+          </button>
           <button
             onClick={handleLeave}
             aria-label="Leave live"
@@ -757,6 +864,53 @@ export default function LiveRoom({
                 </ul>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Who's-here roster — every active participant (name + avatar), sourced
+          from the space_participants presence rows. Opened from the Users badge;
+          updates live as people join/leave. Anyone can view it. */}
+      {showRoster && (
+        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-text-primary">In the room</p>
+            <button
+              onClick={() => setShowRoster(false)}
+              aria-label="Close"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-text-secondary hover:bg-brand-muted hover:text-text-primary"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {roster.length === 0 ? (
+              <p className="text-xs text-text-secondary">No one here yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {roster.map((p) => (
+                  <li key={p.user_id} className="flex items-center gap-2">
+                    {p.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.avatar} alt={p.name} className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{p.name}</span>
+                    {p.has_raised_hand && p.role === "audience" && (
+                      <Hand className="h-3.5 w-3.5 text-brand-primary" />
+                    )}
+                    {(p.role === "host" || p.role === "speaker") && (
+                      <span className="rounded-full bg-brand-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
+                        {p.role === "host" ? "Host" : "On camera"}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
@@ -897,14 +1051,22 @@ export default function LiveRoom({
             <span className="text-[9px] font-bold uppercase leading-none">End</span>
           </button>
         )}
-        {/* Heart / reaction — everyone, bottom-most (frequent + harmless tap). */}
-        <button
-          onClick={sendHeart}
-          aria-label="Send heart"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
-        >
-          <Heart className="h-6 w-6" />
-        </button>
+        {/* Heart / reaction — everyone, bottom-most (frequent + harmless tap).
+            Shows the room's running like total beneath the button. */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            onClick={sendHeart}
+            aria-label="Send heart"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
+          >
+            <Heart className="h-6 w-6" />
+          </button>
+          {heartCount > 0 && (
+            <span className="min-w-[1.5rem] rounded-full bg-black/40 px-1.5 py-0.5 text-center text-[11px] font-semibold text-white backdrop-blur">
+              {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import {
+  liveParticipantCounts,
+  withLiveParticipantCounts,
+} from "@/lib/spacePresence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +46,23 @@ export async function GET() {
 
     // Only surface rooms that actually have a host profile joined; a live row
     // with a missing host can't render a ring or a destination.
-    const live = (data ?? []).filter((r) => r.host);
+    const hosted = (data ?? []).filter((r) => r.host);
+
+    // spaces.participant_count is never written, so the SQL sort above ties on a
+    // frozen 0. Derive the live headcount from the active roster, override the
+    // reported count, and re-sort by it (then recency) so busier rooms lead.
+    const counts = await liveParticipantCounts(
+      supabase,
+      hosted.map((r) => r.id),
+    );
+    const live = withLiveParticipantCounts(hosted, counts).sort((a, b) => {
+      const byCount = (b.participant_count ?? 0) - (a.participant_count ?? 0);
+      if (byCount !== 0) return byCount;
+      return (
+        new Date(b.last_activity_at ?? 0).getTime() -
+        new Date(a.last_activity_at ?? 0).getTime()
+      );
+    });
 
     return NextResponse.json(
       { live },

@@ -411,9 +411,25 @@ function FloatingPlayer() {
     };
   }, [clampPos]);
 
-  // Re-clamp after expand/collapse since the footprint changes.
+  // Re-clamp after expand/collapse since the footprint changes. When expanding
+  // near the right edge the wider panel would otherwise get slammed to x=MARGIN
+  // ("popped to the left"). Mirror to the opposite edge in that case so the
+  // panel opens next to where the bubble sat.
   useEffect(() => {
-    if (mounted) setPos((p) => clampPos(p.x, p.y));
+    if (!mounted) return;
+    // Wait a frame so ref.current reflects the new (expanded/collapsed) size.
+    const id = requestAnimationFrame(() => {
+      setPos((p) => {
+        const el = ref.current;
+        const w = el?.offsetWidth ?? BUBBLE;
+        const vp = getViewport();
+        if (expanded && p.x + w + MARGIN > vp.w) {
+          return clampPos(MARGIN, p.y);
+        }
+        return clampPos(p.x, p.y);
+      });
+    });
+    return () => cancelAnimationFrame(id);
   }, [expanded, mounted, clampPos]);
 
   const gesture = useRef({
@@ -512,8 +528,18 @@ function FloatingPlayer() {
   };
 
   // Interactive children must not start a drag; swallow the pointerdown so the
-  // container gesture never arms on them.
-  const stop = (e: React.PointerEvent) => e.stopPropagation();
+  // container gesture never arms on them. Also cancel any pending long-press
+  // timer and mark the gesture as non-tap so a stray pointerup on the parent
+  // (from pointer capture) doesn't re-toggle expanded after the child handled
+  // the tap.
+  const stop = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const g = gesture.current;
+    clearTimeout(g.timer);
+    g.armed = false;
+    g.dragging = false;
+    g.scrolling = true;
+  };
 
   const trackLabel = current ? current.title : "Nothing playing";
 
@@ -527,9 +553,12 @@ function FloatingPlayer() {
       onPointerMove={onPointerMove}
       onPointerUp={endGesture}
       onPointerCancel={endGesture}
-      className={`md:hidden fixed left-0 top-0 z-40 cursor-grab select-none ${
-        dragging ? "cursor-grabbing" : ""
-      }`}
+      // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
+      // and its launcher sheet — otherwise the X and transport row sit BEHIND
+      // the nav and can't be tapped, which looked like "stuck, can't stop".
+      className={`md:hidden fixed left-0 top-0 ${
+        expanded ? "z-[80]" : "z-40"
+      } cursor-grab select-none ${dragging ? "cursor-grabbing" : ""}`}
       style={{
         transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
         touchAction: "none",

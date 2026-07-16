@@ -26,6 +26,7 @@ import {
   setMicEnabled,
   switchCamera,
   becomePublisher,
+  becomeSubscriber,
   publishLocalMedia,
   type VideoTier,
   type RemoteVideo,
@@ -440,11 +441,29 @@ export default function LiveRoom({
         upsertTile({ identity: user.id, name: "You", isLocal: true, el });
       }
     } catch (e: any) {
-      setError(e?.message ?? "Could not turn on your camera");
+      // The publish path failed all the way through: in-place publish failed AND
+      // becomePublisher's publisher rejoin failed. becomePublisher goes through
+      // joinVideoRoom, which calls leaveVideoRoom() FIRST — so at this point the
+      // guest has already left the old room and would be fully disconnected
+      // (black screen) if we only showed an error. Degrade gracefully: rejoin as
+      // a plain SUBSCRIBER so they stay in the room and can keep watching. Do
+      // this only ONCE — never auto-retry publisher promotion — to avoid loops;
+      // the host can re-approve, which re-triggers this flow.
+      try {
+        await becomeSubscriber();
+        setOnCamera(false);
+        setHandRaised(false);
+        localElRef.current = null;
+        if (user) removeTile(user.id);
+        setError("Couldn't go on camera — you're watching as a viewer. Try again.");
+      } catch {
+        // Even the subscriber rejoin failed (rare). Fall back to the hard error.
+        setError(e?.message ?? "Could not turn on your camera");
+      }
     } finally {
       promotingRef.current = false;
     }
-  }, [user, upsertTile]);
+  }, [user, upsertTile, removeTile]);
 
   // Guest raises / lowers hand to request coming on camera. Goes through the
   // server (service role) rather than a direct client UPDATE: RLS blocks a

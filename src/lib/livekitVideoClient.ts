@@ -517,6 +517,21 @@ export async function becomePublisher(): Promise<HTMLVideoElement | null> {
   return localEl ?? session.localVideoEl;
 }
 
+// Graceful degradation: rejoin the room as a plain SUBSCRIBER (viewer). Used
+// when the on-stage publish path fails all the way through (in-place publish
+// failed AND becomePublisher's publisher rejoin failed) — becomePublisher goes
+// through joinVideoRoom, which calls leaveVideoRoom() first, so a failed
+// publisher rejoin leaves the guest fully disconnected. Rather than leave them
+// on a black screen, we reconnect with a subscriber token (the same path a
+// normal viewer uses) so they stay in the room and can watch. Reuses the
+// original join callbacks so remote tiles/audio wire back up.
+export async function becomeSubscriber(): Promise<void> {
+  const prev = session.lastOpts;
+  if (!prev) throw new Error("Not connected to a live room");
+  await joinVideoRoom({ ...prev, role: "subscriber" });
+  await ensureVideoAudio();
+}
+
 // Publish camera + mic on an ALREADY-CONNECTED participant whose permission was
 // just flipped to canPublish (server-driven promotion). No reconnect — this is
 // the preferred path over becomePublisher() once the client is in the room and

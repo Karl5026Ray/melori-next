@@ -9,6 +9,17 @@ import { defineConfig, devices } from "@playwright/test";
 // Without it we spin up `next dev` locally.
 const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:3000";
 
+// When pointed at an SSO-protected Vercel preview, send the automation bypass
+// token (Vercel: "Protection Bypass for Automation") so requests aren't
+// redirected to the vercel.com login gate. Absent the token this is a no-op.
+const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const extraHTTPHeaders = BYPASS
+  ? {
+      "x-vercel-protection-bypass": BYPASS,
+      "x-vercel-set-bypass-cookie": "true",
+    }
+  : undefined;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -23,6 +34,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
+    extraHTTPHeaders,
     trace: "on-first-retry",
     video: "retain-on-failure",
     screenshot: "only-on-failure",

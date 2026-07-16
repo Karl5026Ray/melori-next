@@ -10,9 +10,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // How recently a member must have heartbeated (POST /api/presence/heartbeat) to
-// count as "online now". The client heartbeats ~every 60s, so a 2-minute window
-// tolerates one missed beat before a member drops off the row.
-const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+// count as "online now". The client heartbeats ~every 60s, so a 5-minute window
+// tolerates several missed beats before a member drops off the row.
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 // GET /api/mirror/live
 // -------------------------------------------------------------------------

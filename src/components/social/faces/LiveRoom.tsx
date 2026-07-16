@@ -417,7 +417,21 @@ export default function LiveRoom({
     if (promotingRef.current || onCameraRef.current) return;
     promotingRef.current = true;
     try {
-      let el = await publishLocalMedia();
+      // Prefer publishing in place (no reconnect). This succeeds once LiveKit
+      // has applied the runtime publish grant (ParticipantPermissionsChanged).
+      // But our Supabase role-watch fires on the DB role→speaker write, which
+      // the moderation route performs BEFORE it flips the LiveKit grant — so an
+      // in-place publish here can race ahead of the grant and be rejected with
+      // "insufficient permissions". When that happens, fall back to reconnecting
+      // with a freshly-minted PUBLISHER token: it carries canPublish
+      // deterministically because the server reads our now-"speaker" DB role, so
+      // it never depends on runtime-grant timing.
+      let el: HTMLVideoElement | null = null;
+      try {
+        el = await publishLocalMedia();
+      } catch {
+        el = null;
+      }
       if (!el) el = await becomePublisher();
       setOnCamera(true);
       setHandRaised(false);

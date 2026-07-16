@@ -103,7 +103,16 @@ export async function POST(req: NextRequest) {
 
     // A client that explicitly asked to only subscribe stays audience even if
     // eligible for stage (e.g. joining muted); it can be promoted at runtime.
-    if (requestedRole === "subscriber") {
+    //
+    // This applies to AUDIO Spaces only. Faces (video) rooms are different: the
+    // multi-guest client ALWAYS requests role:"subscriber" on join (see
+    // LiveRoom / livekitVideoClient), so honoring it here would strip a
+    // legitimately promoted guest's publish grant on every rejoin/reload and
+    // leave them subscribe-only — the exact "insufficient permissions" failure
+    // when they turn on camera. For video we stay DB-authoritative: an on-stage
+    // host / speaker / moderator (already gated by Superfan + not host_muted
+    // above) keeps canPublish regardless of the client's requested role.
+    if (requestedRole === "subscriber" && !withVideo) {
       onStage = false;
     }
 

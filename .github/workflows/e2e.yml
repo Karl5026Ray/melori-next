@@ -78,6 +78,9 @@ jobs:
           REPO: ${{ github.repository }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DISPATCH_URL: ${{ github.event.inputs.base_url }}
+          # Optional: Vercel "Protection Bypass for Automation" token. When set
+          # it lets the probe (and the suite) reach SSO-protected previews.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           # NOTE: intentionally not using `set -e` — we want to tolerate
           # transient gh-api / jq failures inside the poll loop instead of
@@ -125,17 +128,47 @@ jobs:
             sleep 10
           done
 
-          if [ -n "$FOUND" ]; then
+          PROD_URL="https://melorimusic.org"
+
+          # A preview URL is only useful if the suite can actually load it.
+          # Vercel Deployment Protection puts previews behind an SSO gate, so
+          # an unauthenticated request to a protected preview 302-redirects to
+          # vercel.com/sso-api and the app never renders (the suite then times
+          # out in ensurePlayerVisible with "waiting for player OR catalog").
+          # Probe /music: if it isn't a plain 200 we can't reach the app, so
+          # fall back to the unprotected production URL (same player/catalog
+          # code once the branch is up to date with main). If a bypass secret
+          # is configured we try it first so protected previews stay testable.
+          reachable() {
+            local base="$1" probe code
+            probe="$base/music"
+            if [ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]; then
+              probe="$probe?x-vercel-protection-bypass=${VERCEL_AUTOMATION_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true"
+            fi
+            code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$probe" 2>/dev/null || echo "000")
+            echo "Probe $base/music -> HTTP $code" >&2
+            [ "$code" = "200" ]
+          }
+
+          if [ -n "$FOUND" ] && reachable "$FOUND"; then
             echo "url=$FOUND" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FOUND" ]; then
+            echo "Preview $FOUND is unreachable (likely Vercel Deployment Protection) \u2014 falling back to production URL."
+            echo "url=$PROD_URL" >> "$GITHUB_OUTPUT"
           else
             echo "No Vercel preview after 5 min \u2014 falling back to production URL."
-            echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
+            echo "url=$PROD_URL" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Playwright tests
         env:
           BASE_URL: ${{ steps.url.outputs.url }}
           CI: "true"
+          # Forwarded to Playwright (see playwright.config.ts) so the suite can
+          # send the x-vercel-protection-bypass header when the URL resolved to
+          # an SSO-protected preview. Empty on repos without the token — the
+          # resolve step will already have fallen back to production in that case.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           echo "Running tests against: $BASE_URL"
           npm run test:e2e

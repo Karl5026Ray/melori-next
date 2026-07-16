@@ -53,7 +53,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # GHA is deprecating Node 20 on its runners; 22 is the current LTS.
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
@@ -72,44 +73,64 @@ jobs:
         id: url
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_URL: ${{ github.event.inputs.base_url }}
         run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "url=${{ github.event.inputs.base_url }}" >> "$GITHUB_OUTPUT"
+          # NOTE: intentionally not using `set -e` — we want to tolerate
+          # transient gh-api / jq failures inside the poll loop instead of
+          # aborting the whole job on the first hiccup.
+          set -uo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "url=$DISPATCH_URL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+
+          if [ "$EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Pull request: poll the deployments API for a Vercel preview matching
-          # the head SHA. Fall back to local dev server if none appears in 5min.
-          SHA="${{ github.event.pull_request.head.sha }}"
-          echo "Looking for Vercel preview at sha=$SHA"
+
+          # Pull request path: poll for the Vercel preview matching the head
+          # commit. Vercel comments the preview URL on the PR shortly after
+          # the deployment is Ready, so we poll the issue-comments API for
+          # that URL. That's the source of truth the humans see.
+          echo "Looking for Vercel preview for sha=$PR_HEAD_SHA on PR #${{ github.event.pull_request.number }}"
+          FOUND=""
           for i in $(seq 1 30); do
-            URL=$(gh api "repos/${{ github.repository }}/deployments?sha=$SHA" \
-              --jq '.[] | select(.environment | startswith("Preview")) | .payload.web_url // empty' 2>/dev/null | head -1)
-            if [ -z "$URL" ]; then
-              URL=$(gh api "repos/${{ github.repository }}/commits/$SHA/status" \
-                --jq '.statuses[] | select(.context == "Vercel" and .state == "success") | .target_url' 2>/dev/null | head -1)
+            # 1) Deployment statuses on the head SHA (target_url points at the
+            #    deployment when Vercel emits status checks).
+            URL=$(gh api "repos/$REPO/commits/$PR_HEAD_SHA/status" 2>/dev/null \
+              | jq -r '[.statuses[]? | select((.context // "") == "Vercel" and (.state // "") == "success") | .target_url] | map(select(. != null and . != "" and (startswith("https://vercel.com/") | not))) | .[0] // ""' 2>/dev/null || echo "")
+
+            # 2) Vercel's PR-comment bot posts the preview URL as a link. Grep
+            #    it out of the PR comment body if the status-check route was
+            #    empty (Vercel sometimes only reports via the comment).
+            if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+              URL=$(gh api "repos/$REPO/issues/${{ github.event.pull_request.number }}/comments" 2>/dev/null \
+                | jq -r '[.[]? | select((.user.login // "") | test("vercel"; "i")) | .body // ""] | join("\n")' 2>/dev/null \
+                | grep -oE 'https://[a-z0-9-]+-melori[a-z0-9.-]*\.vercel\.app' \
+                | head -1 || echo "")
             fi
-            if [ -n "$URL" ]; then
-              # Vercel's target_url points at the deployment inspector, not the
-              # deployed app. Convert dashboard URLs to the actual site if needed.
-              case "$URL" in
-                https://vercel.com/*) URL="" ;;
-              esac
-            fi
-            if [ -n "$URL" ]; then
+
+            if [ -n "$URL" ] && [ "$URL" != "null" ]; then
               echo "Found preview: $URL"
-              echo "url=$URL" >> "$GITHUB_OUTPUT"
-              exit 0
+              FOUND="$URL"
+              break
             fi
-            echo "Attempt $i: no Vercel preview yet, sleeping 10s"
+            echo "Attempt $i/30: no Vercel preview yet, sleeping 10s"
             sleep 10
           done
-          echo "No Vercel preview after 5 min — falling back to local dev server."
-          echo "url=http://127.0.0.1:3000" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$FOUND" ]; then
+            echo "url=$FOUND" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Vercel preview after 5 min \u2014 falling back to production URL."
+            echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run Playwright tests
         env:

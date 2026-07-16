@@ -50,9 +50,17 @@ import {
   UserPlus,
   Volume2,
   Square,
+  LayoutGrid,
+  Focus,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
+
+// How the on-camera tiles are arranged. `grid` = the auto-grid (everyone equal);
+// `spotlight` = one featured tile (active speaker, else host) fills the stage
+// with the rest as a thumbnail strip. Purely a local view preference — it never
+// changes who is publishing, so it's safe for any viewer to toggle.
+export type FacesLayout = "grid" | "spotlight";
 
 interface LiveRoomProps {
   spaceId: string;
@@ -129,7 +137,16 @@ export default function LiveRoom({
   const [requests, setRequests] = useState<
     { user_id: string; name: string; avatar: string | null }[]
   >([]);
+  // Full audience roster (viewers not on camera) so the host can browse a guest
+  // list and invite anyone up — not just people who raised a hand.
+  const [audience, setAudience] = useState<
+    { user_id: string; name: string; avatar: string | null }[]
+  >([]);
   const [showRequests, setShowRequests] = useState(false);
+  // Guests with an in-flight promote (invite/approve) call, for pending UI.
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  // Tile arrangement (local view only). Starts as the equal auto-grid.
+  const [layout, setLayout] = useState<FacesLayout>("grid");
   // Identities currently speaking (local + remote merged by the video client),
   // drives the green ring on tiles.
   const [speakers, setSpeakers] = useState<Set<string>>(new Set());
@@ -282,20 +299,23 @@ export default function LiveRoom({
   useEffect(() => {
     if (!isHost) return;
     const load = async () => {
+      // One query for every audience member; split locally into raised-hand
+      // "requests" and the rest of the guest list. Mirrors how MM Spaces derives
+      // its `raisedHands` + `audience` lists from the same participant rows.
       const { data } = await supabase
         .from("space_participants")
         .select("user_id, has_raised_hand, role, user:profiles(display_name, avatar_url)")
         .eq("space_id", spaceId)
-        .eq("has_raised_hand", true)
         .eq("role", "audience")
         .is("left_at", null);
-      setRequests(
-        (data ?? []).map((r: any) => ({
-          user_id: r.user_id,
-          name: r.user?.display_name ?? "Guest",
-          avatar: r.user?.avatar_url ?? null,
-        })),
-      );
+      const rows = (data ?? []).map((r: any) => ({
+        user_id: r.user_id,
+        name: r.user?.display_name ?? "Guest",
+        avatar: r.user?.avatar_url ?? null,
+        raised: !!r.has_raised_hand,
+      }));
+      setRequests(rows.filter((r) => r.raised).map(({ raised: _r, ...rest }) => rest));
+      setAudience(rows.map(({ raised: _r, ...rest }) => rest));
     };
     void load();
     const ch = supabase
@@ -380,8 +400,16 @@ export default function LiveRoom({
       .is("left_at", null);
   }, [handRaised, user, spaceId]);
 
-  // Host approves a guest → promote to speaker (they auto-go-on-camera).
-  const approveGuest = useCallback(
+  // Room is full when the current on-camera count (host + on-camera guests, i.e.
+  // `tiles`) has reached the mode's ceiling (2 for Duo, up to 8 for group).
+  const stageFull = tiles.length >= maxOnCamera;
+
+  // Host promotes a guest → speaker. Used by BOTH the "approve raised hand" and
+  // the "invite from guest list" actions; they hit the SAME server-authoritative
+  // moderation endpoint (PATCH role:speaker), which flips LiveKit publish
+  // permission and updates the role — the client never self-promotes. The
+  // promoted guest's own row-watch (below) then brings them on camera in place.
+  const promoteToStage = useCallback(
     async (guestId: string) => {
       // Enforce the on-camera ceiling. `tiles` already includes the host's own
       // tile plus every on-camera guest, so it IS the current on-camera count —
@@ -391,14 +419,29 @@ export default function LiveRoom({
         setError(`This room seats up to ${maxOnCamera} on camera.`);
         return;
       }
-      await authFetch(
-        `/api/social/spaces/${spaceId}/participants/${guestId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "speaker" }),
-        },
-      );
+      setPending((p) => new Set(p).add(guestId));
+      try {
+        const res = await authFetch(
+          `/api/social/spaces/${spaceId}/participants/${guestId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "speaker" }),
+          },
+        );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data?.error ?? "Could not invite that guest.");
+        }
+      } catch {
+        setError("Network error inviting that guest.");
+      } finally {
+        setPending((p) => {
+          const next = new Set(p);
+          next.delete(guestId);
+          return next;
+        });
+      }
     },
     [spaceId, tiles.length, maxOnCamera],
   );
@@ -467,7 +510,20 @@ export default function LiveRoom({
     await setCameraEnabled(next);
   }, [camOn]);
 
-  // Attach each tile's <video> into its container div after render.
+  // The featured tile in spotlight layout: the current active speaker if any,
+  // otherwise the host, otherwise the first tile. Keeps the "big" tile tracking
+  // whoever is talking, exactly like the ring does.
+  const featuredId = useMemo(() => {
+    if (tiles.length === 0) return null;
+    const speaking = tiles.find((t) => speakers.has(t.identity));
+    if (speaking) return speaking.identity;
+    const host = tiles.find((t) => t.identity === hostId);
+    return (host ?? tiles[0]).identity;
+  }, [tiles, speakers, hostId]);
+
+  // Attach each tile's <video> into its container div after render. Re-runs when
+  // the layout or the featured tile changes too, since those swap which DOM node
+  // holds a given identity — without the re-attach the moved tile goes black.
   useEffect(() => {
     tiles.forEach((t) => {
       const container = videoRefs.current.get(t.identity);
@@ -478,10 +534,40 @@ export default function LiveRoom({
         container.appendChild(el);
       }
     });
-  }, [tiles]);
+  }, [tiles, layout, featuredId]);
 
   const gridClass = useMemo(() => gridClassFor(Math.max(1, tiles.length)), [tiles.length]);
   const showStageFallback = tiles.length === 0;
+  // The layout toggle only makes sense once there's more than one tile to
+  // arrange (solo/single-tile rooms have nothing to switch).
+  const canSwitchLayout = !isSolo && tiles.length >= 2;
+  const useSpotlight = layout === "spotlight" && canSwitchLayout;
+
+  // One tile renderer shared by both layouts so the active-speaker ring, name
+  // label and <video> attach point stay identical regardless of arrangement.
+  const renderTile = (t: Tile) => (
+    <div
+      key={t.identity}
+      ref={(node) => {
+        videoRefs.current.set(t.identity, node);
+      }}
+      className={`relative h-full w-full overflow-hidden rounded-lg bg-brand-surface ${
+        speakers.has(t.identity) ? "speaking-ring-tile" : ""
+      }`}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-muted text-lg font-bold text-text-primary">
+          {t.name.charAt(0).toUpperCase()}
+        </div>
+      </div>
+      <span className="absolute bottom-2 left-2 z-10 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
+        {t.identity === hostId ? `${t.name} · Host` : t.name}
+      </span>
+    </div>
+  );
+
+  const featuredTile = tiles.find((t) => t.identity === featuredId) ?? tiles[0];
+  const stripTiles = tiles.filter((t) => t.identity !== featuredTile?.identity);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black">
@@ -501,28 +587,24 @@ export default function LiveRoom({
               {isHost ? "Starting your camera…" : `${hostName} isn't on camera yet`}
             </p>
           </div>
+        ) : useSpotlight && featuredTile ? (
+          // Spotlight: featured tile fills the stage, the rest ride a thumbnail
+          // strip along the bottom.
+          <div className="flex h-full w-full flex-col gap-0.5">
+            <div className="relative min-h-0 flex-1">{renderTile(featuredTile)}</div>
+            {stripTiles.length > 0 && (
+              <div className="flex h-20 w-full shrink-0 gap-0.5 overflow-x-auto sm:h-28">
+                {stripTiles.map((t) => (
+                  <div key={t.identity} className="relative aspect-square h-full shrink-0">
+                    {renderTile(t)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div className={`grid h-full w-full gap-0.5 ${gridClass}`}>
-            {tiles.map((t) => (
-              <div
-                key={t.identity}
-                ref={(node) => {
-                  videoRefs.current.set(t.identity, node);
-                }}
-                className={`relative overflow-hidden rounded-lg bg-brand-surface ${
-                  speakers.has(t.identity) ? "speaking-ring-tile" : ""
-                }`}
-              >
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-muted text-lg font-bold text-text-primary">
-                    {t.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-                <span className="absolute bottom-2 left-2 z-10 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
-                  {t.identity === hostId ? `${t.name} · Host` : t.name}
-                </span>
-              </div>
-            ))}
+            {tiles.map((t) => renderTile(t))}
           </div>
         )}
       </div>
@@ -589,31 +671,93 @@ export default function LiveRoom({
         <p className="truncate text-sm font-medium text-white/90 drop-shadow">{title}</p>
       </div>
 
-      {/* Guest requests panel (host) */}
+      {/* Guests panel (host) — raised-hand REQUESTS to approve on top, then the
+          full AUDIENCE roster to invite from. Mirrors the MM Spaces "Raised
+          Hands" + "Audience" sections; every action hits the same server-side
+          moderation endpoint. */}
       {isHost && !isSolo && showRequests && (
-        <div className="absolute right-4 top-16 z-20 w-64 rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
-          <p className="mb-2 text-sm font-semibold text-text-primary">Requests to join</p>
-          {requests.length === 0 ? (
-            <p className="text-xs text-text-secondary">No requests right now.</p>
-          ) : (
-            <ul className="space-y-2">
-              {requests.map((r) => (
-                <li key={r.user_id} className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
-                    {r.name.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{r.name}</span>
-                  <button
-                    onClick={() => approveGuest(r.user_id)}
-                    aria-label="Approve"
-                    className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary text-white hover:bg-brand-primary-dark"
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-text-primary">Guests</p>
+            <span className="text-xs text-text-secondary">{tiles.length}/{maxOnCamera} on camera</span>
+          </div>
+          {stageFull && (
+            <p className="mb-2 rounded-lg bg-brand-primary/10 px-2 py-1.5 text-[11px] text-brand-primary">
+              Stage is full ({maxOnCamera}). Move someone to the audience to invite another guest.
+            </p>
           )}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            {/* Requests to join (raised hands). */}
+            {requests.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+                  Requests ({requests.length})
+                </p>
+                <ul className="space-y-2">
+                  {requests.map((r) => (
+                    <li key={r.user_id} className="flex items-center gap-2">
+                      <div className="relative">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                          {r.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary">
+                          <Hand className="h-2.5 w-2.5 text-white" />
+                        </span>
+                      </div>
+                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{r.name}</span>
+                      <button
+                        onClick={() => promoteToStage(r.user_id)}
+                        disabled={stageFull || pending.has(r.user_id)}
+                        aria-label={`Approve ${r.name}`}
+                        className="flex items-center gap-1 rounded-full bg-brand-primary px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-primary-dark disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pending.has(r.user_id) ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5" />
+                        )}
+                        Approve
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Full audience roster — invite anyone up. */}
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+                Audience ({audience.length})
+              </p>
+              {audience.length === 0 ? (
+                <p className="text-xs text-text-secondary">No one in the audience yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {audience.map((a) => (
+                    <li key={a.user_id} className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                        {a.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{a.name}</span>
+                      <button
+                        onClick={() => promoteToStage(a.user_id)}
+                        disabled={stageFull || pending.has(a.user_id)}
+                        aria-label={`Invite ${a.name} on camera`}
+                        className="flex items-center gap-1 rounded-full border border-brand-border px-2.5 py-1 text-xs font-semibold text-text-primary hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pending.has(a.user_id) ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <UserPlus className="h-3.5 w-3.5" />
+                        )}
+                        Invite
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -683,6 +827,19 @@ export default function LiveRoom({
           bottom: "calc(env(safe-area-inset-bottom) + 4.75rem)",
         }}
       >
+        {/* Layout toggle — grid ⇄ spotlight. Only for multi-visitor rooms with
+            2+ tiles to arrange; it's a local view preference (never broadcast,
+            never touches who publishes). */}
+        {canSwitchLayout && (
+          <button
+            onClick={() => setLayout((l) => (l === "grid" ? "spotlight" : "grid"))}
+            aria-label={layout === "grid" ? "Switch to spotlight view" : "Switch to grid view"}
+            title={layout === "grid" ? "Spotlight view" : "Grid view"}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+          >
+            {layout === "grid" ? <Focus className="h-5 w-5" /> : <LayoutGrid className="h-5 w-5" />}
+          </button>
+        )}
         {/* Camera/mic controls show for host OR an on-camera guest */}
         {onCamera && (
           <>

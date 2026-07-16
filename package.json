@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "echo 'next lint was removed in Next 16; no standalone linter configured for this project' && exit 0",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
-    "test:webhook": "tsx scripts/pubnub-webhook-curl.ts"
+    "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -30,6 +32,7 @@
     "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.0",
     "@types/react": "19.2.17",

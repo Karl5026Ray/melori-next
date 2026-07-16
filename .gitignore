@@ -24,3 +24,9 @@ yarn-error.log*
 next-env.d.ts
 *.tsbuildinfo
 .vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

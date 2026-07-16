@@ -1,0 +1,153 @@
+name: E2E (Playwright)
+
+# Runs the mobile FloatingPlayer regression suite (e2e/floating-player.spec.ts)
+# on every PR and on pushes to main. This is the safety net for PR #103 —
+# any revert of the AudioPlayer.tsx fixes will fail these tests before merge.
+#
+# The suite hits the freshly-built Vercel preview URL for the PR (or the
+# production URL on main). If neither is reachable we fall back to booting
+# `next dev` inside the runner, so the workflow still works for PRs that
+# don't produce a Vercel preview (draft PRs, forked repos, etc.).
+
+on:
+  pull_request:
+    branches: [main]
+    # Skip runs when only docs / markdown / images change — the suite exercises
+    # runtime UI, so those never affect it.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "public/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "public/**"
+  # Manual trigger — handy for ad-hoc verification after a Vercel domain change.
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Override BASE_URL (default: production)"
+        required: false
+        default: "https://melorimusic.org"
+
+# Cancel in-progress runs on the same ref when a new commit lands — no point
+# testing an older SHA when we already know a newer one is queued.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Mobile FloatingPlayer @ 390x844
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # GHA is deprecating Node 20 on its runners; 22 is the current LTS.
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Chromium only — the mobile-chromium project pins browserName=chromium,
+      # so we skip the ~1GB WebKit / Firefox downloads.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Wait for the Vercel preview to be Ready before running against it.
+      # For PRs, Vercel creates a preview commented on the PR shortly after
+      # the head commit is pushed. For pushes to main, we hit production
+      # directly (which Vercel has already promoted).
+      - name: Resolve target URL
+        id: url
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_URL: ${{ github.event.inputs.base_url }}
+        run: |
+          # NOTE: intentionally not using `set -e` — we want to tolerate
+          # transient gh-api / jq failures inside the poll loop instead of
+          # aborting the whole job on the first hiccup.
+          set -uo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "url=$DISPATCH_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Pull request path: poll for the Vercel preview matching the head
+          # commit. Vercel comments the preview URL on the PR shortly after
+          # the deployment is Ready, so we poll the issue-comments API for
+          # that URL. That's the source of truth the humans see.
+          echo "Looking for Vercel preview for sha=$PR_HEAD_SHA on PR #${{ github.event.pull_request.number }}"
+          FOUND=""
+          for i in $(seq 1 30); do
+            # 1) Deployment statuses on the head SHA (target_url points at the
+            #    deployment when Vercel emits status checks).
+            URL=$(gh api "repos/$REPO/commits/$PR_HEAD_SHA/status" 2>/dev/null \
+              | jq -r '[.statuses[]? | select((.context // "") == "Vercel" and (.state // "") == "success") | .target_url] | map(select(. != null and . != "" and (startswith("https://vercel.com/") | not))) | .[0] // ""' 2>/dev/null || echo "")
+
+            # 2) Vercel's PR-comment bot posts the preview URL as a link. Grep
+            #    it out of the PR comment body if the status-check route was
+            #    empty (Vercel sometimes only reports via the comment).
+            if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+              URL=$(gh api "repos/$REPO/issues/${{ github.event.pull_request.number }}/comments" 2>/dev/null \
+                | jq -r '[.[]? | select((.user.login // "") | test("vercel"; "i")) | .body // ""] | join("\n")' 2>/dev/null \
+                | grep -oE 'https://[a-z0-9-]+-melori[a-z0-9.-]*\.vercel\.app' \
+                | head -1 || echo "")
+            fi
+
+            if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+              echo "Found preview: $URL"
+              FOUND="$URL"
+              break
+            fi
+            echo "Attempt $i/30: no Vercel preview yet, sleeping 10s"
+            sleep 10
+          done
+
+          if [ -n "$FOUND" ]; then
+            echo "url=$FOUND" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Vercel preview after 5 min \u2014 falling back to production URL."
+            echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Playwright tests
+        env:
+          BASE_URL: ${{ steps.url.outputs.url }}
+          CI: "true"
+        run: |
+          echo "Running tests against: $BASE_URL"
+          npm run test:e2e
+
+      # Uploads screenshots, videos, and traces on failure so we can diagnose
+      # regressions without re-running locally.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

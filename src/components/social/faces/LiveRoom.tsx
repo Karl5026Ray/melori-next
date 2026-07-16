@@ -49,6 +49,7 @@ import {
   Check,
   UserPlus,
   Volume2,
+  Square,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -653,14 +654,14 @@ export default function LiveRoom({
       {/* Comment stream — shared RoomChat (auto-scroll, new-message pill,
           grouping, sticky composer). Fixed-height floating shell over the video
           so the internal scroll + composer behave. Orange accent for Faces. */}
-      <div className="absolute bottom-24 left-0 z-10 flex h-[42%] w-full max-w-sm flex-col overflow-hidden px-4 md:bottom-28">
+      <div className="absolute bottom-24 left-0 z-10 flex h-[42%] w-full max-w-sm flex-col overflow-hidden pl-4 pr-24 md:bottom-28 md:pr-4">
         <div className="faces-comment-shell flex min-h-0 flex-1 flex-col">
           <RoomChat spaceId={spaceId} accent="orange" className="flex-1" />
         </div>
       </div>
 
-      {/* Reaction hearts */}
-      <div className="pointer-events-none absolute bottom-24 right-4 h-56 w-20 md:bottom-28">
+      {/* Reaction hearts — rise just LEFT of the right-side control rail. */}
+      <div className="pointer-events-none absolute bottom-40 right-20 h-56 w-20 md:bottom-28">
         {hearts.map((h) => (
           <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
             ❤️
@@ -668,71 +669,85 @@ export default function LiveRoom({
         ))}
       </div>
 
-      {/* Bottom controls */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 p-4 pb-6">
-        <div className="flex items-center gap-3">
-          {/* Camera/mic controls show for host OR an on-camera guest */}
-          {onCamera && (
-            <>
-              <button
-                onClick={toggleMic}
-                aria-label={micOn ? "Mute mic" : "Unmute mic"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
-              >
-                {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              </button>
-              <button
-                onClick={toggleCam}
-                aria-label={camOn ? "Turn camera off" : "Turn camera on"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
-              >
-                {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              </button>
-              <button
-                onClick={() => void switchCamera()}
-                aria-label="Flip camera"
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-              >
-                <SwitchCamera className="h-5 w-5" />
-              </button>
-            </>
-          )}
-          {/* Superfan viewer in duo/group can raise a hand to request camera */}
-          {!isHost && !onCamera && !isSolo && canPublish && (
+      {/* Broadcast controls — VERTICAL RIGHT-SIDE RAIL.
+          The old bottom row sat UNDER the mobile tab bar (fixed, z-[70]) and
+          behind its center "M" launcher, so camera/mic/flip/End Live/heart were
+          covered and untappable on a live phone. They now live in a rail on the
+          RIGHT edge (opposite the left hamburger), anchored ABOVE the tab bar +
+          M button and clear of the bottom-left chat, honoring iOS safe areas.
+          Applies to all three modes (solo/duo/group). */}
+      <div
+        className="absolute z-30 flex flex-col items-center gap-3"
+        style={{
+          right: "calc(env(safe-area-inset-right) + 0.75rem)",
+          bottom: "calc(env(safe-area-inset-bottom) + 4.75rem)",
+        }}
+      >
+        {/* Camera/mic controls show for host OR an on-camera guest */}
+        {onCamera && (
+          <>
             <button
-              onClick={toggleHand}
-              className={`flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
+              onClick={toggleMic}
+              aria-label={micOn ? "Mute mic" : "Unmute mic"}
+              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${micOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
             >
-              <Hand className="h-5 w-5" />
-              {handRaised ? "Requested" : "Join on camera"}
+              {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
             </button>
-          )}
-          {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
-          {!isHost && !onCamera && !isSolo && !canPublish && (
-            <Link
-              href="/membership"
-              className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-3 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-white/25"
+            <button
+              onClick={toggleCam}
+              aria-label={camOn ? "Turn camera off" : "Turn camera on"}
+              className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${camOn ? "bg-white/15 text-white hover:bg-white/25" : "bg-brand-primary text-white"}`}
             >
-              <Hand className="h-5 w-5" />
-              Go Superfan to join on camera
-            </Link>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          {isHost && (
-            <button onClick={handleLeave} className="rounded-full bg-brand-primary px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark">
-              End Live
+              {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
             </button>
-          )}
+            <button
+              onClick={() => void switchCamera()}
+              aria-label="Flip camera"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+            >
+              <SwitchCamera className="h-5 w-5" />
+            </button>
+          </>
+        )}
+        {/* Superfan viewer in duo/group can raise a hand to request camera */}
+        {!isHost && !onCamera && !isSolo && canPublish && (
           <button
-            onClick={sendHeart}
-            aria-label="Send heart"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
+            onClick={toggleHand}
+            aria-label={handRaised ? "Cancel camera request" : "Join on camera"}
+            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors ${handRaised ? "bg-brand-primary text-white" : "bg-white/15 text-white hover:bg-white/25"}`}
           >
-            <Heart className="h-6 w-6" />
+            <Hand className="h-5 w-5" />
           </button>
-        </div>
+        )}
+        {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
+        {!isHost && !onCamera && !isSolo && !canPublish && (
+          <Link
+            href="/membership"
+            aria-label="Go Superfan to join on camera"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+          >
+            <Hand className="h-5 w-5" />
+          </Link>
+        )}
+        {/* End Live (host) — primary, prominent, and always reachable. */}
+        {isHost && (
+          <button
+            onClick={handleLeave}
+            aria-label="End Live"
+            className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-full bg-brand-primary text-white shadow-lg transition-colors hover:bg-brand-primary-dark"
+          >
+            <Square className="h-4 w-4 fill-current" />
+            <span className="text-[9px] font-bold uppercase leading-none">End</span>
+          </button>
+        )}
+        {/* Heart / reaction — everyone, bottom-most (frequent + harmless tap). */}
+        <button
+          onClick={sendHeart}
+          aria-label="Send heart"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
+        >
+          <Heart className="h-6 w-6" />
+        </button>
       </div>
     </div>
   );

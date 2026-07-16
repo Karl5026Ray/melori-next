@@ -51,9 +51,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Only surface rooms that actually have a host profile joined; a live row
-    // with a missing host can't render a ring or a destination.
-    const hosted = (data ?? []).filter((r) => r.host);
+    // Supabase infers the `host:profiles!fkey(...)` embed as an ARRAY at the
+    // type level even though a to-one FK returns a single object at runtime.
+    // Normalize it to a single object up front so every downstream read
+    // (host?.id here, and the host name/avatar the client renders) sees the same
+    // object shape and type-checks. Only surface rooms that actually have a host
+    // joined — a live row with a missing host can't render a ring or destination.
+    const hosted = (data ?? [])
+      .map((r) => ({
+        ...r,
+        host: (Array.isArray(r.host) ? r.host[0] : r.host) ?? null,
+      }))
+      .filter((r) => r.host);
 
     // spaces.participant_count is never written, so the SQL sort above ties on a
     // frozen 0. Derive the live headcount from the active roster, override the

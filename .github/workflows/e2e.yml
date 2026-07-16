@@ -1,0 +1,132 @@
+name: E2E (Playwright)
+
+# Runs the mobile FloatingPlayer regression suite (e2e/floating-player.spec.ts)
+# on every PR and on pushes to main. This is the safety net for PR #103 —
+# any revert of the AudioPlayer.tsx fixes will fail these tests before merge.
+#
+# The suite hits the freshly-built Vercel preview URL for the PR (or the
+# production URL on main). If neither is reachable we fall back to booting
+# `next dev` inside the runner, so the workflow still works for PRs that
+# don't produce a Vercel preview (draft PRs, forked repos, etc.).
+
+on:
+  pull_request:
+    branches: [main]
+    # Skip runs when only docs / markdown / images change — the suite exercises
+    # runtime UI, so those never affect it.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "public/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "public/**"
+  # Manual trigger — handy for ad-hoc verification after a Vercel domain change.
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Override BASE_URL (default: production)"
+        required: false
+        default: "https://melorimusic.org"
+
+# Cancel in-progress runs on the same ref when a new commit lands — no point
+# testing an older SHA when we already know a newer one is queued.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Mobile FloatingPlayer @ 390x844
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Chromium only — the mobile-chromium project pins browserName=chromium,
+      # so we skip the ~1GB WebKit / Firefox downloads.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Wait for the Vercel preview to be Ready before running against it.
+      # For PRs, Vercel creates a preview commented on the PR shortly after
+      # the head commit is pushed. For pushes to main, we hit production
+      # directly (which Vercel has already promoted).
+      - name: Resolve target URL
+        id: url
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "url=${{ github.event.inputs.base_url }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "url=https://melorimusic.org" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Pull request: poll the deployments API for a Vercel preview matching
+          # the head SHA. Fall back to local dev server if none appears in 5min.
+          SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Looking for Vercel preview at sha=$SHA"
+          for i in $(seq 1 30); do
+            URL=$(gh api "repos/${{ github.repository }}/deployments?sha=$SHA" \
+              --jq '.[] | select(.environment | startswith("Preview")) | .payload.web_url // empty' 2>/dev/null | head -1)
+            if [ -z "$URL" ]; then
+              URL=$(gh api "repos/${{ github.repository }}/commits/$SHA/status" \
+                --jq '.statuses[] | select(.context == "Vercel" and .state == "success") | .target_url' 2>/dev/null | head -1)
+            fi
+            if [ -n "$URL" ]; then
+              # Vercel's target_url points at the deployment inspector, not the
+              # deployed app. Convert dashboard URLs to the actual site if needed.
+              case "$URL" in
+                https://vercel.com/*) URL="" ;;
+              esac
+            fi
+            if [ -n "$URL" ]; then
+              echo "Found preview: $URL"
+              echo "url=$URL" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $i: no Vercel preview yet, sleeping 10s"
+            sleep 10
+          done
+          echo "No Vercel preview after 5 min — falling back to local dev server."
+          echo "url=http://127.0.0.1:3000" >> "$GITHUB_OUTPUT"
+
+      - name: Run Playwright tests
+        env:
+          BASE_URL: ${{ steps.url.outputs.url }}
+          CI: "true"
+        run: |
+          echo "Running tests against: $BASE_URL"
+          npm run test:e2e
+
+      # Uploads screenshots, videos, and traces on failure so we can diagnose
+      # regressions without re-running locally.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

@@ -70,6 +70,32 @@ const nextConfig = {
   // Site-evaluation P1 fix (2026-07-04): these previously 404'd.
   async redirects() {
     return [
+      // ── Canonical origin: force www.melorimusic.org → melorimusic.org (apex).
+      //
+      // WHY: Supabase auth (browser client, PKCE flow) stores the OAuth
+      // `code_verifier` in localStorage, which is scoped per-origin. If a user
+      // starts "Continue with Google" on www.melorimusic.org and Google
+      // redirects them back to melorimusic.org (or vice versa), the callback
+      // page can't find the verifier and Supabase throws:
+      //   "PKCE code verifier not found in storage."
+      // Pinning every request to the apex origin eliminates that class of
+      // sign-in failure. Must be `permanent: true` so browsers cache the
+      // redirect and Google/Stripe/etc. see a stable canonical origin.
+      //
+      // Follow-up (do these AFTER this ships):
+      //   1. In Supabase → Authentication → URL Configuration, remove any
+      //      www.melorimusic.org entries from the Redirect URL allowlist so
+      //      only https://melorimusic.org/auth/callback remains.
+      //   2. In Google Cloud Console → OAuth 2.0 Client → Authorized redirect
+      //      URIs, keep only the Supabase callback URL (that never changes),
+      //      but confirm Authorized JavaScript Origins lists only the apex.
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.melorimusic.org' }],
+        destination: 'https://melorimusic.org/:path*',
+        permanent: true,
+      },
+
       { source: '/login',     destination: '/social/auth',   permanent: false },
       { source: '/clubhouse', destination: '/social/spaces', permanent: false },
       { source: '/about',     destination: '/mission',       permanent: true  },

@@ -9,40 +9,20 @@ import { supabase } from "@/lib/supabase";
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
 
-// Left hamburger drawer = MUSIC-FOCUSED. Everything social, photography, and
-// signup now lives in the center "M" button menu (see MobileTabBar). The
-// hamburger keeps only music discovery + the artist/creator track so the two
-// entry points read distinctly: hamburger = music, M = everything else.
-// Each item points at a route that actually exists in src/app.
-const navGroups: NavGroup[] = [
-  {
-    // Discover = everything about finding music.
-    label: "Discover Music",
-    items: [
-      { label: "All Music", href: "/music" },
-      { label: "Albums", href: "/music?type=album" },
-      { label: "Singles", href: "/music?type=single" },
-      { label: "Videos", href: "/video" },
-      { label: "Radio", href: "/social/radio" },
-      { label: "Featured Artist", href: "/featured-artist" },
-    ],
-  },
-  {
-    // For Artists = tools + onboarding for creators.
-    label: "For Artists",
-    items: [
-      { label: "Become an Artist", href: "/register?tier=artist" },
-      { label: "Artist Studio", href: "/studio" },
-    ],
-  },
-];
-// Mission, Comments, Current Artists, and Store now live under the "About"
-// category in the center M-button menu (see MobileTabBar) — not in the
-// hamburger. Membership stays reachable via the account menu.
+// Left hamburger drawer = MINIMAL. All section nav (Social Tools, Photography,
+// Signup, About) lives in the center "M" button menu (see MobileTabBar); music
+// discovery lives in the explore/search surface. The hamburger surfaces a
+// single high-intent action for new visitors: Become a Member.
+//
+// The old "Discover Music" and "For Artists" groups were removed as redundant:
+// "Become an Artist" is reachable via M-menu → Signup → Artist, and "Artist
+// Studio" is in the account menu for artist/admin accounts.
+const navGroups: NavGroup[] = [];
 
-// No standalone links: all non-music destinations live in the center
-// M-button menu (Social Tools, Photography, Signup, About).
-const standaloneLinks: NavItem[] = [];
+// Single standalone link — the one action worth surfacing in the hamburger.
+const standaloneLinks: NavItem[] = [
+  { label: "Become a Member", href: "/membership" },
+];
 
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
@@ -251,9 +231,8 @@ export default function Header() {
         {/* Desktop bar: single hamburger (below) drives ALL section nav on
            every screen size, matching the simpler menu Karl preferred. Here we
            keep only the account menu + primary CTAs visible so signing in /
-           donating stays one click away. The old Discover/Community/For
-           Artists/About dropdown row was removed — those groups now live inside
-           the hamburger drawer. */}
+           donating stays one click away. All section nav lives inside the
+           hamburger drawer (now just "Become a Member") and the center M menu. */}
         <nav
           ref={navRef}
           className="hidden md:flex items-center gap-2 lg:gap-4 text-sm"

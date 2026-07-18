@@ -1,0 +1,5 @@
+{
+  "apiUrl": "https://melorimusic.org/api/gallery",
+  "maxWidth": 2400,
+  "quality": 90
+}

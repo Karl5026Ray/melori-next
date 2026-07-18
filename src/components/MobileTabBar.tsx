@@ -221,170 +221,167 @@ export default function MobileTabBar() {
           {/* pb leaves room for the bottom tab bar (h-14 = 56px) which now
              floats above this sheet, so sheet content never hides behind it. */}
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-brand-border bg-brand-surface p-5 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1rem)] shadow-2xl animate-[sheetUp_.22s_ease-out]">
-            <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-brand-muted" />
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo/logo.png" alt="Melori" className="h-7 w-7 object-contain" />
-                <span className="text-base font-bold text-text-primary">Go anywhere</span>
-              </div>
-              <button
-                aria-label="Close"
-                onClick={() => setLauncherOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary hover:bg-white/10"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+            {(() => {
+              // Which category (if any) is currently showing. When set, the
+              // section is REPLACED by that category's item buttons — no
+              // dropdown, no push-down. The M button (and the header back
+              // control) return to the top-level screen.
+              const activeCat = categories.find((c) => c.label === openCat) || null;
 
-            {/* Scrollable menu body — keeps the sheet within the viewport when
-               categories expand. */}
-            <div className="max-h-[60vh] overflow-y-auto overscroll-contain pr-0.5">
-              {/* Quick presses: Profile + Radio */}
-              <div className="grid grid-cols-4 gap-2">
-                {quickLinks.map((l) => {
-                  const active = pathname.startsWith(l.href) && l.href !== "/";
-                  return (
-                    <Link
-                      key={l.label}
-                      href={l.href}
-                      onClick={() => setLauncherOpen(false)}
-                      title={l.desc}
-                      className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-center transition-colors ${
-                        active
-                          ? "border-brand-primary bg-brand-primary/10"
-                          : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
+              // Renders one tile button (shared by every screen so all buttons
+              // look identical to Profile/Radio).
+              const renderTile = (l: LaunchItem) => {
+                const active =
+                  !l.soon &&
+                  l.href !== "#" &&
+                  pathname.startsWith(l.href.split("?")[0]);
+                const inner = (
+                  <>
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                        active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
                       }`}
                     >
-                      <span
-                        className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                          active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
-                        }`}
-                      >
-                        {l.icon}
+                      {l.icon}
+                    </span>
+                    <span className="text-[11px] font-semibold leading-tight text-text-primary">
+                      {l.label}
+                    </span>
+                    {l.soon && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-brand-primary">
+                        Soon
                       </span>
-                      <span className="text-[11px] font-semibold leading-tight text-text-primary">{l.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-
-              {/* Expandable categories: Social Tools, Photography, Signup */}
-              <div className="mt-3 space-y-2">
-                {categories.map((cat) => {
-                  const catOpen = openCat === cat.label;
+                    )}
+                  </>
+                );
+                if (l.soon) {
                   return (
-                    <div
-                      key={cat.label}
-                      className="overflow-hidden rounded-xl border border-brand-border bg-white/[0.03]"
+                    <span
+                      key={l.label}
+                      title="Coming soon"
+                      aria-disabled="true"
+                      className="flex cursor-not-allowed flex-col items-center gap-1.5 rounded-xl border border-brand-border bg-white/[0.02] px-1 py-2.5 text-center opacity-60"
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenCat((cur) => (cur === cat.label ? null : cat.label))
-                        }
-                        aria-expanded={catOpen}
-                        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-white/[0.04]"
-                      >
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
-                          {cat.icon}
-                        </span>
-                        <span className="flex-1 text-sm font-semibold text-text-primary">
-                          {cat.label}
-                        </span>
-                        <ChevronDown
-                          className={`h-4 w-4 text-text-secondary transition-transform ${
-                            catOpen ? "rotate-180" : ""
-                          }`}
-                        />
-                      </button>
-                      {catOpen && (
-                        <div className="grid grid-cols-4 gap-2 border-t border-brand-border p-2">
-                          {cat.items.map((l) => {
-                            const active =
-                              !l.soon &&
-                              pathname.startsWith(l.href.split("?")[0]) &&
-                              l.href !== "#";
-                            const inner = (
-                              <>
-                                <span
-                                  className={`relative flex h-9 w-9 items-center justify-center rounded-full ${
-                                    active
-                                      ? "bg-brand-primary text-white"
-                                      : "bg-brand-muted text-brand-primary"
-                                  }`}
-                                >
-                                  {l.icon}
-                                </span>
-                                <span className="text-[11px] font-semibold leading-tight text-text-primary">
-                                  {l.label}
-                                </span>
-                                {l.soon && (
-                                  <span className="text-[9px] font-semibold uppercase tracking-wide text-brand-primary">
-                                    Soon
-                                  </span>
-                                )}
-                              </>
-                            );
-                            if (l.soon) {
-                              return (
-                                <span
-                                  key={l.label}
-                                  title="Coming soon"
-                                  aria-disabled="true"
-                                  className="flex cursor-not-allowed flex-col items-center gap-1 rounded-xl border border-brand-border bg-white/[0.02] px-1 py-2.5 text-center opacity-60"
-                                >
-                                  {inner}
-                                </span>
-                              );
-                            }
-                            return (
-                              <Link
-                                key={l.label}
-                                href={l.href}
-                                onClick={() => setLauncherOpen(false)}
-                                title={l.desc}
-                                className={`flex flex-col items-center gap-1 rounded-xl border px-1 py-2.5 text-center transition-colors ${
-                                  active
-                                    ? "border-brand-primary bg-brand-primary/10"
-                                    : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
-                                }`}
-                              >
-                                {inner}
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                      {inner}
+                    </span>
                   );
-                })}
-              </div>
-            </div>
+                }
+                return (
+                  <Link
+                    key={l.label}
+                    href={l.href}
+                    onClick={() => setLauncherOpen(false)}
+                    title={l.desc}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-center transition-colors ${
+                      active
+                        ? "border-brand-primary bg-brand-primary/10"
+                        : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
+                    }`}
+                  >
+                    {inner}
+                  </Link>
+                );
+              };
 
-            {/* Primary actions */}
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  setLauncherOpen(false);
-                  router.push("/social/live");
-                }}
-                className="flex items-center justify-center gap-2 rounded-full bg-brand-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
-              >
-                <Video className="h-4 w-4" />
-                Go Live
-              </button>
-              <button
-                onClick={() => {
-                  setLauncherOpen(false);
-                  router.push("/social/spaces/create");
-                }}
-                className="flex items-center justify-center gap-2 rounded-full border border-brand-primary px-4 py-3 text-sm font-bold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white"
-              >
-                <Radio className="h-4 w-4" />
-                Start a Space
-              </button>
-            </div>
+              // A category tile (top level) that swaps the view instead of
+              // navigating — styled exactly like the other tiles.
+              const renderCatTile = (cat: LaunchCat) => (
+                <button
+                  key={cat.label}
+                  type="button"
+                  onClick={() => setOpenCat(cat.label)}
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-brand-border bg-white/[0.03] px-1 py-2.5 text-center transition-colors hover:border-brand-primary"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
+                    {cat.icon}
+                  </span>
+                  <span className="text-[11px] font-semibold leading-tight text-text-primary">
+                    {cat.label}
+                  </span>
+                </button>
+              );
+
+              return (
+                <>
+                  <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-brand-muted" />
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {activeCat ? (
+                        <button
+                          type="button"
+                          aria-label="Back"
+                          onClick={() => setOpenCat(null)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary hover:bg-white/10"
+                        >
+                          <ChevronDown className="h-5 w-5 rotate-90" />
+                        </button>
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src="/logo/logo.png" alt="Melori" className="h-7 w-7 object-contain" />
+                      )}
+                      <span className="text-base font-bold text-text-primary">
+                        {activeCat ? activeCat.label : "Go anywhere"}
+                      </span>
+                    </div>
+                    <button
+                      aria-label="Close"
+                      onClick={() => setLauncherOpen(false)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary hover:bg-white/10"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  {/* Section body — REPLACED in place when a category is open. */}
+                  <div className="max-h-[60vh] overflow-y-auto overscroll-contain pr-0.5">
+                    {activeCat ? (
+                      // Category screen: that category's item buttons.
+                      <div className="grid grid-cols-4 gap-2">
+                        {activeCat.items.map(renderTile)}
+                      </div>
+                    ) : (
+                      // Top-level screen.
+                      <>
+                        {/* Profile + Radio (own row) */}
+                        <div className="grid grid-cols-4 gap-2">
+                          {quickLinks.map(renderTile)}
+                        </div>
+                        {/* Category buttons — same tile styling */}
+                        <div className="mt-3 grid grid-cols-4 gap-2">
+                          {categories.map(renderCatTile)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Primary actions (shown on the top-level screen only) */}
+                  {!activeCat && (
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => {
+                          setLauncherOpen(false);
+                          router.push("/social/live");
+                        }}
+                        className="flex items-center justify-center gap-2 rounded-full bg-brand-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
+                      >
+                        <Video className="h-4 w-4" />
+                        Go Live
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLauncherOpen(false);
+                          router.push("/social/spaces/create");
+                        }}
+                        className="flex items-center justify-center gap-2 rounded-full border border-brand-primary px-4 py-3 text-sm font-bold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white"
+                      >
+                        <Radio className="h-4 w-4" />
+                        Start a Space
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -417,9 +414,15 @@ export default function MobileTabBar() {
             );
           })}
 
-          {/* Center: Melori M logo launcher */}
+          {/* Center: Melori M logo launcher. Opening always starts at the
+             top-level screen (reset openCat); the M toggles open/closed. */}
           <button
-            onClick={() => setLauncherOpen((o) => !o)}
+            onClick={() =>
+              setLauncherOpen((o) => {
+                setOpenCat(null);
+                return !o;
+              })
+            }
             aria-label="Open navigation menu"
             aria-expanded={launcherOpen}
             className="flex flex-1 flex-col items-center justify-center gap-0.5"

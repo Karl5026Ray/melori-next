@@ -15,16 +15,27 @@ import {
   Sparkles,
   Heart,
   X,
+  ChevronDown,
+  Image as ImageIcon,
+  Calendar,
+  Tag,
+  CalendarClock,
+  UserPlus,
+  Camera,
 } from "lucide-react";
 
 /**
- * Mobile-only bottom tab bar (thumb-zone navigation).
+ * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
+ * Melori "M" logo — the app's "Go anywhere" menu.
  *
- * The center control is the Melori "M" logo. Tapping it opens a bottom-sheet
- * launcher with direct links to every corner of the app (Profile, MM Spaces,
- * MM Faces, Community, Messages, Waves, Videos) plus a primary Go Live / Start
- * a Space action. This replaces the old "Create" shortcut so newcomers can jump
- * anywhere from one obvious button instead of hunting a crowded side menu.
+ * Split of responsibilities (per Karl):
+ *   - Left hamburger (Header) = MUSIC only.
+ *   - Center M button (here)  = everything else, as fast button presses:
+ *       Profile, Radio (direct), then expandable categories:
+ *         • Social Tools — Melori Mirror, MM Faces, MM Spaces, Messages,
+ *                          Waves, Connect
+ *         • Photography  — Gallery, Calendar, Pricing, Scheduling (coming soon)
+ *         • Signup       — Free, Artist, Superfan, Photographer (coming soon)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -79,6 +90,7 @@ export default function MobileTabBar() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [openCat, setOpenCat] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -94,9 +106,10 @@ export default function MobileTabBar() {
     };
   }, []);
 
-  // Close the launcher whenever we navigate.
+  // Close the launcher (and any expanded category) whenever we navigate.
   useEffect(() => {
     setLauncherOpen(false);
+    setOpenCat(null);
   }, [pathname]);
 
   // Lock body scroll while the sheet is open. On close we always CLEAR the
@@ -124,16 +137,65 @@ export default function MobileTabBar() {
     },
   ];
 
-  // Launcher destinations — everything that used to crowd the side menu, one tap away.
-  const launcherLinks: { label: string; href: string; icon: React.ReactNode; desc: string }[] = [
-    { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
-    { label: "Radio", href: "/social/radio", icon: <Radio className="h-5 w-5" />, desc: "Non-stop mix" },
-    { label: "Profile", href: user ? "/social/profile" : "/social/auth", icon: <UserIcon className="h-5 w-5" />, desc: "Your page" },
-    { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
-    { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
-    { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
-    { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
-    { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
+  type LaunchItem = {
+    label: string;
+    href: string;
+    icon: React.ReactNode;
+    desc: string;
+    soon?: boolean;
+  };
+  type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
+
+  // Direct quick-press buttons (top row).
+  const quickLinks: LaunchItem[] = [
+    {
+      label: "Profile",
+      href: user ? "/social/profile" : "/social/auth",
+      icon: <UserIcon className="h-5 w-5" />,
+      desc: "Your page",
+    },
+    {
+      label: "Radio",
+      href: "/social/radio",
+      icon: <Radio className="h-5 w-5" />,
+      desc: "Non-stop mix",
+    },
+  ];
+
+  // Expandable categories — each opens its own list of fast button presses.
+  const categories: LaunchCat[] = [
+    {
+      label: "Social Tools",
+      icon: <Sparkles className="h-5 w-5" />,
+      items: [
+        { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
+        { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
+        { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
+        { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
+        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
+        { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
+      ],
+    },
+    {
+      label: "Photography",
+      icon: <Camera className="h-5 w-5" />,
+      items: [
+        { label: "Gallery", href: "#", icon: <ImageIcon className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Calendar", href: "#", icon: <Calendar className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Pricing", href: "#", icon: <Tag className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Scheduling", href: "#", icon: <CalendarClock className="h-5 w-5" />, desc: "Coming soon", soon: true },
+      ],
+    },
+    {
+      label: "Signup",
+      icon: <UserPlus className="h-5 w-5" />,
+      items: [
+        { label: "Free", href: "/register?tier=free", icon: <UserIcon className="h-5 w-5" />, desc: "Free Fan" },
+        { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
+        { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
+        { label: "Photographer", href: "#", icon: <Camera className="h-5 w-5" />, desc: "Coming soon", soon: true },
+      ],
+    },
   ];
 
   function isActive(tab: Tab): boolean {
@@ -175,32 +237,129 @@ export default function MobileTabBar() {
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
-              {launcherLinks.map((l) => {
-                const active = pathname.startsWith(l.href) && l.href !== "/";
-                return (
-                  <Link
-                    key={l.label}
-                    href={l.href}
-                    onClick={() => setLauncherOpen(false)}
-                    title={l.desc}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-center transition-colors ${
-                      active
-                        ? "border-brand-primary bg-brand-primary/10"
-                        : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                        active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
+            {/* Scrollable menu body — keeps the sheet within the viewport when
+               categories expand. */}
+            <div className="max-h-[60vh] overflow-y-auto overscroll-contain pr-0.5">
+              {/* Quick presses: Profile + Radio */}
+              <div className="grid grid-cols-4 gap-2">
+                {quickLinks.map((l) => {
+                  const active = pathname.startsWith(l.href) && l.href !== "/";
+                  return (
+                    <Link
+                      key={l.label}
+                      href={l.href}
+                      onClick={() => setLauncherOpen(false)}
+                      title={l.desc}
+                      className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-center transition-colors ${
+                        active
+                          ? "border-brand-primary bg-brand-primary/10"
+                          : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
                       }`}
                     >
-                      {l.icon}
-                    </span>
-                    <span className="text-[11px] font-semibold leading-tight text-text-primary">{l.label}</span>
-                  </Link>
-                );
-              })}
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                          active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
+                        }`}
+                      >
+                        {l.icon}
+                      </span>
+                      <span className="text-[11px] font-semibold leading-tight text-text-primary">{l.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              {/* Expandable categories: Social Tools, Photography, Signup */}
+              <div className="mt-3 space-y-2">
+                {categories.map((cat) => {
+                  const catOpen = openCat === cat.label;
+                  return (
+                    <div
+                      key={cat.label}
+                      className="overflow-hidden rounded-xl border border-brand-border bg-white/[0.03]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenCat((cur) => (cur === cat.label ? null : cat.label))
+                        }
+                        aria-expanded={catOpen}
+                        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-white/[0.04]"
+                      >
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
+                          {cat.icon}
+                        </span>
+                        <span className="flex-1 text-sm font-semibold text-text-primary">
+                          {cat.label}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 text-text-secondary transition-transform ${
+                            catOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                      {catOpen && (
+                        <div className="grid grid-cols-4 gap-2 border-t border-brand-border p-2">
+                          {cat.items.map((l) => {
+                            const active =
+                              !l.soon &&
+                              pathname.startsWith(l.href.split("?")[0]) &&
+                              l.href !== "#";
+                            const inner = (
+                              <>
+                                <span
+                                  className={`relative flex h-9 w-9 items-center justify-center rounded-full ${
+                                    active
+                                      ? "bg-brand-primary text-white"
+                                      : "bg-brand-muted text-brand-primary"
+                                  }`}
+                                >
+                                  {l.icon}
+                                </span>
+                                <span className="text-[11px] font-semibold leading-tight text-text-primary">
+                                  {l.label}
+                                </span>
+                                {l.soon && (
+                                  <span className="text-[9px] font-semibold uppercase tracking-wide text-brand-primary">
+                                    Soon
+                                  </span>
+                                )}
+                              </>
+                            );
+                            if (l.soon) {
+                              return (
+                                <span
+                                  key={l.label}
+                                  title="Coming soon"
+                                  aria-disabled="true"
+                                  className="flex cursor-not-allowed flex-col items-center gap-1 rounded-xl border border-brand-border bg-white/[0.02] px-1 py-2.5 text-center opacity-60"
+                                >
+                                  {inner}
+                                </span>
+                              );
+                            }
+                            return (
+                              <Link
+                                key={l.label}
+                                href={l.href}
+                                onClick={() => setLauncherOpen(false)}
+                                title={l.desc}
+                                className={`flex flex-col items-center gap-1 rounded-xl border px-1 py-2.5 text-center transition-colors ${
+                                  active
+                                    ? "border-brand-primary bg-brand-primary/10"
+                                    : "border-brand-border bg-white/[0.03] hover:border-brand-primary"
+                                }`}
+                              >
+                                {inner}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Primary actions */}

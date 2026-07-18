@@ -32,7 +32,12 @@ function RegisterInner() {
       ? nextParam
       : "/social/spaces";
 
-  const [tier, setTier] = useState<Tier>("free");
+  // Preselect the signup tier from ?tier= (deep-linked from the M-button Signup
+  // menu). Falls back to "free" for any unknown value.
+  const tierParam = params.get("tier");
+  const initialTier: Tier =
+    tierParam === "artist" || tierParam === "superfan" ? tierParam : "free";
+  const [tier, setTier] = useState<Tier>(initialTier);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");

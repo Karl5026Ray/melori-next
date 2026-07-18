@@ -32,16 +32,18 @@ const navGroups: NavGroup[] = [
     label: "For Artists",
     items: [
       { label: "Become an Artist", href: "/register?tier=artist" },
-      { label: "Current Artists", href: "/artists" },
       { label: "Artist Studio", href: "/studio" },
-      { label: "Store", href: "/store" },
     ],
   },
   {
+    // About = the catch-all so there are no leftover single-item dropdowns:
+    // Mission, Comments, Current Artists, Store all live here.
     label: "About",
     items: [
       { label: "Mission", href: "/mission" },
-      { label: "Membership", href: "/membership" },
+      { label: "Comments", href: "/social/community" },
+      { label: "Current Artists", href: "/artists" },
+      { label: "Store", href: "/store" },
     ],
   },
 ];

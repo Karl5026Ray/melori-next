@@ -195,7 +195,7 @@ export default function MobileTabBar() {
       label: "Photography",
       icon: <Camera className="h-5 w-5" />,
       items: [
-        { label: "Gallery", href: "#", icon: <ImageIcon className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Gallery", href: "/gallery", icon: <ImageIcon className="h-5 w-5" />, desc: "Photo galleries" },
         { label: "Calendar", href: "#", icon: <Calendar className="h-5 w-5" />, desc: "Coming soon", soon: true },
         { label: "Pricing", href: "#", icon: <Tag className="h-5 w-5" />, desc: "Coming soon", soon: true },
         { label: "Scheduling", href: "#", icon: <CalendarClock className="h-5 w-5" />, desc: "Coming soon", soon: true },

@@ -63,9 +63,12 @@ export async function POST(req: NextRequest) {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
 
-      // Only fulfill sessions that originated from the store.
-      if (session.metadata?.source === "melorimusic.org/store") {
+      // Fulfill by the source tag stamped at checkout time.
+      const source = session.metadata?.source;
+      if (source === "melorimusic.org/store") {
         await fulfillStoreOrder(session);
+      } else if (source === "melorimusic.org/gallery") {
+        await fulfillGalleryPurchase(session);
       }
     }
   } catch (err) {
@@ -152,5 +155,61 @@ async function fulfillStoreOrder(session: Stripe.Checkout.Session) {
         rpcErr.message,
       );
     }
+  }
+}
+
+// Gallery digital-download fulfillment. Idempotent on stripe_session_id (unique
+// column): a duplicate webhook delivery inserts nothing. The /gallery/download
+// route reads the row this creates to authorize the signed original URL.
+async function fulfillGalleryPurchase(session: Stripe.Checkout.Session) {
+  const supabase = createServiceClient();
+  const sessionId = session.id;
+
+  const { data: existing } = await supabase
+    .from("photo_gallery_purchases")
+    .select("id")
+    .eq("stripe_session_id", sessionId)
+    .maybeSingle();
+  if (existing) return;
+
+  const imageId = session.metadata?.image_id;
+  const galleryId = session.metadata?.gallery_id;
+  if (!imageId || !galleryId) {
+    console.error("stripe/webhook gallery purchase missing metadata ids");
+    return;
+  }
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  const buyerUserId =
+    session.client_reference_id ||
+    (typeof session.metadata?.user_id === "string"
+      ? session.metadata.user_id
+      : null) ||
+    null;
+
+  const buyerEmail =
+    session.customer_details?.email || session.customer_email || null;
+
+  const { error: insErr } = await supabase
+    .from("photo_gallery_purchases")
+    .insert({
+      image_id: imageId,
+      gallery_id: galleryId,
+      buyer_user_id: buyerUserId,
+      buyer_email: buyerEmail,
+      stripe_session_id: sessionId,
+      stripe_payment_intent_id: paymentIntentId,
+      amount_cents: session.amount_total ?? null,
+      status: "paid",
+    });
+
+  if (insErr) {
+    // Unique-violation from a race with a concurrent delivery is benign.
+    if (insErr.code === "23505") return;
+    throw new Error(`gallery purchase insert failed: ${insErr.message}`);
   }
 }

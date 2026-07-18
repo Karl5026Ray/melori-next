@@ -15,8 +15,8 @@ import type { TileContent } from "./ProfileContentTile";
 
 // A lightweight viewer for a single profile item (reel or gallery photo) with
 // like / comment / share(reshare) / save actions wired to the social APIs.
-// Comments are only available for videos (Mirror reels) via the existing
-// /api/social/videos/[id]/comments endpoint.
+// Comments work for both Mirror reels (/api/social/videos/[id]/comments) and
+// gallery photos (/api/social/photos/[id]/comments).
 
 type Comment = {
   id: string;
@@ -53,6 +53,10 @@ export default function ProfileContentModal({
     type === "video"
       ? `/api/social/videos/${id}/like`
       : `/api/social/photos/${id}/like`;
+  const commentsEndpoint =
+    type === "video"
+      ? `/api/social/videos/${id}/comments`
+      : `/api/social/photos/${id}/comments`;
 
   // Hydrate like + save state on open.
   useEffect(() => {
@@ -81,14 +85,11 @@ export default function ProfileContentModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, type]);
 
-  // Load comments for videos.
+  // Load comments (reels and photos both support them).
   useEffect(() => {
-    if (type !== "video") return;
     let alive = true;
     (async () => {
-      const res = await authFetch(`/api/social/videos/${id}/comments`).catch(
-        () => null,
-      );
+      const res = await authFetch(commentsEndpoint).catch(() => null);
       if (!alive) return;
       if (res?.ok) {
         const j = await res.json();
@@ -100,6 +101,7 @@ export default function ProfileContentModal({
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, type]);
 
   const toggleLike = async () => {
@@ -157,10 +159,10 @@ export default function ProfileContentModal({
 
   const postComment = async () => {
     const text = draft.trim();
-    if (!text || type !== "video") return;
+    if (!text) return;
     setPosting(true);
     try {
-      const res = await authFetch(`/api/social/videos/${id}/comments`, {
+      const res = await authFetch(commentsEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text }),
@@ -240,12 +242,10 @@ export default function ProfileContentModal({
               <Heart className={`h-5 w-5 ${liked ? "fill-red-500" : ""}`} />
               {likesCount}
             </button>
-            {type === "video" && (
-              <span className="flex items-center gap-1.5 text-sm text-melori-muted">
-                <MessageCircle className="h-5 w-5" />
-                {comments?.length ?? content.comments_count ?? 0}
-              </span>
-            )}
+            <span className="flex items-center gap-1.5 text-sm text-melori-muted">
+              <MessageCircle className="h-5 w-5" />
+              {comments?.length ?? content.comments_count ?? 0}
+            </span>
             <button
               type="button"
               onClick={toggleShare}
@@ -274,9 +274,8 @@ export default function ProfileContentModal({
             </button>
           </div>
 
-          {/* Comments (videos only) */}
-          {type === "video" ? (
-            <>
+          {/* Comments (reels and photos) */}
+          <>
               <div className="flex-1 space-y-3 overflow-y-auto p-3">
                 {comments === null ? (
                   <div className="flex justify-center py-8 text-melori-muted">
@@ -336,11 +335,6 @@ export default function ProfileContentModal({
                 </button>
               </div>
             </>
-          ) : (
-            <div className="flex-1 p-4 text-center text-sm text-melori-muted">
-              Like, share, or save this photo using the actions above.
-            </div>
-          )}
         </div>
       </div>
     </div>

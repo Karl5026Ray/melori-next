@@ -65,12 +65,10 @@ export default function ProfileContentTile({
           <Heart className="h-3.5 w-3.5" />
           {content.likes_count ?? 0}
         </span>
-        {type === "video" && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-white">
-            <MessageCircle className="h-3.5 w-3.5" />
-            {content.comments_count ?? 0}
-          </span>
-        )}
+        <span className="flex items-center gap-1 text-xs font-semibold text-white">
+          <MessageCircle className="h-3.5 w-3.5" />
+          {content.comments_count ?? 0}
+        </span>
       </span>
     </button>
   );

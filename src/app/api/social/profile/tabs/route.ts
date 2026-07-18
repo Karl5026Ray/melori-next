@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       .limit(60),
     supabase
       .from("profile_gallery")
-      .select("id, image_url, media_type, likes_count, sort_order, created_at")
+      .select("id, image_url, media_type, likes_count, comments_count, sort_order, created_at")
       .eq("profile_id", userId)
       .order("sort_order", { ascending: true })
       .limit(60),
@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
     sharePhotoIds.length
       ? supabase
           .from("profile_gallery")
-          .select("id, image_url, media_type")
+          .select("id, image_url, media_type, likes_count, comments_count")
           .in("id", sharePhotoIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);

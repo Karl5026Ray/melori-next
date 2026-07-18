@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     photoIds.length
       ? supabase
           .from("profile_gallery")
-          .select("id, image_url, media_type, likes_count, profile_id")
+          .select("id, image_url, media_type, likes_count, comments_count, profile_id")
           .in("id", photoIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);

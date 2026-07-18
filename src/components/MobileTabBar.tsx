@@ -22,6 +22,11 @@ import {
   CalendarClock,
   UserPlus,
   Camera,
+  Info,
+  Target,
+  MessageCircle,
+  Users,
+  ShoppingBag,
 } from "lucide-react";
 
 /**
@@ -204,6 +209,16 @@ export default function MobileTabBar() {
         { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
         { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
         { label: "Photographer", href: "#", icon: <Camera className="h-5 w-5" />, desc: "Coming soon", soon: true },
+      ],
+    },
+    {
+      label: "About",
+      icon: <Info className="h-5 w-5" />,
+      items: [
+        { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
+        { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
+        { label: "Current Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
+        { label: "Store", href: "/store", icon: <ShoppingBag className="h-5 w-5" />, desc: "Merch & music" },
       ],
     },
   ];

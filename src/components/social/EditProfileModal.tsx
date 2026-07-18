@@ -24,6 +24,11 @@ export default function EditProfileModal({
   const [displayName, setDisplayName] = useState(user.display_name ?? "");
   const [username, setUsername] = useState(user.username ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
+  const [birthDate, setBirthDate] = useState(user.birth_date ?? "");
+  const [birthdayVisible, setBirthdayVisible] = useState(
+    user.birthday_visible ?? true,
+  );
+  const [city, setCity] = useState(user.city ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     user.avatar_url ?? null,
   );
@@ -107,6 +112,9 @@ export default function EditProfileModal({
           display_name: dn,
           username: username.trim().toLowerCase() || undefined,
           bio: bio.trim() ? bio.trim() : null,
+          birth_date: birthDate ? birthDate : null,
+          birthday_visible: birthdayVisible,
+          city: city.trim() ? city.trim() : null,
           avatar_url: avatarUrl,
         }),
       });
@@ -234,6 +242,46 @@ export default function EditProfileModal({
             />
             <p className="mt-1 text-xs text-melori-muted text-right">
               {bio.length}/500
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-melori-muted mb-1">
+              City
+            </label>
+            <input
+              type="text"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              maxLength={120}
+              className="w-full bg-melori-void/60 border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
+              placeholder="Chicago, IL"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-melori-muted mb-1">
+              Birthday
+            </label>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="w-full bg-melori-void/60 border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
+            />
+            <label className="mt-2 flex items-center gap-2 text-sm text-melori-muted cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={birthdayVisible}
+                onChange={(e) => setBirthdayVisible(e.target.checked)}
+                className="h-4 w-4 rounded border-melori-border bg-melori-void/60 accent-melori-purple"
+              />
+              Show my birthday (month &amp; day) on my profile
+            </label>
+            <p className="mt-1 text-xs text-melori-muted">
+              Your birth year is always private. Uncheck to hide your birthday
+              from everyone.
             </p>
           </div>
         </div>

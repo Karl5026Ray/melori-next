@@ -72,6 +72,46 @@ export async function PUT(req: NextRequest) {
     patch.photos = (body.photos as unknown[]).map(String).slice(0, 9);
 
   const supabase = getSupabaseAdmin();
+
+  // --- Seamless identity carry-over from the main social profile -----------
+  // Connect reuses the same `profiles` row for name/avatar, but the dating
+  // profile's own fields (birthdate, city, photos) otherwise start blank. On
+  // first join — i.e. when no dating_profiles row exists yet — pre-fill any
+  // field the caller didn't supply from the member's existing profile so the
+  // Connect card isn't an empty slate. We also keep birthday + city in sync
+  // across both surfaces below.
+  const { data: existing } = await supabase
+    .from("dating_profiles")
+    .select("user_id")
+    .eq("user_id", me)
+    .maybeSingle();
+
+  const { data: mainProfile } = await supabase
+    .from("profiles")
+    .select("birth_date, city")
+    .eq("id", me)
+    .maybeSingle();
+
+  if (!existing) {
+    // First-time join: seed unset fields from the main profile.
+    if (patch.birthdate == null && mainProfile?.birth_date)
+      patch.birthdate = mainProfile.birth_date;
+    if (patch.city == null && mainProfile?.city)
+      patch.city = mainProfile.city;
+    if (patch.photos == null) {
+      const { data: gallery } = await supabase
+        .from("profile_gallery")
+        .select("image_url, media_type, sort_order")
+        .eq("profile_id", me)
+        .order("sort_order", { ascending: true })
+        .limit(9);
+      const photos = (gallery ?? [])
+        .filter((g) => (g.media_type ?? "photo") === "photo" && g.image_url)
+        .map((g) => g.image_url as string);
+      if (photos.length) patch.photos = photos;
+    }
+  }
+
   const { data, error } = await supabase
     .from("dating_profiles")
     .upsert(patch, { onConflict: "user_id" })
@@ -81,5 +121,19 @@ export async function PUT(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // --- Two-way backfill to the main profile -------------------------------
+  // If the member set a birthday/city on their Connect profile but their main
+  // profile has none, copy it up so both surfaces agree and the birthday-hide
+  // toggle governs a single source of truth. We never overwrite an existing
+  // main-profile value here.
+  const backfill: Record<string, unknown> = {};
+  if (patch.birthdate && !mainProfile?.birth_date)
+    backfill.birth_date = patch.birthdate;
+  if (patch.city && !mainProfile?.city) backfill.city = patch.city;
+  if (Object.keys(backfill).length) {
+    await supabase.from("profiles").update(backfill).eq("id", me);
+  }
+
   return NextResponse.json({ profile: data });
 }

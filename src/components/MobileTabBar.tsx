@@ -37,9 +37,9 @@ import {
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
- *         • Social Tools — Melori Mirror, MM Faces, MM Spaces, Messages,
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
  *                          Waves, Connect
- *         • Photography  — Gallery, Calendar, Pricing, Scheduling (coming soon)
+ *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Photographer (coming soon)
  *
  * - App Router: uses `usePathname()` from next/navigation.
@@ -182,7 +182,7 @@ export default function MobileTabBar() {
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
-      label: "Social Tools",
+      label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
         { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
@@ -192,7 +192,7 @@ export default function MobileTabBar() {
       ],
     },
     {
-      label: "Photography",
+      label: "Photo",
       icon: <Camera className="h-5 w-5" />,
       items: [
         { label: "Gallery", href: "/gallery", icon: <ImageIcon className="h-5 w-5" />, desc: "Photo galleries" },

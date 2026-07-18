@@ -9,53 +9,32 @@ import { supabase } from "@/lib/supabase";
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
 
-// Desktop nav restructured per the KIMI "progressive disclosure" spec
-// (Discover / Community / For Artists buckets), but adapted to Melori's REAL
-// App Router routes and brand colors — never the off-brand KIMI light-theme
-// code. Each item below points at a route that actually exists in src/app.
-// The Artists dropdown (data-driven) + About group + Sign Up/Donate CTAs stay
-// so the primary CTAs remain visible (discoverability guardrail).
+// Left hamburger drawer = MUSIC-FOCUSED. Everything social, photography, and
+// signup now lives in the center "M" button menu (see MobileTabBar). The
+// hamburger keeps only music discovery + the artist/creator track so the two
+// entry points read distinctly: hamburger = music, M = everything else.
+// Each item points at a route that actually exists in src/app.
 const navGroups: NavGroup[] = [
   {
     // Discover = everything about finding music.
-    label: "Discover",
+    label: "Discover Music",
     items: [
       { label: "All Music", href: "/music" },
       { label: "Albums", href: "/music?type=album" },
       { label: "Singles", href: "/music?type=single" },
       { label: "Videos", href: "/video" },
+      { label: "Radio", href: "/social/radio" },
       { label: "Featured Artist", href: "/featured-artist" },
     ],
   },
   {
-    // Community = the social layer.
-    label: "Community",
-    items: [
-      // Melori Mirror = the TikTok "For You"-style feed + who's live now.
-      { label: "Melori Mirror", href: "/social/mirror" },
-      // Melori Connect = music-taste dating/matching (Superfan+).
-      { label: "Melori Connect", href: "/social/connect" },
-      // Radio = the non-stop crossfade mix. Lives here so it's reachable from
-      // the menu on every screen size (not just the mobile bottom-bar M-menu).
-      { label: "Radio", href: "/social/radio" },
-      // MM Spaces = the Clubhouse-style audio spaces.
-      { label: "MM Spaces", href: "/social/spaces" },
-      // MM Faces = the social LIVE video system (Live, Duo Live, 8-Person Live).
-      { label: "MM Faces", href: "/social/live" },
-      { label: "Waves", href: "/social/waves" },
-      { label: "Comments", href: "/social/community" },
-    ],
-  },
-  {
-    // For Artists = tools + onboarding for creators. The old standalone
-    // "Artists" dropdown is folded in here as "Current Artists" (see below),
-    // sitting right next to "Become an Artist" so discovery + onboarding live
-    // together. Store was promoted to a top-level nav item.
+    // For Artists = tools + onboarding for creators.
     label: "For Artists",
     items: [
-      { label: "Become an Artist", href: "/register" },
+      { label: "Become an Artist", href: "/register?tier=artist" },
       { label: "Current Artists", href: "/artists" },
       { label: "Artist Studio", href: "/studio" },
+      { label: "Store", href: "/store" },
     ],
   },
   {
@@ -67,10 +46,9 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-// Store promoted to a top-level nav item (per Karl's request it replaces the
-// old standalone "Artists" link, which is now folded into For Artists as
-// "Current Artists"). Featured Artist stays under Discover.
-const standaloneLinks: NavItem[] = [{ label: "Store", href: "/store" }];
+// No standalone links: Store now lives under "For Artists" and all social /
+// signup destinations moved to the center M-button menu.
+const standaloneLinks: NavItem[] = [];
 
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu

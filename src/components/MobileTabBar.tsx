@@ -146,7 +146,7 @@ export default function MobileTabBar() {
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
-  // Direct quick-press buttons (top row).
+  // Direct quick-press buttons (top row): Profile, Radio, Messages, Waves.
   const quickLinks: LaunchItem[] = [
     {
       label: "Profile",
@@ -160,6 +160,18 @@ export default function MobileTabBar() {
       icon: <Radio className="h-5 w-5" />,
       desc: "Non-stop mix",
     },
+    {
+      label: "Messages",
+      href: "/social/messages",
+      icon: <MessageSquare className="h-5 w-5" />,
+      desc: "Direct chats",
+    },
+    {
+      label: "Waves",
+      href: "/social/waves",
+      icon: <Hand className="h-5 w-5" />,
+      desc: "Say hi",
+    },
   ];
 
   // Expandable categories — each opens its own list of fast button presses.
@@ -171,8 +183,6 @@ export default function MobileTabBar() {
         { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
-        { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
-        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
         { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
       ],
     },
@@ -290,8 +300,16 @@ export default function MobileTabBar() {
                   key={cat.label}
                   type="button"
                   onClick={() => setOpenCat(cat.label)}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-brand-border bg-white/[0.03] px-1 py-2.5 text-center transition-colors hover:border-brand-primary"
+                  aria-label={`${cat.label} — more inside`}
+                  className="relative flex flex-col items-center gap-1.5 rounded-xl border border-brand-border bg-white/[0.03] px-1 py-2.5 text-center transition-colors hover:border-brand-primary"
                 >
+                  {/* Indicator that this tile opens more inside */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute right-1.5 top-1 text-sm font-bold leading-none text-brand-primary"
+                  >
+                    *
+                  </span>
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
                     {cat.icon}
                   </span>

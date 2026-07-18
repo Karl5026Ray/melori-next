@@ -7,6 +7,7 @@ import VideoUploader from "./components/VideoUploader";
 import VideoList from "./components/VideoList";
 import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
 import TrackList from "./components/TrackList";
+import WaveformEditor from "./components/WaveformEditor";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
@@ -83,9 +84,13 @@ export default function StudioPage() {
     };
   }, []);
 
+  // Open the 30-second clip maker (WaveformEditor) for a specific track.
+  // Stays on the "tracks" tab and renders the editor as an overlay driven by
+  // selectedTrackId — the Humanizer tab is a separate, independent surface and
+  // must not be triggered from the per-track Preview button.
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
-    setActiveTab("humanizer");
+    setActiveTab("tracks");
   }, []);
 
   // Returning from the Stripe account link lands on /studio?connect=return|refresh
@@ -247,9 +252,15 @@ export default function StudioPage() {
             <VideoList userId={userId} />
           </>
         )}
-        {activeTab === "tracks" && (
-          <TrackList onEditWaveform={handleEditWaveform} />
-        )}
+        {activeTab === "tracks" &&
+          (selectedTrackId ? (
+            <WaveformEditor
+              trackId={selectedTrackId}
+              onBack={() => setSelectedTrackId(null)}
+            />
+          ) : (
+            <TrackList onEditWaveform={handleEditWaveform} />
+          ))}
         {activeTab === "humanizer" && (
           <HumanizerWorkspace canForensic={canForensic} />
         )}

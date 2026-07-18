@@ -32,22 +32,16 @@ const navGroups: NavGroup[] = [
     label: "For Artists",
     items: [
       { label: "Become an Artist", href: "/register?tier=artist" },
-      { label: "Current Artists", href: "/artists" },
       { label: "Artist Studio", href: "/studio" },
-      { label: "Store", href: "/store" },
-    ],
-  },
-  {
-    label: "About",
-    items: [
-      { label: "Mission", href: "/mission" },
-      { label: "Membership", href: "/membership" },
     ],
   },
 ];
+// Mission, Comments, Current Artists, and Store now live under the "About"
+// category in the center M-button menu (see MobileTabBar) — not in the
+// hamburger. Membership stays reachable via the account menu.
 
-// No standalone links: Store now lives under "For Artists" and all social /
-// signup destinations moved to the center M-button menu.
+// No standalone links: all non-music destinations live in the center
+// M-button menu (Social Tools, Photography, Signup, About).
 const standaloneLinks: NavItem[] = [];
 
 export default function Header() {

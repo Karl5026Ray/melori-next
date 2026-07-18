@@ -156,3 +156,57 @@ export async function POST(
     commentsCount: fresh?.comments_count ?? 0,
   });
 }
+
+// DELETE /api/social/photos/[id]/comments?comment_id=... — remove one of the
+// caller's own comments. The delete is scoped by user_id so a member can only
+// remove their own comment (RLS enforces this too). The trigger decrements
+// profile_gallery.comments_count.
+export async function DELETE(
+  req: NextRequest,
+  props: { params: Promise<{ id: string }> },
+) {
+  const { id: galleryId } = await props.params;
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
+  const userId = guard.membership.userId as string;
+
+  const commentId = req.nextUrl.searchParams.get("comment_id");
+  if (!commentId) {
+    return NextResponse.json(
+      { error: "comment_id is required" },
+      { status: 400 },
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: deleted, error } = await supabase
+    .from("profile_gallery_comments")
+    .delete()
+    .eq("id", commentId)
+    .eq("gallery_id", galleryId)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!deleted) {
+    // Either it doesn't exist or it isn't the caller's comment.
+    return NextResponse.json(
+      { error: "Comment not found" },
+      { status: 404 },
+    );
+  }
+
+  const { data: fresh } = await supabase
+    .from("profile_gallery")
+    .select("comments_count")
+    .eq("id", galleryId)
+    .maybeSingle();
+
+  return NextResponse.json({
+    deleted: true,
+    commentsCount: fresh?.comments_count ?? 0,
+  });
+}

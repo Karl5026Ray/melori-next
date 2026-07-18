@@ -9,8 +9,10 @@ import {
   Bookmark,
   Loader2,
   Send,
+  Trash2,
 } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
+import { useAuth } from "@/components/social/providers/AuthProvider";
 import type { TileContent } from "./ProfileContentTile";
 
 // A lightweight viewer for a single profile item (reel or gallery photo) with
@@ -22,6 +24,7 @@ type Comment = {
   id: string;
   content: string;
   created_at: string;
+  user_id: string | null;
   user: {
     display_name: string;
     username: string;
@@ -39,6 +42,7 @@ export default function ProfileContentModal({
   onClose: () => void;
 }) {
   const id = content.id;
+  const { user } = useAuth();
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(content.likes_count ?? 0);
   const [saved, setSaved] = useState(false);
@@ -178,6 +182,25 @@ export default function ProfileContentModal({
     }
   };
 
+  // Delete one of the caller's own comments. Currently wired for photos, which
+  // expose a DELETE handler on their comments endpoint.
+  const deleteComment = async (commentId: string) => {
+    setComments((prev) => prev?.filter((c) => c.id !== commentId) ?? prev);
+    try {
+      await authFetch(
+        `${commentsEndpoint}?comment_id=${encodeURIComponent(commentId)}`,
+        { method: "DELETE" },
+      );
+    } catch {
+      // On failure, refetch to restore the true list.
+      const res = await authFetch(commentsEndpoint).catch(() => null);
+      if (res?.ok) {
+        const j = await res.json();
+        setComments(j.comments ?? []);
+      }
+    }
+  };
+
   const mediaSrc =
     type === "video"
       ? content.video_url || content.thumbnail_url || ""
@@ -286,15 +309,20 @@ export default function ProfileContentModal({
                     No comments yet. Be the first.
                   </p>
                 ) : (
-                  comments.map((c) => (
-                    <div key={c.id} className="flex gap-2">
+                  comments.map((c) => {
+                    const isMine =
+                      type === "photo" &&
+                      !!user?.id &&
+                      c.user_id === user.id;
+                    return (
+                    <div key={c.id} className="group flex gap-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={c.user?.avatar_url || "/favicon.png"}
                         alt=""
                         className="h-7 w-7 shrink-0 rounded-full object-cover"
                       />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-melori-text">
                           {c.user?.display_name ?? "Member"}
                         </p>
@@ -302,8 +330,20 @@ export default function ProfileContentModal({
                           {c.content}
                         </p>
                       </div>
+                      {isMine && (
+                        <button
+                          type="button"
+                          onClick={() => deleteComment(c.id)}
+                          className="shrink-0 rounded-lg p-1 text-melori-muted opacity-0 transition hover:bg-white/5 hover:text-red-500 group-hover:opacity-100 focus:opacity-100"
+                          aria-label="Delete comment"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               <div className="flex items-center gap-2 border-t border-melori-border p-3">

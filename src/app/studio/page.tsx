@@ -20,6 +20,7 @@ type Tab =
   | "upload"
   | "video"
   | "tracks"
+  | "clip"
   | "humanizer"
   | "analytics"
   | "superfans"
@@ -85,12 +86,12 @@ export default function StudioPage() {
   }, []);
 
   // Open the 30-second clip maker (WaveformEditor) for a specific track.
-  // Stays on the "tracks" tab and renders the editor as an overlay driven by
-  // selectedTrackId — the Humanizer tab is a separate, independent surface and
-  // must not be triggered from the per-track Preview button.
+  // Switches to the dedicated "clip" top tab with the chosen track loaded.
+  // The Humanizer tab is a separate, independent surface and must not be
+  // triggered from the per-track Preview button.
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
-    setActiveTab("tracks");
+    setActiveTab("clip");
   }, []);
 
   // Returning from the Stripe account link lands on /studio?connect=return|refresh
@@ -186,6 +187,7 @@ export default function StudioPage() {
     { id: "upload", label: "Upload", icon: "📤" },
     { id: "video", label: "Video", icon: "🎬" },
     { id: "tracks", label: "My Tracks", icon: "🎵" },
+    { id: "clip", label: "Clip Maker", icon: "✂️" },
     { id: "humanizer", label: "Humanizer", icon: "🎛️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
@@ -252,15 +254,15 @@ export default function StudioPage() {
             <VideoList userId={userId} />
           </>
         )}
-        {activeTab === "tracks" &&
-          (selectedTrackId ? (
-            <WaveformEditor
-              trackId={selectedTrackId}
-              onBack={() => setSelectedTrackId(null)}
-            />
-          ) : (
-            <TrackList onEditWaveform={handleEditWaveform} />
-          ))}
+        {activeTab === "tracks" && (
+          <TrackList onEditWaveform={handleEditWaveform} />
+        )}
+        {activeTab === "clip" && (
+          <WaveformEditor
+            trackId={selectedTrackId}
+            onBack={() => setActiveTab("tracks")}
+          />
+        )}
         {activeTab === "humanizer" && (
           <HumanizerWorkspace canForensic={canForensic} />
         )}

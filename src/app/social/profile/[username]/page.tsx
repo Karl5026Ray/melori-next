@@ -10,6 +10,10 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
 import FollowButton from "@/components/social/FollowButton";
+import { MemberActions } from "@/components/social/MemberActions";
+import ProfileTabs from "@/components/social/profile/ProfileTabs";
+import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
+import type { TileContent } from "@/components/social/profile/ProfileContentTile";
 import { Loader2 } from "lucide-react";
 
 type PublicProfile = {
@@ -38,6 +42,10 @@ export default function PublicProfilePage() {
   const params = useParams<{ username: string }>();
   const username = params.username;
   const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [openItem, setOpenItem] = useState<{
+    type: "video" | "photo";
+    content: TileContent;
+  } | null>(null);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -138,17 +146,25 @@ export default function PublicProfilePage() {
               Edit Profile
             </Link>
           ) : viewer?.signedIn && !viewer?.blocked ? (
-            <FollowButton
-              targetId={profile.id}
-              initialFollowing={viewer.following}
-              onChange={(_f, counts) => {
-                if (counts) {
-                  setProfile((p) =>
-                    p ? { ...p, followers_count: counts.followers_count } : p,
-                  );
-                }
-              }}
-            />
+            <>
+              <FollowButton
+                targetId={profile.id}
+                initialFollowing={viewer.following}
+                onChange={(_f, counts) => {
+                  if (counts) {
+                    setProfile((p) =>
+                      p ? { ...p, followers_count: counts.followers_count } : p,
+                    );
+                  }
+                }}
+              />
+              {/* Message / block — ties Messages to the profile. */}
+              <MemberActions
+                memberId={profile.id}
+                memberName={profile.display_name}
+                initiallyBlocked={viewer.blocked}
+              />
+            </>
           ) : !viewer?.signedIn ? (
             <Link
               href="/social/auth"
@@ -174,6 +190,22 @@ export default function PublicProfilePage() {
           <span className="text-melori-muted">Following</span>
         </div>
       </div>
+
+      {/* Public tab bar: owner-only tabs (Liked/Saves/Family/Settings) are
+          hidden automatically by the tabs endpoint's isOwner flag. */}
+      <ProfileTabs
+        userId={profile.id}
+        isOwner={!!viewer?.isSelf}
+        onOpenContent={(content, type) => setOpenItem({ type, content })}
+      />
+
+      {openItem && (
+        <ProfileContentModal
+          type={openItem.type}
+          content={openItem.content}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
     </div>
   );
 }

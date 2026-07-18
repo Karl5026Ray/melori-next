@@ -2,14 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { Radio, Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, MapPin } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
-import ProfileGalleryEditor from "@/components/social/ProfileGalleryEditor";
+import ProfileTabs from "@/components/social/profile/ProfileTabs";
+import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
+import type { TileContent } from "@/components/social/profile/ProfileContentTile";
 import { authFetch } from "@/lib/authClient";
 
 export default function ProfilePage() {
   const { user, applyUser, refreshUser } = useAuth();
   const [editing, setEditing] = useState(false);
+  const [openItem, setOpenItem] = useState<{
+    type: "video" | "photo";
+    content: TileContent;
+  } | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [bannerError, setBannerError] = useState<string | null>(null);
@@ -87,6 +93,11 @@ export default function ProfilePage() {
     } finally {
       setUploadingBanner(false);
     }
+  };
+
+  // Open a reel/photo in the in-app viewer (like / comment / share / save).
+  const openContent = (content: TileContent, type: "video" | "photo") => {
+    setOpenItem({ type, content });
   };
 
   if (!user) {
@@ -168,6 +179,12 @@ export default function ProfilePage() {
             <p className="text-melori-muted text-sm">
               {view.bio || "Independent music advocate"}
             </p>
+            {view.city && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-melori-muted">
+                <MapPin className="h-3.5 w-3.5" />
+                {view.city}
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -195,38 +212,23 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="glass rounded-2xl p-6 mb-6">
-          <h3 className="font-bold mb-4">Stats</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-melori-void/50 rounded-xl">
-              <p className="text-2xl font-bold gradient-text">0</p>
-              <p className="text-xs text-melori-muted mt-1">Spaces Hosted</p>
-            </div>
-            <div className="text-center p-4 bg-melori-void/50 rounded-xl">
-              <p className="text-2xl font-bold gradient-text">0</p>
-              <p className="text-xs text-melori-muted mt-1">Spaces Joined</p>
-            </div>
-            <div className="text-center p-4 bg-melori-void/50 rounded-xl">
-              <p className="text-2xl font-bold gradient-text">0</p>
-              <p className="text-xs text-melori-muted mt-1">Messages</p>
-            </div>
-            <div className="text-center p-4 bg-melori-void/50 rounded-xl">
-              <p className="text-2xl font-bold gradient-text">0</p>
-              <p className="text-xs text-melori-muted mt-1">Videos</p>
-            </div>
-          </div>
-        </div>
-
-        <ProfileGalleryEditor className="mb-6" />
-
-        <div className="glass rounded-2xl p-6">
-          <h3 className="font-bold mb-4">Recent Activity</h3>
-          <div className="text-center py-12 text-melori-muted">
-            <Radio className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No activity yet. Start exploring Spaces!</p>
-          </div>
-        </div>
+        {/* Tabbed profile experience: Reels · Photos · Liked · Shared · Saves ·
+            Friends · Family · Birthday · Settings */}
+        <ProfileTabs
+          userId={view.id}
+          isOwner
+          onEditProfile={() => setEditing(true)}
+          onOpenContent={openContent}
+        />
       </div>
+
+      {openItem && (
+        <ProfileContentModal
+          type={openItem.type}
+          content={openItem.content}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
 
       {editing && (
         <EditProfileModal

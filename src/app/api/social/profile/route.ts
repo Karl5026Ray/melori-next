@@ -67,6 +67,53 @@ export async function PATCH(req: NextRequest) {
     }
     update.bio = raw ?? null;
   }
+  if ("birth_date" in body) {
+    const raw = body.birth_date;
+    if (raw === null || raw === "") {
+      update.birth_date = null;
+    } else if (
+      typeof raw !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(raw) ||
+      Number.isNaN(new Date(raw + "T00:00:00Z").getTime())
+    ) {
+      return NextResponse.json(
+        { error: "birth_date must be an ISO date (YYYY-MM-DD)" },
+        { status: 400 },
+      );
+    } else {
+      const d = new Date(raw + "T00:00:00Z");
+      const now = new Date();
+      if (d.getTime() > now.getTime()) {
+        return NextResponse.json(
+          { error: "birth_date can't be in the future" },
+          { status: 400 },
+        );
+      }
+      update.birth_date = raw;
+    }
+  }
+  if ("birthday_visible" in body) {
+    if (typeof body.birthday_visible !== "boolean") {
+      return NextResponse.json(
+        { error: "birthday_visible must be a boolean" },
+        { status: 400 },
+      );
+    }
+    update.birthday_visible = body.birthday_visible;
+  }
+  if ("city" in body) {
+    const raw = body.city;
+    if (raw === null || raw === "") {
+      update.city = null;
+    } else if (typeof raw !== "string" || raw.length > 120) {
+      return NextResponse.json(
+        { error: "city must be 120 characters or fewer" },
+        { status: 400 },
+      );
+    } else {
+      update.city = raw.trim();
+    }
+  }
   if ("avatar_url" in body) {
     const raw = body.avatar_url;
     if (raw === null || raw === "") {

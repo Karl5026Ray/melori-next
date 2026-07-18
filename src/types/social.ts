@@ -11,6 +11,12 @@ export interface Profile {
   followers_count: number;
   following_count: number;
   created_at?: string;
+  // Profile expansion (migration 033): birthday + coarse location.
+  // birth_date is a plain ISO date (YYYY-MM-DD); year is treated as private and
+  // only month/day are shown to non-owners. birthday_visible=false hides it.
+  birth_date?: string | null;
+  birthday_visible?: boolean | null;
+  city?: string | null;
   // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
   membership_tier?: string | null;
   membership_status?: string | null;

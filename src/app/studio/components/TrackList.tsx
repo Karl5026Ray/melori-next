@@ -365,9 +365,9 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                         <button
                           onClick={() => onEditWaveform(track.id)}
                           className="px-3 sm:px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"
-                          title="Edit 30-second preview"
+                          title="Open the Clip Maker to set this track's 30-second preview"
                         >
-                          ✂️ Preview
+                          ✂️ Clip Maker
                         </button>
                         <button
                           onClick={() =>

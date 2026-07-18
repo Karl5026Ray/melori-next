@@ -49,7 +49,8 @@ export type AdminAction =
   | "reset_password"
   | "suspend"
   | "reactivate"
-  | "delete";
+  | "delete"
+  | "end_room";
 
 // Write an audit row with the service-role client (bypasses RLS). Best-effort:
 // a logging failure must never fail the underlying admin action, so we swallow
@@ -58,7 +59,7 @@ export async function logAdminAction(
   admin: AdminCaller,
   params: {
     action: AdminAction;
-    targetType: "user" | "artist";
+    targetType: "user" | "artist" | "space";
     targetId: string;
     details?: Record<string, unknown>;
   },

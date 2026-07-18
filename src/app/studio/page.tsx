@@ -7,6 +7,7 @@ import VideoUploader from "./components/VideoUploader";
 import VideoList from "./components/VideoList";
 import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
 import TrackList from "./components/TrackList";
+import WaveformEditor from "./components/WaveformEditor";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
@@ -19,6 +20,7 @@ type Tab =
   | "upload"
   | "video"
   | "tracks"
+  | "clip"
   | "humanizer"
   | "analytics"
   | "superfans"
@@ -83,9 +85,13 @@ export default function StudioPage() {
     };
   }, []);
 
+  // Open the 30-second clip maker (WaveformEditor) for a specific track.
+  // Switches to the dedicated "clip" top tab with the chosen track loaded.
+  // The Humanizer tab is a separate, independent surface and must not be
+  // triggered from the per-track Preview button.
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
-    setActiveTab("humanizer");
+    setActiveTab("clip");
   }, []);
 
   // Returning from the Stripe account link lands on /studio?connect=return|refresh
@@ -181,6 +187,7 @@ export default function StudioPage() {
     { id: "upload", label: "Upload", icon: "📤" },
     { id: "video", label: "Video", icon: "🎬" },
     { id: "tracks", label: "My Tracks", icon: "🎵" },
+    { id: "clip", label: "Clip Maker", icon: "✂️" },
     { id: "humanizer", label: "Humanizer", icon: "🎛️" },
     { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
@@ -249,6 +256,12 @@ export default function StudioPage() {
         )}
         {activeTab === "tracks" && (
           <TrackList onEditWaveform={handleEditWaveform} />
+        )}
+        {activeTab === "clip" && (
+          <WaveformEditor
+            trackId={selectedTrackId}
+            onBack={() => setActiveTab("tracks")}
+          />
         )}
         {activeTab === "humanizer" && (
           <HumanizerWorkspace canForensic={canForensic} />

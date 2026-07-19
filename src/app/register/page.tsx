@@ -20,7 +20,7 @@ type Tier = "free" | "superfan" | "artist";
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
   { id: "free", name: "Free Fan", price: "$0", blurb: "Stream music, join the community." },
   { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Early access, exclusives, HD audio." },
-  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 90%." },
+  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 100%." },
 ];
 
 function RegisterInner() {
@@ -44,6 +44,33 @@ function RegisterInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  // When email confirmation is required, we hold the address here so the user
+  // can resend the confirmation link without retyping / re-submitting.
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [resending, setResending] = useState(false);
+
+  const handleResendConfirmation = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    setError("");
+    try {
+      const emailRedirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+          : undefined;
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingEmail,
+        options: { emailRedirectTo },
+      });
+      if (resendError) throw resendError;
+      setNotice(`Confirmation link re-sent to ${pendingEmail}. Check your inbox and spam folder.`);
+    } catch (err: any) {
+      setError(err?.message ?? "Could not resend the confirmation email.");
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleGoogle = async () => {
     setError("");
@@ -105,9 +132,29 @@ function RegisterInner() {
       });
       if (signUpError) throw signUpError;
 
-      // Email confirmation on → no session yet. Tell the user to check email.
-      if (!signUpData.session) {
-        setNotice("Check your email to confirm your account, then sign in.");
+      // Determine the active session. With email confirmation OFF (instant
+      // signup) supabase returns a session directly. If it doesn't (e.g. a
+      // brief propagation gap, or confirmation is ON), try an immediate
+      // password sign-in — when the account is auto-confirmable this logs the
+      // user straight in with no email step.
+      let session = signUpData.session;
+      if (!session) {
+        const { data: signInData } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        session = signInData.session ?? null;
+      }
+
+      // Still no session → email confirmation is genuinely required. Show a
+      // clear message and surface a "resend" action instead of a dead end.
+      if (!session) {
+        setPendingEmail(email);
+        setNotice(
+          "Almost there — we sent a confirmation link to " +
+            email +
+            ". Click it to activate your account, then sign in. Didn't get it? Check spam or resend below.",
+        );
         setLoading(false);
         return;
       }
@@ -115,7 +162,7 @@ function RegisterInner() {
       // Best-effort seed of the profiles row (service-role endpoint). Never
       // block the redirect on it — it can be seeded on the next auth'd request.
       try {
-        const accessToken = signUpData.session?.access_token;
+        const accessToken = session?.access_token;
         if (accessToken) {
           await fetch("/api/social/profile/init", {
             method: "POST",
@@ -171,9 +218,19 @@ function RegisterInner() {
         </div>
 
         {notice && (
-          <p className="mb-4 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-400">
-            {notice}
-          </p>
+          <div className="mb-4 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-400">
+            <p>{notice}</p>
+            {pendingEmail && (
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={resending}
+                className="mt-2 inline-flex items-center rounded-lg border border-emerald-400/40 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-50"
+              >
+                {resending ? "Resending…" : "Resend confirmation email"}
+              </button>
+            )}
+          </div>
         )}
         {error && (
           <p className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">

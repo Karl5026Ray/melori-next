@@ -82,11 +82,8 @@ export default async function AlbumDetailPage(
             artistName={artist?.name ?? null}
             coverUrl={release.cover_art_url}
           />
-          {release.vps_release_id != null && (
-            <BuyButton
-              vpsReleaseId={release.vps_release_id}
-              price={release.price}
-            />
+          {release.price != null && release.price > 0 && (
+            <BuyButton releaseId={release.id} price={release.price} />
           )}
           {/* Reassure the buyer at the point of decision: their money goes to
              the artist, not the platform. This is Melori's key differentiator. */}

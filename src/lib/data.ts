@@ -332,6 +332,95 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
   return pool;
 }
 
+// Resolve a specific set of track refs (used by saved playlists) to full
+// RadioTrack objects WITHOUT loading the whole catalog. Same normalized shape
+// and gating as getRadioPool, but scoped with `.in("id", ...)` so opening a
+// playlist costs O(playlist length) instead of O(catalog). Unpublished /
+// deleted / moderated-out tracks simply don't come back (filtered same as the
+// pool), so they drop out of the playlist exactly like before.
+export async function getRadioTracksByIds(refs: {
+  legacyIds: number[];
+  studioIds: string[];
+}): Promise<RadioTrack[]> {
+  const supabase = getSupabaseAdmin();
+  const legacyIds = Array.from(new Set(refs.legacyIds));
+  const studioIds = Array.from(new Set(refs.studioIds));
+
+  const legacyPromise = legacyIds.length
+    ? supabase
+        .from("tracks")
+        .select(
+          "id, title, duration_seconds, is_published, moderation_status, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
+        )
+        .in("id", legacyIds)
+        .eq("is_published", true)
+        .or("moderation_status.is.null,moderation_status.eq.clean")
+    : null;
+
+  const studioPromise = studioIds.length
+    ? supabase
+        .from("studio_tracks")
+        .select(
+          "id, title, artist, album, genre, cover_url, duration, status, profile_id",
+        )
+        .in("id", studioIds)
+        .eq("status", "published")
+    : null;
+
+  const [legacyRes, studioRes] = await Promise.all([
+    legacyPromise ?? Promise.resolve({ data: [], error: null } as const),
+    studioPromise ?? Promise.resolve({ data: [], error: null } as const),
+  ]);
+
+  const pool: RadioTrack[] = [];
+
+  if (!legacyRes.error && legacyRes.data) {
+    for (const row of legacyRes.data as any[]) {
+      const rel = firstOrSelf(row.release);
+      if (rel && rel.is_published === false) continue;
+      const artist = rel ? firstOrSelf(rel.artist) : null;
+      const genre = artist ? firstOrSelf(artist.genre) : null;
+      pool.push({
+        id: row.id as number,
+        sourceType: "legacy",
+        title: row.title ?? "Untitled",
+        artistName: artist?.name ?? null,
+        coverUrl: rel?.cover_art_url ?? null,
+        album: rel?.title ?? null,
+        genre: genre?.name ?? null,
+        ownerProfileId: artist?.profile_id ?? null,
+        durationSeconds:
+          typeof row.duration_seconds === "number"
+            ? row.duration_seconds
+            : null,
+      });
+    }
+  } else if (legacyRes.error) {
+    console.error("getRadioTracksByIds legacy error", legacyRes.error.message);
+  }
+
+  if (!studioRes.error && studioRes.data) {
+    for (const row of studioRes.data as any[]) {
+      pool.push({
+        id: row.id as string,
+        sourceType: "studio",
+        title: row.title ?? "Untitled",
+        artistName: row.artist ?? null,
+        coverUrl: row.cover_url ?? null,
+        album: row.album ?? null,
+        genre: row.genre ?? null,
+        ownerProfileId: row.profile_id ?? null,
+        durationSeconds:
+          typeof row.duration === "number" ? row.duration : null,
+      });
+    }
+  } else if (studioRes.error) {
+    console.error("getRadioTracksByIds studio error", studioRes.error.message);
+  }
+
+  return pool;
+}
+
 // The "For You" station. Scores every track in the pool from the listener's
 // own signals and returns tracks carrying a `score` the client uses for a
 // WEIGHTED shuffle (higher score = more likely to surface sooner / more often).

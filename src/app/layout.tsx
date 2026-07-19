@@ -11,6 +11,15 @@ import { SITE_URL } from "@/lib/site";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Allow pinch-zoom (accessibility) but never auto-zoom on input focus — the
+  // 16px min input font-size in globals.css handles the iOS auto-zoom case.
+  maximumScale: 5,
+  userScalable: true,
+  // viewportFit:'cover' lets env(safe-area-inset-*) reach under the iPhone
+  // notch/home-indicator so full-height auth screens aren't clipped on rotate.
+  viewportFit: "cover",
   themeColor: "#ff8c00",
 };
 

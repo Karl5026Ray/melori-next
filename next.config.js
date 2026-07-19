@@ -18,11 +18,42 @@
 
 const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 
-// Baseline security headers applied to every route. We deliberately leave the
-// Content-Security-Policy off for now because a wrong CSP would break Stripe
-// Checkout, Supabase realtime, and Agora WebRTC — that needs a staging pass
-// before we lock it in. Everything else here is safe defaults.
+// Staging-safe Content-Security-Policy. We ship it as *Report-Only* first: the
+// browser evaluates it and reports violations but NEVER blocks anything, so it
+// cannot break Stripe Checkout, Supabase realtime, LiveKit/Agora WebRTC, PubNub
+// presence, or Google OAuth. Watch the browser console / a report endpoint for
+// a few days, confirm zero legitimate violations, then flip the header key to
+// "Content-Security-Policy" (enforcing) in a follow-up PR.
+//
+// Sources reflect Melori's real providers:
+//   supabase.co (auth/db/storage/realtime), stripe.com/js.stripe.com (checkout),
+//   *.livekit.cloud + wss (audio/video), *.agora.io (legacy voice),
+//   *.pubnub.com (presence), google/gstatic (OAuth + fonts).
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  // Next.js requires 'unsafe-inline'/'unsafe-eval' for its runtime; Stripe.js
+  // and Google OAuth load from their own hosts.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, Agora, PubNub + generic wss.
+  "connect-src 'self' https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
+  "media-src 'self' blob: https:",
+  // Stripe Checkout + Google OAuth render in iframes; nothing else may embed us.
+  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+
+// Baseline security headers applied to every route. The CSP above is attached
+// as Report-Only (non-blocking) so it can be validated in production traffic
+// before enforcement. Everything else here is already safe to enforce.
 const SECURITY_HEADERS = [
+  // Non-enforcing CSP: report violations, block nothing. Flip to the enforcing
+  // header name once the reports are clean.
+  { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
   // Force HTTPS for a year across the apex + subdomains once the browser has
   // seen this header. `preload` is intentionally omitted until we're sure we
   // want to submit to the HSTS preload list.

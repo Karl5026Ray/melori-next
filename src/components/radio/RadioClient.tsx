@@ -52,8 +52,21 @@ export default function RadioClient() {
   const [addSheetTrack, setAddSheetTrack] = useState<RadioTrack | null>(null);
   const wasTunedRef = useRef(false);
 
+  // Stable identity for the current station so the mixer rebuilds its rotation
+  // (and stops old audio) when the user switches stations or loads a playlist.
+  const poolKey =
+    mode === "playlists"
+      ? activePlaylistId
+        ? `playlist:${activePlaylistId}`
+        : "playlists:none"
+      : mode; // "foryou" | "all"
+
   const { state, tuneIn, togglePlay, skip, reshuffle, setVolume } =
-    useRadioMixer(pool);
+    useRadioMixer(pool, {
+      poolKey,
+      // Saved playlists play in their curated order; radio stations shuffle.
+      preserveOrder: mode === "playlists",
+    });
 
   // Load the shared/for-you pool for the current mode.
   const loadPool = useCallback(async (m: "foryou" | "all") => {

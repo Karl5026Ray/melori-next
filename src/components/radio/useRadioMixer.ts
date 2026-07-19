@@ -37,11 +37,21 @@ function streamUrlFor(t: RadioTrack): string {
     : `/api/tracks/${t.id}/stream`;
 }
 
-// Shuffle the pool into a rotation. When tracks carry a `score` (the "For You"
-// station), use a weighted draw so higher-scored tracks tend to land earlier
+// Build the play rotation for a pool. `preserveOrder` (used for saved
+// playlists) returns the pool as-is so a curated playlist plays in the order it
+// was saved. Otherwise it shuffles: when tracks carry a `score` (the "For You"
+// station) it uses a weighted draw so higher-scored tracks tend to land earlier
 // and recur more — but it stays probabilistic (a radio, not a ranked list), so
 // discovery tracks still surface. Without scores it's a plain Fisher–Yates.
 // Either way, a repair pass avoids the same artist back-to-back.
+function buildRotation(
+  pool: RadioTrack[],
+  preserveOrder: boolean,
+): RadioTrack[] {
+  if (preserveOrder) return [...pool];
+  return shuffleNoAdjacentArtist(pool);
+}
+
 function shuffleNoAdjacentArtist(pool: RadioTrack[]): RadioTrack[] {
   const hasScores = pool.some((t) => typeof t.score === "number" && t.score > 0);
   let arr: RadioTrack[];
@@ -100,7 +110,22 @@ export interface RadioState {
   queueLength: number;
 }
 
-export function useRadioMixer(pool: RadioTrack[]) {
+export interface RadioMixerOptions {
+  // A stable identity for the current pool/station (e.g. "all", "foryou", or
+  // "playlist:<id>"). When it changes we rebuild the rotation, stop the decks,
+  // and re-tune into the new station — otherwise switching stations left the
+  // old rotation (and old audio) running until the stale queue happened to wrap.
+  poolKey?: string;
+  // When true, play the pool in its given order instead of shuffling. Used for
+  // saved playlists so a curated order is respected.
+  preserveOrder?: boolean;
+}
+
+export function useRadioMixer(
+  pool: RadioTrack[],
+  options: RadioMixerOptions = {},
+) {
+  const { poolKey, preserveOrder = false } = options;
   const deckARef = useRef<HTMLAudioElement | null>(null);
   const deckBRef = useRef<HTMLAudioElement | null>(null);
   const activeDeckRef = useRef<"A" | "B">("A");
@@ -171,20 +196,17 @@ export function useRadioMixer(pool: RadioTrack[]) {
     };
   }, []);
 
-  // Initialise the shuffle when the pool arrives.
-  useEffect(() => {
-    if (pool.length && queueRef.current.length === 0) {
-      queueRef.current = shuffleNoAdjacentArtist(pool);
-      idxRef.current = 0;
-      patch({
-        ready: true,
-        current: queueRef.current[0] ?? null,
-        next: queueRef.current[1] ?? null,
-        queueLength: queueRef.current.length,
-        queuePosition: 1,
-      });
-    }
-  }, [pool, patch]);
+  // Build (or rebuild) the rotation when the pool arrives OR the station
+  // changes. Keyed by `poolKey` (falling back to pool length so a first load
+  // still initialises): the FIRST radio bug was that this only ran while the
+  // queue was empty, so switching stations/playlists swapped `pool` but never
+  // rebuilt the queue, never stopped the decks, and never reset `tuned` — the
+  // old station kept playing until the stale queue happened to wrap. Now a new
+  // key stops both decks, rebuilds the rotation, and resets `tuned` so the
+  // auto-resume effect re-tunes into the new station.
+  const builtKeyRef = useRef<string | null>(null);
+  // NOTE: the rotation build/rebuild effect lives lower down, after clearFade is
+  // declared (it depends on it).
 
   const fetchStream = useCallback(
     async (t: RadioTrack): Promise<StreamResp | null> => {
@@ -342,6 +364,68 @@ export function useRadioMixer(pool: RadioTrack[]) {
     [pool, active, idle, loadDeck, clearFade, patch],
   );
 
+  // Build (or rebuild) the rotation when the pool arrives OR the station
+  // changes. Keyed by `poolKey` (falling back to pool length so a first load
+  // still initialises): the FIRST radio bug was that this only ran while the
+  // queue was empty, so switching stations/playlists swapped `pool` but never
+  // rebuilt the queue, never stopped the decks, and never reset `tuned` — the
+  // old station kept playing until the stale queue happened to wrap. Now a new
+  // key stops both decks, rebuilds the rotation, and resets `tuned` so the
+  // auto-resume effect re-tunes into the new station.
+  useEffect(() => {
+    const key = poolKey ?? `len:${pool.length}`;
+    if (!pool.length) {
+      // Empty station/playlist: stop any prior audio and clear the queue so the
+      // UI shows the empty state instead of the previous station playing on.
+      if (builtKeyRef.current !== null) {
+        clearFade();
+        deckARef.current?.pause();
+        deckBRef.current?.pause();
+        queueRef.current = [];
+        idxRef.current = 0;
+        builtKeyRef.current = key;
+        patch({
+          ready: false,
+          tuned: false,
+          isPlaying: false,
+          current: null,
+          next: null,
+          queueLength: 0,
+          queuePosition: 0,
+        });
+      }
+      return;
+    }
+    if (builtKeyRef.current === key) return; // same station, nothing to rebuild
+
+    const wasTuned = builtKeyRef.current !== null; // a real station switch
+    builtKeyRef.current = key;
+    queueRef.current = buildRotation(pool, preserveOrder);
+    idxRef.current = 0;
+
+    if (wasTuned) {
+      // Station switch mid-listen: stop the old decks and reset `tuned` so the
+      // auto-resume effect (in RadioClient) tunes into the new rotation.
+      clearFade();
+      deckARef.current?.pause();
+      deckBRef.current?.pause();
+      activeDeckRef.current = "A";
+      advancingRef.current = false;
+      userPausedRef.current = false;
+    }
+
+    patch({
+      ready: true,
+      // On a station switch, force back to a not-yet-tuned/paused state so the
+      // auto-resume effect re-tunes; on first build leave tuned/isPlaying alone.
+      ...(wasTuned ? { tuned: false, isPlaying: false } : {}),
+      current: queueRef.current[0] ?? null,
+      next: queueRef.current[1] ?? null,
+      queueLength: queueRef.current.length,
+      queuePosition: 1,
+    });
+  }, [pool, poolKey, preserveOrder, clearFade, patch]);
+
   // Per-deck time tracking + auto-crossfade trigger + sample cap.
   useEffect(() => {
     const tick = () => {
@@ -457,7 +541,7 @@ export function useRadioMixer(pool: RadioTrack[]) {
   }, [clearFade, advance, state.tuned, patch]);
 
   const reshuffle = useCallback(() => {
-    queueRef.current = shuffleNoAdjacentArtist(pool);
+    queueRef.current = buildRotation(pool, preserveOrder);
     idxRef.current = 0;
     clearFade();
     patch({

@@ -124,8 +124,8 @@ export default function ConnectProfileEditor({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60">
-      <div className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-melori-void p-5">
+    <div className="fixed inset-0 z-[80] flex justify-end bg-black/60">
+      <div className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-melori-void p-5 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] md:pb-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold">Connect profile</h2>
           <button

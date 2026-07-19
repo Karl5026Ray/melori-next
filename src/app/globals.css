@@ -260,3 +260,42 @@ label {
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
+
+/* ───────────────────────────────────────────
+   MOBILE SIGN-IN / FORM HARDENING (2026-07)
+   Targeted fixes for the auth surfaces. Kept additive so none of the
+   existing brand/scrollbar/sticky rules above are affected.
+   ─────────────────────────────────────────── */
+
+/* iOS Safari auto-zooms the whole page when you focus an input whose text is
+   < 16px, which shoves the sign-in form off-screen and breaks the layout on
+   rotate. Enforcing a 16px minimum on form controls is the documented fix and
+   costs nothing visually (our inputs already render ~16px). Scoped to real
+   form controls so it never touches body copy. */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* Consistent min touch target on the auth CTAs (Apple HIG 44px). Applied via a
+   utility class rather than a global button rule so it can't disturb the many
+   compact icon-buttons across the app. */
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Safe-area padding helpers for full-height auth/checkout screens so content
+   clears the iPhone notch and home indicator when viewportFit:cover is on. */
+@supports (padding: max(0px)) {
+  .safe-area-padding {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .safe-area-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}

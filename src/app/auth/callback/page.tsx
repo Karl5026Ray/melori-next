@@ -59,8 +59,18 @@ function CallbackInner() {
         router.replace(next);
       } catch (err: unknown) {
         if (cancelled) return;
-        const msg =
+        const rawMsg =
           err instanceof Error ? err.message : "Sign-in failed.";
+        // The www→apex redirect (PR #112) fixes the common origin-split PKCE
+        // failure, but a few cases still land here with no usable code verifier:
+        // in-app webviews (Instagram/TikTok) that don't share Safari storage,
+        // cleared localStorage, or a stale bookmarked `?code=...` URL. Detect
+        // that class and show a friendly retry message instead of leaking the
+        // raw "PKCE code verifier not found in storage" string to the user.
+        const isPkce = /pkce|code verifier|verifier not found/i.test(rawMsg);
+        const msg = isPkce
+          ? "Your sign-in link expired or opened in an app that blocks secure sign-in. Please open melorimusic.org in Safari or Chrome and try again."
+          : rawMsg;
         if (isAdmin) {
           router.replace(`/admin?error=${encodeURIComponent(msg)}`);
         } else {

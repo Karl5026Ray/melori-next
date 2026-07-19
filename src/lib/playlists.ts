@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getRadioPool, type RadioTrack } from "@/lib/data";
+import { getRadioTracksByIds, type RadioTrack } from "@/lib/data";
 
 // Server-side data access for member-curated saved playlists (Radio Phase 2).
 // Reuses the same service-role admin client as the rest of data.ts, so never
@@ -202,7 +202,7 @@ export async function getPlaylistTracks(
   if (!(await ownsPlaylist(ownerId, playlistId))) return null;
   const supabase = getSupabaseAdmin();
 
-  const [{ data: meta }, { data: rows }, pool] = await Promise.all([
+  const [{ data: meta }, { data: rows }] = await Promise.all([
     supabase
       .from("saved_playlists")
       .select("name")
@@ -214,15 +214,24 @@ export async function getPlaylistTracks(
       .eq("playlist_id", playlistId)
       .order("position", { ascending: true })
       .order("added_at", { ascending: true }),
-    getRadioPool(),
   ]);
 
-  // Index the pool by key for O(1) lookup.
+  // Resolve ONLY the tracks this playlist references (not the whole catalog).
+  const rowList = (rows ?? []) as any[];
+  const legacyIds: number[] = [];
+  const studioIds: string[] = [];
+  for (const r of rowList) {
+    if (r.studio_track_id != null) studioIds.push(r.studio_track_id);
+    else if (r.legacy_track_id != null) legacyIds.push(r.legacy_track_id);
+  }
+  const resolved = await getRadioTracksByIds({ legacyIds, studioIds });
+
+  // Index the resolved tracks by key for O(1) lookup.
   const byKey = new Map<string, RadioTrack>();
-  for (const t of pool) byKey.set(trackKey(t.sourceType, t.id), t);
+  for (const t of resolved) byKey.set(trackKey(t.sourceType, t.id), t);
 
   const tracks: RadioTrack[] = [];
-  for (const r of (rows ?? []) as any[]) {
+  for (const r of rowList) {
     const key =
       r.studio_track_id != null
         ? trackKey("studio", r.studio_track_id)

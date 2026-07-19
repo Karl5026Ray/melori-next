@@ -102,9 +102,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Unified TikTok-style live: default to the growable group format so a room
+    // that starts with just the host can grow to the tier cap as guests join.
+    // Explicit solo/duo bodies stay backward-compatible.
     const room_format = VIDEO_FORMATS.has(body.room_format)
       ? (body.room_format as string)
-      : "live_solo";
+      : "live_group";
 
     const isArtist = isArtistSubscriber(membership.profile);
     const { maxOnCamera, durationMinutes } = limitsForFormat(

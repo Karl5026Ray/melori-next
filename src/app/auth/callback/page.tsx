@@ -19,6 +19,20 @@ function CallbackInner() {
   const [message, setMessage] = useState("Signing you in…");
 
   useEffect(() => {
+    // detectSessionInUrl may write the session a beat after exchange resolves.
+    // Poll briefly so a slightly-delayed session write still counts as success
+    // instead of falling through to the error page. Returns the access token or
+    // null after ~2s.
+    async function waitForSession(): Promise<string | null> {
+      for (let i = 0; i < 10; i++) {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) return token;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return null;
+    }
+
     let cancelled = false;
     const isAdmin = params.get("admin") === "1";
     const next = safeNext(params.get("next"));
@@ -28,15 +42,24 @@ function CallbackInner() {
         const href = window.location.href;
         if (href.includes("code=")) {
           const { error } = await supabase.auth.exchangeCodeForSession(href);
-          if (error) throw error;
+          // IMPORTANT: `detectSessionInUrl: true` means supabase-js may have
+          // ALREADY auto-exchanged this same `?code=` and consumed the PKCE
+          // verifier before this manual call runs. When that happens the
+          // manual exchange throws "code verifier not found" even though a
+          // valid session now exists. So don't throw blindly — only treat it
+          // as a real failure if NO session got established (checked below).
+          // This prevents the callback from bouncing a successfully signed-in
+          // user to /social/auth?error=... (the double-exchange race).
+          if (error) {
+            if (!(await waitForSession())) throw error;
+          }
         } else {
           // Implicit/hash fallback: detectSessionInUrl has already run.
           const { error } = await supabase.auth.getSession();
           if (error) throw error;
         }
 
-        const { data } = await supabase.auth.getSession();
-        const accessToken = data.session?.access_token;
+        const accessToken = await waitForSession();
         if (!accessToken) throw new Error("No session established.");
 
         if (isAdmin) {

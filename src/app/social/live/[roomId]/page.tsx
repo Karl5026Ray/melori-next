@@ -162,7 +162,7 @@ export default function LiveRoomPage() {
   const maxOnCamera =
     room.host_settings?.max_on_camera ??
     room.max_capacity ??
-    (mode === "live_duo" ? 2 : mode === "live_group" ? 8 : 1);
+    (mode === "live_duo" ? 2 : mode === "live_group" ? 9 : 1);
 
   return (
     <LiveRoom

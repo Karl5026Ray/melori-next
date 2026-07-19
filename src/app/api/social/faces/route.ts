@@ -18,11 +18,11 @@ export const dynamic = "force-dynamic";
 // heartbeat, end). Video rooms are distinguished by room_format:
 //   - "live_solo"  : one host broadcasting (TikTok-style Live)
 //   - "live_duo"   : host + one guest (Duo Live)
-//   - "live_group" : host + up to 8 guests (8-Person Live)
+//   - "live_group" : host + up to 8 guests (9 faces total on camera)
 //
 // Tier limits (from the MM Faces spec) are applied here and stored on the row
 // so the client and any later moderation can enforce them:
-//   FREE   : 8 people,  30 min
+//   FREE   : 9 people,  30 min
 //   ARTIST : 50 people, unlimited
 //
 // GET  /api/social/faces          — list active live video rooms
@@ -33,12 +33,12 @@ const VIDEO_FORMATS = new Set(["live_solo", "live_duo", "live_group"]);
 function limitsForFormat(format: string, isArtist: boolean) {
   // Per-format ceilings, then clamped by the member tier.
   const formatMax =
-    format === "live_solo" ? 1 : format === "live_duo" ? 2 : 8;
-  const tierPeopleCap = isArtist ? 50 : 8;
-  // Solo/Duo have a fixed on-camera ceiling; group is capped by tier (max 8
-  // faces for free, but artists could seat more in a future group mode).
+    format === "live_solo" ? 1 : format === "live_duo" ? 2 : 9;
+  const tierPeopleCap = isArtist ? 50 : 9;
+  // Solo/Duo have a fixed on-camera ceiling; group is capped by tier (9 faces
+  // total for free = host + 8 guests; artists could seat more in future).
   const maxOnCamera =
-    format === "live_group" ? Math.min(8, tierPeopleCap) : formatMax;
+    format === "live_group" ? Math.min(9, tierPeopleCap) : formatMax;
   const durationMinutes = isArtist ? null : 30;
   return { maxOnCamera, durationMinutes };
 }

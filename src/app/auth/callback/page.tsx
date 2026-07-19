@@ -10,7 +10,8 @@ import { Music } from "lucide-react";
 function safeNext(next: string | null): string {
   // Only allow same-origin absolute paths to avoid open-redirects.
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/social/profile";
+  // Default landing after sign-in is the main music catalog page.
+  return "/music";
 }
 
 function CallbackInner() {

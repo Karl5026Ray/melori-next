@@ -30,7 +30,7 @@ function RegisterInner() {
   const next =
     nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
       ? nextParam
-      : "/social/spaces";
+      : "/music";
 
   // Preselect the signup tier from ?tier= (deep-linked from the M-button Signup
   // menu). Falls back to "free" for any unknown value.

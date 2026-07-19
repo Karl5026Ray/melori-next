@@ -4,10 +4,10 @@
 //
 //   • Live         (live_solo)  — one host on camera; viewers watch/comment/react.
 //   • Duo Live      (live_duo)   — host + one guest on camera (2 tiles).
-//   • 8-Person Live (live_group) — host + up to N guests (auto-grid, up to 8 tiles).
+//   • Group Live    (live_group) — host + up to 8 guests (auto-grid, up to 9 tiles).
 //
 // One engine, three configs. Tiles are laid out with the TikTok/KIMI auto-grid
-// math (1→1x1, 2→2 cols, ≤4→2x2, ≤6→3x2, else 3x3). Guests raise a hand to
+// math (1→1x1, 2→2 cols, ≤4→2x2, ≤6→3x2, ≤8→3x3, 9→3x3). Guests raise a hand to
 // request camera; the host approves (promote to "speaker" = publisher). This
 // reuses the SAME server model as audio MM Spaces: `space_participants.role`
 // + has_raised_hand, the host-only PATCH moderation endpoint, and the
@@ -72,7 +72,7 @@ interface LiveRoomProps {
   tier: VideoTier;
   durationMinutes: number | null;
   mode: LiveMode;
-  maxOnCamera: number; // host + guests ceiling (1 for solo, 2 duo, up to 8 group)
+  maxOnCamera: number; // host + guests ceiling (1 for solo, 2 duo, up to 9 group)
   canPublish: boolean; // may this viewer go on camera? (host or Superfan+)
 }
 
@@ -96,7 +96,9 @@ function gridClassFor(count: number): string {
   if (count === 2) return "grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1";
   if (count <= 4) return "grid-cols-2 grid-rows-2";
   if (count <= 6) return "grid-cols-2 grid-rows-3 sm:grid-cols-3 sm:grid-rows-2";
-  return "grid-cols-2 grid-rows-4 sm:grid-cols-3 sm:grid-rows-3";
+  if (count <= 8) return "grid-cols-2 grid-rows-4 sm:grid-cols-3 sm:grid-rows-3";
+  // 9 faces (host + 8 guests): mobile stacks 2x5 (10 cells), desktop 3x3.
+  return "grid-cols-2 grid-rows-5 sm:grid-cols-3 sm:grid-rows-3";
 }
 
 export default function LiveRoom({
@@ -148,6 +150,9 @@ export default function LiveRoom({
   const [pending, setPending] = useState<Set<string>>(new Set());
   // Tile arrangement (local view only). Starts as the equal auto-grid.
   const [layout, setLayout] = useState<FacesLayout>("grid");
+  // In spotlight view, which tile the viewer has tapped to feature big. null =
+  // fall back to the host. Local-only view preference.
+  const [featuredOverride, setFeaturedOverride] = useState<string | null>(null);
   // Identities currently speaking (local + remote merged by the video client),
   // drives the green ring on tiles.
   const [speakers, setSpeakers] = useState<Set<string>>(new Set());
@@ -499,7 +504,7 @@ export default function LiveRoom({
   }, [handRaised, user, spaceId]);
 
   // Room is full when the current on-camera count (host + on-camera guests, i.e.
-  // `tiles`) has reached the mode's ceiling (2 for Duo, up to 8 for group).
+  // `tiles`) has reached the mode's ceiling (2 for Duo, up to 9 for group).
   const stageFull = tiles.length >= maxOnCamera;
 
   // Host promotes a guest → speaker. Used by BOTH the "approve raised hand" and
@@ -718,16 +723,21 @@ export default function LiveRoom({
     await setCameraEnabled(next);
   }, [camOn]);
 
-  // The featured tile in spotlight layout: the current active speaker if any,
-  // otherwise the host, otherwise the first tile. Keeps the "big" tile tracking
-  // whoever is talking, exactly like the ring does.
+  // The featured tile in spotlight layout. Default is the HOST (this is a hosted
+  // room), but the viewer can tap any thumbnail to feature that person instead
+  // (`featuredOverride`). Tapping the big/host tile clears the override. The
+  // active speaker no longer auto-steals the big tile — it only drives the ring.
   const featuredId = useMemo(() => {
     if (tiles.length === 0) return null;
-    const speaking = tiles.find((t) => speakers.has(t.identity));
-    if (speaking) return speaking.identity;
+    if (
+      featuredOverride &&
+      tiles.some((t) => t.identity === featuredOverride)
+    ) {
+      return featuredOverride;
+    }
     const host = tiles.find((t) => t.identity === hostId);
     return (host ?? tiles[0]).identity;
-  }, [tiles, speakers, hostId]);
+  }, [tiles, hostId, featuredOverride]);
 
   // Attach each tile's <video> into its container div after render. Re-runs when
   // the layout or the featured tile changes too, since those swap which DOM node
@@ -797,15 +807,29 @@ export default function LiveRoom({
           </div>
         ) : useSpotlight && featuredTile ? (
           // Spotlight: featured tile fills the stage, the rest ride a thumbnail
-          // strip along the bottom.
+          // strip along the bottom. Tap a thumbnail to feature that person; tap
+          // the big tile to clear back to the host.
           <div className="flex h-full w-full flex-col gap-0.5">
-            <div className="relative min-h-0 flex-1">{renderTile(featuredTile)}</div>
+            <button
+              type="button"
+              onClick={() => setFeaturedOverride(null)}
+              className="relative min-h-0 flex-1 cursor-pointer text-left"
+              aria-label="Feature the host"
+            >
+              {renderTile(featuredTile)}
+            </button>
             {stripTiles.length > 0 && (
               <div className="flex h-20 w-full shrink-0 gap-0.5 overflow-x-auto sm:h-28">
                 {stripTiles.map((t) => (
-                  <div key={t.identity} className="relative aspect-square h-full shrink-0">
+                  <button
+                    type="button"
+                    key={t.identity}
+                    onClick={() => setFeaturedOverride(t.identity)}
+                    className="relative aspect-square h-full shrink-0 cursor-pointer"
+                    aria-label={`Feature ${t.name}`}
+                  >
                     {renderTile(t)}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
+  hasMembershipAccess,
+  isAdmin,
   isArtistSubscriber,
   isSuperfanOrBetter,
   type MembershipProfile,
@@ -15,9 +17,12 @@ import {
 // service-role admin client (bypasses RLS).
 //
 // NOTE: the `profiles` table stores tier + admin flag in a single `role` column
-// (values: 'free' | 'superfan' | 'artist' | 'admin'). There is no
-// `membership_tier` or `membership_expires_at` column, so we read `role` and map
-// it onto MembershipProfile.membership_tier for the shared gating helpers.
+// (values: 'free' | 'superfan' | 'artist' | 'admin') alongside
+// `membership_status` and `membership_expires_at` (populated by the Stripe
+// members webhook). We read all three: `role` drives tier, and
+// status + expiry drive the access/grace check (hasMembershipAccess) so a
+// lapsed subscription actually loses access while admin-granted members (no
+// expiry) never do.
 
 export interface RequestMembership {
   userId: string | null;
@@ -58,15 +63,20 @@ export async function getRequestMembership(
   const admin = getSupabaseAdmin();
   const { data: row } = await admin
     .from("profiles")
-    .select("role, membership_status")
+    .select("role, membership_status, membership_expires_at")
     .eq("id", userId)
     .maybeSingle();
 
   const profile: MembershipProfile | null = row
     ? {
+        role: (row as { role?: string | null }).role ?? "free",
         membership_tier: (row as { role?: string | null }).role ?? "free",
-        membership_status: (row as { membership_status?: string | null }).membership_status ?? null,
-        membership_expires_at: null,
+        membership_status:
+          (row as { membership_status?: string | null }).membership_status ??
+          null,
+        membership_expires_at:
+          (row as { membership_expires_at?: string | null })
+            .membership_expires_at ?? null,
       }
     : null;
 
@@ -98,7 +108,7 @@ export async function requireSuperfan(
       { status: 401 },
     );
   }
-  if (!isSuperfanOrBetter(membership.profile)) {
+  if (!paidAccessAllowed(membership.profile, isSuperfanOrBetter)) {
     return NextResponse.json(
       { error: "Superfan membership required", upgrade: "/membership" },
       { status: 403 },
@@ -117,13 +127,26 @@ export async function requireArtist(
       { status: 401 },
     );
   }
-  if (!isArtistSubscriber(membership.profile)) {
+  if (!paidAccessAllowed(membership.profile, isArtistSubscriber)) {
     return NextResponse.json(
       { error: "Artist membership required", upgrade: "/membership" },
       { status: 403 },
     );
   }
   return { membership };
+}
+
+// A paid guard passes when the caller holds the required tier AND their
+// membership is currently accessible (active, in past_due grace, or admin-
+// granted with no expiry). Admins always pass. This is what wires expiry/status
+// enforcement into the gates: previously they keyed off role alone, so a lapsed
+// subscriber kept access until Stripe fired subscription.deleted.
+function paidAccessAllowed(
+  profile: MembershipProfile | null,
+  tierCheck: (p: MembershipProfile | null | undefined) => boolean,
+): boolean {
+  if (isAdmin(profile)) return true;
+  return tierCheck(profile) && hasMembershipAccess(profile);
 }
 
 export function isGuardFailure(

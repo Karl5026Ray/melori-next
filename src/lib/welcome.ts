@@ -77,8 +77,13 @@ export async function verifyCheckoutSession(
   const subInterval =
     (subscription?.items?.data?.[0]?.price?.recurring?.interval as Interval) ??
     null;
+  const priceId = subscription?.items?.data?.[0]?.price?.id ?? null;
 
-  const { tier, interval } = classifyPrice(priceAmount);
+  const { tier, interval } = classifyPrice({
+    amountCents: priceAmount,
+    priceId,
+    interval: subInterval,
+  });
 
   const currentPeriodEnd = subscription?.current_period_end
     ? new Date(subscription.current_period_end * 1000).toISOString()

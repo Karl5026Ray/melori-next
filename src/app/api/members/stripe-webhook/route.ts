@@ -62,10 +62,18 @@ export async function POST(req: NextRequest) {
   try {
     await handleEvent(stripe, event);
   } catch (err) {
-    // Log but still 200 so Stripe does not hammer retries for an application
-    // error (signature already verified). Failures are visible in logs +
-    // membership_events is only written on success paths.
+    // Return 500 (not 200) so Stripe RETRIES on its bounded schedule. A
+    // transient failure here (e.g. a brief DB blip while granting a tier) used
+    // to be swallowed with a 200, so Stripe never retried and the paying member
+    // silently never got their entitlement. The whole handler is idempotent
+    // (deterministic profile update + unique-constrained membership_events),
+    // so a retry safely re-applies the same state. Stripe stops retrying after
+    // its window, so a genuinely permanent bug can't loop forever.
     console.error("members/stripe-webhook handler error:", err);
+    return NextResponse.json(
+      { error: "handler_failed" },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ received: true });
@@ -113,6 +121,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const sub = event.data.object as Stripe.Subscription;
       const item = sub.items?.data?.[0];
       const amount = item?.price?.unit_amount ?? null;
+      const priceId = item?.price?.id ?? null;
       const interval = item?.price?.recurring?.interval ?? null;
       const isCanceled =
         event.type === "customer.subscription.deleted" ||
@@ -126,6 +135,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
         subscriptionId: sub.id,
         email: null,
         amountTotal: amount,
+        priceId,
         intervalOverride: (interval as Interval) ?? null,
         status: isCanceled ? "canceled" : sub.status === "active" || sub.status === "trialing" ? "active" : sub.status,
         currentPeriodEnd: sub.current_period_end
@@ -198,6 +208,7 @@ interface StateArgs {
   subscriptionId: string | null;
   email: string | null;
   amountTotal: number | null;
+  priceId?: string | null;
   status: string;
   intervalOverride?: Interval;
   currentPeriodEnd?: string | null;
@@ -211,7 +222,11 @@ async function applySubscriptionState(
   event: Stripe.Event,
   args: StateArgs
 ) {
-  const { tier, interval } = classifyPrice(args.amountTotal);
+  const { tier, interval } = classifyPrice({
+    amountCents: args.amountTotal,
+    priceId: args.priceId ?? null,
+    interval: args.intervalOverride ?? null,
+  });
   const resolvedInterval = args.intervalOverride ?? interval;
 
   // Resolve the customer email if we only have a customer id.

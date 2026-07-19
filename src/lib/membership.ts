@@ -64,6 +64,34 @@ export function isActive(profile: MembershipProfile | null | undefined): boolean
   return true;
 }
 
+// Access policy for PAID-tier gating (enforced server-side). We deliberately do
+// NOT collapse this into isActive() because the two answer different questions:
+// isActive() is the strict "subscription is current" check, while access gating
+// wants to (a) give failed-payment members a grace window during Stripe's
+// dunning retries, and (b) never lock out admin-granted members who have no
+// Stripe expiry at all.
+//
+// Returns true (access allowed) when:
+//   - there's no expiry set (admin-granted / legacy member), OR
+//   - status is 'past_due' (failed payment, still in Stripe's retry window —
+//     keep access until the subscription is actually deleted/canceled), OR
+//   - the expiry is in the future.
+// Returns false only when a Stripe expiry is set AND in the past AND the member
+// isn't in the past_due grace state.
+export function hasMembershipAccess(
+  profile: MembershipProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  const status = (profile.membership_status ?? "active").toLowerCase();
+  // Grace: keep access through the failed-payment retry window.
+  if (status === "past_due") return true;
+  const expires = profile.membership_expires_at;
+  if (!expires) return true; // admin-granted / no Stripe expiry -> never expire
+  const ts = new Date(expires).getTime();
+  if (!Number.isFinite(ts)) return true; // unparseable -> fail open (don't lock out)
+  return ts >= Date.now();
+}
+
 // Canonical "superfan-or-above" predicate — the SINGLE definition shared by the
 // client gate (UpgradePrompt / useCanParticipate) and the server gate
 // (membership-server.requireSuperfan). Qualifies when role is in

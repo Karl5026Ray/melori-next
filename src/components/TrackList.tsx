@@ -89,9 +89,9 @@ export default function TrackList({
               {formatDuration(track.duration_seconds)}
             </span>
 
-            {track.vps_track_id != null && (
+            {track.price != null && track.price > 0 && (
               <BuyButton
-                vpsTrackId={track.vps_track_id}
+                trackId={track.id}
                 price={track.price ?? DEFAULT_TRACK_PRICE}
                 title={track.title}
                 variant="compact"

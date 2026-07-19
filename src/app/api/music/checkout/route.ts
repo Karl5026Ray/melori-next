@@ -8,20 +8,28 @@ import { approvedOrigin } from "@/lib/approved-origin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/artist/purchase/checkout
-// Additive artist-attributed music purchase using Stripe destination charges.
-// The artist keeps 100% of the sale minus Stripe's processing fee — Melori
-// takes NO platform cut on music sales. Body: { releaseId } or { trackId }.
-// Price is read authoritatively from the DB (never trusted from the client).
-// The release's artist must have an onboarded Connect account with payouts
-// enabled; otherwise we return a clear error and DO NOT charge — the existing
-// purchase flows are left untouched.
+// POST /api/music/checkout
+// Album / single-track music purchase via Stripe Checkout.
+// NOTE: lives under /api/music/* (NOT /api/artist/* or /api/purchase/*) so it
+// is a real Next.js route handler and is never proxied to the legacy VPS by
+// the rewrites in next.config.js.
 //
-// application_fee_amount = 0 (Melori keeps nothing on music sales)
-// on_behalf_of = artist connected account -> the artist's account is the
-//   settlement account, so STRIPE'S PROCESSING FEE (2.9% + $0.30) is deducted
-//   from the artist's balance and the artist receives the remainder.
-// transfer_data.destination = artist connected account (funds routed to artist)
+// Body: { releaseId } OR { trackId }. Price is read authoritatively from the
+// database (never trusted from the client).
+//
+// Payout model (per-artist, automatic):
+//   • If the owning artist has a fully-onboarded Stripe Connect account
+//     (payouts_enabled), we use a DESTINATION CHARGE with on_behalf_of so the
+//     artist is the settlement account and receives 100% minus Stripe's
+//     processing fee. Melori takes no platform cut on music sales.
+//   • If the artist is NOT onboarded yet, the sale still completes on the
+//     Melori platform account (standard charge). This unblocks every release
+//     immediately; earnings are reconciled to the artist once they onboard.
+//     Previously this path hard-failed with a 409, so NO music could be sold.
+//
+// Fulfillment: the webhook (source "melorimusic.org/artist-purchase") records
+// the purchase into music_purchases and thereby grants the buyer download
+// access via /api/music/download.
 
 interface Body {
   releaseId?: number | string;
@@ -114,37 +122,22 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  if (!artistId) {
-    return NextResponse.json(
-      { error: "This item is not linked to an artist." },
-      { status: 400 },
-    );
+
+  // If we can resolve an onboarded Connect account for the artist, route funds
+  // directly to them (destination charge). Otherwise the sale completes on the
+  // platform account — the purchase is never blocked.
+  let connectedAccountId: string | null = null;
+  if (artistId) {
+    const { data: payout } = await supabase
+      .from("artist_payouts")
+      .select("stripe_connect_account_id, payouts_enabled")
+      .eq("artist_id", artistId)
+      .maybeSingle();
+    if (payout?.stripe_connect_account_id && payout.payouts_enabled) {
+      connectedAccountId = payout.stripe_connect_account_id;
+    }
   }
 
-  // The artist must have an onboarded Connect account with payouts enabled to
-  // receive a destination charge. If not, return a clear error rather than
-  // silently charging without a split.
-  const { data: payout } = await supabase
-    .from("artist_payouts")
-    .select("stripe_connect_account_id, payouts_enabled")
-    .eq("artist_id", artistId)
-    .maybeSingle();
-
-  if (!payout?.stripe_connect_account_id || !payout.payouts_enabled) {
-    return NextResponse.json(
-      {
-        error:
-          "This artist hasn't finished setting up payouts yet. Please try again later.",
-        payoutsUnavailable: true,
-      },
-      { status: 409 },
-    );
-  }
-
-  // Music sales: Melori takes 0% platform fee. The artist absorbs Stripe's
-  // processing fee (via on_behalf_of making them the settlement account) and
-  // receives the entire remainder.
-  const applicationFee = 0;
   const origin = approvedOrigin(req);
 
   // Attach buyer identity if signed in (optional for one-off purchases).
@@ -153,6 +146,18 @@ export async function POST(req: NextRequest) {
   const buyerEmail = membership?.email ?? undefined;
 
   const stripe = getStripe();
+
+  // When the artist is onboarded, make them the settlement account so Stripe's
+  // processing fee comes out of their balance and they keep 100% of the
+  // remainder (Melori applies no platform fee). When not onboarded, this block
+  // is simply omitted and the charge settles to the platform account.
+  const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData | undefined =
+    connectedAccountId
+      ? {
+          on_behalf_of: connectedAccountId,
+          transfer_data: { destination: connectedAccountId },
+        }
+      : undefined;
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -168,29 +173,26 @@ export async function POST(req: NextRequest) {
           },
         },
       ],
-      payment_intent_data: {
-        // No platform fee on music sales. on_behalf_of makes the artist's
-        // connected account the settlement/merchant-of-record account, so
-        // Stripe's processing fee is borne by the artist, not Melori.
-        on_behalf_of: payout.stripe_connect_account_id,
-        transfer_data: { destination: payout.stripe_connect_account_id },
-      },
-      success_url: `${origin}/studio?purchase=success`,
-      cancel_url: `${origin}/studio?purchase=cancel`,
+      ...(paymentIntentData ? { payment_intent_data: paymentIntentData } : {}),
+      success_url: `${origin}/music/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/music`,
       ...(buyerEmail ? { customer_email: buyerEmail } : {}),
       ...(buyerUserId ? { client_reference_id: buyerUserId } : {}),
       metadata: {
         source: "melorimusic.org/artist-purchase",
-        artist_id: String(artistId),
+        ...(artistId ? { artist_id: String(artistId) } : {}),
         ...(releaseId ? { release_id: String(releaseId) } : {}),
         ...(trackId ? { track_id: String(trackId) } : {}),
+        item_name: itemName.slice(0, 200),
         total_cents: String(totalCents),
-        application_fee_cents: String(applicationFee),
+        ...(connectedAccountId ? { connected_account_id: connectedAccountId } : {}),
         ...(buyerUserId ? { user_id: buyerUserId } : {}),
       },
     } satisfies Stripe.Checkout.SessionCreateParams);
 
-    return NextResponse.json({ url: session.url });
+    // BuyButton historically expected { checkout_url }; the newer client reads
+    // { url }. Return both so either version works.
+    return NextResponse.json({ url: session.url, checkout_url: session.url });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Stripe error";
     console.error("artist/purchase/checkout error:", msg);

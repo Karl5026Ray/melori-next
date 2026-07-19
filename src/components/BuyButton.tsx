@@ -3,9 +3,13 @@
 import { useState } from "react";
 
 interface BuyButtonProps {
-  /** VPS release id — used for whole-album purchases. */
+  /** Supabase release id — used for whole-album purchases. */
+  releaseId?: number;
+  /** Supabase track id — used for single-track purchases. Takes precedence. */
+  trackId?: number;
+  /** @deprecated legacy alias for releaseId (VPS era) */
   vpsReleaseId?: number;
-  /** VPS track id — used for single-track purchases. Takes precedence. */
+  /** @deprecated legacy alias for trackId (VPS era) */
   vpsTrackId?: number;
   price: number;
   title?: string;
@@ -17,16 +21,20 @@ interface BuyButtonProps {
 }
 
 /**
- * BuyButton — initiates a Stripe Checkout via the VPS purchase API.
+ * BuyButton — initiates a Stripe Checkout via the in-repo music purchase API.
  *
  * Contract:
- *   POST /api/purchase/checkout
+ *   POST /api/music/checkout
  *   body: { releaseId } | { trackId }
- *   resp: { checkout_url, amount, item }
+ *   resp: { url }   (also returns { checkout_url } for backwards-compat)
  *
- * Next.js rewrites proxy /api/purchase/* -> VPS (160.153.186.249:5000).
+ * This is a real Next.js route handler backed by Stripe + Supabase. It replaces
+ * the old /api/purchase/checkout path that proxied to the legacy VPS (whose
+ * Stripe key was expired and whose release ids no longer matched Supabase).
  */
 export default function BuyButton({
+  releaseId,
+  trackId,
   vpsReleaseId,
   vpsTrackId,
   price,
@@ -36,41 +44,49 @@ export default function BuyButton({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Prefer the canonical Supabase ids; fall back to the legacy vps* aliases so
+  // any un-migrated caller keeps working (the ids are the same Supabase ids).
+  const effectiveTrackId = trackId ?? vpsTrackId;
+  const effectiveReleaseId = releaseId ?? vpsReleaseId;
+
   async function handleBuy() {
     setError(null);
     setLoading(true);
     try {
       const body =
-        vpsTrackId != null
-          ? { trackId: vpsTrackId }
-          : { releaseId: vpsReleaseId };
+        effectiveTrackId != null
+          ? { trackId: effectiveTrackId }
+          : { releaseId: effectiveReleaseId };
 
       if (
         ("releaseId" in body && body.releaseId == null) &&
         ("trackId" in body && body.trackId == null)
       ) {
-        throw new Error("BuyButton requires vpsTrackId or vpsReleaseId");
+        throw new Error("BuyButton requires a trackId or releaseId");
       }
 
-      const res = await fetch("/api/purchase/checkout", {
+      const res = await fetch("/api/music/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        checkout_url?: string;
+        error?: string;
+      };
+
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(
-          `Checkout failed (${res.status})${text ? `: ${text.slice(0, 200)}` : ""}`,
-        );
+        throw new Error(data.error || `Checkout failed (${res.status}).`);
       }
 
-      const data = (await res.json()) as { checkout_url?: string };
-      if (!data.checkout_url) {
-        throw new Error("Checkout response missing checkout_url");
+      const checkoutUrl = data.url || data.checkout_url;
+      if (!checkoutUrl) {
+        throw new Error("Checkout response missing the redirect URL.");
       }
 
-      window.location.href = data.checkout_url;
+      window.location.href = checkoutUrl;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);

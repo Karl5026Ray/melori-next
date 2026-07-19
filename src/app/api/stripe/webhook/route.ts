@@ -69,6 +69,8 @@ export async function POST(req: NextRequest) {
         await fulfillStoreOrder(session);
       } else if (source === "melorimusic.org/gallery") {
         await fulfillGalleryPurchase(session);
+      } else if (source === "melorimusic.org/artist-purchase") {
+        await fulfillMusicPurchase(session);
       }
     }
   } catch (err) {
@@ -211,5 +213,64 @@ async function fulfillGalleryPurchase(session: Stripe.Checkout.Session) {
     // Unique-violation from a race with a concurrent delivery is benign.
     if (insErr.code === "23505") return;
     throw new Error(`gallery purchase insert failed: ${insErr.message}`);
+  }
+}
+
+// Records a paid album/single-track purchase. Writing the row is what grants
+// the buyer download access (verified by /api/music/download). Idempotent on
+// the Stripe session id.
+async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
+  const supabase = createServiceClient();
+  const sessionId = session.id;
+
+  const { data: existing } = await supabase
+    .from("music_purchases")
+    .select("id")
+    .eq("stripe_session_id", sessionId)
+    .maybeSingle();
+  if (existing) return;
+
+  const meta = session.metadata ?? {};
+  const releaseId = meta.release_id ? Number(meta.release_id) : null;
+  const trackId = meta.track_id ? Number(meta.track_id) : null;
+  if (!releaseId && !trackId) {
+    console.error("stripe/webhook music purchase missing release_id/track_id");
+    return;
+  }
+  const artistId = meta.artist_id ? Number(meta.artist_id) : null;
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  const buyerUserId =
+    session.client_reference_id ||
+    (typeof meta.user_id === "string" ? meta.user_id : null) ||
+    null;
+
+  const buyerEmail =
+    session.customer_details?.email || session.customer_email || null;
+
+  const { error: insErr } = await supabase.from("music_purchases").insert({
+    buyer_user_id: buyerUserId,
+    buyer_email: buyerEmail,
+    release_id: releaseId,
+    track_id: trackId,
+    artist_id: artistId,
+    item_name: typeof meta.item_name === "string" ? meta.item_name : "",
+    amount_cents: session.amount_total ?? null,
+    stripe_session_id: sessionId,
+    stripe_payment_intent_id: paymentIntentId,
+    connected_account_id:
+      typeof meta.connected_account_id === "string"
+        ? meta.connected_account_id
+        : null,
+    status: "paid",
+  });
+
+  if (insErr) {
+    if (insErr.code === "23505") return; // benign race
+    throw new Error(`music purchase insert failed: ${insErr.message}`);
   }
 }

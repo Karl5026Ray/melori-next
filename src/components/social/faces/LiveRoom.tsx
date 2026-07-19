@@ -161,6 +161,19 @@ export default function LiveRoom({
   >([]);
   const [showRoster, setShowRoster] = useState(false);
 
+  // Invite-followers panel (host only). Distinct from the Guests panel above:
+  // this invites people the host FOLLOWS who are NOT yet in the room, via an
+  // in-app live invite. The Guests panel promotes people already present.
+  const [showInvite, setShowInvite] = useState(false);
+  const [following, setFollowing] = useState<
+    { id: string; name: string; avatar: string | null }[]
+  >([]);
+  const [followingLoaded, setFollowingLoaded] = useState(false);
+  const [followingLoading, setFollowingLoading] = useState(false);
+  // Recipients with an in-flight invite call and those already invited.
+  const [inviting, setInviting] = useState<Set<string>>(new Set());
+  const [invited, setInvited] = useState<Set<string>>(new Set());
+
   // Keep the local <video> for re-attach when tiles re-render.
   const localElRef = useRef<HTMLVideoElement | null>(null);
   const remoteEls = useRef<Map<string, HTMLVideoElement>>(new Map());
@@ -545,6 +558,65 @@ export default function LiveRoom({
     [spaceId],
   );
 
+  // --- Invite followers (host only) ------------------------------------
+  // Load the people the host follows so they can invite someone who is NOT yet
+  // in the room. This is the in-app live invite, distinct from promoteToStage.
+  const loadFollowing = useCallback(async () => {
+    setFollowingLoading(true);
+    try {
+      const res = await authFetch("/api/social/connections?kind=following");
+      const data = await res.json().catch(() => ({}));
+      const items = (data.items ?? []).map((p: any) => ({
+        id: p.id,
+        name: p.display_name || p.username || "Member",
+        avatar: p.avatar_url ?? null,
+      }));
+      setFollowing(items);
+    } catch {
+      /* non-fatal */
+    } finally {
+      setFollowingLoaded(true);
+      setFollowingLoading(false);
+    }
+  }, []);
+
+  const openInvitePanel = useCallback(() => {
+    setShowInvite((s) => {
+      const next = !s;
+      if (next && !followingLoaded) void loadFollowing();
+      return next;
+    });
+  }, [followingLoaded, loadFollowing]);
+
+  const inviteFollower = useCallback(
+    async (recipientId: string) => {
+      setInviting((p) => new Set(p).add(recipientId));
+      try {
+        const res = await authFetch("/api/social/live-invites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient_id: recipientId, space_id: spaceId }),
+        });
+        // 409 = already invited; treat as sent so the UI reflects reality.
+        if (res.ok || res.status === 409) {
+          setInvited((p) => new Set(p).add(recipientId));
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setError(data?.error ?? "Could not send that invite.");
+        }
+      } catch {
+        setError("Network error sending that invite.");
+      } finally {
+        setInviting((p) => {
+          const next = new Set(p);
+          next.delete(recipientId);
+          return next;
+        });
+      }
+    },
+    [spaceId],
+  );
+
   // --- Reactions -------------------------------------------------------
   const reactionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   useEffect(() => {
@@ -775,12 +847,22 @@ export default function LiveRoom({
         </div>
 
         <div className="flex items-center gap-2">
+          {isHost && (
+            <button
+              onClick={openInvitePanel}
+              aria-label="Invite followers"
+              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Invite</span>
+            </button>
+          )}
           {isHost && !isSolo && (
             <button
               onClick={() => setShowRequests((s) => !s)}
               className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
             >
-              <UserPlus className="h-4 w-4" />
+              <Hand className="h-4 w-4" />
               {requests.length > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
                   {requests.length}
@@ -810,6 +892,79 @@ export default function LiveRoom({
       <div className="absolute left-4 top-16 max-w-[70%]">
         <p className="truncate text-sm font-medium text-white/90 drop-shadow">{title}</p>
       </div>
+
+      {/* Invite-followers panel (host) — bring people who FOLLOW the host into
+          the live via an in-app invite. Distinct from the Guests panel below,
+          which promotes people already in the room. */}
+      {isHost && showInvite && (
+        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-text-primary">Invite followers</p>
+            <button
+              onClick={() => setShowInvite(false)}
+              aria-label="Close"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-text-secondary hover:bg-brand-muted hover:text-text-primary"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="mb-2 text-xs text-text-secondary">
+            Bring people you follow into your live.
+          </p>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {followingLoading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-text-secondary">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            ) : following.length === 0 ? (
+              <p className="py-4 text-xs text-text-secondary">
+                You&apos;re not following anyone yet.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {following.map((f) => {
+                  const sent = invited.has(f.id);
+                  const busy = inviting.has(f.id);
+                  return (
+                    <li key={f.id} className="flex items-center gap-2">
+                      {f.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={f.avatar}
+                          alt={f.name}
+                          className="h-8 w-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                          {f.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                        {f.name}
+                      </span>
+                      <button
+                        onClick={() => inviteFollower(f.id)}
+                        disabled={sent || busy}
+                        aria-label={`Invite ${f.name}`}
+                        className="flex items-center gap-1 rounded-full border border-brand-border px-2.5 py-1 text-xs font-semibold text-text-primary hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {busy ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : sent ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <UserPlus className="h-3.5 w-3.5" />
+                        )}
+                        {sent ? "Invited" : "Invite"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Guests panel (host) — raised-hand REQUESTS to approve on top, then the
           full AUDIENCE roster to invite from. Mirrors the MM Spaces "Raised

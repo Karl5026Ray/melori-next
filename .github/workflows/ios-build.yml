@@ -49,8 +49,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_16.app
+      - name: Select latest Xcode
+        run: |
+          # Pick the newest installed Xcode so the matching iOS platform/SDK
+          # is available (avoids "iOS X is not installed" archive errors).
+          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST_XCODE" ]; then LATEST_XCODE="/Applications/Xcode.app"; fi
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -switch "$LATEST_XCODE"
+          xcodebuild -version
+          echo "--- installed iOS platforms ---"
+          xcodebuild -showsdks | grep -i ios || true
 
       - name: Setup Node
         uses: actions/setup-node@v4

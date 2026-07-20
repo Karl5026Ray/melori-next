@@ -142,11 +142,11 @@ export default function EditProfileModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-melori-elevated border border-melori-border p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-md rounded-2xl bg-melori-elevated border border-melori-border p-6 pb-[calc(1.5rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6 shadow-2xl max-h-[calc(100dvh-3.5rem-env(safe-area-inset-bottom)-1rem)] md:max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">

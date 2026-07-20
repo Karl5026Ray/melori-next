@@ -34,11 +34,13 @@ platform :ios do
     # as "not valid for code signing".
     # ------------------------------------------------------------------
 
-    # Create or download a distribution certificate into the default keychain.
+    # Create or download a distribution certificate into the CI keychain.
     get_certificates(
       type: "distribution",
       api_key: api_key,
-      output_path: "./ios/App/certs"
+      output_path: "./ios/App/certs",
+      keychain_path: ENV["MATCH_KEYCHAIN_NAME"],
+      keychain_password: ENV["MATCH_KEYCHAIN_PASSWORD"]
     )
 
     # Create or fetch the App Store provisioning profile for this app id.

@@ -49,8 +49,6 @@ platform :ios do
     get_provisioning_profile(
       app_identifier: APP_IDENTIFIER,
       api_key: api_key,
-      developer_id: false,
-      adhoc: false,
       provisioning_name: PROFILE_NAME,
       output_path: "./ios/App/profiles",
       filename: "melori_appstore.mobileprovision"

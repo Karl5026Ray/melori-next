@@ -96,6 +96,15 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          # Install the current Apple WWDR intermediate certificate so Xcode
+          # can validate the distribution cert's chain. Without this, a
+          # perfectly good cert is reported "not valid for code signing".
+          curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer \
+            -o "$RUNNER_TEMP/AppleWWDRCAG3.cer" || true
+          if [ -s "$RUNNER_TEMP/AppleWWDRCAG3.cer" ]; then
+            security import "$RUNNER_TEMP/AppleWWDRCAG3.cer" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign || true
+          fi
+
           echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
 
           # Sanity-check the .p12 opens with the supplied password and actually

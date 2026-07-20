@@ -31,9 +31,19 @@ export const metadata: Metadata = {
   },
   description:
     "Independent music from Karl Ray, KAIEL R, Gloria Joy Rivers, Gbenga Yakubu, and more. Stream, download and support independent artists on Melori Music.",
+  // PWA manifest (served by src/app/manifest.ts at /manifest.webmanifest).
+  manifest: "/manifest.webmanifest",
+  // Standalone install experience on iOS: title, status-bar style, and
+  // "web app capable" so the wrapped/home-screen app runs without Safari chrome.
+  appleWebApp: {
+    capable: true,
+    title: "Melori",
+    statusBarStyle: "black-translucent",
+  },
   icons: {
     icon: "/favicon.png",
-    apple: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/icons/apple-touch-icon.png",
   },
   openGraph: {
     siteName: "MELORI MUSIC",

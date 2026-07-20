@@ -67,12 +67,24 @@ jobs:
           node-version: "20"
 
       - name: Install JS deps (Capacitor)
+        working-directory: mobile
         run: npm install
 
       - name: Add & sync iOS project
+        working-directory: mobile
         run: |
+          # Capacitor config lives in mobile/, so add/sync must run here.
           npx cap add ios || echo "ios project already present"
           npx cap sync ios
+          # Ensure CocoaPods (Capacitor pods) are installed so the workspace
+          # links the 'Capacitor' module — otherwise the build fails with
+          # "Unable to find module dependency: 'Capacitor'".
+          sudo gem install cocoapods --no-document || gem install cocoapods --no-document || true
+          cd ios/App
+          pod install --repo-update
+          echo "--- iOS project contents ---"
+          ls -la
+          test -d App.xcworkspace && echo "workspace present" || echo "NO WORKSPACE"
 
       - name: Setup Ruby + Fastlane
         uses: ruby/setup-ruby@v1
@@ -131,6 +143,7 @@ jobs:
           openssl pkey -in "$KEY_FILE" -noout && echo "API key parsed OK" || (echo "API key INVALID" && exit 1)
 
       - name: Build & upload with Fastlane
+        working-directory: mobile
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}

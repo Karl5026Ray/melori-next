@@ -35,8 +35,10 @@ platform :ios do
     # ------------------------------------------------------------------
 
     # Create or download a distribution certificate into the CI keychain.
+    # (get_certificates defaults to a distribution cert; 'development: false'
+    # makes that explicit. It does NOT accept a 'type:' option.)
     get_certificates(
-      type: "distribution",
+      development: false,
       api_key: api_key,
       output_path: "./ios/App/certs",
       keychain_path: ENV["MATCH_KEYCHAIN_NAME"],

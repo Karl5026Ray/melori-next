@@ -1,0 +1,134 @@
+name: iOS Build & Upload (TestFlight)
+
+# Builds the native iOS app (Capacitor wrapper in mobile/) on a macOS runner,
+# signs it with your Apple Distribution certificate, and uploads it to
+# App Store Connect / TestFlight via Fastlane.
+#
+# TRIGGER: manual only (workflow_dispatch) or when you push a version tag like
+# "ios-v1.0.0". We keep it manual so you don't burn macOS CI minutes on every
+# commit — you run it when you actually want a new build.
+#
+# PREREQUISITES — set these repository secrets (Settings → Secrets and variables
+# → Actions → New repository secret). See mobile/fastlane/README.md for exactly
+# how to obtain each value.
+#
+#   APP_STORE_CONNECT_KEY_ID        App Store Connect API key ID
+#   APP_STORE_CONNECT_ISSUER_ID     App Store Connect API issuer ID
+#   APP_STORE_CONNECT_KEY_P8        Contents of the AuthKey_XXXX.p8 file (full text)
+#   IOS_DIST_CERT_P12_BASE64        base64 of your Apple Distribution .p12 cert
+#   IOS_DIST_CERT_PASSWORD          password for that .p12
+#   IOS_PROVISIONING_PROFILE_BASE64 base64 of your App Store provisioning profile (.mobileprovision)
+#
+# BUNDLE ID: org.melorimusic.app   APPLE ID (app): 6792791603
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Build number (must be higher than the last uploaded build)"
+        required: true
+        default: "1"
+  push:
+    tags:
+      - "ios-v*"
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & upload IPA
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_16.app
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install JS deps (Capacitor)
+        run: npm install
+
+      - name: Add & sync iOS project
+        run: |
+          npx cap add ios || echo "ios project already present"
+          npx cap sync ios
+
+      - name: Setup Ruby + Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: false
+          working-directory: mobile
+
+      - name: Install Fastlane
+        run: gem install fastlane --no-document
+
+      - name: Import signing certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          # Create a temporary keychain and import the distribution cert into it.
+          KEYCHAIN_PATH="$RUNNER_TEMP/melori.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -P "$CERT_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Make it the default keychain so codesign can find the identity.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/melori.mobileprovision"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" \
+            /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/melori.mobileprovision")")
+          cp "$RUNNER_TEMP/melori.mobileprovision" \
+            "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "Installed provisioning profile $UUID"
+
+      - name: Write App Store Connect API key
+        env:
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_${KEY_ID}.p8"
+
+      - name: Build & upload with Fastlane
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+          BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
+        run: fastlane ios release
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: melori-ios-ipa
+          path: mobile/ios/App/build/*.ipa
+          if-no-files-found: ignore
+          retention-days: 14

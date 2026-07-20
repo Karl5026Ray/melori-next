@@ -4,6 +4,7 @@ import Link from "next/link";
 
 const footerLinks = [
   { label: "Music", href: "/music" },
+  { label: "Photography", href: "/photography" },
   { label: "Mission", href: "/mission" },
   { label: "Membership", href: "/membership" },
   { label: "Donate", href: "/donate" },

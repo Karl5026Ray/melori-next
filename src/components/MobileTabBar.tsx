@@ -17,7 +17,6 @@ import {
   X,
   ChevronDown,
   Image as ImageIcon,
-  Calendar,
   Tag,
   CalendarClock,
   UserPlus,
@@ -195,10 +194,10 @@ export default function MobileTabBar() {
       label: "Photo",
       icon: <Camera className="h-5 w-5" />,
       items: [
+        { label: "Photography", href: "/photography", icon: <Camera className="h-5 w-5" />, desc: "Karl Ray Photography" },
         { label: "Gallery", href: "/gallery", icon: <ImageIcon className="h-5 w-5" />, desc: "Photo galleries" },
-        { label: "Calendar", href: "#", icon: <Calendar className="h-5 w-5" />, desc: "Coming soon", soon: true },
-        { label: "Pricing", href: "#", icon: <Tag className="h-5 w-5" />, desc: "Coming soon", soon: true },
-        { label: "Scheduling", href: "#", icon: <CalendarClock className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Pricing", href: "/pricing", icon: <Tag className="h-5 w-5" />, desc: "Session pricing" },
+        { label: "Book", href: "/book", icon: <CalendarClock className="h-5 w-5" />, desc: "Schedule a session" },
       ],
     },
     {

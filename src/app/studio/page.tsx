@@ -242,6 +242,20 @@ export default function StudioPage() {
                 {tab.label}
               </button>
             ))}
+            {/* Photography group — Galleries, Services & Pricing, Booking &
+               Calendar all live under /studio but are their own routes (not
+               in-page tabs, since each needs real list→detail navigation).
+               Grouped visually with a label + divider so they read as one
+               coherent "Photography" area of the Studio nav rather than
+               three loose links. */}
+            <span
+              aria-hidden
+              className="my-2 ml-1 h-6 w-px shrink-0 self-center bg-white/10"
+            />
+            <span className="flex shrink-0 items-center whitespace-nowrap self-center px-2 text-[11px] font-semibold uppercase tracking-wide text-[#666]">
+              <span className="mr-1.5">{"\uD83D\uDCF8"}</span>
+              Photography
+            </span>
             <Link
               href="/studio/galleries"
               className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
@@ -254,14 +268,14 @@ export default function StudioPage() {
               className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
             >
               <span>{"\uD83D\uDCB2"}</span>
-              Services
+              Services &amp; Pricing
             </Link>
             <Link
               href="/studio/booking"
               className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
             >
               <span>{"\uD83D\uDCC5"}</span>
-              Booking
+              Booking &amp; Calendar
             </Link>
           </nav>
         </div>

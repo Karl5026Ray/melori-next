@@ -173,11 +173,11 @@ const nextConfig = {
         source: '/api/members/:path((?!stripe-webhook$).*)',
         destination: `${VPS_ORIGIN}/api/members/:path`,
       },
-      // ── Purchases (Stripe Checkout sessions, order lookup)
-      {
-        source: '/api/purchase/:path*',
-        destination: `${VPS_ORIGIN}/api/purchase/:path*`,
-      },
+      // ── Purchases: REMOVED. Music commerce migrated off the VPS to Vercel-
+      // native routes (/api/music/checkout -> /music/success, fulfilled via the
+      // Stripe webhook + music_purchases table, downloads signed by
+      // /api/music/download). Nothing calls /api/purchase/* anymore, so we no
+      // longer proxy it to the VPS (whose Stripe key was expired anyway).
       // ── Downloads (post-purchase secure file delivery)
       {
         source: '/api/download/:path*',

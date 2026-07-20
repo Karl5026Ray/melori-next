@@ -8,8 +8,11 @@
 default_platform(:ios)
 
 APP_IDENTIFIER = "org.melorimusic.app"
-XCODE_PROJECT  = "./ios/App/App.xcodeproj"
-XCODE_WORKSPACE = "./ios/App/App.xcworkspace"
+# Anchor all paths to the mobile/ dir (parent of this fastlane/ folder) so
+# they resolve regardless of Fastlane's runtime working directory.
+MOBILE_DIR = File.expand_path("..", __dir__)
+XCODE_PROJECT  = File.join(MOBILE_DIR, "ios/App/App.xcodeproj")
+XCODE_WORKSPACE = File.join(MOBILE_DIR, "ios/App/App.xcworkspace")
 SCHEME = "App"
 TEAM_ID = "ZDPS766DHY"
 PROFILE_NAME = "Melori Music App Store"

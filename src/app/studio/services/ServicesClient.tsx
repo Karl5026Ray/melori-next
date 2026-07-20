@@ -6,6 +6,7 @@ import { DollarSign, Plus } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import ServiceEditorModal from "./ServiceEditorModal";
 import ServiceCard from "./ServiceCard";
+import CalendarConnectCard from "../components/CalendarConnectCard";
 import type { ServiceItem } from "./types";
 
 // /studio/services — Phase 2 services & pricing admin. Client component
@@ -86,6 +87,13 @@ export default function ServicesClient() {
           >
             ← Studio
           </Link>
+        </div>
+
+        {/* Phase 3: Google Calendar connect card. Mounted here on
+            /studio/services since /studio/booking doesn't exist yet
+            (Phase 4) — this is the only Studio surface this phase touches. */}
+        <div className="mt-5">
+          <CalendarConnectCard />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">

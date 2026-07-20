@@ -76,10 +76,14 @@ platform :ios do
       profile_name: profile_name
     )
 
-    # Build the signed .ipa. CocoaPods creates the workspace; prefer it if present.
+    # Build the signed .ipa from the CocoaPods WORKSPACE (never the bare
+    # .xcodeproj) so the Capacitor pod is compiled and linked. Building the
+    # project alone fails with "Unable to find module dependency: 'Capacitor'".
+    unless File.exist?(XCODE_WORKSPACE)
+      UI.user_error!("Expected CocoaPods workspace at #{XCODE_WORKSPACE} (run pod install)")
+    end
     build_app(
-      workspace: File.exist?(XCODE_WORKSPACE) ? XCODE_WORKSPACE : nil,
-      project: File.exist?(XCODE_WORKSPACE) ? nil : XCODE_PROJECT,
+      workspace: XCODE_WORKSPACE,
       scheme: SCHEME,
       export_method: "app-store",
       output_directory: "./ios/App/build",

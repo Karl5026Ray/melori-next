@@ -1,0 +1,6 @@
+# Capacitor native projects are generated locally via `npx cap add ios`.
+# They contain machine-specific paths and signing config; regenerate rather than commit.
+/ios/
+/android/
+/node_modules/
+/www/assets/generated/

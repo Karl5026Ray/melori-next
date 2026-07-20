@@ -1,0 +1,26 @@
+{
+  "appId": "org.melorimusic.app",
+  "appName": "Melori Music",
+  "webDir": "www",
+  "server": {
+    "url": "https://melorimusic.org",
+    "cleartext": false,
+    "allowNavigation": [
+      "melorimusic.org",
+      "*.melorimusic.org",
+      "*.supabase.co",
+      "js.stripe.com",
+      "hooks.stripe.com",
+      "checkout.stripe.com",
+      "accounts.google.com",
+      "*.livekit.cloud",
+      "*.agora.io",
+      "*.pubnub.com"
+    ]
+  },
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#111111",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

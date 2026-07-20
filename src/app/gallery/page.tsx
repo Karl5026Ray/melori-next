@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Camera, Lock, Download, ShoppingBag } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import ManageGalleriesLink from "./ManageGalleriesLink";
 
 export const dynamic = "force-dynamic";
 
@@ -78,16 +79,19 @@ export default async function GalleryIndexPage() {
   return (
     <main className="min-h-screen bg-brand-background text-text-primary">
       <section className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-16">
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
-            <Camera className="h-6 w-6" />
-          </span>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Gallery</h1>
-            <p className="text-sm text-text-secondary">
-              Photography by Melori Music
-            </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
+              <Camera className="h-6 w-6" />
+            </span>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Gallery</h1>
+              <p className="text-sm text-text-secondary">
+                Photography by Melori Music
+              </p>
+            </div>
           </div>
+          <ManageGalleriesLink />
         </div>
 
         <p className="mt-6 max-w-2xl text-text-secondary">

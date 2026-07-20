@@ -242,6 +242,13 @@ export default function StudioPage() {
                 {tab.label}
               </button>
             ))}
+            <Link
+              href="/studio/galleries"
+              className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <span>{"\uD83D\uDCF7"}</span>
+              Galleries
+            </Link>
           </nav>
         </div>
       </div>

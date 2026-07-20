@@ -114,7 +114,18 @@ jobs:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
           mkdir -p "$RUNNER_TEMP/asc"
-          echo "$KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_${KEY_ID}.p8"
+          KEY_FILE="$RUNNER_TEMP/asc/AuthKey_${KEY_ID}.p8"
+          # The secret may be stored either as single-line base64 of the .p8
+          # or as the raw PEM text. Try base64-decode first; if the result is
+          # not a valid key, fall back to writing the raw secret contents.
+          if printf '%s' "$KEY_P8" | base64 --decode > "$KEY_FILE" 2>/dev/null && openssl pkey -in "$KEY_FILE" -noout 2>/dev/null; then
+            echo "Wrote API key from base64 secret"
+          else
+            printf '%s\n' "$KEY_P8" > "$KEY_FILE"
+            echo "Wrote API key from raw secret"
+          fi
+          # Sanity check
+          openssl pkey -in "$KEY_FILE" -noout && echo "API key parsed OK" || (echo "API key INVALID" && exit 1)
 
       - name: Build & upload with Fastlane
         env:

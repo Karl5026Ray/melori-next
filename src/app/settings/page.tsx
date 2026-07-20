@@ -827,6 +827,21 @@ export default function SettingsPage() {
           >
             Sign out
           </button>
+
+          {/* Account deletion — required by Google Play / Apple. Links to the
+              public /account/delete page which explains what is removed and
+              provides the in-app delete + email fallback. */}
+          <div className="mt-6 pt-6 border-t border-white/[0.08]">
+            <p className="text-xs uppercase tracking-wide text-[#888] mb-2">
+              Danger zone
+            </p>
+            <Link
+              href="/account/delete"
+              className="inline-block px-5 py-2.5 rounded-full bg-red-500/[0.06] border border-red-500/20 text-red-300 text-sm font-medium hover:bg-red-500/15 transition"
+            >
+              Delete account
+            </Link>
+          </div>
         </section>
       </div>
     </div>

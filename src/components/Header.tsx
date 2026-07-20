@@ -19,9 +19,14 @@ type NavGroup = { label: string; items: NavItem[] };
 // Studio" is in the account menu for artist/admin accounts.
 const navGroups: NavGroup[] = [];
 
-// Single standalone link — the one action worth surfacing in the hamburger.
+// Standalone links surfaced in the hamburger. "Become a Member" is the one
+// high-intent action for new visitors; "Photography" is a light-touch second
+// entry point (mirrors the desktop nav link above) so mobile visitors have a
+// path to /photography from the hamburger too, without duplicating the full
+// M-menu "Photo" category.
 const standaloneLinks: NavItem[] = [
   { label: "Become a Member", href: "/membership" },
+  { label: "Photography", href: "/photography" },
 ];
 
 export default function Header() {
@@ -340,6 +345,13 @@ export default function Header() {
               </Link>
             </>
           )}
+
+          <Link
+            href="/photography"
+            className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+          >
+            Photography
+          </Link>
 
           <Link
             href="/donate"

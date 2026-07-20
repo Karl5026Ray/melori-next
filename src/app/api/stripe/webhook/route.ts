@@ -71,6 +71,8 @@ export async function POST(req: NextRequest) {
         await fulfillGalleryPurchase(session);
       } else if (source === "melorimusic.org/artist-purchase") {
         await fulfillMusicPurchase(session);
+      } else if (session.metadata?.type === "photo_deposit") {
+        await fulfillPhotoDeposit(session);
       }
     }
   } catch (err) {
@@ -272,5 +274,46 @@ async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
   if (insErr) {
     if (insErr.code === "23505") return; // benign race
     throw new Error(`music purchase insert failed: ${insErr.message}`);
+  }
+}
+
+// Photography deposit fulfillment — Phase 4. Marks the booking's deposit as
+// paid and confirms it. Keyed by metadata.type === 'photo_deposit' (set at
+// checkout in /api/booking/create) rather than the `source` tag the other
+// branches use, since this checkout isn't tied to a single storefront
+// "source" the way gallery/store/music purchases are. Idempotent: a booking
+// already marked deposit_paid is left alone on a duplicate delivery.
+async function fulfillPhotoDeposit(session: Stripe.Checkout.Session) {
+  const supabase = createServiceClient();
+  const bookingId = session.metadata?.bookingId;
+  if (!bookingId) {
+    console.error("stripe/webhook photo_deposit missing bookingId metadata");
+    return;
+  }
+
+  const { data: booking, error: loadErr } = await supabase
+    .from("photo_bookings")
+    .select("id, deposit_paid, status")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (loadErr || !booking) {
+    console.error(`stripe/webhook photo_deposit booking not found: ${bookingId}`);
+    return;
+  }
+  if (booking.deposit_paid) return; // already fulfilled — duplicate delivery
+
+  const { error: updateErr } = await supabase
+    .from("photo_bookings")
+    .update({
+      deposit_paid: true,
+      status: "confirmed",
+      stripe_session_id: session.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", bookingId);
+
+  if (updateErr) {
+    throw new Error(`photo_deposit booking update failed: ${updateErr.message}`);
   }
 }

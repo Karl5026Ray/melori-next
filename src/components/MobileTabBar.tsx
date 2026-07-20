@@ -461,15 +461,15 @@ export default function MobileTabBar() {
             className="flex flex-1 flex-col items-center justify-center gap-0.5"
           >
             <span
-              className={`-mt-5 flex h-14 w-14 items-center justify-center rounded-full border-4 border-brand-surface bg-gradient-to-br from-brand-primary to-brand-accent shadow-lg transition-transform ${
+              className={`-mt-6 flex h-16 w-16 items-center justify-center rounded-full border-4 border-brand-surface bg-gradient-to-br from-brand-primary to-brand-accent shadow-lg transition-transform ${
                 launcherOpen ? "scale-95" : "hover:scale-105"
               }`}
             >
               {launcherOpen ? (
-                <X className="h-6 w-6 text-white" />
+                <X className="h-7 w-7 text-white" />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src="/logo/logo.png" alt="Menu" className="h-8 w-8 object-contain" />
+                <img src="/logo/logo.png" alt="Menu" className="h-10 w-10 object-contain" />
               )}
             </span>
             <span className="text-[10px] font-medium text-text-secondary">Menu</span>

@@ -11,6 +11,8 @@ APP_IDENTIFIER = "org.melorimusic.app"
 XCODE_PROJECT  = "./ios/App/App.xcodeproj"
 XCODE_WORKSPACE = "./ios/App/App.xcworkspace"
 SCHEME = "App"
+TEAM_ID = "ZDPS766DHY"
+PROFILE_NAME = "Melori Music App Store"
 
 platform :ios do
   desc "Build and upload a signed build to App Store Connect / TestFlight"
@@ -36,11 +38,16 @@ platform :ios do
     )
 
     # Force manual signing with the imported distribution cert + profile.
+    # team_id + profile_name are required so Xcode can resolve the profile
+    # during the archive step (otherwise: "App requires a provisioning profile").
     update_code_signing_settings(
       use_automatic_signing: false,
       path: XCODE_PROJECT,
+      team_id: TEAM_ID,
+      targets: ["App"],
       bundle_identifier: APP_IDENTIFIER,
-      code_sign_identity: "Apple Distribution"
+      code_sign_identity: "Apple Distribution",
+      profile_name: PROFILE_NAME
     )
 
     # Build the signed .ipa. CocoaPods creates the workspace; prefer it if present.
@@ -52,9 +59,12 @@ platform :ios do
       output_directory: "./ios/App/build",
       output_name: "MeloriMusic.ipa",
       clean: true,
+      export_team_id: TEAM_ID,
       export_options: {
+        teamID: TEAM_ID,
+        method: "app-store",
         provisioningProfiles: {
-          APP_IDENTIFIER => "Melori Music App Store"
+          APP_IDENTIFIER => PROFILE_NAME
         },
         signingStyle: "manual"
       }

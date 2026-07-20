@@ -27,6 +27,32 @@ platform :ios do
 
     build_number = ENV["BUILD_NUMBER"] || "1"
 
+    # ------------------------------------------------------------------
+    # Signing: let Fastlane create/fetch a VALID distribution certificate
+    # and App Store provisioning profile via the App Store Connect API key.
+    # This avoids relying on a manually-created cert that Xcode can reject
+    # as "not valid for code signing".
+    # ------------------------------------------------------------------
+
+    # Create or download a distribution certificate into the default keychain.
+    get_certificates(
+      type: "distribution",
+      api_key: api_key,
+      output_path: "./ios/App/certs"
+    )
+
+    # Create or fetch the App Store provisioning profile for this app id.
+    get_provisioning_profile(
+      app_identifier: APP_IDENTIFIER,
+      api_key: api_key,
+      developer_id: false,
+      adhoc: false,
+      provisioning_name: PROFILE_NAME,
+      output_path: "./ios/App/profiles",
+      filename: "melori_appstore.mobileprovision"
+    )
+    profile_name = lane_context[SharedValues::SIGH_NAME] || PROFILE_NAME
+
     # Set version (1.0) and the build number on the generated Xcode project.
     increment_version_number(
       version_number: "1.0",
@@ -37,9 +63,7 @@ platform :ios do
       xcodeproj: XCODE_PROJECT
     )
 
-    # Force manual signing with the imported distribution cert + profile.
-    # team_id + profile_name are required so Xcode can resolve the profile
-    # during the archive step (otherwise: "App requires a provisioning profile").
+    # Manual signing pointed at the freshly-fetched cert + profile.
     update_code_signing_settings(
       use_automatic_signing: false,
       path: XCODE_PROJECT,
@@ -47,7 +71,7 @@ platform :ios do
       targets: ["App"],
       bundle_identifier: APP_IDENTIFIER,
       code_sign_identity: "Apple Distribution",
-      profile_name: PROFILE_NAME
+      profile_name: profile_name
     )
 
     # Build the signed .ipa. CocoaPods creates the workspace; prefer it if present.
@@ -64,7 +88,7 @@ platform :ios do
         teamID: TEAM_ID,
         method: "app-store",
         provisioningProfiles: {
-          APP_IDENTIFIER => PROFILE_NAME
+          APP_IDENTIFIER => profile_name
         },
         signingStyle: "manual"
       }

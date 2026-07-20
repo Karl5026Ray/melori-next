@@ -45,6 +45,12 @@ const CSP_REPORT_ONLY = [
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+  // Violation reporting. `report-uri` is the widely-supported legacy directive;
+  // `report-to` is the modern Reporting API name (paired with the
+  // Reporting-Endpoints header below). Both point at our collector route, which
+  // stores reports in public.csp_reports for review before we enforce.
+  "report-uri /api/csp-report",
+  "report-to csp-endpoint",
 ].join("; ");
 
 // Baseline security headers applied to every route. The CSP above is attached
@@ -54,6 +60,10 @@ const SECURITY_HEADERS = [
   // Non-enforcing CSP: report violations, block nothing. Flip to the enforcing
   // header name once the reports are clean.
   { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
+  // Names the modern Reporting API endpoint referenced by `report-to` above.
+  // Browsers that support the Reporting API POST batched violation reports
+  // (application/reports+json) to this URL; older browsers use `report-uri`.
+  { key: "Reporting-Endpoints", value: 'csp-endpoint="/api/csp-report"' },
   // Force HTTPS for a year across the apex + subdomains once the browser has
   // seen this header. `preload` is intentionally omitted until we're sure we
   // want to submit to the HSTS preload list.

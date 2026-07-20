@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   // Caller must have opted into Connect (have a dating profile).
   const { data: mine } = await supabase
     .from("dating_profiles")
-    .select("user_id, interested_in, age_min, age_max")
+    .select("user_id, gender, interested_in, age_min, age_max")
     .eq("user_id", me)
     .maybeSingle();
   if (!mine) {
@@ -54,23 +54,50 @@ export async function GET(req: NextRequest) {
     excluded.add(b.blocked_id as string);
   }
 
-  // Pull active candidates joined to their profile card fields.
+  // Pull active candidates joined to their profile card fields. We also read
+  // each candidate's `interested_in` so we can enforce MUTUAL gender matching
+  // below (never selected out to the client — used only for filtering).
   const { data: rows, error } = await supabase
     .from("dating_profiles")
     .select(
-      `user_id, headline, birthdate, gender, city, photos, videos, prompts,
+      `user_id, headline, birthdate, gender, interested_in, city, photos, videos, prompts,
        profile:profiles!dating_profiles_user_id_fkey(
          id, display_name, username, avatar_url, verified, role, bio
        )`,
     )
     .eq("is_active", true)
-    .limit(limit + excluded.size + 20);
+    .limit(limit + excluded.size + 200);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Gender preference filtering (mutual + bidirectional):
+  //   - I only see candidates whose gender is in MY `interested_in`, so a man
+  //     seeking women sees women and a woman seeking men sees men.
+  //   - The candidate must also be interested in MY gender, so I never surface
+  //     to someone who isn't looking for me. This is what keeps women shown to
+  //     men and men shown to women.
+  // A missing/empty `interested_in` on either side is treated as "open to all"
+  // so legacy profiles without a stated preference aren't silently hidden.
+  const myGender = (mine.gender as string | null) ?? null;
+  const myInterest = Array.isArray(mine.interested_in)
+    ? (mine.interested_in as string[])
+    : [];
+  const genderMatch = (candGender: string | null, candInterest: unknown) => {
+    const ci = Array.isArray(candInterest) ? (candInterest as string[]) : [];
+    // Do I want this candidate's gender?
+    const iWantThem =
+      myInterest.length === 0 || (candGender != null && myInterest.includes(candGender));
+    // Does this candidate want my gender?
+    const theyWantMe =
+      ci.length === 0 || (myGender != null && ci.includes(myGender));
+    return iWantThem && theyWantMe;
+  };
+
   const candidates = (rows ?? []).filter(
-    (r) => !excluded.has(r.user_id as string),
+    (r) =>
+      !excluded.has(r.user_id as string) &&
+      genderMatch(r.gender as string | null, r.interested_in),
   );
 
   // Score each candidate (music-taste + prefs) via the DB function.

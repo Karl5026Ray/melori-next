@@ -15,13 +15,22 @@ import { supabase } from "@/lib/supabase";
 
 const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
 
-type Tier = "free" | "superfan" | "artist";
+type Tier = "free" | "superfan" | "artist" | "snappd";
 
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
   { id: "free", name: "Free Fan", price: "$0", blurb: "Stream music, join the community." },
   { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Early access, exclusives, HD audio." },
   { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 100%." },
+  { id: "snappd", name: "Snappd", price: "$14.99/mo", blurb: "Photographer membership: profile, galleries, tethering, $1.99 instant prints (keep 80%)." },
 ];
+
+// Snappd is sold through its own live Stripe Payment Link, whose completion
+// redirects to /welcome?tier=snappd to auto-provision the photographer account
+// and grant the studio role. Sending the buyer straight here (rather than via
+// /membership) makes signup one click. Public hosted-checkout URL — safe to
+// ship to the client.
+const SNAPPD_PAYMENT_LINK =
+  "https://buy.stripe.com/cNiaER1gQgKTbVfexI7Zu0b";
 
 function RegisterInner() {
   const router = useRouter();
@@ -36,7 +45,11 @@ function RegisterInner() {
   // menu). Falls back to "free" for any unknown value.
   const tierParam = params.get("tier");
   const initialTier: Tier =
-    tierParam === "artist" || tierParam === "superfan" ? tierParam : "free";
+    tierParam === "artist" ||
+    tierParam === "superfan" ||
+    tierParam === "snappd"
+      ? tierParam
+      : "free";
   const [tier, setTier] = useState<Tier>(initialTier);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,8 +111,17 @@ function RegisterInner() {
     setError("");
     setNotice("");
 
-    // Paid tiers go through Stripe — send the user to /membership where the
-    // live Payment Links start Checkout → /welcome grants the role after pay.
+    // Snappd goes straight to its own live Payment Link (hosted Stripe
+    // Checkout). On completion Stripe redirects to /welcome?tier=snappd, which
+    // auto-provisions the photographer account + studio role — no separate
+    // signup form step needed here.
+    if (tier === "snappd") {
+      window.location.href = SNAPPD_PAYMENT_LINK;
+      return;
+    }
+
+    // Other paid tiers go through Stripe — send the user to /membership where
+    // the live Payment Links start Checkout → /welcome grants the role after pay.
     if (tier !== "free") {
       router.push("/membership");
       return;
@@ -241,19 +263,23 @@ function RegisterInner() {
         {paid ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center">
             <p className="text-sm text-[#bbb]">
-              {tier === "artist" ? "Artist" : "Superfan"} membership is set up
-              through secure Stripe checkout. After payment you&apos;ll finish
-              creating your account.
+              {tier === "artist"
+                ? "Artist"
+                : tier === "snappd"
+                  ? "Snappd photographer"
+                  : "Superfan"}{" "}
+              membership is set up through secure Stripe checkout. After payment
+              you&apos;ll finish creating your account.
             </p>
-            {tier === "artist" && (
+            {(tier === "artist" || tier === "snappd") && (
   <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
     <p className="text-sm font-medium text-[#f0d99c]">
       After you join, set up payouts to get paid
     </p>
     <p className="mt-1 text-xs text-[#888]">
-      Artists keep 100% of every sale (only Stripe&apos;s processing fee is deducted). Once your account is created,
-      head to Artist Studio &rarr; Payouts to connect Stripe. Have these
-      ready:
+      {tier === "snappd"
+        ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"
+        : "Artists keep 100% of every sale (only Stripe's processing fee is deducted). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"}
     </p>
     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
       <li>A government-issued photo ID to verify your identity.</li>
@@ -269,7 +295,11 @@ function RegisterInner() {
 )}
             <button
               type="button"
-              onClick={() => router.push("/membership")}
+              onClick={() =>
+                tier === "snappd"
+                  ? (window.location.href = SNAPPD_PAYMENT_LINK)
+                  : router.push("/membership")
+              }
               className="mt-4 w-full py-3 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm"
             >
               Continue to checkout

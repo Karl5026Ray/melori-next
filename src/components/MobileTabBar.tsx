@@ -39,7 +39,7 @@ import {
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
  *                          Waves, Connect
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
- *         • Signup       — Free, Artist, Superfan, Photographer (coming soon)
+ *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -207,7 +207,7 @@ export default function MobileTabBar() {
         { label: "Free", href: "/register?tier=free", icon: <UserIcon className="h-5 w-5" />, desc: "Free Fan" },
         { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
         { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
-        { label: "Photographer", href: "#", icon: <Camera className="h-5 w-5" />, desc: "Coming soon", soon: true },
+        { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer — $14.99/mo" },
       ],
     },
     {

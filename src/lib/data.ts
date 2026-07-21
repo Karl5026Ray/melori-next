@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import type { Artist, Release, Track } from "@/types";
+import type { Artist, Release, StoreProduct, Track } from "@/types";
 
 // Server-side data access. These reuse the same Supabase admin client as the
 // API routes to avoid an HTTP round-trip. Never import this into a client
@@ -70,6 +70,24 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
       genre: genre?.name ?? null,
     };
   });
+}
+
+// Store products for the homepage store strip. Featured items surface first,
+// then most-recently added, so the homepage always leads with the products
+// Karl has chosen to promote. Failures degrade to an empty list so a store
+// outage never takes down the homepage.
+export async function getStoreProducts(limit = 8): Promise<StoreProduct[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("store_products")
+    .select("*")
+    .eq("is_active", true)
+    .order("is_featured", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data as StoreProduct[]) ?? [];
 }
 
 export async function getArtists(): Promise<Artist[]> {

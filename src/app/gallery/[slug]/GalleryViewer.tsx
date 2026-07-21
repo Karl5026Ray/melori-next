@@ -157,7 +157,7 @@ export default function GalleryViewer({
                           <ShoppingBag className="h-3.5 w-3.5" />
                           {buyingId === img.id
                             ? "…"
-                            : `Buy ${formatPrice(img.priceCents)}`}
+                            : `Instant ${formatPrice(img.priceCents)}`}
                         </button>
                       ) : allowDownloads ? (
                         <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
@@ -242,7 +242,7 @@ export default function GalleryViewer({
                   <ShoppingBag className="h-4 w-4" />
                   {buyingId === active.id
                     ? "Starting checkout…"
-                    : `Buy — ${formatPrice(active.priceCents)}`}
+                    : `Snappd instant — ${formatPrice(active.priceCents)}`}
                 </button>
               ) : null}
             </div>

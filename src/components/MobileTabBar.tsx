@@ -98,6 +98,16 @@ export default function MobileTabBar() {
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [concertSoon, setConcertSoon] = useState(false);
 
+  // MM Faces live rooms are fullscreen takeovers with their own vertical
+  // control rail (mic/cam/end/heart) anchored to the bottom-right. The mobile
+  // tab bar previously sat over the bottom of the stage, eating space needed
+  // for the composer and covering the End Live button on some devices. We
+  // suppress rendering on any live-room route so the stage runs edge-to-edge.
+  // Computed here so subsequent hooks still run in the same order every
+  // render (rules-of-hooks) — the actual early-return happens below.
+  const isLiveRoomRoute =
+    !!pathname && /^\/social\/live\/[^/]+/.test(pathname);
+
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -233,6 +243,9 @@ export default function MobileTabBar() {
   // Two tabs, then the center launcher, then two tabs.
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
+
+  // Suppress the tab bar entirely on MM Faces live-room routes (see above).
+  if (isLiveRoomRoute) return null;
 
   return (
     <>

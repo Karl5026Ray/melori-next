@@ -145,11 +145,55 @@ export default function LiveRoom({
   const [audience, setAudience] = useState<
     { user_id: string; name: string; avatar: string | null }[]
   >([]);
-  const [showRequests, setShowRequests] = useState(false);
+  // Only one right-side panel may be open at a time (Invite / Guests / Roster).
+  // Previously each had its own `showX` flag and they all rendered at the same
+  // `right-4 top-16` slot — so opening two stacked them on top of each other.
+  // We now derive individual show-flags from a single `activePanel` value so
+  // opening one automatically closes the others.
+  type ActivePanel = "invite" | "requests" | "roster" | null;
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const showRequests = activePanel === "requests";
+  const showRoster = activePanel === "roster";
+  const showInvite = activePanel === "invite";
+  const setShowRequests = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "requests";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "requests" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
+  const setShowRoster = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "roster";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "roster" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
+  const setShowInvite = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "invite";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "invite" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
   // Guests with an in-flight promote (invite/approve) call, for pending UI.
   const [pending, setPending] = useState<Set<string>>(new Set());
   // Tile arrangement (local view only). Starts as the equal auto-grid.
   const [layout, setLayout] = useState<FacesLayout>("grid");
+  // Composer-focus state — comments render as translucent floating bubbles
+  // over the video and the composer is a slim pill; when the user taps it,
+  // it expands to the full RoomChat composer. Auto-collapses on blur so it
+  // never sits over guest faces while nobody is typing.
+  const [chatExpanded, setChatExpanded] = useState(false);
   // In spotlight view, which tile the viewer has tapped to feature big. null =
   // fall back to the host. Local-only view preference.
   const [featuredOverride, setFeaturedOverride] = useState<string | null>(null);
@@ -164,12 +208,12 @@ export default function LiveRoom({
   const [roster, setRoster] = useState<
     { user_id: string; name: string; avatar: string | null; role: string; has_raised_hand: boolean }[]
   >([]);
-  const [showRoster, setShowRoster] = useState(false);
 
-  // Invite-followers panel (host only). Distinct from the Guests panel above:
-  // this invites people the host FOLLOWS who are NOT yet in the room, via an
-  // in-app live invite. The Guests panel promotes people already present.
-  const [showInvite, setShowInvite] = useState(false);
+
+  // Invite-followers panel state (host only). Distinct from the Guests panel:
+  // this invites people the host FOLLOWS who are NOT yet in the room. The
+  // `showInvite` open-flag itself lives in `activePanel` above so all three
+  // right-side panels are mutually exclusive.
   const [following, setFollowing] = useState<
     { id: string; name: string; avatar: string | null }[]
   >([]);
@@ -535,6 +579,20 @@ export default function LiveRoom({
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setError(data?.error ?? "Could not invite that guest.");
+        } else {
+          // Optimistic: drop the just-approved guest from the local requests
+          // list so the panel fades to only the guests still waiting. If they
+          // were the last one, close the panel entirely so it stops covering
+          // the stage. Realtime + poll will reconcile authoritatively.
+          setRequests((prev) => {
+            const nextReqs = prev.filter((r) => r.user_id !== guestId);
+            if (nextReqs.length === 0 && prev.length > 0) {
+              // Defer the close so we don't setState during another setState.
+              queueMicrotask(() => setShowRequests(false));
+            }
+            return nextReqs;
+          });
+          setAudience((prev) => prev.filter((a) => a.user_id !== guestId));
         }
       } catch {
         setError("Network error inviting that guest.");
@@ -846,9 +904,9 @@ export default function LiveRoom({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 to-transparent" />
 
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-full bg-black/40 px-3 py-1.5 backdrop-blur">
+      <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
             {hostAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
@@ -857,17 +915,23 @@ export default function LiveRoom({
                 {hostName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="max-w-[9rem] truncate text-sm font-semibold text-white">{hostName}</span>
+            <span className="max-w-[8rem] truncate text-sm font-semibold leading-tight text-white sm:max-w-[10rem]">
+              {hostName}
+            </span>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-primary px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-primary px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-wide text-white sm:px-2.5 sm:text-xs">
             <Radio className="h-3 w-3" />
             Live
           </span>
           {!isSolo && (
-            <span className="hidden rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium text-white backdrop-blur sm:inline">
+            <span className="hidden shrink-0 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium leading-none text-white backdrop-blur sm:inline">
               {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
             </span>
           )}
+          {/* Title inline on tablet/desktop — single truncated line, no wrap. */}
+          <span className="hidden min-w-0 truncate text-sm font-medium text-white/90 drop-shadow sm:inline">
+            {title}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -912,9 +976,15 @@ export default function LiveRoom({
         </div>
       </div>
 
-      {/* Title */}
-      <div className="absolute left-4 top-16 max-w-[70%]">
-        <p className="truncate text-sm font-medium text-white/90 drop-shadow">{title}</p>
+      {/* Title — mobile only. On sm+ it's rendered inline in the top bar
+          above so it never collides with the right-side panels. On mobile
+          we keep the previous placement but constrain width and cap it to a
+          single line so the guests panel that opens at `top-16` can't
+          overlap the title. */}
+      <div className="absolute left-3 top-14 max-w-[62%] pr-2 sm:hidden">
+        <p className="truncate text-[13px] font-medium leading-tight text-white/90 drop-shadow">
+          {title}
+        </p>
       </div>
 
       {/* Invite-followers panel (host) — bring people who FOLLOW the host into
@@ -1161,17 +1231,47 @@ export default function LiveRoom({
         </button>
       )}
 
-      {/* Comment stream — shared RoomChat (auto-scroll, new-message pill,
-          grouping, sticky composer). Fixed-height floating shell over the video
-          so the internal scroll + composer behave. Orange accent for Faces. */}
-      <div className="absolute bottom-24 left-0 z-10 flex h-[42%] w-full max-w-sm flex-col overflow-hidden pl-4 pr-24 md:bottom-28 md:pr-4">
-        <div className="faces-comment-shell flex min-h-0 flex-1 flex-col">
+      {/* Comment stream — transparent floating bubbles over the video, no card
+          chrome. The list at the top fades into video via a mask (older
+          messages softly disappear rather than sitting under an opaque box)
+          and the composer collapses to a slim pill when not focused so it
+          never covers guests. Anchored bottom-left, narrower than before and
+          well clear of the right-side control rail. */}
+      <div
+        className={`faces-comment-shell pointer-events-none absolute left-0 z-10 flex w-[68%] max-w-sm flex-col overflow-hidden pl-3 transition-all duration-200 md:w-96 ${
+          chatExpanded ? "h-[46%]" : "h-[38%]"
+        }`}
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom) + 0.75rem)",
+          pointerEvents: "none",
+        }}
+      >
+        {/* Re-enable pointer events only inside — the outer wrapper stays
+            click-through so viewers can still tap tiles behind the chat. */}
+        <div
+          className={`faces-comment-inner pointer-events-auto flex min-h-0 flex-1 flex-col ${
+            chatExpanded ? "is-expanded" : "is-collapsed"
+          }`}
+          onFocusCapture={() => setChatExpanded(true)}
+          onBlurCapture={(e) => {
+            // Only collapse if focus is leaving the whole chat, not moving
+            // between child inputs / emoji picker.
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setChatExpanded(false);
+            }
+          }}
+        >
           <RoomChat spaceId={spaceId} accent="orange" className="flex-1" />
         </div>
       </div>
 
-      {/* Reaction hearts — rise just LEFT of the right-side control rail. */}
-      <div className="pointer-events-none absolute bottom-40 right-20 h-56 w-20 md:bottom-28">
+      {/* Reaction hearts — rise just LEFT of the right-side control rail.
+          Anchored to the same safe-area bottom as the rail so it stays
+          aligned when the tab bar is hidden. */}
+      <div
+        className="pointer-events-none absolute right-20 h-56 w-20"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 4rem)" }}
+      >
         {hearts.map((h) => (
           <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
             ❤️
@@ -1180,17 +1280,16 @@ export default function LiveRoom({
       </div>
 
       {/* Broadcast controls — VERTICAL RIGHT-SIDE RAIL.
-          The old bottom row sat UNDER the mobile tab bar (fixed, z-[70]) and
-          behind its center "M" launcher, so camera/mic/flip/End Live/heart were
-          covered and untappable on a live phone. They now live in a rail on the
-          RIGHT edge (opposite the left hamburger), anchored ABOVE the tab bar +
-          M button and clear of the bottom-left chat, honoring iOS safe areas.
-          Applies to all three modes (solo/duo/group). */}
+          The mobile tab bar is now suppressed on live-room routes (see
+          MobileTabBar.tsx), so the rail no longer has to sit "above" the
+          fixed 4rem tab bar — it drops to the true safe-area bottom edge,
+          giving the stage more usable vertical space and putting End Live /
+          mic / cam / heart right at the thumb. Applies to solo/duo/group. */}
       <div
         className="absolute z-30 flex flex-col items-center gap-3"
         style={{
           right: "calc(env(safe-area-inset-right) + 0.75rem)",
-          bottom: "calc(env(safe-area-inset-bottom) + 4.75rem)",
+          bottom: "calc(env(safe-area-inset-bottom) + 1rem)",
         }}
       >
         {/* Layout toggle — grid ⇄ spotlight. Only for multi-visitor rooms with

@@ -20,13 +20,12 @@ type NavGroup = { label: string; items: NavItem[] };
 const navGroups: NavGroup[] = [];
 
 // Standalone links surfaced in the hamburger. "Become a Member" is the one
-// high-intent action for new visitors; "Photography" is a light-touch second
-// entry point (mirrors the desktop nav link above) so mobile visitors have a
-// path to /photography from the hamburger too, without duplicating the full
-// M-menu "Photo" category.
+// high-intent action for new visitors. We deliberately do NOT repeat
+// "Photography" here — it already lives in the desktop top nav and in the full
+// M-menu "Photo" category, so listing it in the hamburger too was showing the
+// same thing twice (noticeable once you're a member).
 const standaloneLinks: NavItem[] = [
   { label: "Become a Member", href: "/membership" },
-  { label: "Photography", href: "/photography" },
 ];
 
 export default function Header() {
@@ -560,16 +559,19 @@ export default function Header() {
               );
             })}
 
-            {standaloneLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
-              >
-                {link.label}
-              </Link>
-            ))}
+            {standaloneLinks
+              // Don't show "Become a Member" to someone who's already a member.
+              .filter((link) => !(user && link.href === "/membership"))
+              .map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  {link.label}
+                </Link>
+              ))}
 
             <Link
               href="/donate"

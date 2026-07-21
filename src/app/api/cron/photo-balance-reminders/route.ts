@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getResend, MELORI_FROM, MELORI_REPLY_TO } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Client reminders repeat every 3 days until the balance is paid.
+const CLIENT_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const SITE_ORIGIN = "https://melorimusic.org";
 
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toLocaleString(undefined, {
@@ -151,12 +156,143 @@ async function handle(req: NextRequest) {
       .in("id", ids);
   }
 
+  // -------------------------------------------------------------------------
+  // Client-facing reminders: email the CLIENT directly, every 3 days, with a
+  // one-click Stripe pay link, until the balance is paid or booking cancelled.
+  // Independent of the owner digest above (own timestamp column), so the owner
+  // "remind once" behaviour is unaffected.
+  // -------------------------------------------------------------------------
+  const clientResult = await remindClients(supabase, resend);
+
   return NextResponse.json({
     ok: true,
     reminders: owed.length,
     emailsSent,
+    clientReminders: clientResult.sent,
   });
 }
+
+type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
+type ResendClient = ReturnType<typeof getResend>;
+
+async function remindClients(
+  supabase: SupabaseAdmin,
+  resend: ResendClient,
+): Promise<{ sent: number }> {
+  const cutoffIso = new Date(Date.now() - CLIENT_REMINDER_INTERVAL_MS).toISOString();
+
+  // Completed, unpaid bookings with a client email, that either have never
+  // been reminded or were last reminded > 3 days ago.
+  const { data: rows, error } = await supabase
+    .from("photo_bookings")
+    .select(
+      "id, photographer_id, client_name, client_email, starts_at, deposit_cents, balance_cents, balance_paid, status, client_balance_reminder_sent_at, photo_services(name, price_cents)",
+    )
+    .eq("status", "completed")
+    .eq("balance_paid", false)
+    .not("client_email", "is", null)
+    .or(`client_balance_reminder_sent_at.is.null,client_balance_reminder_sent_at.lt.${cutoffIso}`)
+    .order("starts_at", { ascending: true });
+
+  if (error) {
+    console.error("photo-balance-reminders client query failed", error.message);
+    return { sent: 0 };
+  }
+
+  const stripeSecret = process.env.STRIPE_SECRET_KEY;
+  const stripe = stripeSecret ? new Stripe(stripeSecret) : null;
+  let sent = 0;
+
+  for (const r of (rows ?? []) as ClientRow[]) {
+    const email = (r.client_email ?? "").trim();
+    if (!email) continue;
+    const svc = Array.isArray(r.photo_services) ? r.photo_services[0] : r.photo_services;
+    const price = Number.isInteger(svc?.price_cents) ? (svc?.price_cents as number) : 0;
+    const deposit = Number.isInteger(r.deposit_cents) ? (r.deposit_cents as number) : 0;
+    const balance = (r.balance_cents ?? 0) > 0 ? (r.balance_cents as number) : Math.max(price - deposit, 0);
+    if (balance <= 0) continue;
+
+    const serviceName = svc?.name ?? "Photography session";
+    const clientName = r.client_name ?? "there";
+
+    // Fresh Stripe checkout for the balance (webhook handles photo_balance).
+    let payUrl = `${SITE_ORIGIN}/pricing`;
+    if (stripe) {
+      try {
+        const session = await stripe.checkout.sessions.create({
+          mode: "payment",
+          payment_method_types: ["card"],
+          line_items: [
+            {
+              quantity: 1,
+              price_data: {
+                currency: "usd",
+                unit_amount: balance,
+                product_data: { name: `Balance \u2014 ${serviceName}` },
+              },
+            },
+          ],
+          customer_email: email,
+          success_url: `${SITE_ORIGIN}/book/success?bookingId=${r.id}&balance=1&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${SITE_ORIGIN}/pricing`,
+          metadata: {
+            type: "photo_balance",
+            bookingId: String(r.id),
+            photographer_id: String(r.photographer_id),
+          },
+        });
+        if (session.url) {
+          payUrl = session.url;
+          await supabase
+            .from("photo_bookings")
+            .update({ balance_cents: balance, balance_session_id: session.id })
+            .eq("id", r.id);
+        }
+      } catch (err) {
+        console.warn("client reminder stripe session failed", err);
+        // Skip this booking this run rather than sending a broken link.
+        continue;
+      }
+    } else {
+      // No Stripe configured — don't send a payment email with no link.
+      continue;
+    }
+
+    if (!resend) continue;
+    try {
+      await resend.emails.send({
+        from: MELORI_FROM,
+        to: [email],
+        replyTo: MELORI_REPLY_TO,
+        subject: `Balance due for your ${serviceName} \u2014 ${formatMoney(balance)}`,
+        html: `<p>Hi ${clientName},</p><p>This is a friendly reminder that the remaining balance for your <strong>${serviceName}</strong> with Karl Ray Photography is <strong>${formatMoney(balance)}</strong>.</p><p>You can pay securely in one click here:</p><p><a href="${payUrl}">Pay your balance (${formatMoney(balance)})</a></p><p>If you&apos;ve already arranged payment, please disregard this note. Reply to this email with any questions.</p><p>Thank you!<br/>\u2014 Karl Ray Photography</p>`,
+      });
+      await supabase
+        .from("photo_bookings")
+        .update({ client_balance_reminder_sent_at: new Date().toISOString() })
+        .eq("id", r.id);
+      sent += 1;
+    } catch (err) {
+      console.warn("client reminder email failed", err);
+      // Don't stamp — retry next run.
+    }
+  }
+
+  return { sent };
+}
+
+type ClientRow = {
+  id: string;
+  photographer_id: string;
+  client_name: string | null;
+  client_email: string | null;
+  starts_at: string | null;
+  deposit_cents: number | null;
+  balance_cents: number | null;
+  status: string;
+  client_balance_reminder_sent_at: string | null;
+  photo_services: { name?: string; price_cents?: number } | { name?: string; price_cents?: number }[] | null;
+};
 
 export const GET = handle;
 export const POST = handle;

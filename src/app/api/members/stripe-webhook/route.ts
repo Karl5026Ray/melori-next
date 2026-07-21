@@ -8,6 +8,15 @@ import {
   type Tier,
 } from "@/lib/membership-sync";
 import { ensureArtistRow } from "@/lib/artist";
+import { banAuthUser, unbanAuthUser } from "@/lib/account-lockout";
+
+// Hard login lockout for lapsed paid subscribers. When enabled, a subscription
+// that Stripe has finally canceled (AFTER its dunning/retry grace window)
+// results in the auth user being banned so they cannot sign in at all; a later
+// successful payment auto-unbans them. Gated behind an env flag so it can be
+// rolled back instantly without a deploy, and so it never affects tiers it
+// shouldn't. Defaults ON for the Snappd photography membership rollout.
+const LOCKOUT_ENABLED = process.env.SNAPPD_LOGIN_LOCKOUT !== "false";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -286,6 +295,29 @@ async function applySubscriptionState(
   // linked `artists` row so the dashboard/studio populate. Idempotent.
   if (update.role === "artist") {
     await ensureArtistRow(profile.id, {}, supabase);
+  }
+
+  // -------------------------------------------------------------------------
+  // Hard login lockout / reactivation.
+  //
+  // `profile.id` is the auth user id (shared UUID), so it is passed straight
+  // to the auth admin ban/unban call. Admins are NEVER banned.
+  //
+  // Ban ONLY when the subscription is finally canceled (clearOnCancel is set
+  // exactly for canceled / unpaid / incomplete_expired — NOT for the
+  // `past_due` grace state), so Stripe's retry window is always honored first.
+  //
+  // Unban whenever we apply a live, non-canceled state (a successful payment
+  // or renewal), which auto-reactivates a previously locked-out member.
+  //
+  // Both calls are idempotent + non-fatal: a failure is logged but never
+  // throws, so a transient auth-API blip can't turn into a webhook retry storm.
+  if (LOCKOUT_ENABLED && profile.role !== "admin") {
+    if (args.clearOnCancel) {
+      await banAuthUser(profile.id, supabase);
+    } else if (args.status === "active") {
+      await unbanAuthUser(profile.id, supabase);
+    }
   }
 }
 

@@ -10,7 +10,6 @@ import {
   MessagesSquare,
   User,
   LogOut,
-  Home,
   Plus,
   Sparkles,
   Heart,
@@ -75,13 +74,6 @@ export function Sidebar() {
               </Link>
             );
           })}
-          <Link
-            href="/"
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium text-sm text-text-secondary hover:bg-brand-surface hover:text-text-primary"
-          >
-            <Home className="w-5 h-5" />
-            Back to Melori
-          </Link>
         </nav>
       </div>
 

@@ -11,6 +11,7 @@ import {
   User,
   LogOut,
   Plus,
+  Swords,
   Sparkles,
   Heart,
 } from "lucide-react";
@@ -49,11 +50,27 @@ export function Sidebar() {
 
         <Link
           href="/social/live"
-          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-6 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-3 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
         >
           <Plus className="w-4 h-4" />
           Go Live
         </Link>
+
+        {/* Concert (coming soon) — teal, sits right under Go Live. This will
+           become the TikTok-style "battle mode" head-to-head live concert
+           feature. Disabled for now. */}
+        <button
+          type="button"
+          aria-disabled="true"
+          title="Concert — coming soon"
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-6 bg-teal-500/90 text-white opacity-80 cursor-not-allowed"
+        >
+          <Swords className="w-4 h-4" />
+          Concert
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+            Soon
+          </span>
+        </button>
 
         <nav className="space-y-1">
           {navItems.map((item) => {

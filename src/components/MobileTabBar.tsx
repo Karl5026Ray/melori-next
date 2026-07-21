@@ -26,6 +26,7 @@ import {
   MessageCircle,
   Users,
   ShoppingBag,
+  Swords,
 } from "lucide-react";
 
 /**
@@ -410,6 +411,24 @@ export default function MobileTabBar() {
                         Start a Space
                       </button>
                     </div>
+                  )}
+
+                  {/* Concert (coming soon) — teal, mirrors the desktop MM Social
+                     sidebar's Concert button (under Go Live). Future TikTok-style
+                     "battle mode" head-to-head live concerts. Disabled for now. */}
+                  {!activeCat && (
+                    <button
+                      type="button"
+                      aria-disabled="true"
+                      title="Concert — coming soon"
+                      className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-full bg-teal-500/90 px-4 py-3 text-sm font-bold text-white opacity-80"
+                    >
+                      <Swords className="h-4 w-4" />
+                      Concert
+                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        Coming soon
+                      </span>
+                    </button>
                   )}
                 </>
               );

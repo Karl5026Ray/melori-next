@@ -3,8 +3,9 @@ import Link from "next/link";
 import ReleaseCard from "@/components/ReleaseCard";
 import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
+import ProductCard from "@/app/store/ProductCard";
 import type { Metadata } from "next";
-import { getReleases } from "@/lib/data";
+import { getReleases, getStoreProducts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,10 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const releases = await getReleases().catch(() => []);
+  const [releases, storeProducts] = await Promise.all([
+    getReleases().catch(() => []),
+    getStoreProducts(8).catch(() => []),
+  ]);
   const meloriFavorites = releases.slice(0, 12);
 
   return (
@@ -67,6 +71,22 @@ An independent music platform where fans stream the full catalog for free and su
 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 {meloriFavorites.map((release) => (
 <ReleaseCard key={release.id} release={release} />
+))}
+</div>
+</section>
+)}
+
+{/* Melori Store — merch strip. Surfaces the store on the desktop main page
+   (it was previously reachable only through the mobile launcher / nav). */}
+{storeProducts.length > 0 && (
+<section className="max-w-6xl mx-auto px-6 pt-4 pb-12">
+<div className="mb-6 flex items-end justify-between">
+<h2 className="text-2xl font-bold">Melori Store</h2>
+<Link href="/store" className="text-sm font-semibold text-brand-primary hover:underline">Shop all</Link>
+</div>
+<div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+{storeProducts.map((product) => (
+<ProductCard key={product.id} product={product} />
 ))}
 </div>
 </section>

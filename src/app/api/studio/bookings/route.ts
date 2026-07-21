@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const { data: bookings, error } = await supabase
     .from("photo_bookings")
     .select(
-      "id, service_id, client_name, client_email, client_phone, starts_at, ends_at, status, notes, deposit_cents, deposit_paid, stripe_session_id, google_event_id, created_at, photo_services(name)",
+      "id, service_id, client_name, client_email, client_phone, starts_at, ends_at, status, notes, deposit_cents, deposit_paid, balance_cents, balance_paid, stripe_session_id, google_event_id, created_at, photo_services(name, price_cents)",
     )
     .eq("photographer_id", userId)
     .order("starts_at", { ascending: false });
@@ -43,6 +43,9 @@ export async function GET(req: NextRequest) {
       notes: b.notes,
       depositCents: b.deposit_cents,
       depositPaid: b.deposit_paid,
+      balanceCents: b.balance_cents ?? 0,
+      balancePaid: Boolean(b.balance_paid),
+      servicePriceCents: (service?.price_cents as number | undefined) ?? null,
       hasGoogleEvent: Boolean(b.google_event_id),
       createdAt: b.created_at,
     };

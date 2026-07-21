@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarCheck, CalendarClock, CheckCircle2, XCircle } from "lucide-react";
+import { CalendarCheck, CalendarClock, CheckCircle2, XCircle, DollarSign } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import type { BookingItem, BookingStatus } from "./types";
 
@@ -28,6 +28,10 @@ export default function BookingsList() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  // Per-booking balance UI state: last generated pay link + status message.
+  const [balanceInfo, setBalanceInfo] = useState<
+    Record<string, { url: string; emailed: boolean; amountCents: number }>
+  >({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +83,60 @@ export default function BookingsList() {
       setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update booking.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Default remaining balance shown on the button = service price - deposit,
+  // clamped at >= 0. Karl can override the amount in the prompt (tiered 321
+  // extra hours, extra wedding albums, etc.).
+  const defaultBalanceCents = (b: BookingItem): number => {
+    if (b.balanceCents > 0) return b.balanceCents;
+    if (b.servicePriceCents != null) {
+      return Math.max(b.servicePriceCents - b.depositCents, 0);
+    }
+    return 0;
+  };
+
+  const chargeBalance = async (b: BookingItem) => {
+    const suggested = defaultBalanceCents(b);
+    const entered = window.prompt(
+      `Charge the remaining balance for ${b.clientName}. Enter the amount in dollars (they'll be emailed a secure Stripe pay link):`,
+      (suggested / 100).toFixed(2),
+    );
+    if (entered == null) return; // cancelled
+    const dollars = Number(entered);
+    if (!Number.isFinite(dollars) || dollars <= 0) {
+      setError("Enter a valid dollar amount greater than 0.");
+      return;
+    }
+    const amountCents = Math.round(dollars * 100);
+    setBusyId(b.id);
+    setError(null);
+    try {
+      const res = await authFetch(`/api/studio/bookings/${b.id}/balance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountCents }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Could not create balance payment.");
+      setBalanceInfo((prev) => ({
+        ...prev,
+        [b.id]: {
+          url: body.checkoutUrl as string,
+          emailed: Boolean(body.emailed),
+          amountCents: Number(body.balanceCents) || amountCents,
+        },
+      }));
+      setBookings((prev) =>
+        prev.map((x) =>
+          x.id === b.id ? { ...x, balanceCents: Number(body.balanceCents) || amountCents } : x,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create balance payment.");
     } finally {
       setBusyId(null);
     }
@@ -161,6 +219,11 @@ export default function BookingsList() {
                         Deposit {formatPrice(b.depositCents)} · {b.depositPaid ? "paid" : "unpaid"}
                       </span>
                     )}
+                    {b.balanceCents > 0 && (
+                      <span className="text-[10px] text-text-secondary">
+                        Balance {formatPrice(b.balanceCents)} · {b.balancePaid ? "paid" : "unpaid"}
+                      </span>
+                    )}
                     {b.hasGoogleEvent && (
                       <span className="text-[10px] text-text-secondary">On calendar</span>
                     )}
@@ -177,6 +240,16 @@ export default function BookingsList() {
                     className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-400 disabled:opacity-50"
                   >
                     <CalendarCheck className="h-3.5 w-3.5" /> Confirm
+                  </button>
+                )}
+                {b.status !== "cancelled" && !b.balancePaid && (
+                  <button
+                    type="button"
+                    disabled={busyId === b.id}
+                    onClick={() => void chargeBalance(b)}
+                    className="flex items-center gap-1.5 rounded-full bg-brand-primary/10 border border-brand-primary/20 px-3 py-1.5 text-xs font-semibold text-brand-primary disabled:opacity-50"
+                  >
+                    <DollarSign className="h-3.5 w-3.5" /> Charge balance
                   </button>
                 )}
                 {(b.status === "pending" || b.status === "confirmed") && (
@@ -204,6 +277,22 @@ export default function BookingsList() {
                   </>
                 )}
               </div>
+
+              {balanceInfo[b.id] && (
+                <div className="mt-2 rounded-lg border border-brand-primary/20 bg-brand-primary/5 p-2.5 text-[11px] text-text-secondary">
+                  {balanceInfo[b.id].emailed
+                    ? `Balance link for ${formatPrice(balanceInfo[b.id].amountCents)} emailed to ${b.clientEmail}. `
+                    : `Balance link for ${formatPrice(balanceInfo[b.id].amountCents)} created (email not sent — copy the link below). `}
+                  <a
+                    href={balanceInfo[b.id].url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-primary underline break-all"
+                  >
+                    Open pay link
+                  </a>
+                </div>
+              )}
             </div>
           ))}
         </div>

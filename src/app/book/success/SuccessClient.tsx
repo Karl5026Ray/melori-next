@@ -11,6 +11,7 @@ import { CheckCircle2 } from "lucide-react";
 export default function SuccessClient() {
   const searchParams = useSearchParams();
   const bookingId = searchParams.get("bookingId");
+  const isBalance = searchParams.get("balance") === "1";
 
   return (
     <main className="min-h-screen bg-brand-background text-text-primary flex items-center justify-center px-4">
@@ -18,11 +19,13 @@ export default function SuccessClient() {
         <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
           <CheckCircle2 className="h-9 w-9" />
         </span>
-        <h1 className="mt-5 text-2xl font-bold">Booking received!</h1>
+        <h1 className="mt-5 text-2xl font-bold">
+          {isBalance ? "Payment received!" : "Booking received!"}
+        </h1>
         <p className="mt-2 text-sm text-text-secondary">
-          Thanks for booking with Karl Ray Photography. You&apos;ll receive a
-          confirmation email shortly with your session details. Reply to that
-          email with any questions.
+          {isBalance
+            ? "Thanks — your balance payment to Karl Ray Photography is complete. You'll receive a receipt by email. Reply to that email with any questions."
+            : "Thanks for booking with Karl Ray Photography. You'll receive a confirmation email shortly with your session details. Reply to that email with any questions."}
         </p>
         {bookingId && (
           <p className="mt-3 text-xs text-text-secondary">

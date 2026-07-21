@@ -28,6 +28,26 @@ const standaloneLinks: NavItem[] = [
   { label: "Become a Member", href: "/membership" },
 ];
 
+// Desktop top-bar dropdown menus. Karl's ask: surface the same apps that live
+// in the center "M" menu (MobileTabBar) as top-bar dropdowns on desktop —
+// Social, Radio, Photography, Profile. Radio/Profile are single destinations
+// (no sub-items) so they render as plain links; Social & Photography mirror
+// the M-menu categories as dropdowns. Kept in sync with MobileTabBar.
+const SOCIAL_ITEMS: NavItem[] = [
+  { label: "Melori Mirror", href: "/social/mirror" },
+  { label: "MM Faces", href: "/social/live" },
+  { label: "MM Spaces", href: "/social/spaces" },
+  { label: "Connect", href: "/social/connect" },
+  { label: "Messages", href: "/social/messages" },
+  { label: "Waves", href: "/social/waves" },
+];
+const PHOTO_ITEMS: NavItem[] = [
+  { label: "Photography", href: "/photography" },
+  { label: "Gallery", href: "/gallery" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "Book", href: "/book" },
+];
+
 export default function Header() {
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
@@ -345,11 +365,65 @@ export default function Header() {
             </>
           )}
 
+          {/* Top-bar app dropdowns (desktop) mirroring the center M menu:
+             Social ▾, Radio, Photography ▾, Profile. */}
+          {([
+            { key: "Social", items: SOCIAL_ITEMS },
+            { key: "Photography", items: PHOTO_ITEMS },
+          ] as const).map(({ key, items }) => {
+            const isOpen = openGroup === key;
+            return (
+              <div key={key} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroup((g) => (g === key ? null : key))}
+                  aria-expanded={isOpen}
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  {key === "Photography" ? "Photography" : key}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    className={`h-3.5 w-3.5 transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                    aria-hidden
+                  >
+                    <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+                  </svg>
+                </button>
+                {isOpen && (
+                  <div className="absolute left-0 mt-2 min-w-52 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
+                    {items.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpenGroup(null)}
+                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
           <Link
-            href="/photography"
+            href="/social/radio"
             className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
           >
-            Photography
+            Radio
+          </Link>
+
+          <Link
+            href={user ? "/social/profile" : "/social/auth"}
+            className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+          >
+            Profile
           </Link>
 
           <Link

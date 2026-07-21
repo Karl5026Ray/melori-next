@@ -206,14 +206,77 @@ a {
   100% { transform: translateY(-200px) scale(1.1) rotate(12deg); opacity: 0; }
 }
 /* Comment stream inside the live stage: transparent, no card chrome, light
-   text over video, and no fixed page layout — it floats over the stage. */
-.faces-comment-shell :is(section, form) { background: transparent !important; }
+   text over video, and no fixed page layout — it floats over the stage.
+   Individual messages read as small translucent bubbles over the video
+   instead of one big opaque box that covers guest faces. */
+.faces-comment-shell :is(section, form, div[class*="bg-melori"]) {
+  background: transparent !important;
+  border-color: transparent !important;
+}
 .faces-comment-shell { color: #fff; }
+.faces-comment-shell .faces-comment-inner {
+  /* Fade older messages softly into the video at the top edge — no hard
+     rectangle, no card. */
+  -webkit-mask-image: linear-gradient(to top, #000 65%, transparent);
+  mask-image: linear-gradient(to top, #000 65%, transparent);
+}
+
+/* Each comment row (avatar + name + text) becomes a translucent pill so it's
+   readable over any video without a big backdrop plate. Targets the <li>
+   rows that RoomChat renders. */
+.faces-comment-shell ul > li {
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 6px 10px 6px 8px !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.faces-comment-shell ul > li p,
+.faces-comment-shell ul > li span {
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.faces-comment-shell ul > li span[class*="text-melori-muted"] {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+/* Kill the day-divider background chip so it doesn't render as a floating
+   solid block over video; keep the label text with a light shadow. */
+.faces-comment-shell ul > li:has(> p.text-center) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 2px 0 !important;
+}
+
+/* Composer: slim pill by default. When the user taps the input the parent
+   toggles `is-expanded` and we relax the pill back into the full composer. */
 .faces-comment-shell input,
 .faces-comment-shell textarea {
-  background: rgba(0,0,0,0.4);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #fff !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 999px !important;
+}
+.faces-comment-inner.is-collapsed textarea {
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 6px 12px !important;
+  font-size: 13px;
+  overflow: hidden;
+}
+.faces-comment-inner.is-collapsed .faces-comment-shell,
+.faces-comment-inner.is-collapsed button[type="submit"] {
+  /* Shrink the send button to match the pill height. */
+  height: 34px !important;
+  width: 34px !important;
+}
+.faces-comment-inner.is-expanded textarea {
+  border-radius: 18px !important;
 }
 
 /* Mobile nav launcher bottom-sheet slide-up */

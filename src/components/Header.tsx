@@ -212,7 +212,7 @@ export default function Header() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             aria-controls="mobile-nav"
-            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary md:hidden"
           >
             <svg
               viewBox="0 0 24 24"
@@ -450,7 +450,7 @@ export default function Header() {
       <div
         onClick={() => setOpen(false)}
         aria-hidden
-        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 md:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -458,7 +458,7 @@ export default function Header() {
       <nav
         id="mobile-nav"
         aria-label="Main menu"
-        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out ${
+        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >

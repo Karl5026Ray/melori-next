@@ -212,7 +212,7 @@ export default function Header() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             aria-controls="mobile-nav"
-            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary md:hidden"
           >
             <svg
               viewBox="0 0 24 24"
@@ -231,13 +231,17 @@ export default function Header() {
             </svg>
           </button>
 
-          {/* Brand M — a plain Home link. Melori Mirror now lives in the
-             bottom-bar launcher (MobileTabBar), NOT on the brand mark. */}
+          {/* Brand M.
+             - Mobile: a plain Home link (the hamburger to its left opens the
+               drawer).
+             - Desktop: the hamburger is hidden, so the brand mark itself opens
+               the slide-in side drawer. Home stays reachable via the logo
+               inside the drawer header. */}
           <Link
             href="/"
             onClick={() => setOpen(false)}
             aria-label="Melori — Home"
-            className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
+            className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90 md:hidden"
           >
             <Image
               src="/logo/logo.png"
@@ -250,6 +254,23 @@ export default function Header() {
               MELORI MUSIC
             </span>
           </Link>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            aria-controls="mobile-nav"
+            className="hidden md:flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
+          >
+            <Image
+              src="/logo/logo.png"
+              alt="MELORI Music — open menu"
+              width={36}
+              height={36}
+              priority
+            />
+            <span className="font-bold tracking-wide">MELORI MUSIC</span>
+          </button>
         </div>
 
         {/* Desktop bar: single hamburger (below) drives ALL section nav on

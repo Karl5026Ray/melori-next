@@ -12,7 +12,7 @@ export async function GET() {
   const { data: services, error } = await supabase
     .from("photo_services")
     .select(
-      "id, name, description, duration_minutes, price_cents, deposit_cents, deposit_percent",
+      "id, name, description, duration_minutes, price_cents, deposit_cents, deposit_percent, contract_url",
     )
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
@@ -23,5 +23,11 @@ export async function GET() {
     return NextResponse.json({ error: "Could not load services" }, { status: 500 });
   }
 
-  return NextResponse.json({ services: services ?? [] });
+  // Expose only a boolean — never leak the private storage key to the client.
+  const mapped = (services ?? []).map((s) => {
+    const { contract_url, ...rest } = s as Record<string, unknown>;
+    return { ...rest, hasContract: Boolean(contract_url) };
+  });
+
+  return NextResponse.json({ services: mapped });
 }

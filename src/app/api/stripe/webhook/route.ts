@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
         await fulfillMusicPurchase(session);
       } else if (session.metadata?.type === "photo_deposit") {
         await fulfillPhotoDeposit(session);
+      } else if (session.metadata?.type === "photo_balance") {
+        await fulfillPhotoBalance(session);
       }
     }
   } catch (err) {
@@ -315,5 +317,44 @@ async function fulfillPhotoDeposit(session: Stripe.Checkout.Session) {
 
   if (updateErr) {
     throw new Error(`photo_deposit booking update failed: ${updateErr.message}`);
+  }
+}
+
+// Photography remaining-balance fulfillment. Marks the booking's balance as
+// paid. Keyed by metadata.type === 'photo_balance' (set in
+// /api/studio/bookings/[id]/balance). Idempotent: a booking already marked
+// balance_paid is left alone on a duplicate delivery.
+async function fulfillPhotoBalance(session: Stripe.Checkout.Session) {
+  const supabase = createServiceClient();
+  const bookingId = session.metadata?.bookingId;
+  if (!bookingId) {
+    console.error("stripe/webhook photo_balance missing bookingId metadata");
+    return;
+  }
+
+  const { data: booking, error: loadErr } = await supabase
+    .from("photo_bookings")
+    .select("id, balance_paid")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (loadErr || !booking) {
+    console.error(`stripe/webhook photo_balance booking not found: ${bookingId}`);
+    return;
+  }
+  if (booking.balance_paid) return; // already fulfilled — duplicate delivery
+
+  const { error: updateErr } = await supabase
+    .from("photo_bookings")
+    .update({
+      balance_paid: true,
+      balance_cents: session.amount_total ?? undefined,
+      balance_session_id: session.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", bookingId);
+
+  if (updateErr) {
+    throw new Error(`photo_balance booking update failed: ${updateErr.message}`);
   }
 }

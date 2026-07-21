@@ -1,8 +1,17 @@
-import { redirect } from "next/navigation";
+"use client";
 
-// /cart is an alias for the canonical store cart, which already drives the
-// one-off Stripe Checkout (mode: payment) against store_products / orders /
-// order_items. Aliasing avoids a duplicate parallel cart implementation.
+import { CartProvider } from "../store/CartProvider";
+import CartView from "../store/CartView";
+
+// Top-level /cart page. Renders the same canonical CartView as /store/cart,
+// wrapped in its own CartProvider. CartProvider is localStorage-backed
+// (melori_store_cart), so the cart contents stay in sync with the store no
+// matter which route the visitor lands on. Previously /cart merely redirected
+// to /store/cart; this gives the literal /cart path a real page.
 export default function CartPage() {
-  redirect("/store/cart");
+  return (
+    <CartProvider>
+      <CartView heading="Your cart" />
+    </CartProvider>
+  );
 }

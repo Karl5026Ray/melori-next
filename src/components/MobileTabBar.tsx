@@ -96,6 +96,7 @@ export default function MobileTabBar() {
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
+  const [concertSoon, setConcertSoon] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -400,35 +401,27 @@ export default function MobileTabBar() {
                         <Video className="h-4 w-4" />
                         Go Live
                       </button>
+                      {/* Concert — teal, sits next to Go Live in place of
+                         "Start a Space". Future TikTok-style "battle mode"
+                         head-to-head live concerts. Pressing it reveals a
+                         "Coming soon" notice for now. */}
                       <button
-                        onClick={() => {
-                          setLauncherOpen(false);
-                          router.push("/social/spaces/create");
-                        }}
-                        className="flex items-center justify-center gap-2 rounded-full border border-brand-primary px-4 py-3 text-sm font-bold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white"
+                        type="button"
+                        onClick={() => setConcertSoon(true)}
+                        className="flex items-center justify-center gap-2 rounded-full bg-teal-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-teal-400"
                       >
-                        <Radio className="h-4 w-4" />
-                        Start a Space
+                        <Swords className="h-4 w-4" />
+                        Concert
                       </button>
                     </div>
                   )}
 
-                  {/* Concert (coming soon) — teal, mirrors the desktop MM Social
-                     sidebar's Concert button (under Go Live). Future TikTok-style
-                     "battle mode" head-to-head live concerts. Disabled for now. */}
-                  {!activeCat && (
-                    <button
-                      type="button"
-                      aria-disabled="true"
-                      title="Concert — coming soon"
-                      className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-full bg-teal-500/90 px-4 py-3 text-sm font-bold text-white opacity-80"
-                    >
-                      <Swords className="h-4 w-4" />
-                      Concert
-                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                        Coming soon
-                      </span>
-                    </button>
+                  {/* Concert "Coming soon" notice, shown after pressing Concert. */}
+                  {!activeCat && concertSoon && (
+                    <div className="mt-3 rounded-xl border border-teal-500/40 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-200">
+                      <span className="font-semibold">Concert is coming soon.</span>{" "}
+                      Live head-to-head battle concerts — stay tuned.
+                    </div>
                   )}
                 </>
               );

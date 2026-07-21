@@ -231,17 +231,15 @@ export default function Header() {
             </svg>
           </button>
 
-          {/* Brand M.
-             - Mobile: a plain Home link (the hamburger to its left opens the
-               drawer).
-             - Desktop: the hamburger is hidden, so the brand mark itself opens
-               the slide-in side drawer. Home stays reachable via the logo
-               inside the drawer header. */}
+          {/* Brand M — always a plain Home link on every screen size. On mobile
+             the hamburger to its left opens the drawer; on desktop the top bar
+             (incl. Log In / Sign Up Free) covers nav, so the logo is purely
+             Home. */}
           <Link
             href="/"
             onClick={() => setOpen(false)}
             aria-label="Melori — Home"
-            className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90 md:hidden"
+            className="flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
           >
             <Image
               src="/logo/logo.png"
@@ -254,23 +252,6 @@ export default function Header() {
               MELORI MUSIC
             </span>
           </Link>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-label={open ? "Close menu" : "Open menu"}
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            className="hidden md:flex shrink-0 items-center gap-2 rounded-md transition-opacity hover:opacity-90"
-          >
-            <Image
-              src="/logo/logo.png"
-              alt="MELORI Music — open menu"
-              width={36}
-              height={36}
-              priority
-            />
-            <span className="font-bold tracking-wide">MELORI MUSIC</span>
-          </button>
         </div>
 
         {/* Desktop bar: single hamburger (below) drives ALL section nav on
@@ -471,7 +452,7 @@ export default function Header() {
       <div
         onClick={() => setOpen(false)}
         aria-hidden
-        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 md:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -479,7 +460,7 @@ export default function Header() {
       <nav
         id="mobile-nav"
         aria-label="Main menu"
-        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out ${
+        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >

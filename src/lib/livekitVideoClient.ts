@@ -64,6 +64,11 @@ export interface JoinVideoOptions {
   // host's own preview tile.
   onLocalVideo?: (element: HTMLVideoElement) => void;
   onParticipantCountChange?: (count: number) => void;
+  // Full set of identities currently CONNECTED to the LiveKit room (local
+  // INCLUDED). Emitted on connect and on every join/leave so the UI roster
+  // reflects real presence in real time instead of waiting on a DB poll. Used
+  // to filter the participant roster to who is actually in the room right now.
+  onRosterIdentitiesChange?: (ids: string[]) => void;
   // Full set of currently-active speaker identities (local INCLUDED — LiveKit's
   // ActiveSpeakersChanged omits the local participant, so we merge it in here).
   // Drives the speaker ring for every tile, host + viewers alike.
@@ -74,6 +79,11 @@ export interface JoinVideoOptions {
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Fired when the server FORCIBLY removed the local participant (host ban /
+  // kick — LiveKit Disconnected with reason PARTICIPANT_REMOVED). Distinct from
+  // a transient network disconnect: the client will NOT auto-reconnect, so the
+  // UI should show a clear "you were removed" message rather than a retry.
+  onRemoved?: () => void;
   // Called whenever the browser's autoplay policy changes whether remote audio
   // can play. `canPlay === false` means the UI must show a tap-to-unmute
   // affordance and call ensureVideoAudio() from that user gesture.
@@ -134,7 +144,7 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
   }
 
   const lk = await import("livekit-client");
-  const { Room, RoomEvent, Track, VideoPresets } = lk as any;
+  const { Room, RoomEvent, Track, VideoPresets, DisconnectReason } = lk as any;
 
   const tier: VideoTier = opts.tier || "free";
   const limits = VIDEO_TIER_LIMITS[tier];
@@ -257,16 +267,31 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed),
     );
 
-    // --- Participant count -----------------------------------------------
+    // --- Participant count + live roster ---------------------------------
     const emitCount = () => {
       // +1 for the local participant.
       const n = (room.remoteParticipants?.size ?? 0) + 1;
       opts.onParticipantCountChange?.(n);
     };
-    const onParticipantConnected = () => emitCount();
+    // Identities actually connected to LiveKit right now (local included). This
+    // is the real-time source of truth for presence — the UI intersects the DB
+    // roster with this set so a guest who dropped disappears immediately instead
+    // of lingering until their DB row is reaped.
+    const emitRoster = () => {
+      const ids: string[] = [];
+      const local = room.localParticipant?.identity;
+      if (local) ids.push(local);
+      room.remoteParticipants?.forEach((p: AnyParticipant) => ids.push(p.identity));
+      opts.onRosterIdentitiesChange?.(ids);
+    };
+    const onParticipantConnected = () => {
+      emitCount();
+      emitRoster();
+    };
     const onParticipantDisconnected = (p: AnyParticipant) => {
       opts.onRemoteVideoRemoved?.(p.identity);
       emitCount();
+      emitRoster();
     };
     room.on(RoomEvent.ParticipantConnected, onParticipantConnected);
     room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
@@ -336,8 +361,19 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.Reconnecting, onReconnecting);
       room.off(RoomEvent.Reconnected, onReconnected);
     });
-    const onDisconnected = () =>
+    // A host ban/kick disconnects us with PARTICIPANT_REMOVED and LiveKit will
+    // NOT auto-reconnect. Surface that as a distinct "removed" signal so the UI
+    // can show a clear message instead of a generic error / silent retry.
+    const onDisconnected = (reason?: unknown) => {
+      if (
+        DisconnectReason &&
+        reason === DisconnectReason.PARTICIPANT_REMOVED
+      ) {
+        opts.onRemoved?.();
+        return;
+      }
       opts.onError?.(new Error("Disconnected from live room"));
+    };
     room.on(RoomEvent.Disconnected, onDisconnected);
     session.cleanups.push(() =>
       room.off(RoomEvent.Disconnected, onDisconnected),
@@ -396,6 +432,7 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     }
 
     emitCount();
+    emitRoster();
   } catch (err) {
     opts.onError?.(err as Error);
     throw err;

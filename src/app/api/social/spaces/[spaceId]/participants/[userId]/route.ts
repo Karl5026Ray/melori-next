@@ -4,6 +4,7 @@ import { getRequestMembership } from "@/lib/membership-server";
 import {
   applyStagePermissions,
   serverMuteMicrophone,
+  removeLiveKitParticipant,
   livekitConfigured,
   type SocialRole,
 } from "@/lib/livekitServer";
@@ -31,7 +32,10 @@ function isModeratorRow(row: { role?: string | null; badge?: string | null } | n
 //   { role: "speaker" | "audience" }  — promote (approve/invite) or demote
 //   { host_muted: boolean }           — force-mute / unmute a speaker
 //   { badge: "mod" | null }           — grant / revoke moderator
-//   { remove: true }                  — kick from the space
+//   { remove: true }                  — kick from the space (this session)
+//   { ban: true }                     — HOST-ONLY: eject now AND record a
+//                                       room-scoped ban so they can't rejoin
+//                                       (the token route refuses banned users)
 export async function PATCH(
   req: NextRequest,
   props: { params: Promise<{ spaceId: string; userId: string }> },
@@ -98,6 +102,36 @@ export async function PATCH(
     updates.left_at = new Date().toISOString();
   }
 
+  // Room ban — host only, and never the host themselves. Records a persistent
+  // room-scoped ban (idempotent) and marks the participant left; the LiveKit
+  // removal happens below. Banning an already-banned user is a no-op.
+  if (body.ban === true) {
+    if (!isHost) {
+      return NextResponse.json(
+        { error: "Only the host can ban" },
+        { status: 403 },
+      );
+    }
+    if (params.userId === space.host_id) {
+      return NextResponse.json(
+        { error: "Cannot ban the host" },
+        { status: 400 },
+      );
+    }
+    const { error: banErr } = await supabase
+      .from("space_bans")
+      .upsert(
+        { space_id: params.spaceId, user_id: params.userId, banned_by: callerId },
+        { onConflict: "space_id,user_id", ignoreDuplicates: true },
+      );
+    if (banErr) {
+      return NextResponse.json({ error: banErr.message }, { status: 500 });
+    }
+    updates.left_at = new Date().toISOString();
+    updates.role = "audience";
+    updates.has_raised_hand = false;
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No changes" }, { status: 400 });
   }
@@ -125,7 +159,13 @@ export async function PATCH(
       .maybeSingle();
     const avatarUrl = (avatarRow as { avatar_url?: string | null } | null)?.avatar_url ?? null;
 
-    if (body.remove === true) {
+    if (body.ban === true) {
+      // Eject the participant from the room right now. removeParticipant
+      // disconnects them with reason PARTICIPANT_REMOVED and they won't
+      // auto-reconnect; the token route's ban guard keeps them out on any
+      // manual rejoin attempt.
+      await removeLiveKitParticipant(roomName, params.userId);
+    } else if (body.remove === true) {
       await applyStagePermissions({
         roomName,
         identity: params.userId,

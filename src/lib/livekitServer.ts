@@ -111,6 +111,23 @@ export async function endLiveKitRoom(roomName: string): Promise<void> {
   }
 }
 
+// Forcibly disconnect a participant from a live room right now (host ban /
+// kick). LiveKit sends the client a Disconnected event with reason
+// PARTICIPANT_REMOVED and will NOT auto-reconnect it. Best-effort: a participant
+// who is already gone is not an error.
+export async function removeLiveKitParticipant(
+  roomName: string,
+  identity: string,
+): Promise<void> {
+  try {
+    await client().removeParticipant(roomName, identity);
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|no participant/i.test(msg)) return;
+    console.warn("[livekitServer] removeParticipant failed", msg);
+  }
+}
+
 // Force-mute (or unmute) a participant's published microphone track server-side
 // so a demoted / host-muted speaker actually stops being heard even if their
 // client is slow to react. Best-effort: returns silently if they aren't

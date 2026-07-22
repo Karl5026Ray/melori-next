@@ -290,6 +290,18 @@ export function useRadioMixer(
         return;
       }
 
+      // Defense in depth: if the idle deck is somehow still playing (e.g. a
+      // skip landed mid-crossfade and the previous fade was cleared before it
+      // could pause the outgoing deck), silence it before we reuse it as the
+      // next deck. Without this, the previous track would keep playing under
+      // the newly-loaded one — two songs at once.
+      try {
+        if (!nxt.paused) nxt.pause();
+      } catch {
+        /* ignore */
+      }
+      nxt.volume = 0;
+
       // Heavier fade at set boundaries.
       const atSetBoundary = nextIdx % SET_SIZE === 0;
       const fadeSec = immediate
@@ -535,7 +547,38 @@ export function useRadioMixer(
   }, [active, state.tuned, tuneIn, patch]);
 
   const skip = useCallback(() => {
+    // Hard reset before we advance. The two bugs this fixes:
+    //
+    //  1) Skip "sticks" — button appears dead. `advance()` is guarded by
+    //     `advancingRef`, and if a skip is pressed while an advance is still
+    //     in flight (very easy: pressing skip during the auto-crossfade near
+    //     end of a track, or double-tapping skip) the guard silently drops
+    //     the new advance. We release the guard here so a user-initiated
+    //     skip always wins.
+    //
+    //  2) Two songs at once — pressing skip mid-crossfade cleared the fade
+    //     timer but left BOTH decks playing (the timer is what eventually
+    //     paused the outgoing deck at line ~346). `advance(true)` would then
+    //     load the new track onto the idle deck (killing the incoming half
+    //     of the crossfade) and start a fresh short fade, but the previously
+    //     ACTIVE deck was never paused and kept playing underneath. Hard-
+    //     stopping both decks here guarantees only the new track is audible.
     clearFade();
+    advancingRef.current = false;
+    const a = deckARef.current;
+    const b = deckBRef.current;
+    try {
+      if (a && !a.paused) a.pause();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (b && !b.paused) b.pause();
+    } catch {
+      /* ignore */
+    }
+    if (a) a.volume = 0;
+    if (b) b.volume = 0;
     void advance(true);
     if (!state.tuned) patch({ tuned: true, isPlaying: true });
   }, [clearFade, advance, state.tuned, patch]);
@@ -584,6 +627,146 @@ export function useRadioMixer(
     },
     [active, patch],
   );
+
+  // --- Media Session API ---------------------------------------------------
+  //
+  // Publish the currently-playing track to the OS media session so that:
+  //   - Bluetooth car head units (AVRCP), CarPlay, Android Auto, the phone
+  //     lock screen, and OS media widgets show the song title / artist /
+  //     album / cover art instead of falling back to "Unknown".
+  //   - Hardware buttons on the steering wheel and dashboard (play, pause,
+  //     next, previous) actually control Melori Radio.
+  //
+  // Without this, a page-driven <audio> element ships no AVRCP metadata over
+  // Bluetooth, which is why the car was displaying "Unknown" for every track
+  // even though the site itself renders the metadata correctly.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const ms = navigator.mediaSession;
+    const t = state.current;
+    if (!t) {
+      try {
+        ms.metadata = null;
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      ms.metadata = new MediaMetadata({
+        title: t.title || "Melori Radio",
+        artist: t.artistName || "Melori Radio",
+        album: t.album || "Melori Radio",
+        artwork: t.coverUrl
+          ? [
+              // Same URL at multiple advertised sizes — head units pick the
+              // one that best fits their display. Real dimensions don't need
+              // to match; the sizes hint is just a preference signal.
+              { src: t.coverUrl, sizes: "96x96", type: "image/jpeg" },
+              { src: t.coverUrl, sizes: "256x256", type: "image/jpeg" },
+              { src: t.coverUrl, sizes: "512x512", type: "image/jpeg" },
+            ]
+          : [],
+      });
+    } catch {
+      /* older browsers may throw on MediaMetadata construction; ignore */
+    }
+  }, [state.current]);
+
+  // Keep the OS-level playback state in sync so the car dashboard shows the
+  // correct play/pause icon and progress bar without waiting for the next
+  // audio event.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    try {
+      navigator.mediaSession.playbackState = state.isPlaying
+        ? "playing"
+        : state.tuned
+          ? "paused"
+          : "none";
+    } catch {
+      /* ignore */
+    }
+  }, [state.isPlaying, state.tuned]);
+
+  // Position state powers the car's progress bar / elapsed-time display.
+  // Throttled by the existing 200ms tick that already updates state.currentTime
+  // and state.duration, so we don't need our own timer.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    if (typeof navigator.mediaSession.setPositionState !== "function") return;
+    const dur = state.duration;
+    const pos = state.currentTime;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    if (!Number.isFinite(pos) || pos < 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: dur,
+        position: Math.min(pos, dur),
+        playbackRate: 1,
+      });
+    } catch {
+      /* some browsers reject stale/invalid states — ignore */
+    }
+  }, [state.currentTime, state.duration]);
+
+  // Wire the hardware/dashboard buttons to Melori Radio's controls.
+  // Registered once and re-registered whenever the underlying handlers
+  // change identity so we don't hold stale closures.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const ms = navigator.mediaSession;
+    const setHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null,
+    ) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        /* action not supported on this browser — ignore */
+      }
+    };
+    setHandler("play", () => {
+      if (!state.isPlaying) togglePlay();
+    });
+    setHandler("pause", () => {
+      if (state.isPlaying) togglePlay();
+    });
+    setHandler("nexttrack", () => {
+      skip();
+    });
+    // Radio is a shuffle so there's no real "previous." Per user preference:
+    // restart the currently-playing track when the car's Prev button is hit.
+    setHandler("previoustrack", () => {
+      const cur = active();
+      if (cur) {
+        try {
+          cur.currentTime = 0;
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+    // Some head units send stop instead of pause when audio is cut.
+    setHandler("stop", () => {
+      if (state.isPlaying) togglePlay();
+    });
+    return () => {
+      setHandler("play", null);
+      setHandler("pause", null);
+      setHandler("nexttrack", null);
+      setHandler("previoustrack", null);
+      setHandler("stop", null);
+    };
+  }, [state.isPlaying, togglePlay, skip, active]);
 
   return {
     state,

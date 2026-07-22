@@ -446,11 +446,12 @@ function FloatingPlayer() {
   const onPointerDown = (e: React.PointerEvent) => {
     const el = ref.current;
     if (!el) return;
-    try {
-      el.setPointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
+    // NOTE: capture is claimed only once a drag actually begins (see
+    // onPointerMove), NOT here. Capturing on every pointerdown meant a missed
+    // pointerup (common on mobile — scroll momentum, gesture interruptions)
+    // left the container holding a stale capture that retargeted the NEXT
+    // tap's events to it. That swallowed taps on the transport buttons, so the
+    // player "got stuck" — you couldn't pause/close it.
     const g = gesture.current;
     g.startX = e.clientX;
     g.startY = e.clientY;
@@ -477,8 +478,15 @@ function FloatingPlayer() {
       return;
     }
     if (g.armed) {
-      // Long-press already fired — the first movement starts the drag.
+      // Long-press already fired — the first movement starts the drag. Claim
+      // the pointer NOW so subsequent moves keep tracking even if the finger
+      // slides off the bubble; endGesture/cancel/scroll-abort all release it.
       g.dragging = true;
+      try {
+        ref.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
       setPos(clampPos(g.originX + dx, g.originY + dy));
       return;
     }

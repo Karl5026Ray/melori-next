@@ -54,6 +54,8 @@ import {
   LayoutGrid,
   Focus,
   Share2,
+  ArrowDownToLine,
+  Ban,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -134,6 +136,9 @@ export default function LiveRoom({
   const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  // Set when the host removes/bans us: PARTICIPANT_REMOVED, no auto-reconnect.
+  // Drives a terminal "You were removed" overlay instead of a generic error.
+  const [removed, setRemoved] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -359,6 +364,12 @@ export default function LiveRoom({
           },
           onReconnecting: () => setReconnecting(true),
           onReconnected: () => setReconnecting(false),
+          onRemoved: () => {
+            if (!cancelled) {
+              setReconnecting(false);
+              setRemoved(true);
+            }
+          },
           onError: (e) => {
             if (!cancelled) setError(e.message);
           },
@@ -644,14 +655,47 @@ export default function LiveRoom({
     [spaceId, tiles.length, maxOnCamera],
   );
 
+  // Demote an on-camera guest to audience. Server-authoritative: the PATCH
+  // route flips their LiveKit publish permission off (camera/mic stop for
+  // everyone) and persists role=audience so any rejoin is subscriber-only. We
+  // reflect the role locally so the roster updates before the next poll.
   const removeGuest = useCallback(
     async (guestId: string) => {
+      setRoster((r) =>
+        r.map((p) =>
+          p.user_id === guestId
+            ? { ...p, role: "audience", has_raised_hand: false }
+            : p,
+        ),
+      );
       await authFetch(
         `/api/social/spaces/${spaceId}/participants/${guestId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: "audience" }),
+        },
+      );
+    },
+    [spaceId],
+  );
+
+  // Ban + remove a guest from the room entirely (host only). The PATCH route
+  // ejects them via RoomServiceClient.removeParticipant AND records a room-
+  // scoped ban so the token route refuses to let them rejoin. We optimistically
+  // drop them from every local list; their tile is removed when LiveKit fires
+  // the participant-disconnected event.
+  const banGuest = useCallback(
+    async (guestId: string) => {
+      setRoster((r) => r.filter((p) => p.user_id !== guestId));
+      setAudience((a) => a.filter((p) => p.user_id !== guestId));
+      setRequests((q) => q.filter((p) => p.user_id !== guestId));
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${guestId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ban: true }),
         },
       );
     },
@@ -1272,7 +1316,12 @@ export default function LiveRoom({
               <p className="text-xs text-text-secondary">No one here yet.</p>
             ) : (
               <ul className="space-y-2">
-                {roster.map((p) => (
+                {roster.map((p) => {
+                  // Host-only moderation: never on the host row, never on
+                  // yourself. Demote is offered only for someone on camera.
+                  const canModerate =
+                    isHost && p.user_id !== hostId && p.user_id !== user?.id;
+                  return (
                   <li key={p.user_id} className="flex items-center gap-2">
                     {p.avatar ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -1291,16 +1340,65 @@ export default function LiveRoom({
                         {p.role === "host" ? "Host" : "On camera"}
                       </span>
                     )}
+                    {canModerate && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        {p.role === "speaker" && (
+                          <button
+                            onClick={() => void removeGuest(p.user_id)}
+                            aria-label={`Move ${p.name} to audience`}
+                            title="Move to audience"
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-text-secondary hover:bg-brand-muted hover:text-text-primary"
+                          >
+                            <ArrowDownToLine className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void banGuest(p.user_id)}
+                          aria-label={`Remove ${p.name} from the room`}
+                          title="Remove from room"
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10"
+                        >
+                          <Ban className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>
         </div>
       )}
 
+      {/* Removed-by-host overlay — terminal. LiveKit disconnected us with
+          PARTICIPANT_REMOVED (host ban/kick) and will NOT auto-reconnect, and
+          the token route refuses a rejoin, so we show a clear message and only
+          offer a way back to the Faces list. Takes precedence over other UI. */}
+      {removed && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6 backdrop-blur">
+          <div className="w-[min(90%,24rem)] rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
+              <Ban className="h-6 w-6 text-red-500" />
+            </div>
+            <p className="text-base font-semibold text-text-primary">
+              You were removed from this room
+            </p>
+            <p className="mt-1 text-sm text-text-secondary">
+              The host removed you from this live room.
+            </p>
+            <Link
+              href="/social/live"
+              className="mt-4 inline-block rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark"
+            >
+              Back to MM Faces
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Status overlays */}
-      {(connecting || reconnecting) && (
+      {(connecting || reconnecting) && !removed && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm text-white backdrop-blur">
           <Loader2 className="h-4 w-4 animate-spin" />
           {reconnecting ? "Reconnecting…" : "Connecting…"}

@@ -79,6 +79,11 @@ export interface JoinVideoOptions {
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Fired when the server FORCIBLY removed the local participant (host ban /
+  // kick — LiveKit Disconnected with reason PARTICIPANT_REMOVED). Distinct from
+  // a transient network disconnect: the client will NOT auto-reconnect, so the
+  // UI should show a clear "you were removed" message rather than a retry.
+  onRemoved?: () => void;
   // Called whenever the browser's autoplay policy changes whether remote audio
   // can play. `canPlay === false` means the UI must show a tap-to-unmute
   // affordance and call ensureVideoAudio() from that user gesture.
@@ -139,7 +144,7 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
   }
 
   const lk = await import("livekit-client");
-  const { Room, RoomEvent, Track, VideoPresets } = lk as any;
+  const { Room, RoomEvent, Track, VideoPresets, DisconnectReason } = lk as any;
 
   const tier: VideoTier = opts.tier || "free";
   const limits = VIDEO_TIER_LIMITS[tier];
@@ -356,8 +361,19 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.Reconnecting, onReconnecting);
       room.off(RoomEvent.Reconnected, onReconnected);
     });
-    const onDisconnected = () =>
+    // A host ban/kick disconnects us with PARTICIPANT_REMOVED and LiveKit will
+    // NOT auto-reconnect. Surface that as a distinct "removed" signal so the UI
+    // can show a clear message instead of a generic error / silent retry.
+    const onDisconnected = (reason?: unknown) => {
+      if (
+        DisconnectReason &&
+        reason === DisconnectReason.PARTICIPANT_REMOVED
+      ) {
+        opts.onRemoved?.();
+        return;
+      }
       opts.onError?.(new Error("Disconnected from live room"));
+    };
     room.on(RoomEvent.Disconnected, onDisconnected);
     session.cleanups.push(() =>
       room.off(RoomEvent.Disconnected, onDisconnected),

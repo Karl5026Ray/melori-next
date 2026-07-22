@@ -63,6 +63,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Space is not active" }, { status: 409 });
     }
 
+    // ROOM BAN GUARD: a host can ban a disruptive guest from THIS room (see the
+    // participants PATCH route). A banned user is refused a join token entirely,
+    // so they can't rejoin/reconnect. Room-scoped — this is NOT the global DM
+    // block (member_blocks). The host is never banned (can't ban self), but skip
+    // the lookup for them anyway.
+    if (space.host_id !== userId) {
+      const { data: ban } = await supabase
+        .from("space_bans")
+        .select("user_id")
+        .eq("space_id", space.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (ban) {
+        return NextResponse.json(
+          { error: "You were removed from this room", banned: true },
+          { status: 403 },
+        );
+      }
+    }
+
     const roomName: string = space.livekit_room ?? `space_${space.id}`;
     // Faces rooms (live_* room_format) are video; everything else is audio-only.
     const withVideo = String(space.room_format ?? "").startsWith("live_");

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { Users, Radio, Loader2, Plus, X } from "lucide-react";
@@ -51,6 +52,8 @@ export default function LivePage() {
   const router = useRouter();
   const { user } = useAuth();
   const canParticipate = useCanParticipate();
+
+  const RETURN_PATH = "/social/live";
 
   const [rooms, setRooms] = useState<LiveRoomListItem[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
@@ -117,15 +120,43 @@ export default function LivePage() {
     }
     setCreating(true);
     try {
-      const res = await authFetch("/api/social/faces", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          ...(topic.trim() ? { topic: topic.trim() } : {}),
-        }),
+      const payload = JSON.stringify({
+        title: title.trim(),
+        ...(topic.trim() ? { topic: topic.trim() } : {}),
       });
-      const data = await res.json();
+      const post = () =>
+        authFetch("/api/social/faces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+
+      let res = await post();
+      // A lone 401 is almost always a stale access token that autoRefresh
+      // hasn't rotated yet (e.g. right after a tab regains focus). Force a
+      // refresh and retry ONCE before concluding the caller is signed out —
+      // this is the intermittent case that used to bounce members to sign-in.
+      if (res.status === 401) {
+        await supabase.auth.refreshSession();
+        res = await post();
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401) {
+        // Still unauthenticated after a refresh: genuinely signed out. Send to
+        // sign-in with a return path so they land back on MM Faces.
+        router.push(
+          `/social/auth?next=${encodeURIComponent(RETURN_PATH)}`,
+        );
+        return;
+      }
+      if (res.status === 403) {
+        // Authenticated but lacks the required tier — a PERMISSION problem, not
+        // a sign-in problem. Route to the upgrade page, never the auth screen.
+        router.push(data?.upgrade ?? "/membership");
+        return;
+      }
       if (!res.ok) {
         setCreateError(data?.error ?? "Could not start your live.");
         setCreating(false);
@@ -138,17 +169,30 @@ export default function LivePage() {
     }
   }, [title, topic, router]);
 
-  const openCreate = () => {
-    if (!user) {
-      router.push("/social/auth");
+  const openCreate = useCallback(async () => {
+    if (user) {
+      // Profile loaded: use the local gate for instant feedback.
+      if (!canParticipate) {
+        router.push("/membership");
+        return;
+      }
+      setShowCreate(true);
       return;
     }
-    if (!canParticipate) {
-      router.push("/membership");
+    // `user` can be null simply because auth/profile is still resolving (or the
+    // session exists but the profile row hasn't loaded). Don't treat that as
+    // "logged out" — a fast click used to race hydration and bounce a
+    // signed-in member to /social/auth. Confirm against the REAL session first.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      router.push(`/social/auth?next=${encodeURIComponent(RETURN_PATH)}`);
       return;
     }
+    // Authenticated but profile not yet in context: open the modal and let the
+    // server (requireSuperfan) be the source of truth — goLive handles a 403
+    // by routing to the upgrade page, not the sign-in screen.
     setShowCreate(true);
-  };
+  }, [user, canParticipate, router]);
 
   const respondToInvite = useCallback(
     async (inviteId: string, action: "accept" | "decline") => {

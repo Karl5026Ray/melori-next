@@ -10,12 +10,19 @@ export const metadata: Metadata = {
     "Swipe through Melori members — artists, superfans, and friends. Follow, message, or open a profile in one tap.",
 };
 
-// Facebook / news-feed–style profile feed. Deliberately NOT height-constrained:
-// the feed is a normal column of self-sizing cards that scrolls with the
-// document, so there is no viewport-height math to get wrong. This replaced the
-// full-viewport TikTok snap scroller, which repeatedly mis-oriented on mobile
-// because it coupled slide height to a resolved parent `100dvh`/`h-full` chain
-// and rendered each banner as a full-screen crop.
+// Full-viewport, TikTok-style profile scroller. Given a DEFINITE height (the
+// dynamic viewport minus the 4rem header) rather than a flex-grow of a
+// min-height-only ancestor chain: the scroller and its slides size off
+// `h-full`, and without a resolved parent height they fell back to the
+// `min-h-[70vh]` basis. On mobile `vh` is the URL-bar-EXPANDED height, so each
+// slide was taller than the visible screen — the swipe landed mid-slide and the
+// content looked mis-oriented. `dvh` tracks the real visible area, matching the
+// working Mirror feed's `.mirror-viewport` pattern, so each slide is exactly
+// one screen tall.
 export default function DiscoverPage() {
-  return <ProfileScroller />;
+  return (
+    <div className="flex flex-col" style={{ height: "calc(100dvh - 4rem)" }}>
+      <ProfileScroller />
+    </div>
+  );
 }

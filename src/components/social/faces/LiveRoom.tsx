@@ -34,7 +34,7 @@ import {
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import RoomChat from "@/components/social/rooms/RoomChat";
+import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
 import {
   Mic,
   MicOff,
@@ -53,6 +53,7 @@ import {
   Square,
   LayoutGrid,
   Focus,
+  Share2,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -78,7 +79,8 @@ interface LiveRoomProps {
 
 interface FloatingHeart {
   id: number;
-  left: number;
+  x: number; // viewport coords of the tap (or a random point for remote hearts)
+  y: number;
 }
 
 // A tile = one on-camera participant (host or guest) plus their attached
@@ -93,7 +95,10 @@ interface Tile {
 // Auto-layout grid (KIMI/TikTok math), returned as a Tailwind grid class.
 function gridClassFor(count: number): string {
   if (count <= 1) return "grid-cols-1 grid-rows-1";
-  if (count === 2) return "grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1";
+  // Two people: side-by-side (2 cols × 1 row) at ALL widths, including mobile
+  // portrait — TikTok/duet style. Only very narrow screens (<360px) fall back to
+  // stacked so faces stay usable. See `two-up-side-by-side` note in the PR.
+  if (count === 2) return "grid-cols-1 grid-rows-2 min-[360px]:grid-cols-2 min-[360px]:grid-rows-1";
   if (count <= 4) return "grid-cols-2 grid-rows-2";
   if (count <= 6) return "grid-cols-2 grid-rows-3 sm:grid-cols-3 sm:grid-rows-2";
   if (count <= 8) return "grid-cols-2 grid-rows-4 sm:grid-cols-3 sm:grid-rows-3";
@@ -189,11 +194,6 @@ export default function LiveRoom({
   const [pending, setPending] = useState<Set<string>>(new Set());
   // Tile arrangement (local view only). Starts as the equal auto-grid.
   const [layout, setLayout] = useState<FacesLayout>("grid");
-  // Composer-focus state — comments render as translucent floating bubbles
-  // over the video and the composer is a slim pill; when the user taps it,
-  // it expands to the full RoomChat composer. Auto-collapses on blur so it
-  // never sits over guest faces while nobody is typing.
-  const [chatExpanded, setChatExpanded] = useState(false);
   // In spotlight view, which tile the viewer has tapped to feature big. null =
   // fall back to the host. Local-only view preference.
   const [featuredOverride, setFeaturedOverride] = useState<string | null>(null);
@@ -757,18 +757,24 @@ export default function LiveRoom({
     };
   }, [spaceId]);
 
-  const spawnHeart = useCallback(() => {
+  // Spawn a floating heart at viewport coords (x,y). Local likes pass the tap
+  // point; remote (broadcast) hearts have none, so we scatter them across the
+  // lower-middle of the stage.
+  const spawnHeart = useCallback((x?: number, y?: number) => {
     const id = ++heartSeq.current;
-    const left = 20 + Math.random() * 50;
-    setHearts((h) => [...h, { id, left }]);
-    setTimeout(() => setHearts((h) => h.filter((x) => x.id !== id)), 2200);
+    const px =
+      x ?? (typeof window !== "undefined" ? window.innerWidth * (0.3 + Math.random() * 0.4) : 100);
+    const py =
+      y ?? (typeof window !== "undefined" ? window.innerHeight * (0.55 + Math.random() * 0.2) : 400);
+    setHearts((h) => [...h, { id, x: px, y: py }]);
+    setTimeout(() => setHearts((h) => h.filter((v) => v.id !== id)), 2200);
   }, []);
 
-  // Tap a heart: animate instantly, optimistically bump the counter, persist the
-  // increment server-side, then broadcast the authoritative new total so every
-  // other client animates + syncs. Reverts the optimistic bump on failure.
-  const sendHeart = useCallback(() => {
-    spawnHeart();
+  // Tap to like: animate instantly at the tap point, optimistically bump the
+  // counter, persist the increment server-side, then broadcast the authoritative
+  // new total so every other client animates + syncs. Reverts on failure.
+  const sendHeart = useCallback((x?: number, y?: number) => {
+    spawnHeart(x, y);
     setHeartCount((c) => c + 1);
     (async () => {
       try {
@@ -794,6 +800,49 @@ export default function LiveRoom({
       }
     })();
   }, [spawnHeart, spaceId]);
+
+  // Tap-anywhere-to-like: a tap on empty video area spawns a heart at the tap
+  // point and fires the same like action. Guarded so it never steals taps meant
+  // for controls, chat, the share button, panels, or (in spotlight) tile
+  // buttons — anything interactive or explicitly marked `data-no-like`.
+  const handleStageTap = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'button, a, input, textarea, select, [role="dialog"], [data-no-like]',
+        )
+      ) {
+        return;
+      }
+      sendHeart(e.clientX, e.clientY);
+    },
+    [sendHeart],
+  );
+
+  // Share the live room: native share sheet where available, else copy the URL
+  // to the clipboard with a brief "Link copied" confirmation.
+  const [shareCopied, setShareCopied] = useState(false);
+  const handleShare = useCallback(async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    if (!url) return;
+    const nav = typeof navigator !== "undefined" ? navigator : undefined;
+    if (nav?.share) {
+      try {
+        await nav.share({ title, text: `Watch ${hostName} live on MELORI`, url });
+      } catch {
+        /* user dismissed the share sheet — nothing to do */
+      }
+      return;
+    }
+    try {
+      await nav?.clipboard?.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1800);
+    } catch {
+      /* clipboard blocked — best effort */
+    }
+  }, [title, hostName]);
 
   // Autoplay unlock — must run from a user gesture. Retries startAudio() and
   // re-plays every attached remote <audio>, then clears the prompt.
@@ -873,8 +922,8 @@ export default function LiveRoom({
           {t.name.charAt(0).toUpperCase()}
         </div>
       </div>
-      <span className="absolute bottom-2 left-2 z-10 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
-        {t.identity === hostId ? `${t.name} · Host` : t.name}
+      <span className="absolute bottom-2 left-2 z-10 max-w-[85%] truncate rounded-md bg-black/45 px-2 py-0.5 text-xs font-semibold text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] backdrop-blur">
+        {t.name}
       </span>
     </div>
   );
@@ -883,7 +932,7 @@ export default function LiveRoom({
   const stripTiles = tiles.filter((t) => t.identity !== featuredTile?.identity);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black">
+    <div className="fixed inset-0 z-[60] bg-black" onClick={handleStageTap}>
       {/* Video stage — single tile (solo) or auto-grid (duo/group) */}
       <div className="absolute inset-0 bg-black p-0.5">
         {showStageFallback ? (
@@ -941,7 +990,10 @@ export default function LiveRoom({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 to-transparent" />
 
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4">
+      <div
+        data-no-like
+        className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4"
+      >
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
             {hostAvatar ? (
@@ -952,14 +1004,27 @@ export default function LiveRoom({
                 {hostName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="max-w-[8rem] truncate text-sm font-semibold leading-tight text-white sm:max-w-[10rem]">
-              {hostName}
-            </span>
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="max-w-[8rem] truncate text-sm font-semibold text-white sm:max-w-[10rem]">
+                {hostName}
+              </span>
+              {/* Hearts / likes total, live-updating, directly under the host name. */}
+              <span className="flex items-center gap-1 text-[11px] font-medium leading-none text-white/85">
+                <Heart className="h-3 w-3 fill-current text-brand-primary" />
+                {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
+              </span>
+            </div>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-primary px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-wide text-white sm:px-2.5 sm:text-xs">
             <Radio className="h-3 w-3" />
             Live
           </span>
+          {/* "You / Host" self-tag — moved off the video tiles up to the header. */}
+          {(isHost || onCamera) && (
+            <span className="inline-flex shrink-0 items-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase leading-none tracking-wide text-white backdrop-blur sm:text-xs">
+              {isHost ? "You · Host" : "You"}
+            </span>
+          )}
           {!isSolo && (
             <span className="hidden shrink-0 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium leading-none text-white backdrop-blur sm:inline">
               {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
@@ -1018,7 +1083,7 @@ export default function LiveRoom({
           we keep the previous placement but constrain width and cap it to a
           single line so the guests panel that opens at `top-16` can't
           overlap the title. */}
-      <div className="absolute left-3 top-14 max-w-[62%] pr-2 sm:hidden">
+      <div data-no-like className="absolute left-3 top-14 max-w-[62%] pr-2 sm:hidden">
         <p className="truncate text-[13px] font-medium leading-tight text-white/90 drop-shadow">
           {title}
         </p>
@@ -1028,7 +1093,7 @@ export default function LiveRoom({
           the live via an in-app invite. Distinct from the Guests panel below,
           which promotes people already in the room. */}
       {isHost && showInvite && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">Invite followers</p>
             <button
@@ -1102,7 +1167,7 @@ export default function LiveRoom({
           Hands" + "Audience" sections; every action hits the same server-side
           moderation endpoint. */}
       {isHost && !isSolo && showRequests && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">Guests</p>
             <span className="text-xs text-text-secondary">{tiles.length}/{maxOnCamera} on camera</span>
@@ -1191,7 +1256,7 @@ export default function LiveRoom({
           from the space_participants presence rows. Opened from the Users badge;
           updates live as people join/leave. Anyone can view it. */}
       {showRoster && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">In the room</p>
             <button
@@ -1268,66 +1333,53 @@ export default function LiveRoom({
         </button>
       )}
 
-      {/* Comment stream — transparent floating bubbles over the video, no card
-          chrome. The list at the top fades into video via a mask (older
-          messages softly disappear rather than sitting under an opaque box)
-          and the composer collapses to a slim pill when not focused so it
-          never covers guests. Anchored bottom-left, narrower than before and
-          well clear of the right-side control rail. */}
-      <div
-        className={`faces-comment-shell pointer-events-none absolute left-0 z-10 flex w-[68%] max-w-sm flex-col overflow-hidden pl-3 transition-all duration-200 md:w-96 ${
-          chatExpanded ? "h-[46%]" : "h-[38%]"
-        }`}
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom) + 0.75rem)",
-          pointerEvents: "none",
-        }}
-      >
-        {/* Re-enable pointer events only inside — the outer wrapper stays
-            click-through so viewers can still tap tiles behind the chat. */}
-        <div
-          className={`faces-comment-inner pointer-events-auto flex min-h-0 flex-1 flex-col ${
-            chatExpanded ? "is-expanded" : "is-collapsed"
-          }`}
-          onFocusCapture={() => setChatExpanded(true)}
-          onBlurCapture={(e) => {
-            // Only collapse if focus is leaving the whole chat, not moving
-            // between child inputs / emoji picker.
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-              setChatExpanded(false);
-            }
-          }}
-        >
-          <RoomChat spaceId={spaceId} accent="orange" className="flex-1" />
-        </div>
-      </div>
-
-      {/* Reaction hearts — rise just LEFT of the right-side control rail.
-          Anchored to the same safe-area bottom as the rail so it stays
-          aligned when the tab bar is hidden. */}
-      <div
-        className="pointer-events-none absolute right-20 h-56 w-20"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 4rem)" }}
-      >
+      {/* Reaction hearts — spawn at the tap point and rise/fade. Full-stage,
+          click-through layer so it never blocks controls or chat. */}
+      <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {hearts.map((h) => (
-          <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
+          <span
+            key={h.id}
+            className="faces-heart absolute text-3xl"
+            style={{ left: h.x, top: h.y, transform: "translate(-50%, -50%)" }}
+          >
             ❤️
           </span>
         ))}
       </div>
 
-      {/* Broadcast controls — VERTICAL RIGHT-SIDE RAIL.
-          The mobile tab bar is now suppressed on live-room routes (see
-          MobileTabBar.tsx), so the rail no longer has to sit "above" the
-          fixed 4rem tab bar — it drops to the true safe-area bottom edge,
-          giving the stage more usable vertical space and putting End Live /
-          mic / cam / heart right at the thumb. Applies to solo/duo/group. */}
+      {/* TikTok-style live comment overlay — raised off the very bottom so it
+          sits ABOVE the control bar. Messages float above the translucent input
+          and auto-fade. Click-through except its own input/messages. */}
       <div
-        className="absolute z-30 flex flex-col items-center gap-3"
+        data-no-like
+        className="pointer-events-none absolute left-3 right-3 z-10 flex flex-col justify-end sm:right-auto sm:w-96"
         style={{
-          right: "calc(env(safe-area-inset-right) + 0.75rem)",
-          bottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+          bottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+          top: "40%",
         }}
+      >
+        <FacesLiveChat spaceId={spaceId} />
+      </div>
+
+      {/* "Link copied" confirmation for the share fallback. */}
+      {shareCopied && (
+        <div
+          data-no-like
+          className="absolute left-1/2 z-40 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-sm font-semibold text-white backdrop-blur"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 8.5rem)" }}
+        >
+          Link copied
+        </div>
+      )}
+
+      {/* Broadcast controls — CENTERED BOTTOM BAR (moved off the right rail).
+          Horizontally laid out, pinned to the safe-area bottom, and sitting
+          below the raised chat so nothing overlaps. The dedicated heart button
+          is gone — tap anywhere on empty video to like (see handleStageTap). */}
+      <div
+        data-no-like
+        className="absolute inset-x-0 z-30 flex items-center justify-center gap-3 px-3"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 0.85rem)" }}
       >
         {/* Layout toggle — grid ⇄ spotlight. Only for multi-visitor rooms with
             2+ tiles to arrange; it's a local view preference (never broadcast,
@@ -1388,6 +1440,14 @@ export default function LiveRoom({
             <Hand className="h-5 w-5" />
           </Link>
         )}
+        {/* Share — native share sheet where available, else copy link. */}
+        <button
+          onClick={handleShare}
+          aria-label="Share this live"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+        >
+          <Share2 className="h-5 w-5" />
+        </button>
         {/* End Live (host) — primary, prominent, and always reachable. */}
         {isHost && (
           <button
@@ -1399,22 +1459,6 @@ export default function LiveRoom({
             <span className="text-[9px] font-bold uppercase leading-none">End</span>
           </button>
         )}
-        {/* Heart / reaction — everyone, bottom-most (frequent + harmless tap).
-            Shows the room's running like total beneath the button. */}
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={sendHeart}
-            aria-label="Send heart"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
-          >
-            <Heart className="h-6 w-6" />
-          </button>
-          {heartCount > 0 && (
-            <span className="min-w-[1.5rem] rounded-full bg-black/40 px-1.5 py-0.5 text-center text-[11px] font-semibold text-white backdrop-blur">
-              {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
-            </span>
-          )}
-        </div>
       </div>
     </div>
   );

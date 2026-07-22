@@ -1137,7 +1137,7 @@ export default function LiveRoom({
           the live via an in-app invite. Distinct from the Guests panel below,
           which promotes people already in the room. */}
       {isHost && showInvite && (
-        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-black/50 p-3 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">Invite followers</p>
             <button
@@ -1300,7 +1300,7 @@ export default function LiveRoom({
           from the space_participants presence rows. Opened from the Users badge;
           updates live as people join/leave. Anyone can view it. */}
       {showRoster && (
-        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-black/50 p-3 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">In the room</p>
             <button

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { Camera, Loader2, MapPin } from "lucide-react";
+import Link from "next/link";
+import { Camera, Loader2, MapPin, Users } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
 import ProfileTabs from "@/components/social/profile/ProfileTabs";
 import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
@@ -186,7 +187,7 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -194,6 +195,15 @@ export default function ProfilePage() {
             >
               Edit Profile
             </button>
+            {/* Entry point to the TikTok-style profile scroller. Swipe / arrow
+                through every member without leaving the social area. */}
+            <Link
+              href="/social/discover"
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full bg-melori-purple/15 border border-melori-purple/40 font-medium text-sm text-white hover:bg-melori-purple/25 transition"
+            >
+              <Users className="h-4 w-4" />
+              Discover
+            </Link>
           </div>
         </div>
 

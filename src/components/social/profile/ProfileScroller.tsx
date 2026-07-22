@@ -24,12 +24,15 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import {
+  ArrowUp,
   ChevronUp,
   ChevronDown,
   Loader2,
   MapPin,
   MessageCircle,
+  RotateCcw,
   Sparkles,
+  Sparkle,
   UserPlus,
   Users,
   Wifi,
@@ -182,19 +185,39 @@ export default function ProfileScroller() {
 
   // --- navigation primitives ----------------------------------------------
 
+  // When the feed is exhausted (no more pages) and we have at least one
+  // profile, we append a synthetic "You've caught up" slide at the end so a
+  // swipe past the last real profile lands on something meaningful (retry /
+  // reset filters) instead of a dead-end pip. `totalSlides` includes that
+  // synthetic slide so all the nav clamps stay correct.
+  const showEndCard = !hasMore && items.length > 0;
+  const totalSlides = items.length + (showEndCard ? 1 : 0);
+
   const canGoUp = index > 0;
-  const canGoDown = index < items.length - 1 || hasMore;
+  const canGoDown = index < totalSlides - 1;
+
+  // Fire a short haptic buzz on capable devices. Silent no-op elsewhere; the
+  // try/catch guards against Permissions-Policy denials that would otherwise
+  // throw and break the gesture chain.
+  const buzz = (ms = 8) => {
+    if (typeof navigator === "undefined") return;
+    if (typeof navigator.vibrate !== "function") return;
+    try { navigator.vibrate(ms); } catch { /* ignore */ }
+  };
 
   const advance = useCallback(
     (delta: 1 | -1) => {
       setIndex((prev) => {
         const next = prev + delta;
         if (next < 0) return 0;
-        if (next >= items.length) return items.length - 1;
+        if (next >= totalSlides) return totalSlides - 1;
+        // Only buzz on actual movement (edge attempts stay silent so the
+        // rubber-band + disabled-chevron cues do the talking).
+        if (next !== prev) buzz(8);
         return next;
       });
     },
-    [items.length],
+    [totalSlides],
   );
 
   // Keyboard: arrows + page + home/end. Ignored while typing in an input.
@@ -214,12 +237,12 @@ export default function ProfileScroller() {
         setIndex(0);
       } else if (e.key === "End") {
         e.preventDefault();
-        setIndex(items.length - 1);
+        setIndex(totalSlides - 1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, items.length]);
+  }, [advance, totalSlides]);
 
   // Wheel: throttle so a single "flick" advances exactly one card. Also
   // guards against small trackpad drift by requiring |deltaY| > 20.
@@ -439,6 +462,22 @@ export default function ProfileScroller() {
               />
             );
           })}
+          {showEndCard && (
+            <EndOfFeedSlide
+              onResetFilters={() => {
+                setFilters(DEFAULT_FILTERS);
+              }}
+              onScrollTop={() => {
+                setIndex(0);
+                buzz(8);
+              }}
+              filtersActive={
+                filters.mode !== DEFAULT_FILTERS.mode ||
+                filters.role !== DEFAULT_FILTERS.role ||
+                filters.excludeFollowed !== DEFAULT_FILTERS.excludeFollowed
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -465,10 +504,67 @@ export default function ProfileScroller() {
         </button>
       </div>
 
-      {/* Position pip. Small, non-intrusive, bottom-left. */}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-medium text-white/80 backdrop-blur">
-        {index + 1} / {items.length}
-        {hasMore ? "+" : ""}
+      {/* Position pip. Small, non-intrusive, bottom-left. Hidden on the
+          synthetic end-of-feed slide because there's nothing to count. */}
+      {index < items.length && (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-medium text-white/80 backdrop-blur">
+          {index + 1} / {items.length}
+          {hasMore ? "+" : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- end-of-feed slide -----------------------------------------------------
+
+function EndOfFeedSlide({
+  onResetFilters,
+  onScrollTop,
+  filtersActive,
+}: {
+  onResetFilters: () => void;
+  onScrollTop: () => void;
+  filtersActive: boolean;
+}) {
+  return (
+    <div className="relative flex h-full min-h-[70vh] w-full flex-col items-center justify-center overflow-hidden px-6 text-center">
+      {/* Ambient brand gradient so it feels like part of the feed, not a
+          system error screen. */}
+      <div className="absolute inset-0 bg-gradient-to-br from-melori-purple/25 via-melori-void to-brand-accent/20" />
+      <div className="absolute inset-0 bg-melori-void/40" />
+
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-melori-purple/25 ring-1 ring-melori-purple/40">
+          <Sparkle className="h-8 w-8 text-melori-purple" />
+        </div>
+        <h3 className="text-2xl font-bold text-white">You&rsquo;re all caught up</h3>
+        <p className="max-w-xs text-sm text-white/70">
+          {filtersActive
+            ? "That’s everyone matching these filters. Try widening the search or head back to the top."
+            : "You’ve swiped through every profile. Check back soon — new members are joining daily."}
+        </p>
+
+        <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row">
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={onResetFilters}
+              className="inline-flex items-center gap-1.5 rounded-full bg-melori-purple px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-melori-purple/30 transition hover:bg-melori-purple/90"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset filters
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onScrollTop}
+            className="inline-flex items-center gap-1.5 rounded-full border border-melori-border bg-black/40 px-5 py-2.5 text-sm font-medium text-white backdrop-blur transition hover:border-melori-purple/40"
+          >
+            <ArrowUp className="h-4 w-4" />
+            Back to top
+          </button>
+        </div>
       </div>
     </div>
   );

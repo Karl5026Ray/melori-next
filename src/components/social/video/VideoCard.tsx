@@ -75,6 +75,10 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const burstIdRef = useRef(0);
   const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
 
+  // Share button state — shows a brief "Copied!" confirmation when we fall
+  // back to the clipboard on desktops without navigator.share.
+  const [shareCopied, setShareCopied] = useState(false);
+
   // Load the caller's like state + the live count for this card. Deferred until
   // the card is at (or adjacent to) the active position, and fetched only once.
   // Previously this fired on mount for EVERY card, so scrolling and infinite
@@ -255,6 +259,52 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     }
   };
 
+  // Share this post. Prefers the native share sheet (mobile / newer
+  // desktops), falls back to clipboard so desktop users still get a link.
+  // Silent on user-cancelled shares (AbortError) so the console stays clean.
+  const handleShare = async () => {
+    // vibrate() is a no-op on desktops; on phones it gives the same 10ms tap
+    // the double-tap-like uses, keeping the whole card gesture set cohesive.
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try { navigator.vibrate(10); } catch { /* iOS Safari denies quietly */ }
+    }
+
+    // Absolute URL so the share target opens the post on any device. We use
+    // the user's profile as the deep-link because Mirror posts don't yet
+    // have a per-post canonical page; the profile shows their content.
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://melorimusic.org";
+    const url = video.user?.username
+      ? `${origin}/social/profile/${video.user.username}`
+      : `${origin}/social/mirror`;
+    const title = video.title
+      ? `${video.title} · Melori Mirror`
+      : "Melori Mirror";
+    const text = video.user?.display_name
+      ? `Check out ${video.user.display_name} on Melori`
+      : "Check this out on Melori";
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ title, text, url });
+        return;
+      }
+    } catch (err) {
+      // AbortError = user closed the share sheet; treat as success (no fallback).
+      if (err instanceof Error && err.name === "AbortError") return;
+    }
+
+    // Fallback: copy the URL and flash a "Copied!" label for 1.6s.
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        window.setTimeout(() => setShareCopied(false), 1600);
+      }
+    } catch {
+      /* clipboard denied; silent — nothing better we can do here */
+    }
+  };
+
   // Spawn a heart burst at (x, y) — coordinates are relative to the tap
   // surface, so the caller passes clientX/Y minus the surface's bounding
   // rect. Each burst self-cleans after 900ms (matches the animation length
@@ -297,6 +347,12 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
       // It's a double-tap: fire the burst, and if not already liked, like.
       lastTapRef.current = null; // consume so a third tap starts fresh
       spawnBurst(x, y);
+      // Short haptic buzz on capable devices (Android + some newer iOS).
+      // Silent no-op elsewhere; wrapped so a permissions policy denial can't
+      // throw and break the gesture.
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        try { navigator.vibrate(15); } catch { /* denied — ignore */ }
+      }
       if (!isLiked && !likePending) {
         void handleLike();
       }
@@ -446,9 +502,15 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
           <MessageCircle className="w-7 h-7" />
           <span className="text-xs font-medium">{commentsCount}</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-white">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex flex-col items-center gap-1 text-white"
+        >
           <Share2 className="w-7 h-7" />
-          <span className="text-xs font-medium">Share</span>
+          <span className="text-xs font-medium">
+            {shareCopied ? "Copied!" : "Share"}
+          </span>
         </button>
       </div>
 

@@ -236,6 +236,27 @@ export default function LiveRoom({
   // the LiveKit ParticipantPermissionsChanged event fire for the same approval.
   const promotingRef = useRef(false);
 
+  // Identities currently CONNECTED to the LiveKit room (from the client's
+  // real-time roster events). This is the live source of truth for presence:
+  // the DB participant rows lag (a dropped guest's row isn't reaped until the
+  // webhook/leave fires), so we intersect the DB roster with this set to hide
+  // people who have actually left. `presentVersion` bumps on every join/leave
+  // so the roster/requests effects re-fetch immediately instead of waiting on
+  // their slow poll.
+  const presentIdsRef = useRef<Set<string>>(new Set());
+  const [presentVersion, setPresentVersion] = useState(0);
+  const isPresent = useCallback(
+    (id: string) => {
+      const set = presentIdsRef.current;
+      // Before the first LiveKit roster event lands, don't hide anyone.
+      if (set.size === 0) return true;
+      // The host is always shown even if their tile briefly drops on a
+      // reconnect, so the room never looks host-less.
+      return set.has(id) || id === hostId;
+    },
+    [hostId],
+  );
+
   const upsertTile = useCallback((t: Tile) => {
     setTiles((prev) => {
       const idx = prev.findIndex((x) => x.identity === t.identity);
@@ -325,6 +346,10 @@ export default function LiveRoom({
           },
           onRemoteVideoRemoved: (identity) => removeTile(identity),
           onParticipantCountChange: (n) => setViewerCount(n),
+          onRosterIdentitiesChange: (ids) => {
+            presentIdsRef.current = new Set(ids);
+            setPresentVersion((v) => v + 1);
+          },
           onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
           onActiveSpeakersChange: (ids) => setSpeakers(new Set(ids)),
           onLocalPermissionsChanged: (allowed) => {
@@ -379,11 +404,17 @@ export default function LiveRoom({
     let active = true;
     const load = async () => {
       try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const { participants } = await res.json();
         if (!active) return;
-        const guests = (participants ?? []).filter((p: any) => p.role === "audience");
+        // Only guests actually still connected to LiveKit — a dropped guest's DB
+        // row lingers until the webhook reaps it, so filter by live presence.
+        const guests = (participants ?? []).filter(
+          (p: any) => p.role === "audience" && isPresent(p.user_id),
+        );
         setRequests(
           guests
             .filter((p: any) => p.has_raised_hand)
@@ -411,7 +442,7 @@ export default function LiveRoom({
       clearInterval(poll);
       void supabase.removeChannel(ch);
     };
-  }, [isHost, spaceId]);
+  }, [isHost, spaceId, presentVersion, isPresent]);
 
   // In-room roster ("who's here"): every active participant with a name +
   // avatar, for the tappable Users badge sheet. Read through the server route
@@ -423,10 +454,16 @@ export default function LiveRoom({
     let active = true;
     const load = async () => {
       try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const { participants } = await res.json();
-        if (active) setRoster(participants ?? []);
+        if (!active) return;
+        // Show only people still connected to LiveKit so a dropped viewer leaves
+        // the "who's here" sheet immediately instead of lingering until their DB
+        // presence row is reaped.
+        setRoster((participants ?? []).filter((p: any) => isPresent(p.user_id)));
       } catch {
         /* transient — the poll will retry */
       }
@@ -437,7 +474,7 @@ export default function LiveRoom({
       active = false;
       clearInterval(poll);
     };
-  }, [user, spaceId, viewerCount]);
+  }, [user, spaceId, viewerCount, presentVersion, isPresent]);
 
   // Guest: watch my own row — when host promotes me to speaker, go on camera.
   useEffect(() => {

@@ -90,7 +90,32 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
       const isMod = participant?.badge === "mod" || participant?.badge === "cohost";
       const isSpeaker = participant?.role === "speaker" || participant?.role === "host";
-      if (isMod || isSpeaker) {
+
+      // AUTO-REJOIN GUARD (Faces): a non-host guest who dropped and comes back
+      // must return as AUDIENCE, not be auto-placed back on camera. The Faces
+      // client ALWAYS joins with role:"subscriber"; a fresh join that still
+      // carries a stale role='speaker' row (left over from the previous session
+      // because a disconnect isn't always seen server-side) would otherwise be
+      // granted publish below. When a returning video guest requests subscriber
+      // and their only claim to the stage is a plain speaker role (NOT a host-
+      // assigned moderator/co-host badge), reset that row to audience so they
+      // must raise a hand / be re-invited — the same path a new viewer uses.
+      // becomePublisher() requests role:"publisher" (an in-session promotion
+      // reconnect), so it is unaffected and still re-grants publish.
+      const staleSpeakerRejoin =
+        withVideo &&
+        requestedRole === "subscriber" &&
+        !isMod &&
+        participant?.role === "speaker";
+      if (staleSpeakerRejoin) {
+        await supabase
+          .from("space_participants")
+          .update({ role: "audience", has_raised_hand: false })
+          .eq("space_id", space.id)
+          .eq("user_id", userId)
+          .is("left_at", null);
+        // Falls through as audience (onStage stays false).
+      } else if (isMod || isSpeaker) {
         // Going on stage (speaking / camera) is a Superfan perk. A free user
         // can still WATCH/LISTEN as audience, but never receives a publish
         // grant even if promoted in the DB.
@@ -104,15 +129,17 @@ export async function POST(req: NextRequest) {
     // A client that explicitly asked to only subscribe stays audience even if
     // eligible for stage (e.g. joining muted); it can be promoted at runtime.
     //
-    // This applies to AUDIO Spaces only. Faces (video) rooms are different: the
-    // multi-guest client ALWAYS requests role:"subscriber" on join (see
-    // LiveRoom / livekitVideoClient), so honoring it here would strip a
-    // legitimately promoted guest's publish grant on every rejoin/reload and
-    // leave them subscribe-only — the exact "insufficient permissions" failure
-    // when they turn on camera. For video we stay DB-authoritative: an on-stage
-    // host / speaker / moderator (already gated by Superfan + not host_muted
-    // above) keeps canPublish regardless of the client's requested role.
-    if (requestedRole === "subscriber" && !withVideo) {
+    // This is enforced for every NON-HOST request (audio Spaces AND video
+    // Faces). The Faces client joins with role:"subscriber" on a fresh page
+    // load / rejoin, so honoring it here is precisely what keeps a dropped guest
+    // from being auto-published back on camera: they return as audience and must
+    // raise a hand or be re-invited. In-session promotion still works because
+    // becomePublisher() requests role:"publisher" (see livekitVideoClient), and
+    // a live host/mod approval flips canPublish at runtime via the server SDK
+    // without a token at all. The host is never demoted here — the host client
+    // always requests role:"publisher" and is short-circuited by isHost above,
+    // but we also guard on !isHost so host auto-promotion can never regress.
+    if (requestedRole === "subscriber" && !isHost) {
       onStage = false;
     }
 

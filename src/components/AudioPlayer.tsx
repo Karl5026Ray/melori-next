@@ -310,10 +310,12 @@ function DesktopBar() {
 
 // -------------------------------------------------------------------------
 // Mobile (< md): a draggable floating mini-player.
-//   - Collapsed = a ~56px bubble (album art + play/pause).
+//   - Collapsed = a ~64px bubble (album art + play/pause).
 //   - Tap the bubble to expand to the full transport; tap the close button
 //     (or the bubble again) to collapse.
-//   - Long-press (~300ms) then drag to move it anywhere; position persists.
+//   - Tap-and-hold (~300ms) OR grab-and-drag past the move threshold engages
+//     drag mode (with a single haptic pulse) to move it anywhere; position
+//     persists.
 // Hand-rolled with pointer events + translate3d per the design consult — no
 // drag library, no animating top/left.
 // -------------------------------------------------------------------------
@@ -322,10 +324,23 @@ const MARGIN = 8;
 // Reserve for the fixed mobile tab bar (h-14 = 56px) plus the iOS home
 // indicator so the player never parks underneath the nav.
 const BOTTOM_RESERVE = 76;
-const BUBBLE = 56;
+const BUBBLE = 64;
 // Movement thresholds that disambiguate tap / long-press-drag / scroll.
 const MOVE_THRESHOLD = 10;
 const LONG_PRESS_MS = 300;
+
+// Fire a short haptic buzz on capable devices. Silent no-op elsewhere; the
+// try/catch guards against Permissions-Policy denials that would otherwise
+// throw. Mirrors the haptics used on the discover feed and filter taps.
+function buzz(ms = 12) {
+  if (typeof navigator === "undefined") return;
+  if (typeof navigator.vibrate !== "function") return;
+  try {
+    navigator.vibrate(ms);
+  } catch {
+    /* ignore */
+  }
+}
 
 function getViewport() {
   const vv = typeof window !== "undefined" ? window.visualViewport : null;
@@ -439,9 +454,19 @@ function FloatingPlayer() {
     originY: 0,
     armed: false, // long-press timer fired → drag is now allowed
     dragging: false, // actively moving
-    scrolling: false, // moved before long-press → user meant to scroll
+    scrolling: false, // gesture handled by a child button → not a drag/tap
+    buzzed: false, // engage haptic already fired for this gesture
     timer: 0 as ReturnType<typeof setTimeout> | 0,
   });
+
+  // Fire the "drag mode engaged" haptic exactly once per gesture, whether drag
+  // engaged via the long-press timer or by dragging past the move threshold.
+  const engageHaptic = () => {
+    const g = gesture.current;
+    if (g.buzzed) return;
+    g.buzzed = true;
+    buzz();
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
     const el = ref.current;
@@ -460,9 +485,14 @@ function FloatingPlayer() {
     g.armed = false;
     g.dragging = false;
     g.scrolling = false;
+    g.buzzed = false;
     clearTimeout(g.timer);
     g.timer = setTimeout(() => {
+      // Tap-and-hold: arm drag mode and pulse so the user feels the control is
+      // now grabbable, even before they start moving.
+      if (g.scrolling || g.dragging) return;
       g.armed = true;
+      engageHaptic();
       setDragging(true);
     }, LONG_PRESS_MS);
   };
@@ -477,29 +507,24 @@ function FloatingPlayer() {
       setPos(clampPos(g.originX + dx, g.originY + dy));
       return;
     }
-    if (g.armed) {
-      // Long-press already fired — the first movement starts the drag. Claim
-      // the pointer NOW so subsequent moves keep tracking even if the finger
-      // slides off the bubble; endGesture/cancel/scroll-abort all release it.
+    // Engage the drag when either the long-press timer has armed us, OR the
+    // finger has travelled past the move threshold (grab-and-drag). Either way
+    // this is the moment drag mode begins: pulse once and claim the pointer NOW
+    // (never on pointerdown — see the #180 note) so subsequent moves keep
+    // tracking even if the finger slides off the bubble. endGesture / cancel /
+    // lostpointercapture all release it.
+    if (g.armed || Math.hypot(dx, dy) > MOVE_THRESHOLD) {
+      clearTimeout(g.timer);
+      g.armed = true;
       g.dragging = true;
+      engageHaptic();
       try {
         ref.current?.setPointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
+      setDragging(true);
       setPos(clampPos(g.originX + dx, g.originY + dy));
-      return;
-    }
-    // Still within the press window: a real move here means the user is
-    // scrolling the page, so abandon the gesture and don't hijack the scroll.
-    if (Math.hypot(dx, dy) > MOVE_THRESHOLD) {
-      g.scrolling = true;
-      clearTimeout(g.timer);
-      try {
-        ref.current?.releasePointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
     }
   };
 
@@ -525,13 +550,16 @@ function FloatingPlayer() {
       } catch {
         /* ignore */
       }
-    } else if (!g.scrolling) {
-      // Clean tap (quick, or a hold with no movement) → toggle expand.
+    } else if (!g.armed && !g.scrolling) {
+      // Clean tap: quick press + release, no long-press, no movement → toggle
+      // expand. A long-press that armed drag mode (even without moving) is NOT
+      // a tap, so it must not toggle here.
       setExpanded((v) => !v);
     }
     g.armed = false;
     g.dragging = false;
     g.scrolling = false;
+    g.buzzed = false;
     setDragging(false);
   };
 
@@ -547,6 +575,20 @@ function FloatingPlayer() {
     g.armed = false;
     g.dragging = false;
     g.scrolling = true;
+    g.buzzed = false;
+  };
+
+  // Safety net: if the browser force-releases the capture mid-drag (OS gesture,
+  // element removed), reset gesture state so a stale capture can never linger
+  // and swallow the next tap (the #180 failure mode).
+  const onLostCapture = () => {
+    const g = gesture.current;
+    clearTimeout(g.timer);
+    g.armed = false;
+    g.dragging = false;
+    g.scrolling = false;
+    g.buzzed = false;
+    setDragging(false);
   };
 
   const trackLabel = current ? current.title : "Nothing playing";
@@ -561,6 +603,7 @@ function FloatingPlayer() {
       onPointerMove={onPointerMove}
       onPointerUp={endGesture}
       onPointerCancel={endGesture}
+      onLostPointerCapture={onLostCapture}
       // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
       // and its launcher sheet — otherwise the X and transport row sit BEHIND
       // the nav and can't be tapped, which looked like "stuck, can't stop".
@@ -707,7 +750,7 @@ function FloatingPlayer() {
       ) : (
         // Collapsed bubble: album art with a centred play/pause control. Tapping
         // the art ring expands; the play button toggles playback.
-        <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-brand-border bg-brand-surface shadow-lg">
+        <div className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-brand-border bg-brand-surface shadow-lg">
           <CoverImage
             src={current?.coverUrl}
             alt={trackLabel}
@@ -720,7 +763,7 @@ function FloatingPlayer() {
             onClick={togglePlay}
             disabled={!current}
             aria-label={isPlaying ? "Pause" : "Play"}
-            className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white transition-colors hover:bg-black/70 disabled:opacity-50"
+            className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white transition-colors hover:bg-black/70 disabled:opacity-50"
           >
             {isLoading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

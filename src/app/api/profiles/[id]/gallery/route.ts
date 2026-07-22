@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getRequestMembership } from "@/lib/membership-server";
+import { isBlockedBetween } from "@/lib/blocks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +15,7 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
   return (error.code === "42P01" || /relation .*profile_gallery.* does not exist/i.test(error.message ?? ""));
 }
 
-export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const profileId = params.id;
   if (!profileId) {
@@ -21,6 +23,19 @@ export async function GET(_req: Request, props: { params: Promise<{ id: string }
   }
 
   const supabase = getSupabaseAdmin();
+
+  // Mutual invisibility: hide a blocked pair's gallery from each other. Viewer
+  // identity is best-effort (this endpoint is public), so anonymous callers are
+  // unaffected. Returning an empty list keeps the "never 500, hide the section"
+  // contract callers already rely on.
+  try {
+    const { userId: viewerId } = await getRequestMembership(req);
+    if (viewerId && (await isBlockedBetween(supabase, viewerId, profileId))) {
+      return NextResponse.json({ photos: [] });
+    }
+  } catch {
+    /* anonymous — no block to enforce */
+  }
   // Public view: only content that has cleared moderation. 'clean' and
   // 'flagged' (explicit/borderline, visible pending review) show; 'quarantined',
   // 'removed', and unreviewed 'pending_review' videos are hidden from the public.

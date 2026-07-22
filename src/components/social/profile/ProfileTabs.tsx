@@ -490,6 +490,21 @@ function SettingsPanel({ onEditProfile }: { onEditProfile?: () => void }) {
       </button>
 
       <Link
+        href="/social/blocked"
+        className="flex w-full items-center justify-between rounded-2xl border border-melori-border bg-melori-elevated px-5 py-4 text-left transition hover:border-melori-purple/40"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-melori-text">
+            Blocked members
+          </span>
+          <span className="block text-xs text-melori-muted">
+            Review and unblock people you&apos;ve blocked
+          </span>
+        </span>
+        <span className="text-melori-muted">›</span>
+      </Link>
+
+      <Link
         href="/settings"
         className="flex w-full items-center justify-between rounded-2xl border border-melori-border bg-melori-elevated px-5 py-4 text-left transition hover:border-melori-purple/40"
       >

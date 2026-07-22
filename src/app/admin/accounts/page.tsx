@@ -600,6 +600,8 @@ function EditModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hardMode, setHardMode] = useState(false);
+  const [hardConfirm, setHardConfirm] = useState("");
 
   async function call(path: string, method: string, body?: unknown) {
     setBusy(true);
@@ -648,6 +650,13 @@ function EditModal({
   async function softDelete() {
     if (!window.confirm("Soft-delete this account? They will lose access.")) return;
     const j = await call(`/api/admin/accounts/${row.id}`, "DELETE", { reason });
+    if (j) onSaved();
+  }
+
+  async function hardDelete() {
+    const j = await call(`/api/admin/accounts/${row.id}/hard-delete`, "POST", {
+      confirm: "DELETE",
+    });
     if (j) onSaved();
   }
 
@@ -720,6 +729,60 @@ function EditModal({
         >
           {row.status === "deleted" ? "Already deleted" : "Soft delete account"}
         </button>
+
+        {/* Danger zone: permanent, irreversible hard delete (Postgres rows +
+            Supabase Auth user). Requires typing DELETE to confirm. */}
+        <div className="mt-2 rounded-md border border-melori-danger/40 bg-melori-danger/5 p-3">
+          {!hardMode ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setHardMode(true);
+                setHardConfirm("");
+                setErr(null);
+              }}
+              className="w-full rounded-md bg-melori-danger/90 px-3 py-2 text-xs font-semibold text-white hover:bg-melori-danger disabled:opacity-50"
+            >
+              Permanently delete account…
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-melori-danger">
+                This permanently erases the profile, all their content, and their
+                login. It cannot be undone. Type <span className="font-mono font-bold">DELETE</span> to confirm.
+              </p>
+              <input
+                value={hardConfirm}
+                onChange={(e) => setHardConfirm(e.target.value)}
+                placeholder="DELETE"
+                className={inputCls}
+                autoFocus
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setHardMode(false);
+                    setHardConfirm("");
+                  }}
+                  className="rounded-md border border-brand-border px-3 py-2 text-xs text-text-primary hover:text-melori-accent disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || hardConfirm !== "DELETE"}
+                  onClick={() => void hardDelete()}
+                  className="rounded-md bg-melori-danger px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? "Deleting…" : "Permanently delete"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </ModalShell>
   );

@@ -205,6 +205,24 @@ a {
   12%  { opacity: 1; transform: translateY(-10px) scale(1); }
   100% { transform: translateY(-200px) scale(1.1) rotate(12deg); opacity: 0; }
 }
+
+/* Melori Mirror — double-tap-to-like heart burst.
+   The heart pops in at the tap point, over-scales briefly, then fades up and
+   away. Duration (900ms) MUST match the setTimeout cleanup in VideoCard.tsx
+   so a burst is removed from state right after its animation ends and does
+   not linger as an invisible element. */
+.mirror-heart-burst {
+  animation: mirrorHeartBurst 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: transform, opacity;
+  transform-origin: center;
+  pointer-events: none;
+}
+@keyframes mirrorHeartBurst {
+  0%   { transform: scale(0.2) rotate(-8deg); opacity: 0; }
+  25%  { transform: scale(1.25) rotate(-4deg); opacity: 1; }
+  55%  { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1.4) translateY(-40px) rotate(8deg); opacity: 0; }
+}
 /* TikTok-style live comment overlay (FacesLiveChat). Each message floats over
    the video, rises from the bottom, holds, then auto-fades so chat never piles
    up over guest faces. The 7s total MUST match LIFETIME_MS in

@@ -138,6 +138,94 @@ async function fetchToken(spaceId: string, role: VideoRole) {
   }>;
 }
 
+export type MediaPermissionState = "granted" | "denied" | "prompt" | "unknown";
+
+// Read the browser's PERSISTED camera + mic permission via the Permissions API.
+// The persisted grant is what makes a second join instant: once the user has
+// clicked "Allow" for the origin, the state is "granted" and getUserMedia will
+// NOT prompt again. We use this to (a) skip firing getUserMedia when access is
+// "denied" (it would only reject) and show a settings hint instead, and (b)
+// reason about the grant without prompting. Camera/microphone are not queryable
+// in every browser (older Firefox/Safari), so "unknown" falls back to the
+// normal getUserMedia path.
+export async function getMediaPermission(): Promise<MediaPermissionState> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+      return "unknown";
+    }
+    const [cam, mic] = await Promise.all([
+      navigator.permissions.query({ name: "camera" as PermissionName }),
+      navigator.permissions.query({ name: "microphone" as PermissionName }),
+    ]);
+    const states = [cam.state, mic.state];
+    if (states.includes("denied")) return "denied";
+    if (states.every((s) => s === "granted")) return "granted";
+    return "prompt";
+  } catch {
+    return "unknown";
+  }
+}
+
+// Turn on the local camera + mic in a SINGLE getUserMedia request and attach the
+// resulting camera track. LiveKit's enableCameraAndMicrophone() exists
+// specifically to surface ONE permission dialog (and to reuse a persisted grant
+// silently); requesting camera and mic as two separate calls made the browser
+// evaluate access twice — the repeat-prompt bug this replaces. Capture quality
+// still comes from the room's per-tier videoCaptureDefaults/publishDefaults.
+async function enableLocalCameraAndMic(
+  room: AnyRoom,
+  onLocalVideo?: (el: HTMLVideoElement) => void,
+): Promise<HTMLVideoElement | null> {
+  // If the user has explicitly BLOCKED access, don't fire getUserMedia (it just
+  // rejects); surface an actionable message the UI can show instead.
+  if ((await getMediaPermission()) === "denied") {
+    throw new Error(
+      "Camera and microphone are blocked. Enable them for this site in your browser settings, then try again.",
+    );
+  }
+
+  const lp = room.localParticipant;
+  try {
+    await lp.enableCameraAndMicrophone();
+  } catch (err: any) {
+    // A genuine access failure (user denied at the prompt, no/unreadable device)
+    // must NOT trigger a second getUserMedia — that would double-prompt. Only
+    // fall back to the individual calls when the combined helper itself is
+    // unavailable in this SDK build.
+    const name = err?.name;
+    if (
+      name === "NotAllowedError" ||
+      name === "NotFoundError" ||
+      name === "NotReadableError" ||
+      name === "SecurityError"
+    ) {
+      throw err;
+    }
+    await lp.setCameraEnabled(true);
+    await lp.setMicrophoneEnabled(true);
+  }
+
+  const lk = await import("livekit-client");
+  const { Track } = lk as any;
+  const SOURCE_CAMERA = Track?.Source?.Camera ?? "camera";
+  const camPub =
+    lp.getTrackPublication?.(SOURCE_CAMERA) ??
+    Array.from(lp.trackPublications?.values?.() ?? []).find(
+      (p: any) => p?.source === SOURCE_CAMERA,
+    );
+  const camTrack = camPub?.track ?? camPub?.videoTrack;
+  if (camTrack && typeof camTrack.attach === "function") {
+    const el = camTrack.attach() as HTMLVideoElement;
+    el.playsInline = true;
+    el.autoplay = true;
+    el.muted = true; // never echo your own mic
+    session.localVideoEl = el;
+    onLocalVideo?.(el);
+    return el;
+  }
+  return session.localVideoEl;
+}
+
 export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
   if (session.room) {
     await leaveVideoRoom();
@@ -411,24 +499,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     // browser is holding audio back until a gesture.
     opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
 
-    // Publisher (host) turns on camera + mic. Viewers stay receive-only.
+    // Publisher (host) turns on camera + mic. Viewers stay receive-only. Uses a
+    // single combined request so a persisted grant is reused with no re-prompt.
     if (creds.role === "publisher") {
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
-      const camPub =
-        room.localParticipant.getTrackPublication?.(SOURCE_CAMERA) ??
-        Array.from(room.localParticipant.trackPublications?.values?.() ?? []).find(
-          (p: any) => p?.source === SOURCE_CAMERA,
-        );
-      const camTrack = camPub?.track ?? camPub?.videoTrack;
-      if (camTrack && typeof camTrack.attach === "function") {
-        const el = camTrack.attach() as HTMLVideoElement;
-        el.playsInline = true;
-        el.autoplay = true;
-        el.muted = true; // never echo your own mic
-        session.localVideoEl = el;
-        opts.onLocalVideo?.(el);
-      }
+      await enableLocalCameraAndMic(room, opts.onLocalVideo);
     }
 
     emitCount();
@@ -576,29 +650,12 @@ export async function becomeSubscriber(): Promise<void> {
 // the camera track is live so the UI can show a self-tile.
 export async function publishLocalMedia(): Promise<HTMLVideoElement | null> {
   if (!session.room) return null;
-  const lk = await import("livekit-client");
-  const { Track } = lk as any;
-  const SOURCE_CAMERA = Track?.Source?.Camera ?? "camera";
-  const lp = session.room.localParticipant;
-  await lp.setCameraEnabled(true);
-  await lp.setMicrophoneEnabled(true);
-  const camPub =
-    lp.getTrackPublication?.(SOURCE_CAMERA) ??
-    Array.from(lp.trackPublications?.values?.() ?? []).find(
-      (p: any) => p?.source === SOURCE_CAMERA,
-    );
-  const camTrack = camPub?.track ?? camPub?.videoTrack;
-  if (camTrack && typeof camTrack.attach === "function") {
-    const el = camTrack.attach() as HTMLVideoElement;
-    el.playsInline = true;
-    el.autoplay = true;
-    el.muted = true;
-    session.localVideoEl = el;
-    session.lastOpts?.onLocalVideo?.(el);
-    session.role = "publisher";
-    return el;
-  }
-  return session.localVideoEl;
+  const el = await enableLocalCameraAndMic(
+    session.room,
+    session.lastOpts?.onLocalVideo,
+  );
+  session.role = "publisher";
+  return el;
 }
 
 export function getVideoSession() {

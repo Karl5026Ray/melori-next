@@ -61,6 +61,20 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
+  // Double-tap-to-like state.
+  //
+  // - `bursts` renders one <Heart> per double-tap at the tap point, keyed by an
+  //   ever-increasing id so React never reuses a DOM node and every animation
+  //   plays clean. Each burst auto-cleans after the animation window.
+  // - `lastTapRef` remembers the previous tap so we can detect a double-tap
+  //   within 300ms and within ~40px of the first tap (native double-tap feel,
+  //   independent of the browser's own dblclick which behaves poorly on touch).
+  const [bursts, setBursts] = useState<
+    { id: number; x: number; y: number }[]
+  >([]);
+  const burstIdRef = useRef(0);
+  const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+
   // Load the caller's like state + the live count for this card. Deferred until
   // the card is at (or adjacent to) the active position, and fetched only once.
   // Previously this fired on mount for EVERY card, so scrolling and infinite
@@ -241,8 +255,62 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     }
   };
 
+  // Spawn a heart burst at (x, y) — coordinates are relative to the tap
+  // surface, so the caller passes clientX/Y minus the surface's bounding
+  // rect. Each burst self-cleans after 900ms (matches the animation length
+  // in globals.css: `.mirror-heart-burst`).
+  const spawnBurst = (x: number, y: number) => {
+    const id = ++burstIdRef.current;
+    setBursts((prev) => [...prev, { id, x, y }]);
+    window.setTimeout(() => {
+      setBursts((prev) => prev.filter((b) => b.id !== id));
+    }, 900);
+  };
+
+  // Double-tap gesture: TikTok/Instagram-style. A second tap within 300ms
+  // and ~40px of the first tap fires a LIKE (never an unlike — this matches
+  // native app behaviour and prevents an accidental double-tap from wiping a
+  // previous like) and plays a heart burst at the tap point.
+  //
+  // We implement this manually rather than using onDoubleClick because the
+  // browser's synthetic dblclick event has a ~200ms delay on the *first* tap
+  // too (waiting to see if a second tap arrives) — that would delay any
+  // future single-tap handler we add here. Manual detection keeps single-tap
+  // handlers (e.g. play/pause) instant.
+  const handleTapSurface = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Only respond to primary touches / left mouse. Ignore right-click, pen
+    // eraser, etc.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    const now = Date.now();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const prev = lastTapRef.current;
+
+    if (
+      prev &&
+      now - prev.t < 300 &&
+      Math.abs(prev.x - x) < 40 &&
+      Math.abs(prev.y - y) < 40
+    ) {
+      // It's a double-tap: fire the burst, and if not already liked, like.
+      lastTapRef.current = null; // consume so a third tap starts fresh
+      spawnBurst(x, y);
+      if (!isLiked && !likePending) {
+        void handleLike();
+      }
+      return;
+    }
+
+    lastTapRef.current = { t: now, x, y };
+  };
+
   return (
-    <div className="relative h-full w-full bg-melori-void">
+    <div
+      className="relative h-full w-full bg-melori-void"
+      onPointerDown={handleTapSurface}
+    >
       {isAudio ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
           <div className="absolute inset-0 bg-gradient-to-br from-melori-purple/30 via-melori-void to-melori-pink/20" />
@@ -382,6 +450,25 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
           <Share2 className="w-7 h-7" />
           <span className="text-xs font-medium">Share</span>
         </button>
+      </div>
+
+      {/* Heart-burst layer. Absolutely positioned so it floats above the
+          video and gradient overlay but stays below the right-rail actions
+          and comment sheet. `pointer-events-none` so the bursts never eat a
+          subsequent tap. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {bursts.map((b) => (
+          <Heart
+            key={b.id}
+            aria-hidden
+            className="mirror-heart-burst absolute h-24 w-24 fill-red-500 text-red-500 drop-shadow-[0_0_14px_rgba(255,0,80,0.55)]"
+            style={{
+              // Center the 96px heart on the tap point.
+              left: b.x - 48,
+              top: b.y - 48,
+            }}
+          />
+        ))}
       </div>
 
       <CommentSheet

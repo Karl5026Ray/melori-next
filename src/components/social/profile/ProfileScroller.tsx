@@ -623,7 +623,7 @@ function ProfileSlide({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <h2 className="text-center text-2xl font-bold text-white md:text-3xl">
             {profile.display_name}
           </h2>
@@ -634,20 +634,20 @@ function ProfileSlide({
           )}
         </div>
 
-        <p className="mt-0.5 text-sm text-melori-muted">
+        <p className="mt-2 text-sm text-melori-muted">
           @{profile.username}{" "}
           <span className="mx-1 opacity-50">·</span>
           <span className="capitalize text-melori-purple">{profile.role}</span>
         </p>
 
         {profile.bio && (
-          <p className="mt-3 max-w-md text-center text-sm leading-relaxed text-white/85">
+          <p className="mt-4 max-w-md text-center text-sm leading-relaxed text-white/85 break-words">
             {profile.bio}
           </p>
         )}
 
         {profile.city && (
-          <p className="mt-2 inline-flex items-center gap-1 text-xs text-melori-muted">
+          <p className="mt-3 inline-flex items-center gap-1 text-xs text-melori-muted">
             <MapPin className="h-3.5 w-3.5" />
             {profile.city}
           </p>

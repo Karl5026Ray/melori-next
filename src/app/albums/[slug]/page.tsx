@@ -45,7 +45,14 @@ export default async function AlbumDetailPage(
   const data = await getReleaseBySlug(params.slug).catch(() => null);
   if (!data) notFound();
 
-  const { release, artist, tracks } = data;
+  const { release, artist, tracks, creditsByTrack } = data;
+
+  const tracksWithExtras = tracks.filter(
+    (t) =>
+      (t.lyrics && t.lyrics.trim()) ||
+      (t.credits_text && t.credits_text.trim()) ||
+      (creditsByTrack[t.id]?.length ?? 0) > 0,
+  );
 
   return (
     <article className="max-w-6xl mx-auto px-6 py-12">
@@ -109,9 +116,62 @@ export default async function AlbumDetailPage(
             tracks={tracks}
             artistName={artist?.name ?? null}
             coverUrl={release.cover_art_url}
+            artistId={release.artist_id}
           />
         </div>
       </div>
+
+      {tracksWithExtras.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-6 text-xl font-bold">Lyrics &amp; Credits</h2>
+          <div className="space-y-8">
+            {tracksWithExtras.map((track) => {
+              const structured = creditsByTrack[track.id] ?? [];
+              return (
+                <div
+                  key={track.id}
+                  className="rounded-lg border border-brand-border bg-brand-surface p-5"
+                >
+                  <h3 className="mb-3 font-semibold text-text-primary">
+                    {track.title}
+                  </h3>
+                  {track.lyrics && track.lyrics.trim() && (
+                    <div className="mb-4">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/70">
+                        Lyrics
+                      </p>
+                      <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary">
+                        {track.lyrics}
+                      </pre>
+                    </div>
+                  )}
+                  {(structured.length > 0 ||
+                    (track.credits_text && track.credits_text.trim())) && (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary/70">
+                        Credits
+                      </p>
+                      {structured.length > 0 ? (
+                        <ul className="space-y-0.5 text-sm text-text-secondary">
+                          {structured.map((c, i) => (
+                            <li key={i}>
+                              {c.role} — {c.name}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary">
+                          {track.credits_text}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </article>
   );
 }

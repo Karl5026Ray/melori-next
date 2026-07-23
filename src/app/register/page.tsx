@@ -50,6 +50,11 @@ function RegisterInner() {
     tierParam === "snappd"
       ? tierParam
       : "free";
+  // Referral code from ?ref= (deep-linked from an invite link). Applied after a
+  // successful free signup; for paid tiers we can't apply it here (the account
+  // doesn't exist until after Stripe checkout), so we stash it for /welcome to
+  // pick up — see the localStorage handoff below.
+  const refCode = (params.get("ref") ?? "").trim().toUpperCase() || null;
   const [tier, setTier] = useState<Tier>(initialTier);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -115,6 +120,18 @@ function RegisterInner() {
     // Checkout). On completion Stripe redirects to /welcome?tier=snappd, which
     // auto-provisions the photographer account + studio role — no separate
     // signup form step needed here.
+    // Paid tiers create the account only after Stripe checkout, so we can't call
+    // /api/referrals/apply here (no session yet). Stash the code for the
+    // post-payment flow to apply once the account exists. Known limitation: a
+    // referral on a paid-first signup only lands if /welcome later reads this.
+    if (tier !== "free" && refCode && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("melori_ref", refCode);
+      } catch {
+        /* best-effort */
+      }
+    }
+
     if (tier === "snappd") {
       window.location.href = SNAPPD_PAYMENT_LINK;
       return;
@@ -194,6 +211,23 @@ function RegisterInner() {
             },
             body: JSON.stringify({ username: normalizedUsername, role: "free" }),
           });
+
+          // If this signup came from an invite link, record the referral now
+          // that we have a session. Best-effort — never block the redirect.
+          if (refCode) {
+            try {
+              await fetch("/api/referrals/apply", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({ code: refCode }),
+              });
+            } catch {
+              /* best-effort */
+            }
+          }
         }
       } catch {
         /* seeded later */

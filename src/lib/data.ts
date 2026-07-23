@@ -547,10 +547,16 @@ export async function getPersonalizedRadioPool(
   return { tracks: scored, personalized: true };
 }
 
+export interface TrackCredit {
+  role: string;
+  name: string;
+}
+
 export async function getReleaseBySlug(slug: string): Promise<{
   release: Release;
   artist: ArtistRef | null;
   tracks: Track[];
+  creditsByTrack: Record<number, TrackCredit[]>;
 } | null> {
   const supabase = getSupabaseAdmin();
   const { data: release, error } = await supabase
@@ -574,7 +580,7 @@ export async function getReleaseBySlug(slug: string): Promise<{
   const { data: tracks, error: tracksError } = await supabase
     .from("tracks")
     .select(
-      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at, vps_track_id",
+      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at, vps_track_id, lyrics, credits_text",
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)
@@ -586,9 +592,30 @@ export async function getReleaseBySlug(slug: string): Promise<{
 
   if (tracksError) throw tracksError;
 
+  const trackList = (tracks as Track[] | null) ?? [];
+
+  // Structured per-line credits for these tracks, grouped by track id.
+  const creditsByTrack: Record<number, TrackCredit[]> = {};
+  const trackIds = trackList.map((t) => t.id);
+  if (trackIds.length) {
+    const { data: credits } = await supabase
+      .from("track_credits")
+      .select("track_id, role, name, order_index")
+      .in("track_id", trackIds)
+      .order("order_index", { ascending: true });
+    for (const c of (credits ?? []) as Array<{
+      track_id: number;
+      role: string;
+      name: string;
+    }>) {
+      (creditsByTrack[c.track_id] ??= []).push({ role: c.role, name: c.name });
+    }
+  }
+
   return {
     release: release as Release,
     artist: (artist as ArtistRef | null) ?? null,
-    tracks: (tracks as Track[] | null) ?? [],
+    tracks: trackList,
+    creditsByTrack,
   };
 }

@@ -66,6 +66,12 @@ export type LiveMode = "live_solo" | "live_duo" | "live_group";
 // changes who is publishing, so it's safe for any viewer to toggle.
 export type FacesLayout = "grid" | "spotlight";
 
+// TODO(tips): TipButton (source="live") is intentionally NOT placed here. The
+// live-room host is a social profile (space_participants.role='host' / hostId is
+// a profiles/auth uuid), not an `artists` row, so there is no clean numeric
+// artistId to route the destination charge to. Wiring this up would require a
+// host-profile → artists.id lookup that most social hosts don't have. Add the
+// TipButton once a reliable host→artist resolution exists.
 interface LiveRoomProps {
   spaceId: string;
   hostId: string;

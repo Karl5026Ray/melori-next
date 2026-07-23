@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Camera, RotateCw, CheckCircle2, XCircle } from "lucide-react";
-import { authFetch, authHeaders } from "@/lib/authClient";
+import { authFetch } from "@/lib/authClient";
 
 interface FileStatus {
   file: File;
@@ -41,63 +41,112 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
     void runQueue(next);
   };
 
+  // Three-step upload:
+  //   1. POST /signed-url         → { uploadUrl, imageId }
+  //   2. PUT uploadUrl (direct)   → Supabase Storage (no Vercel 4.5 MB cap)
+  //   3. POST /finalize           → kicks off sharp watermarking + DB row
+  //
+  // Previously step 2 was a POST straight to the Next.js route with the
+  // file in a multipart FormData body — that hit Vercel's HARD 4.5 MB
+  // serverless function body limit (not configurable), so any real phone
+  // photo returned 413 before reaching the route.
   async function uploadOne(item: FileStatus): Promise<boolean> {
+    const markError = (msg: string) =>
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.key === item.key ? { ...q, status: "error", error: msg } : q,
+        ),
+      );
+
     setQueue((prev) =>
-      prev.map((q) => (q.key === item.key ? { ...q, status: "uploading", error: undefined } : q)),
+      prev.map((q) =>
+        q.key === item.key
+          ? { ...q, status: "uploading", error: undefined }
+          : q,
+      ),
     );
 
     try {
-      const form = new FormData();
-      form.append("files", item.file, item.file.name);
-      const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
-      if (forSale && Number.isFinite(priceCents) && priceCents > 0) {
-        form.append("forSale", "true");
-        form.append("priceCents", String(priceCents));
+      // Step 1 — mint a signed upload URL scoped to this gallery.
+      const signedRes = await authFetch(
+        `/api/studio/gallery/${galleryId}/images/signed-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: item.file.name,
+            contentType: item.file.type || "image/jpeg",
+          }),
+        },
+      );
+      const signedBody = await signedRes.json().catch(() => ({}));
+      if (!signedRes.ok || !signedBody?.uploadUrl || !signedBody?.imageId) {
+        markError(
+          signedBody?.error ??
+            `Couldn't prepare upload (HTTP ${signedRes.status})`,
+        );
+        return false;
       }
 
-      const headers = await authHeaders();
-      const res = await fetch(`/api/studio/gallery/${galleryId}/images`, {
-        method: "POST",
-        headers,
-        body: form,
+      // Step 2 — PUT the raw file DIRECTLY to Supabase Storage. This
+      // bypasses Vercel entirely so the 4.5 MB body limit doesn't apply.
+      // The signed URL is a JWT that only permits an upload to the exact
+      // path returned in step 1.
+      const putRes = await fetch(signedBody.uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": item.file.type || "application/octet-stream",
+          "x-upsert": "true",
+        },
+        body: item.file,
       });
-      const body = await res.json().catch(() => ({}));
-      const result = body?.results?.[0];
-      const ok = res.ok && result?.success;
+      if (!putRes.ok) {
+        const txt = await putRes.text().catch(() => "");
+        markError(`Upload to storage failed (HTTP ${putRes.status}) ${txt}`);
+        return false;
+      }
 
-      // Surface HTTP status when there's no useful body — e.g. Vercel's
-      // proxy returns 413 with no JSON when the request body exceeds the
-      // configured limit, so without this the user just sees "Upload
-      // failed" and we can't tell if it was body size, timeout, or a
-      // sharp error. Common ones the user will actually see: 413 (photo
-      // too large), 504 (function timeout), 500 (sharp/storage error).
-      const fallback = res.ok
-        ? "Upload failed"
-        : `Upload failed (HTTP ${res.status})`;
+      // Step 3 — tell the server the raw file is up so it can watermark,
+      // upload the preview/thumb, and insert the DB row. Tiny request
+      // body, no size concerns.
+      const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
+      const finalizeRes = await authFetch(
+        `/api/studio/gallery/${galleryId}/images/finalize`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: signedBody.imageId,
+            filename: item.file.name,
+            forSale:
+              forSale && Number.isFinite(priceCents) && priceCents > 0,
+            priceCents:
+              forSale && Number.isFinite(priceCents) && priceCents > 0
+                ? priceCents
+                : null,
+          }),
+        },
+      );
+      const finalizeBody = await finalizeRes.json().catch(() => ({}));
+      const ok = finalizeRes.ok && finalizeBody?.success;
+
       setQueue((prev) =>
         prev.map((q) =>
           q.key === item.key
             ? {
                 ...q,
                 status: ok ? "done" : "error",
-                error: ok ? undefined : result?.error ?? body?.error ?? fallback,
+                error: ok
+                  ? undefined
+                  : finalizeBody?.error ??
+                    `Finalize failed (HTTP ${finalizeRes.status})`,
               }
             : q,
         ),
       );
       return Boolean(ok);
     } catch (err) {
-      setQueue((prev) =>
-        prev.map((q) =>
-          q.key === item.key
-            ? {
-                ...q,
-                status: "error",
-                error: err instanceof Error ? err.message : "Network error",
-              }
-            : q,
-        ),
-      );
+      markError(err instanceof Error ? err.message : "Network error");
       return false;
     }
   }

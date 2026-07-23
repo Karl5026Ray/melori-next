@@ -1,5 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/api/studio/gallery/[id]/images/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    },
+    "src/app/api/gallery/upload/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    }
+  },
   "crons": [
     {
       "path": "/api/health",

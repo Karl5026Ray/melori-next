@@ -9,6 +9,11 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Sharp watermarking of a full-res phone JPEG (decode + preview + thumb +
+// three Supabase Storage uploads) can exceed the 10s serverless default on
+// cold starts. 60s is comfortably below Vercel Pro's 300s max and matches
+// the memory/duration set in vercel.json > functions.
+export const maxDuration = 60;
 
 const ORIGINALS_BUCKET = "gallery-originals"; // private
 const PREVIEWS_BUCKET = "gallery-previews"; // public
@@ -103,10 +108,12 @@ export async function POST(
       const previewKey = `${gallery.photographer_id}/${galleryId}/${imageId}/preview.jpg`;
       const thumbnailKey = `${gallery.photographer_id}/${galleryId}/${imageId}/thumb.jpg`;
 
-      const [originalJpeg, watermarked] = await Promise.all([
-        normalizeOriginalJpeg(sourceBuffer),
-        generateWatermarkedImages(sourceBuffer),
-      ]);
+      // Serialize sharp calls (previously Promise.all) so we peak at one
+      // libvips pipeline in memory at a time. On a 12 MB phone photo the
+      // parallel path could briefly hold two full decoded rasters (~700 MB
+      // combined) which triggered silent OOM kills on the function.
+      const originalJpeg = await normalizeOriginalJpeg(sourceBuffer);
+      const watermarked = await generateWatermarkedImages(sourceBuffer);
 
       const { error: upErr } = await supabase.storage
         .from(ORIGINALS_BUCKET)

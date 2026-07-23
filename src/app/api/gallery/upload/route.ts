@@ -6,6 +6,13 @@ import { getResend, MELORI_FROM, MELORI_REPLY_TO } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// CLI uploads (melori-gallery) send batches of 3× preprocessed JPEGs per
+// image — original + preview + thumb, all already watermarked locally.
+// The bottleneck here is Supabase Storage uploads (3 files/image × N
+// images per request), not sharp. Even so, a batch of 20+ photos on a
+// slow connection can exceed the 10s serverless default. 60s matches
+// the studio path and vercel.json.
+export const maxDuration = 60;
 
 const ORIGINALS_BUCKET = "gallery-originals"; // private
 const PREVIEWS_BUCKET = "gallery-previews"; // public

@@ -65,13 +65,22 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
       const result = body?.results?.[0];
       const ok = res.ok && result?.success;
 
+      // Surface HTTP status when there's no useful body — e.g. Vercel's
+      // proxy returns 413 with no JSON when the request body exceeds the
+      // configured limit, so without this the user just sees "Upload
+      // failed" and we can't tell if it was body size, timeout, or a
+      // sharp error. Common ones the user will actually see: 413 (photo
+      // too large), 504 (function timeout), 500 (sharp/storage error).
+      const fallback = res.ok
+        ? "Upload failed"
+        : `Upload failed (HTTP ${res.status})`;
       setQueue((prev) =>
         prev.map((q) =>
           q.key === item.key
             ? {
                 ...q,
                 status: ok ? "done" : "error",
-                error: ok ? undefined : result?.error ?? body?.error ?? "Upload failed",
+                error: ok ? undefined : result?.error ?? body?.error ?? fallback,
               }
             : q,
         ),

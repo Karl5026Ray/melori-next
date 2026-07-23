@@ -89,6 +89,16 @@ const SECURITY_HEADERS = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Studio photo galleries accept raw phone-camera JPEGs (iPhone/Canon
+  // Camera Connect commonly produce 3-12 MB per shot). The App Router
+  // default request body is 4.5 MB which returned 413 on any richly-
+  // detailed photo — the client just showed "Upload Failed" with no
+  // detail. Raising to 25 MB comfortably covers modern phone shots.
+  // NOTE: per-route `maxDuration` and Vercel function memory are set in
+  // vercel.json; this only widens the incoming request body ceiling.
+  experimental: {
+    serverActions: { bodySizeLimit: '25mb' },
+  },
   // Image optimizer allowlist. Narrow on purpose: only the Supabase public
   // storage host that actually serves Melori cover/artwork URLs. This unblocks
   // migrating components to next/image incrementally WITHOUT a broad wildcard

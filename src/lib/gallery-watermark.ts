@@ -8,6 +8,16 @@ import sharp from "sharp";
 // Preview: max 1600px long edge (spec). Thumbnail: max 500px long edge.
 // Watermark: "© Karl Ray Photography" tiled diagonally at ~40% opacity,
 // rendered as an SVG overlay composited over the resized JPEG.
+//
+// libvips tuning for Vercel serverless: without these two calls, sharp
+// will (a) spawn one libvips worker per CPU which on a 3009 MB Vercel
+// function thrashes memory instead of gaining throughput, and (b) hold
+// decoded pixel data in its process-wide cache across invocations, which
+// on a warm Lambda leaks memory until the next cold start. Concurrency 1
+// keeps peak RSS predictable; cache(false) frees buffers as soon as the
+// pipeline resolves.
+sharp.concurrency(1);
+sharp.cache(false);
 
 const PREVIEW_MAX_EDGE = 1600;
 const THUMBNAIL_MAX_EDGE = 500;
@@ -54,11 +64,21 @@ export interface WatermarkedImages {
 
 // Produces watermarked preview + thumbnail JPEG buffers from a raw source
 // buffer (any format sharp can decode). Auto-rotates via EXIF orientation.
+//
+// Uses ONE decoded base pipeline (.clone()d for preview and thumb) instead
+// of three separate sharp(sourceBuffer) instantiations. Each sharp() call
+// spins up a fresh libvips pipeline that decodes the source JPEG from
+// scratch — on a 12 MB phone photo that's 3× the decode cost and 3× the
+// peak memory. .clone() forks the decoded state so preview + thumb share
+// one decode.
 export async function generateWatermarkedImages(
   sourceBuffer: Buffer,
 ): Promise<WatermarkedImages> {
-  const rotated = sharp(sourceBuffer).rotate();
-  const meta = await rotated.metadata();
+  // failOn: "none" tolerates minor JPEG corruption we occasionally see from
+  // Canon Camera Connect transfers — without it, sharp throws on the whole
+  // file instead of decoding what it can.
+  const base = sharp(sourceBuffer, { failOn: "none" }).rotate();
+  const meta = await base.metadata();
   const srcWidth = meta.width ?? PREVIEW_MAX_EDGE;
   const srcHeight = meta.height ?? PREVIEW_MAX_EDGE;
 
@@ -66,8 +86,8 @@ export async function generateWatermarkedImages(
   const previewWidth = Math.max(1, Math.round(srcWidth * previewScale));
   const previewHeight = Math.max(1, Math.round(srcHeight * previewScale));
 
-  const previewBuffer = await sharp(sourceBuffer)
-    .rotate()
+  const previewBuffer = await base
+    .clone()
     .resize(PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE, {
       fit: "inside",
       withoutEnlargement: true,
@@ -80,8 +100,8 @@ export async function generateWatermarkedImages(
   const thumbWidth = Math.max(1, Math.round(srcWidth * thumbScale));
   const thumbHeight = Math.max(1, Math.round(srcHeight * thumbScale));
 
-  const thumbnailBuffer = await sharp(sourceBuffer)
-    .rotate()
+  const thumbnailBuffer = await base
+    .clone()
     .resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, {
       fit: "inside",
       withoutEnlargement: true,
@@ -99,7 +119,7 @@ export async function generateWatermarkedImages(
 // the browser already converted, or PNG screenshots) landing in the bucket
 // with a mismatched contentType.
 export async function normalizeOriginalJpeg(sourceBuffer: Buffer): Promise<Buffer> {
-  return sharp(sourceBuffer)
+  return sharp(sourceBuffer, { failOn: "none" })
     .rotate()
     .jpeg({ quality: 95, progressive: true, mozjpeg: true })
     .toBuffer();

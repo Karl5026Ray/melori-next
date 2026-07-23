@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import ShareButton from "@/components/ShareButton";
+import TipButton from "@/components/TipButton";
 import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
 import ProfileGallery from "@/components/ProfileGallery";
@@ -99,6 +100,12 @@ export default async function ArtistDetailPage(
               title={`${artist.name} on MELORI MUSIC`}
               text={`Check out ${artist.name} on MELORI MUSIC — stream their music free and support them directly.`}
               label={`Share ${artist.name}`}
+            />
+            <TipButton
+              artistId={artist.id}
+              artistName={artist.name}
+              source="artist"
+              variant="compact"
             />
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import BuyButton from "@/components/BuyButton";
+import TipButton from "@/components/TipButton";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatDuration } from "@/lib/format";
 import type { Track } from "@/types";
@@ -12,12 +13,14 @@ interface TrackListProps {
   tracks: Track[];
   artistName: string | null;
   coverUrl: string | null;
+  artistId?: number;
 }
 
 export default function TrackList({
   tracks,
   artistName,
   coverUrl,
+  artistId,
 }: TrackListProps) {
   const { current, isPlaying, playQueue } = usePlayer();
 
@@ -94,6 +97,16 @@ export default function TrackList({
                 trackId={track.id}
                 price={track.price ?? DEFAULT_TRACK_PRICE}
                 title={track.title}
+                variant="compact"
+              />
+            )}
+
+            {artistId != null && (
+              <TipButton
+                artistId={artistId}
+                artistName={artistName ?? undefined}
+                source="track"
+                trackId={track.id}
                 variant="compact"
               />
             )}

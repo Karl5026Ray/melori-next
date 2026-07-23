@@ -54,6 +54,8 @@ export interface Track {
   is_published: boolean;
   created_at: string;
   vps_track_id: number | null;
+  lyrics?: string | null;
+  credits_text?: string | null;
 }
 
 // Store — mirrors the `store_products` Supabase table (prices in integer cents).

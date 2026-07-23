@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -49,6 +51,8 @@ const PHOTO_ITEMS: NavItem[] = [
 ];
 
 export default function Header() {
+  const router = useRouter();
+  const [searchValue, setSearchValue] = useState("");
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
@@ -263,6 +267,27 @@ export default function Header() {
           ref={navRef}
           className="hidden md:flex items-center gap-2 lg:gap-4 text-sm"
         >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = searchValue.trim();
+              if (v) router.push(`/search?q=${encodeURIComponent(v)}`);
+            }}
+            className="hidden md:flex"
+            role="search"
+          >
+            <input
+              type="search"
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              placeholder="Search…"
+              aria-label="Search Melori"
+              className="w-40 rounded-md border border-brand-border bg-brand-surface px-3 py-1.5 text-text-primary outline-none transition-colors focus:border-brand-primary lg:w-52"
+            />
+          </form>
+
+          <NotificationBell />
+
           {user ? (
             <div className="relative">
               <button

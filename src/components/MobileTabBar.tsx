@@ -27,7 +27,10 @@ import {
   Users,
   ShoppingBag,
   Swords,
+  Search,
+  Bell,
 } from "lucide-react";
+import { useUnreadCount } from "@/components/notifications/useUnreadCount";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -97,6 +100,8 @@ export default function MobileTabBar() {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [concertSoon, setConcertSoon] = useState(false);
+  const [search, setSearch] = useState("");
+  const unread = useUnreadCount();
 
   // MM Faces live rooms are fullscreen takeovers with their own vertical
   // control rail (mic/cam/end/heart) anchored to the bottom-right. The mobile
@@ -183,6 +188,12 @@ export default function MobileTabBar() {
       href: "/social/messages",
       icon: <MessageSquare className="h-5 w-5" />,
       desc: "Direct chats",
+    },
+    {
+      label: "Alerts",
+      href: "/notifications",
+      icon: <Bell className="h-5 w-5" />,
+      desc: unread > 0 ? `${unread} unread` : "Notifications",
     },
     {
       label: "Store",
@@ -381,6 +392,28 @@ export default function MobileTabBar() {
                     </button>
                   </div>
 
+                  {/* Global search — first action in the sheet. */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const v = search.trim();
+                      setLauncherOpen(false);
+                      if (v) router.push(`/search?q=${encodeURIComponent(v)}`);
+                    }}
+                    role="search"
+                    className="mb-4 flex items-center gap-2 rounded-xl border border-brand-border bg-white/[0.03] px-3"
+                  >
+                    <Search className="h-4 w-4 shrink-0 text-text-secondary" />
+                    <input
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search Melori…"
+                      aria-label="Search Melori"
+                      className="w-full bg-transparent py-2.5 text-sm text-text-primary outline-none"
+                    />
+                  </form>
+
                   {/* Section body — REPLACED in place when a category is open. */}
                   <div className="max-h-[60vh] overflow-y-auto overscroll-contain pr-0.5">
                     {activeCat ? (
@@ -484,8 +517,13 @@ export default function MobileTabBar() {
             }
             aria-label="Open navigation menu"
             aria-expanded={launcherOpen}
-            className="flex flex-1 flex-col items-center justify-center gap-0.5"
+            className="relative flex flex-1 flex-col items-center justify-center gap-0.5"
           >
+            {unread > 0 && !launcherOpen && (
+              <span className="absolute right-[calc(50%-1.75rem)] -top-4 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-bold text-white">
+                {unread > 9 ? "9+" : unread}
+              </span>
+            )}
             <span
               className={`-mt-6 flex h-16 w-16 items-center justify-center rounded-full border-4 border-brand-surface bg-gradient-to-br from-brand-primary to-brand-accent shadow-lg transition-transform ${
                 launcherOpen ? "scale-95" : "hover:scale-105"

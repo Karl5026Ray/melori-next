@@ -9,6 +9,7 @@ import {
 } from "@/lib/membership-sync";
 import { ensureArtistRow } from "@/lib/artist";
 import { banAuthUser, unbanAuthUser } from "@/lib/account-lockout";
+import { maybeGrantReferralReward } from "@/lib/referral-reward";
 
 // Hard login lockout for lapsed paid subscribers. When enabled, a subscription
 // that Stripe has finally canceled (AFTER its dunning/retry grace window)
@@ -290,6 +291,11 @@ async function applySubscriptionState(
   );
 
   await supabase.from("profiles").update(update).eq("id", profile.id);
+
+  // A completed paid membership is the qualifying action for a referral: if this
+  // buyer was invited, grant both sides a comp Superfan month. Best-effort — the
+  // helper swallows all errors so it can never fail/retry this webhook.
+  await maybeGrantReferralReward(supabase, profile.id);
 
   // When this subscription grants the artist role, ensure the artist has a
   // linked `artists` row so the dashboard/studio populate. Idempotent.

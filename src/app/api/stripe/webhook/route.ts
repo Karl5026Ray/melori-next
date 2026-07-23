@@ -71,6 +71,8 @@ export async function POST(req: NextRequest) {
         await fulfillGalleryPurchase(session);
       } else if (source === "melorimusic.org/artist-purchase") {
         await fulfillMusicPurchase(session);
+      } else if (source === "tip") {
+        await fulfillTip(session);
       } else if (session.metadata?.type === "photo_deposit") {
         await fulfillPhotoDeposit(session);
       } else if (session.metadata?.type === "photo_balance") {
@@ -276,6 +278,90 @@ async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
   if (insErr) {
     if (insErr.code === "23505") return; // benign race
     throw new Error(`music purchase insert failed: ${insErr.message}`);
+  }
+}
+
+// Records a paid fan tip. Fulfilled here (rather than in a dedicated tips
+// webhook) because tips are mode:payment checkouts and this route already
+// receives + verifies every checkout.session.completed for one-time payments.
+// Idempotent on the unique stripe_session_id.
+async function fulfillTip(session: Stripe.Checkout.Session) {
+  const supabase = createServiceClient();
+  const sessionId = session.id;
+
+  const { data: existing } = await supabase
+    .from("tips")
+    .select("id")
+    .eq("stripe_session_id", sessionId)
+    .maybeSingle();
+  if (existing) return;
+
+  const meta = session.metadata ?? {};
+  const artistId = meta.artist_id ? Number(meta.artist_id) : null;
+  const recipientProfileId =
+    typeof meta.recipient_profile_id === "string"
+      ? meta.recipient_profile_id
+      : null;
+  const trackId = meta.track_id ? Number(meta.track_id) : null;
+  const spaceId = typeof meta.space_id === "string" ? meta.space_id : null;
+  const tipperUserId =
+    session.client_reference_id ||
+    (typeof meta.tipper_user_id === "string" ? meta.tipper_user_id : null) ||
+    null;
+  const tipperEmail =
+    session.customer_details?.email || session.customer_email || null;
+  const amountCents =
+    session.amount_total ?? (meta.amount_cents ? Number(meta.amount_cents) : null);
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  const { error: insErr } = await supabase.from("tips").insert({
+    artist_id: artistId,
+    recipient_profile_id: recipientProfileId,
+    source:
+      meta.tip_source === "track" ||
+      meta.tip_source === "live" ||
+      meta.tip_source === "mirror"
+        ? meta.tip_source
+        : "artist",
+    track_id: trackId,
+    space_id: spaceId,
+    tipper_user_id: tipperUserId,
+    tipper_email: tipperEmail,
+    amount_cents: amountCents,
+    connected_account_id:
+      typeof meta.connected_account_id === "string"
+        ? meta.connected_account_id
+        : null,
+    routed_to_artist: meta.routed_to_artist === "true",
+    stripe_session_id: sessionId,
+    stripe_payment_intent_id: paymentIntentId,
+    status: "paid",
+  });
+
+  if (insErr) {
+    if (insErr.code === "23505") return; // benign race
+    throw new Error(`tip insert failed: ${insErr.message}`);
+  }
+
+  // Best-effort: notify the recipient artist. Never let this fail the webhook.
+  if (recipientProfileId && amountCents) {
+    try {
+      await supabase.from("notifications").insert({
+        user_id: recipientProfileId,
+        type: "tip",
+        data: {
+          title: "You got a tip!",
+          body: `$${(amountCents / 100).toFixed(2)} from a fan`,
+          link: "/studio",
+        },
+      });
+    } catch {
+      /* notification is non-critical */
+    }
   }
 }
 

@@ -106,6 +106,36 @@ export default function WelcomeClient() {
         return;
       }
 
+      // Paid-first referral handoff: register/page.tsx stashes ?ref= in
+      // localStorage for paid tiers (no session existed at signup time). Now
+      // that this freshly-created account is signed in, drain and apply it.
+      // Best-effort — never block the redirect.
+      try {
+        const stashedRef =
+          typeof window !== "undefined"
+            ? localStorage.getItem("melori_ref")
+            : null;
+        if (stashedRef) {
+          localStorage.removeItem("melori_ref");
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (token) {
+            await fetch("/api/referrals/apply", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ code: stashedRef }),
+            });
+          }
+        }
+      } catch {
+        /* best-effort referral apply */
+      }
+
       router.push(data.artist ? "/studio" : "/social/spaces");
     } catch {
       setFormError("Something went wrong. Please try again.");

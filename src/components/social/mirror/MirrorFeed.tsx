@@ -22,6 +22,10 @@ import { Compass } from "lucide-react";
 //     adjacent cards fight over activeIndex. This removes the observer→state
 //     race that caused the twitch and the wrong video playing.
 //   - Keyset infinite scroll via /api/mirror/feed (?cursor=created_at_id).
+// TODO(tips): TipButton (source="mirror") is intentionally NOT placed on Mirror
+// cards. A Mirror video is keyed to social_videos.user_id (a profile), not an
+// `artists` row, so there is no clean numeric artistId to route a tip to. Add a
+// TipButton here once a video → owning-artist resolution is available.
 export default function MirrorFeed({
   initialVideos,
   initialCursor,

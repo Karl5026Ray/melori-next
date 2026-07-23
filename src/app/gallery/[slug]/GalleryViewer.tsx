@@ -18,6 +18,16 @@ export interface ViewerImage {
 export interface ViewerFolder {
   id: string;
   name: string;
+  parentFolderId: string | null;
+}
+
+// A folder in the rendered tree, with its direct child folders and the
+// images that live *directly* inside it (not in a descendant).
+interface FolderNode {
+  id: string;
+  name: string;
+  children: FolderNode[];
+  images: ViewerImage[];
 }
 
 function formatPrice(cents: number): string {
@@ -40,23 +50,50 @@ export default function GalleryViewer({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [buyingId, setBuyingId] = useState<string | null>(null);
 
-  // Group images by folder, preserving order. Images without a folder land in
-  // an implicit "Gallery" group rendered first.
-  const groups = useMemo(() => {
-    const byFolder = new Map<string | null, ViewerImage[]>();
+  // Build a nested tree of folders + the images that live directly inside
+  // each one. Images without a folder go into `rootImages`, which is
+  // rendered before any folder sections.
+  const { rootImages, rootFolders } = useMemo(() => {
+    const imagesByFolder = new Map<string | null, ViewerImage[]>();
     for (const img of images) {
       const key = img.folderId;
-      if (!byFolder.has(key)) byFolder.set(key, []);
-      byFolder.get(key)!.push(img);
+      if (!imagesByFolder.has(key)) imagesByFolder.set(key, []);
+      imagesByFolder.get(key)!.push(img);
     }
-    const result: { title: string | null; items: ViewerImage[] }[] = [];
-    const unfiled = byFolder.get(null);
-    if (unfiled?.length) result.push({ title: null, items: unfiled });
-    for (const folder of folders) {
-      const items = byFolder.get(folder.id);
-      if (items?.length) result.push({ title: folder.name, items });
+
+    const nodeById = new Map<string, FolderNode>();
+    for (const f of folders) {
+      nodeById.set(f.id, {
+        id: f.id,
+        name: f.name,
+        children: [],
+        images: imagesByFolder.get(f.id) ?? [],
+      });
     }
-    return result;
+
+    const roots: FolderNode[] = [];
+    for (const f of folders) {
+      const node = nodeById.get(f.id)!;
+      if (f.parentFolderId && nodeById.has(f.parentFolderId)) {
+        nodeById.get(f.parentFolderId)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    // Alphabetical for stability. Folder rows carry no explicit
+    // order_index in the payload today; if we add one later, plug it in
+    // here.
+    const sortNodes = (nodes: FolderNode[]) => {
+      nodes.sort((a, b) => a.name.localeCompare(b.name));
+      for (const n of nodes) sortNodes(n.children);
+    };
+    sortNodes(roots);
+
+    return {
+      rootImages: imagesByFolder.get(null) ?? [],
+      rootFolders: roots,
+    };
   }, [images, folders]);
 
   const active = activeIndex !== null ? images[activeIndex] : null;
@@ -118,58 +155,30 @@ export default function GalleryViewer({
             This gallery has no photos yet.
           </div>
         ) : (
-          groups.map((group, gi) => (
-            <section key={group.title ?? `group-${gi}`} className="mb-10">
-              {group.title && (
-                <h2 className="mb-4 text-lg font-semibold text-text-primary">
-                  {group.title}
-                </h2>
-              )}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {group.items.map((img) => {
-                  const idx = images.findIndex((x) => x.id === img.id);
-                  return (
-                    <figure
-                      key={img.id}
-                      className="group relative overflow-hidden rounded-xl border border-brand-border bg-brand-surface"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setActiveIndex(idx)}
-                        className="relative block aspect-square w-full overflow-hidden"
-                        aria-label={`Open ${img.filename ?? "photo"}`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.thumbnailUrl}
-                          alt={img.caption ?? img.filename ?? "Gallery photo"}
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      </button>
-                      {img.forSale && img.priceCents ? (
-                        <button
-                          type="button"
-                          onClick={() => buy(img.id)}
-                          disabled={buyingId === img.id}
-                          className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
-                        >
-                          <ShoppingBag className="h-3.5 w-3.5" />
-                          {buyingId === img.id
-                            ? "…"
-                            : `Instant ${formatPrice(img.priceCents)}`}
-                        </button>
-                      ) : allowDownloads ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
-                          <Download className="h-3 w-3" /> Download
-                        </span>
-                      ) : null}
-                    </figure>
-                  );
-                })}
-              </div>
-            </section>
-          ))
+          <>
+            {rootImages.length > 0 && (
+              <ImageGrid
+                items={rootImages}
+                allImages={images}
+                onOpen={setActiveIndex}
+                onBuy={buy}
+                buyingId={buyingId}
+                allowDownloads={allowDownloads}
+              />
+            )}
+            {rootFolders.map((node) => (
+              <FolderSection
+                key={node.id}
+                node={node}
+                depth={0}
+                allImages={images}
+                onOpen={setActiveIndex}
+                onBuy={buy}
+                buyingId={buyingId}
+                allowDownloads={allowDownloads}
+              />
+            ))}
+          </>
         )}
       </div>
 
@@ -250,5 +259,125 @@ export default function GalleryViewer({
         </div>
       )}
     </main>
+  );
+}
+
+// A folder header + its direct images + its child folders (recursive).
+// Depth is passed down so nested headers get slightly smaller / indented.
+function FolderSection({
+  node,
+  depth,
+  allImages,
+  onOpen,
+  onBuy,
+  buyingId,
+  allowDownloads,
+}: {
+  node: FolderNode;
+  depth: number;
+  allImages: ViewerImage[];
+  onOpen: (idx: number) => void;
+  onBuy: (imageId: string) => void;
+  buyingId: string | null;
+  allowDownloads: boolean;
+}) {
+  const headingSize =
+    depth === 0 ? "text-lg" : depth === 1 ? "text-base" : "text-sm";
+  const indent = depth === 0 ? "" : "pl-4 border-l border-brand-border";
+
+  return (
+    <section className={`mb-10 ${indent}`}>
+      <h2
+        className={`mb-4 ${headingSize} font-semibold text-text-primary`}
+      >
+        {node.name}
+      </h2>
+      {node.images.length > 0 && (
+        <ImageGrid
+          items={node.images}
+          allImages={allImages}
+          onOpen={onOpen}
+          onBuy={onBuy}
+          buyingId={buyingId}
+          allowDownloads={allowDownloads}
+        />
+      )}
+      {node.children.map((child) => (
+        <FolderSection
+          key={child.id}
+          node={child}
+          depth={depth + 1}
+          allImages={allImages}
+          onOpen={onOpen}
+          onBuy={onBuy}
+          buyingId={buyingId}
+          allowDownloads={allowDownloads}
+        />
+      ))}
+    </section>
+  );
+}
+
+// Grid of photo tiles. Split out so the top-level rootImages block and
+// each folder can share the exact same tile rendering.
+function ImageGrid({
+  items,
+  allImages,
+  onOpen,
+  onBuy,
+  buyingId,
+  allowDownloads,
+}: {
+  items: ViewerImage[];
+  allImages: ViewerImage[];
+  onOpen: (idx: number) => void;
+  onBuy: (imageId: string) => void;
+  buyingId: string | null;
+  allowDownloads: boolean;
+}) {
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {items.map((img) => {
+        const idx = allImages.findIndex((x) => x.id === img.id);
+        return (
+          <figure
+            key={img.id}
+            className="group relative overflow-hidden rounded-xl border border-brand-border bg-brand-surface"
+          >
+            <button
+              type="button"
+              onClick={() => onOpen(idx)}
+              className="relative block aspect-square w-full overflow-hidden"
+              aria-label={`Open ${img.filename ?? "photo"}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.thumbnailUrl}
+                alt={img.caption ?? img.filename ?? "Gallery photo"}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+            </button>
+            {img.forSale && img.priceCents ? (
+              <button
+                type="button"
+                onClick={() => onBuy(img.id)}
+                disabled={buyingId === img.id}
+                className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
+              >
+                <ShoppingBag className="h-3.5 w-3.5" />
+                {buyingId === img.id
+                  ? "\u2026"
+                  : `Instant ${formatPrice(img.priceCents)}`}
+              </button>
+            ) : allowDownloads ? (
+              <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
+                <Download className="h-3 w-3" /> Download
+              </span>
+            ) : null}
+          </figure>
+        );
+      })}
+    </div>
   );
 }

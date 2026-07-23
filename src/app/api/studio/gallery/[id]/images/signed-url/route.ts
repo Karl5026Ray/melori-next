@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
+import { resolveFolderPath } from "@/lib/gallery-folders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,8 +31,12 @@ const ORIGINALS_BUCKET = "gallery-originals"; // private
 // (default 2h in Supabase Storage). The caller's membership + gallery
 // ownership are checked here so we don't hand out URLs to random users.
 //
-// Body: { filename: string, contentType?: string }
-// Returns: { uploadUrl, token, path, imageId, bucket }
+// Body: { filename: string, contentType?: string, folderPath?: string[] }
+//   folderPath: ordered root-first list of folder names, e.g. ["Bride",
+//   "Prep"]. Missing levels are created on the fly (composite unique
+//   index on (gallery_id, parent_folder_id, name) makes it race-safe).
+//   Omit or send [] for a top-level photo.
+// Returns: { uploadUrl, token, path, imageId, bucket, folderId }
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },
@@ -43,7 +48,11 @@ export async function POST(
 
   const { id: galleryId } = await props.params;
 
-  let body: { filename?: unknown; contentType?: unknown };
+  let body: {
+    filename?: unknown;
+    contentType?: unknown;
+    folderPath?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -65,6 +74,14 @@ export async function POST(
     );
   }
 
+  // folderPath is optional. Accept string[]; anything else is ignored (we
+  // don't want a malformed hint to block the upload — just fall back to
+  // top-level).
+  const folderPath = Array.isArray(body?.folderPath)
+    ? (body.folderPath as unknown[])
+        .map((v) => String(v ?? ""))
+    : [];
+
   const supabase = getSupabaseAdmin();
 
   const { data: gallery, error: galErr } = await supabase
@@ -78,6 +95,21 @@ export async function POST(
   }
   if (gallery.photographer_id !== userId && !callerIsAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Resolve (creating on demand) the folder tree the client asked for.
+  // Do this BEFORE minting the signed URL so a folder-tree error surfaces
+  // as a proper 4xx/5xx instead of a phantom successful PUT with no DB row.
+  let folderId: string | null = null;
+  if (folderPath.length > 0) {
+    try {
+      folderId = await resolveFolderPath(supabase, galleryId, folderPath);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not resolve folder path";
+      console.error("signed-url resolveFolderPath failed:", message);
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
   }
 
   // Pre-mint the imageId so the client can round-trip it into /finalize
@@ -108,5 +140,6 @@ export async function POST(
     imageId,
     bucket: ORIGINALS_BUCKET,
     filename,
+    folderId,
   });
 }

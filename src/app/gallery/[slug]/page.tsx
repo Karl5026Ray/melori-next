@@ -83,7 +83,7 @@ export default async function GalleryViewerPage(props: {
   const [{ data: folders }, { data: images }] = await Promise.all([
     supabase
       .from("photo_gallery_folders")
-      .select("id, name, order_index")
+      .select("id, name, order_index, parent_folder_id")
       .eq("gallery_id", gallery.id)
       .order("order_index", { ascending: true }),
     supabase
@@ -113,6 +113,7 @@ export default async function GalleryViewerPage(props: {
   const viewerFolders: ViewerFolder[] = (folders ?? []).map((f) => ({
     id: f.id,
     name: f.name,
+    parentFolderId: f.parent_folder_id ?? null,
   }));
 
   return (

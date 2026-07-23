@@ -34,7 +34,11 @@ const PREVIEWS_BUCKET = "gallery-previews"; // public
 // Downloading from Supabase → server-side is not subject to Vercel's
 // 4.5 MB request-body limit (that limit is only on inbound REQUEST bodies).
 //
-// Body: { imageId, filename, forSale?, priceCents? }
+// Body: { imageId, filename, forSale?, priceCents?, folderId? }
+//   folderId: the UUID returned by /signed-url when a folderPath was
+//   provided, or omit/null for a top-level photo. We validate that the
+//   folder actually belongs to this gallery so a malicious caller can't
+//   drop an image into someone else's folder.
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },
@@ -51,6 +55,7 @@ export async function POST(
     filename?: unknown;
     forSale?: unknown;
     priceCents?: unknown;
+    folderId?: unknown;
   };
   try {
     body = await req.json();
@@ -74,6 +79,13 @@ export async function POST(
   const rowForSale = forSale && hasValidPrice;
   const rowPriceCents = rowForSale ? priceCentsParsed : null;
 
+  // Optional folder assignment. Accept a uuid string or null/undefined.
+  const rawFolderId = body?.folderId;
+  const folderIdInput =
+    typeof rawFolderId === "string" && /^[0-9a-f-]{36}$/i.test(rawFolderId)
+      ? rawFolderId
+      : null;
+
   const supabase = getSupabaseAdmin();
 
   const { data: gallery, error: galErr } = await supabase
@@ -87,6 +99,30 @@ export async function POST(
   }
   if (gallery.photographer_id !== userId && !callerIsAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Validate the folder belongs to this gallery. This is the ONLY place
+  // that gate exists — signed-url resolves folder paths on behalf of the
+  // caller but never returns folderIds from other galleries, and finalize
+  // is the only path that writes folder_id into photo_gallery_images. If
+  // a malformed folderId sneaks in (custom client, race with a folder
+  // delete), we quietly drop the assignment and log rather than 500.
+  let resolvedFolderId: string | null = null;
+  if (folderIdInput) {
+    const { data: folderRow } = await supabase
+      .from("photo_gallery_folders")
+      .select("id")
+      .eq("id", folderIdInput)
+      .eq("gallery_id", galleryId)
+      .maybeSingle();
+    if (folderRow?.id) {
+      resolvedFolderId = folderRow.id as string;
+    } else {
+      console.warn(
+        "finalize: folderId not in this gallery, dropping assignment",
+        { imageId, folderIdInput, galleryId },
+      );
+    }
   }
 
   const photographerId = gallery.photographer_id as string;
@@ -194,6 +230,7 @@ export async function POST(
     .insert({
       id: imageId,
       gallery_id: galleryId,
+      folder_id: resolvedFolderId,
       storage_key: storageKey,
       preview_key: previewKey,
       thumbnail_key: thumbnailKey,

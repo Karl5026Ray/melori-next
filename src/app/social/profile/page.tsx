@@ -165,8 +165,8 @@ export default function ProfilePage() {
               alt={view.display_name}
             />
           </div>
-          <div className="flex-1 mb-2">
-            <div className="flex items-center gap-2 mb-1">
+          <div className="flex-1 min-w-0 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-1.5">
               <h2 className="text-2xl font-bold">{view.display_name}</h2>
               {view.verified && (
                 <span className="text-melori-purple bg-melori-purple/10 px-2 py-0.5 rounded-full text-xs font-medium">
@@ -174,14 +174,14 @@ export default function ProfilePage() {
                 </span>
               )}
             </div>
-            <p className="text-melori-purple font-medium text-sm mb-1 capitalize">
+            <p className="text-melori-purple font-medium text-sm mb-2 capitalize">
               {view.role}
             </p>
-            <p className="text-melori-muted text-sm">
+            <p className="text-melori-muted text-sm leading-relaxed break-words">
               {view.bio || "Independent music advocate"}
             </p>
             {view.city && (
-              <p className="mt-1 flex items-center gap-1 text-xs text-melori-muted">
+              <p className="mt-2 flex items-center gap-1 text-xs text-melori-muted">
                 <MapPin className="h-3.5 w-3.5" />
                 {view.city}
               </p>

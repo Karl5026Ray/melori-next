@@ -117,8 +117,8 @@ export default function PublicProfilePage() {
             alt={profile.display_name}
           />
         </div>
-        <div className="mb-2 flex-1">
-          <div className="mb-1 flex items-center gap-2">
+        <div className="mb-2 min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-bold">{profile.display_name}</h2>
             {profile.verified && (
               <span className="rounded-full bg-melori-purple/10 px-2 py-0.5 text-xs font-medium text-melori-purple">
@@ -126,11 +126,11 @@ export default function PublicProfilePage() {
               </span>
             )}
           </div>
-          <p className="mb-1 text-sm text-melori-muted">@{profile.username}</p>
-          <p className="mb-1 text-sm font-medium capitalize text-melori-purple">
+          <p className="mb-1.5 text-sm text-melori-muted">@{profile.username}</p>
+          <p className="mb-2 text-sm font-medium capitalize text-melori-purple">
             {profile.role}
           </p>
-          <p className="text-sm text-melori-muted">
+          <p className="text-sm leading-relaxed text-melori-muted break-words">
             {profile.bio || "Independent music advocate"}
           </p>
         </div>

@@ -1,16 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//": [
-    "Photo gallery upload routes need extra time + memory for sharp.",
-    "sharp decodes the source JPEG + composites an SVG watermark for a",
-    "preview (1600px) and thumbnail (500px), then uploads three files to",
-    "Supabase Storage. On a 12 MB phone photo this can peak around 700 MB",
-    "and exceed the default 10s function timeout on cold starts. 3009 MB",
-    "is Vercel's max on Pro; scales CPU proportionally, which is what",
-    "libvips actually needs. maxDuration 60s covers cold-start + Supabase."
-  ],
   "functions": {
-    "src/app/api/studio/gallery/**/route.ts": {
+    "src/app/api/studio/gallery/[id]/images/route.ts": {
       "maxDuration": 60,
       "memory": 3009
     },

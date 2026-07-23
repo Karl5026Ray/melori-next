@@ -5,6 +5,10 @@
       "maxDuration": 60,
       "memory": 3009
     },
+    "src/app/api/studio/gallery/[id]/images/finalize/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    },
     "src/app/api/gallery/upload/route.ts": {
       "maxDuration": 60,
       "memory": 3009

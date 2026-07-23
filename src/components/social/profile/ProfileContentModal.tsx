@@ -220,8 +220,10 @@ export default function ProfileContentModal({
           {type === "video" && content.video_url ? (
             <video
               src={content.video_url}
+              poster={content.thumbnail_url ?? undefined}
               controls
-              autoPlay
+              playsInline
+              preload="metadata"
               className="max-h-[50vh] w-full object-contain md:max-h-[90vh]"
             />
           ) : mediaSrc ? (

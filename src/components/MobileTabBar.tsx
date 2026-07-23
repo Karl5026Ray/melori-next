@@ -38,7 +38,7 @@ import {
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
- *                          Waves, Connect
+ *                          Connect (Waves lives in About)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
@@ -162,7 +162,9 @@ export default function MobileTabBar() {
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
-  // Direct quick-press buttons (top row): Profile, Radio, Messages, Waves.
+  // Direct quick-press buttons (top row): Profile, Radio, Messages, Store.
+  // Karl asked to flip-flop Waves and Store on mobile — Store is now promoted
+  // to the quick-press row and Waves moves into the About category below.
   const quickLinks: LaunchItem[] = [
     {
       label: "Profile",
@@ -183,10 +185,10 @@ export default function MobileTabBar() {
       desc: "Direct chats",
     },
     {
-      label: "Waves",
-      href: "/social/waves",
-      icon: <Hand className="h-5 w-5" />,
-      desc: "Say hi",
+      label: "Store",
+      href: "/store",
+      icon: <ShoppingBag className="h-5 w-5" />,
+      desc: "Merch & music",
     },
   ];
 
@@ -229,7 +231,7 @@ export default function MobileTabBar() {
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
         { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-        { label: "Store", href: "/store", icon: <ShoppingBag className="h-5 w-5" />, desc: "Merch & music" },
+        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
   ];

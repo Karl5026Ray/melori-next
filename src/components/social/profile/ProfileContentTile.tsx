@@ -28,10 +28,17 @@ export default function ProfileContentTile({
   content: TileContent;
   onOpen?: (content: TileContent, type: "video" | "photo") => void;
 }) {
-  const src =
-    type === "video"
-      ? content.thumbnail_url || content.video_url || ""
-      : content.image_url || "";
+  // A video tile prefers a real poster image (thumbnail_url). When one is
+  // missing we must NOT drop the video URL into an <img> — a browser can't
+  // decode an .mp4 as an image, so the tile would render blank. Instead we
+  // render a muted <video> element that paints its first frame as the poster
+  // (preload="metadata" so we don't pull the whole file just to show a grid).
+  const imgSrc =
+    type === "video" ? content.thumbnail_url || "" : content.image_url || "";
+  const videoFallback =
+    type === "video" && !content.thumbnail_url
+      ? content.video_url || ""
+      : "";
 
   return (
     <button
@@ -39,13 +46,22 @@ export default function ProfileContentTile({
       onClick={() => onOpen?.(content, type)}
       className="group relative aspect-square overflow-hidden rounded-xl bg-melori-void/60 border border-melori-border"
     >
-      {src ? (
+      {imgSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={src}
+          src={imgSrc}
           alt={content.title ?? ""}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           loading="lazy"
+        />
+      ) : videoFallback ? (
+        <video
+          src={`${videoFallback}#t=0.1`}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          muted
+          playsInline
+          preload="metadata"
+          tabIndex={-1}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-melori-muted text-xs">

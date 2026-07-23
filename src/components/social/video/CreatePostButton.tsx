@@ -11,6 +11,71 @@ type MediaType = "video" | "audio";
 
 const MAX_SECONDS: Record<MediaType, number> = { video: 60, audio: 120 };
 
+// Reels should stay lightweight. Reject oversized uploads on the client before
+// we ever start a multi-hundred-MB transfer (a 732 MB clip makes tiles blank
+// and playback hang). Recorded clips are already short, so this only guards the
+// "Upload File" path.
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
+
+// Grab the first visible frame of a video as a JPEG poster so the profile /
+// feed grids have something to show without downloading the whole file. Runs
+// entirely in the browser via <canvas>; returns null if the frame can't be
+// read (e.g. cross-origin or unsupported codec) so publishing still succeeds.
+async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(source);
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.src = url;
+
+      const cleanup = () => URL.revokeObjectURL(url);
+      const fail = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      video.onloadeddata = () => {
+        // Seek slightly in so we don't grab a black leading frame.
+        const target = Math.min(0.1, (video.duration || 1) / 2);
+        const onSeeked = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth || 720;
+            canvas.height = video.videoHeight || 1280;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return fail();
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(
+              (blob) => {
+                cleanup();
+                resolve(blob);
+              },
+              "image/jpeg",
+              0.8,
+            );
+          } catch {
+            fail();
+          }
+        };
+        video.onseeked = onSeeked;
+        try {
+          video.currentTime = target;
+        } catch {
+          onSeeked();
+        }
+      };
+      video.onerror = fail;
+      // Safety timeout so a stuck decode never blocks publishing.
+      setTimeout(fail, 8000);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 function pickVideoMime(): string {
   const candidates = [
     "video/webm;codecs=vp9,opus",
@@ -202,6 +267,21 @@ export default function CreatePostButton() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setError(null);
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      // Reset the input so the same oversized file can be re-picked after the
+      // user trims it, and surface a clear limit instead of silently uploading
+      // a huge clip that later renders as a blank tile.
+      e.target.value = "";
+      setPickedFile(null);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setError(
+        `That file is ${(file.size / (1024 * 1024)).toFixed(0)}MB. Reels must be under ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB — please trim or compress it.`,
+      );
+      return;
+    }
     setPickedFile(file);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -264,6 +344,36 @@ export default function CreatePostButton() {
       });
       if (!putRes.ok) throw new Error("Upload failed — please try again.");
 
+      // For video reels, capture a poster frame client-side and upload it so
+      // grids can show a real thumbnail instead of trying to paint an .mp4 in
+      // an <img>. Best-effort: any failure here just leaves thumbnail_url null.
+      let thumbnailUrl: string | null = null;
+      if (mediaType === "video") {
+        try {
+          const poster = await captureVideoPoster(source);
+          if (poster) {
+            const thumbName = `${filename.replace(/\.[^.]+$/, "")}_poster.jpg`;
+            const thumbUrlRes = await authFetch("/api/social/upload-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: thumbName, type: "thumbnail" }),
+            });
+            if (thumbUrlRes.ok) {
+              const { signedUrl: thumbSigned, publicUrl: thumbPublic } =
+                await thumbUrlRes.json();
+              const thumbPut = await fetch(thumbSigned, {
+                method: "PUT",
+                body: poster,
+                headers: { "Content-Type": "image/jpeg" },
+              });
+              if (thumbPut.ok) thumbnailUrl = thumbPublic;
+            }
+          }
+        } catch {
+          /* poster is optional — publish without it */
+        }
+      }
+
       const saveRes = await authFetch("/api/social/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -271,6 +381,7 @@ export default function CreatePostButton() {
           title: trimmed,
           video_url: publicUrl,
           media_type: mediaType,
+          thumbnail_url: thumbnailUrl,
         }),
       });
       if (!saveRes.ok) {

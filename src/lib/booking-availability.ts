@@ -175,28 +175,83 @@ export async function computeAvailableSlots(opts: {
     const windowStart = dayStartMs + rule.startMinute * 60 * 1000;
     const windowEnd = dayStartMs + rule.endMinute * 60 * 1000;
 
-    for (
-      let candidateStart = windowStart;
-      candidateStart + serviceMs <= windowEnd;
-      candidateStart += stepMs
-    ) {
-      const candidateEnd = candidateStart + serviceMs + bufferMs;
-
-      if (candidateStart < earliestAllowed) continue;
-      if (candidateStart > latestAllowed) continue;
-
-      const candidateInterval: Interval = {
-        start: candidateStart,
-        end: candidateEnd,
-      };
-      const conflict = busy.some((b) => overlaps(candidateInterval, b));
-      if (conflict) continue;
-
+    const starts = generateSlotStarts({
+      windowStart,
+      windowEnd,
+      serviceMs,
+      bufferMs,
+      stepMs,
+      earliestAllowed,
+      latestAllowed,
+      busy,
+    });
+    for (const candidateStart of starts) {
       slots.push(new Date(candidateStart).toISOString());
     }
   }
 
   return slots;
+}
+
+/**
+ * PURE slot-window generator (no I/O) — extracted so the boundary math can be
+ * unit-tested deterministically (see scripts/booking-slots.test.ts).
+ *
+ * Returns candidate START times (epoch ms) that satisfy ALL of:
+ *  - the FULL service duration fits before the window end:
+ *    `candidateStart + serviceMs <= windowEnd` (this is why the last slot of a
+ *    9-5 window for a 60-min service is 4:00pm, not 4:30pm),
+ *  - the start honors min-notice / max-advance bounds,
+ *  - the service + buffer does not overlap any busy interval.
+ *
+ * Keep this the single source of truth for slot-boundary behavior; changing
+ * the loop condition here is what the boundary tests guard against.
+ */
+export function generateSlotStarts(opts: {
+  windowStart: number;
+  windowEnd: number;
+  serviceMs: number;
+  bufferMs: number;
+  stepMs: number;
+  earliestAllowed: number;
+  latestAllowed: number;
+  busy: Interval[];
+}): number[] {
+  const {
+    windowStart,
+    windowEnd,
+    serviceMs,
+    bufferMs,
+    stepMs,
+    earliestAllowed,
+    latestAllowed,
+    busy,
+  } = opts;
+
+  const out: number[] = [];
+  const step = Math.max(stepMs, 5 * 60 * 1000);
+
+  for (
+    let candidateStart = windowStart;
+    candidateStart + serviceMs <= windowEnd;
+    candidateStart += step
+  ) {
+    const candidateEnd = candidateStart + serviceMs + bufferMs;
+
+    if (candidateStart < earliestAllowed) continue;
+    if (candidateStart > latestAllowed) continue;
+
+    const candidateInterval: Interval = {
+      start: candidateStart,
+      end: candidateEnd,
+    };
+    const conflict = busy.some((b) => overlaps(candidateInterval, b));
+    if (conflict) continue;
+
+    out.push(candidateStart);
+  }
+
+  return out;
 }
 
 /**

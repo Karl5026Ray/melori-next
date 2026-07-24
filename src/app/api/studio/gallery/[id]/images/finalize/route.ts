@@ -18,6 +18,21 @@ export const maxDuration = 60;
 const ORIGINALS_BUCKET = "gallery-originals"; // private
 const PREVIEWS_BUCKET = "gallery-previews"; // public
 
+// Every object we persist here must be a real JPEG (SOI marker 0xFF 0xD8
+// 0xFF). This guards against a specific, silent corruption mode: if binary
+// image bytes ever get round-tripped through a UTF-8 string anywhere in the
+// path (a stray buffer.toString("utf8"), a proxy/CDN that transcodes the
+// body, a mid-deploy code path), every high byte collapses to the U+FFFD
+// replacement char (EF BF BD) while ASCII bytes survive — producing a file
+// that has the right size and content-type but is not a decodable image.
+// It happened once during a deploy window and shipped unreadable galleries
+// with no error. Asserting the magic bytes turns that into a loud 500
+// instead of a persisted corrupt object.
+const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
+function isJpeg(buf: Buffer): boolean {
+  return buf.length >= 3 && buf.subarray(0, 3).equals(JPEG_MAGIC);
+}
+
 // POST /api/studio/gallery/[id]/images/finalize
 //
 // STEP 2 of the direct-to-Supabase upload flow. Client has already:
@@ -131,6 +146,35 @@ export async function POST(
           err instanceof Error
             ? `Image processing failed: ${err.message}`
             : "Image processing failed",
+      },
+      { status: 500 },
+    );
+  }
+
+  // Integrity gate: sharp always emits JPEG (.jpeg()), so all three outputs
+  // MUST start with the JPEG magic bytes. If any doesn't, the bytes were
+  // corrupted somewhere in the pipeline (see JPEG_MAGIC note above) — refuse
+  // to persist an unreadable object and fail loudly instead. No DB row is
+  // written and nothing is uploaded, so the client can safely retry.
+  const badOutput =
+    (!isJpeg(originalJpeg) && "original") ||
+    (!isJpeg(watermarked.previewBuffer) && "preview") ||
+    (!isJpeg(watermarked.thumbnailBuffer) && "thumbnail");
+  if (badOutput) {
+    console.error(
+      "finalize integrity check failed: non-JPEG output",
+      imageId,
+      badOutput,
+      {
+        originalHead: originalJpeg.subarray(0, 4).toString("hex"),
+        previewHead: watermarked.previewBuffer.subarray(0, 4).toString("hex"),
+        thumbHead: watermarked.thumbnailBuffer.subarray(0, 4).toString("hex"),
+      },
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Image failed an integrity check after processing (not a valid JPEG). Nothing was saved — please try uploading again.",
       },
       { status: 500 },
     );

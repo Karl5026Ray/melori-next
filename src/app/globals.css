@@ -82,6 +82,20 @@ a {
   );
 }
 
+/* Homepage hero waveform — bars "breathe" while a track plays. Applied inline
+   with a per-bar delay so the row animates like a live visualization. Gated in
+   JS on isPlaying + !prefers-reduced-motion, so this only ever runs when the
+   visitor has opted into motion and audio is actually playing. */
+@keyframes meloriWave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* ============================================================ */
 /* MM SOCIAL utilities (scoped visual language for /social/*)    */
 /* ============================================================ */

@@ -50,6 +50,10 @@ interface PlayerContextValue {
   currentTime: number; // seconds
   duration: number; // seconds
   volume: number; // 0..1
+  // Muted mirrors the <audio> element's own `muted` flag. Used by the homepage
+  // hero, which starts playback MUTED (the only way browsers allow autoplay)
+  // and unmutes on the visitor's first interaction.
+  muted: boolean;
   error: string | null;
   hasNext: boolean;
   hasPrev: boolean;
@@ -73,6 +77,11 @@ interface PlayerContextValue {
   prev: () => void;
   seek: (fraction: number) => void;
   setVolume: (v: number) => void;
+  setMuted: (m: boolean) => void;
+  // Start (or restart) playback of a single track MUTED — the homepage hero's
+  // autoplay entry point. Muted playback is exempt from browser autoplay
+  // blocking; the caller unmutes on first interaction via setMuted(false).
+  playMutedAutoplay: (track: PlayerTrack) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -117,6 +126,10 @@ export default function PlayerProvider({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
+  const [muted, setMutedState] = useState(false);
+  // Mirror `muted` into a ref so loadAndPlay can apply it synchronously before
+  // calling audio.play() (state updates lag a render behind).
+  const mutedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [isSample, setIsSample] = useState(false);
   const [sampleEnded, setSampleEnded] = useState(false);
@@ -176,7 +189,28 @@ export default function PlayerProvider({
     const onPause = () => setIsPlaying(false);
     const onEnded = () => advanceRef.current();
     const onError = () => {
-      setError("Unable to play this track.");
+      const mediaError = audio.error;
+      const code = mediaError?.code;
+      // MEDIA_ERR_ABORTED (1) fires whenever we swap `audio.src` to load the
+      // next track — that's normal churn, not a playback failure, so ignore it.
+      // Surfacing it was showing a spurious "Unable to play this track" while
+      // the new track loaded and its progress bar moved.
+      if (code === 1 /* MEDIA_ERR_ABORTED */) return;
+
+      let message = "Unable to play this track.";
+      if (code === 2 /* MEDIA_ERR_NETWORK */) {
+        message = "Network error — check your connection and try again.";
+      } else if (code === 3 /* MEDIA_ERR_DECODE */) {
+        message = "This track couldn't be decoded.";
+      } else if (code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
+        message = "This track's audio format isn't supported.";
+      }
+      console.error(
+        `[player] audio error code=${code ?? "?"} src=${audio.currentSrc || "(none)"}: ${
+          mediaError?.message ?? "unknown"
+        }`,
+      );
+      setError(message);
       setIsPlaying(false);
       setIsLoading(false);
     };
@@ -227,6 +261,12 @@ export default function PlayerProvider({
       /* ignore malformed storage */
     }
   }, []);
+
+  // --- keep <audio> muted flag in sync ---
+  useEffect(() => {
+    mutedRef.current = muted;
+    if (audioRef.current) audioRef.current.muted = muted;
+  }, [muted]);
 
   // --- keep <audio> volume in sync + persist ---
   useEffect(() => {
@@ -293,15 +333,25 @@ export default function PlayerProvider({
 
         audio.src = data.url;
         audio.volume = volume;
+        audio.muted = mutedRef.current;
         loadedIdRef.current = trackKey(track);
         if (shouldPlay) {
           userPausedRef.current = false;
           await audio.play();
         }
-      } catch {
-        setError("Unable to play this track.");
-        setIsPlaying(false);
-        loadedIdRef.current = null;
+      } catch (err) {
+        // A blocked autoplay (NotAllowedError) is a browser policy decision, not
+        // a broken track — the URL loaded fine and playback works once the user
+        // interacts. Don't scare listeners with an error in that case.
+        const name = (err as { name?: string } | null)?.name;
+        if (name === "NotAllowedError" || name === "AbortError") {
+          setIsPlaying(false);
+        } else {
+          console.error("[player] loadAndPlay failed:", err);
+          setError("Unable to play this track.");
+          setIsPlaying(false);
+          loadedIdRef.current = null;
+        }
       } finally {
         setIsLoading(false);
       }
@@ -466,6 +516,25 @@ export default function PlayerProvider({
     setVolumeState(Math.max(0, Math.min(1, v)));
   }, []);
 
+  const setMuted = useCallback((m: boolean) => {
+    mutedRef.current = m;
+    if (audioRef.current) audioRef.current.muted = m;
+    setMutedState(m);
+  }, []);
+
+  const playMutedAutoplay = useCallback(
+    (track: PlayerTrack) => {
+      // Force muted BEFORE the async load so audio.play() is autoplay-eligible.
+      mutedRef.current = true;
+      if (audioRef.current) audioRef.current.muted = true;
+      setMutedState(true);
+      setRadioMode(false);
+      radioModeRef.current = false;
+      activateIndex([track], 0, true);
+    },
+    [activateIndex],
+  );
+
   // Keep the "ended" auto-advance handler pointing at the latest queue/index.
   useEffect(() => {
     advanceRef.current = () => {
@@ -495,6 +564,7 @@ export default function PlayerProvider({
         currentTime,
         duration,
         volume,
+        muted,
         error,
         isSample,
         sampleEnded,
@@ -511,6 +581,8 @@ export default function PlayerProvider({
         prev,
         seek,
         setVolume,
+        setMuted,
+        playMutedAutoplay,
       }}
     >
       {children}

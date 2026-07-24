@@ -93,7 +93,7 @@ export default function Header() {
     };
   }, [open]);
 
-  // Track Supabase auth state so the header can show Log In vs. an account menu.
+  // Track Supabase auth state so the header can show Sign In vs. an account menu.
   useEffect(() => {
     let active = true;
     let mintedAdmin = false;
@@ -233,7 +233,7 @@ export default function Header() {
 
           {/* Brand M — always a plain Home link on every screen size. On mobile
              the hamburger to its left opens the drawer; on desktop the top bar
-             (incl. Log In / Create a Profile) covers nav, so the logo is purely
+             (incl. Sign In / Create a Profile) covers nav, so the logo is purely
              Home. */}
           <Link
             href="/"
@@ -356,7 +356,7 @@ export default function Header() {
                 href="/social/auth"
                 className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
               >
-                Log In
+                Sign In
               </Link>
               <Link
                 href="/register"
@@ -492,7 +492,7 @@ export default function Header() {
             paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
           }}
         >
-            {/* Account / Log In — pinned to the top of the drawer so it's
+            {/* Account / Sign In — pinned to the top of the drawer so it's
                visible immediately without scrolling. */}
             {user ? (
               <div className="pb-2 mb-1 border-b border-brand-border">
@@ -574,7 +574,7 @@ export default function Header() {
                   onClick={() => setOpen(false)}
                   className="rounded-md border border-brand-border px-4 py-2.5 text-center font-semibold text-text-primary transition-colors hover:text-brand-primary"
                 >
-                  Log In
+                  Sign In
                 </Link>
                 <Link
                   href="/register"

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Camera, RotateCw, CheckCircle2, XCircle, Check } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
+import { getStorageClient } from "@/lib/supabase/storageClient";
 
 interface FileStatus {
   file: File;
@@ -129,7 +130,13 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
         },
       );
       const signedBody = await signedRes.json().catch(() => ({}));
-      if (!signedRes.ok || !signedBody?.uploadUrl || !signedBody?.imageId) {
+      if (
+        !signedRes.ok ||
+        !signedBody?.token ||
+        !signedBody?.path ||
+        !signedBody?.bucket ||
+        !signedBody?.imageId
+      ) {
         markError(
           signedBody?.error ??
             `Couldn't prepare upload (HTTP ${signedRes.status})`,
@@ -137,27 +144,31 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
         return false;
       }
 
-      // Step 2 — PUT the byte snapshot DIRECTLY to Supabase Storage. This
-      // bypasses Vercel entirely so the 4.5 MB body limit doesn't apply.
-      // The signed URL is a JWT that only permits an upload to the exact
-      // path returned in step 1.
+      // Step 2 — upload the byte snapshot DIRECTLY to Supabase Storage using
+      // supabase-js uploadToSignedUrl(). This bypasses Vercel entirely (no
+      // 4.5 MB body limit) and is authorized by the short-lived token minted
+      // in step 1 for exactly this path.
       //
-      // We PUT `item.blob` (the in-memory snapshot), NOT the raw input File:
-      // the File is a live OS-handle reference that Chromium can invalidate
-      // once the <input> is cleared, which produced
-      // net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE and silently killed every
-      // upload before it reached the server. Headers mirror the app's other
-      // working signed-URL uploaders (avatar, reels): just Content-Type, no
-      // x-upsert (upsert is encoded in the signed token, not this header, and
-      // the custom header only widened the CORS preflight surface for nothing).
-      const putRes = await fetch(signedBody.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": item.contentType },
-        body: item.blob,
-      });
-      if (!putRes.ok) {
-        const txt = await putRes.text().catch(() => "");
-        markError(`Upload to storage failed (HTTP ${putRes.status}) ${txt}`);
+      // CRITICAL — corruption fix: we do NOT do a raw `fetch` PUT of a Blob
+      // here anymore. A raw binary PUT body can be transcoded to UTF-8 by an
+      // intermediary (CDN/proxy content optimization), collapsing every byte
+      // >= 0x80 to EF BF BD and destroying the JPEG while keeping a valid
+      // content-type and an inflated size. uploadToSignedUrl() sends the bytes
+      // as multipart/form-data, where the binary lives inside a MIME part and
+      // is immune to whole-body text transcoding.
+      //
+      // We upload `item.blob` (the in-memory snapshot), NOT the raw input File:
+      // the File is a live OS-handle reference Chromium can invalidate once the
+      // <input> is cleared (net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE).
+      const storage = getStorageClient();
+      const { error: putErr } = await storage.storage
+        .from(signedBody.bucket)
+        .uploadToSignedUrl(signedBody.path, signedBody.token, item.blob, {
+          contentType: item.contentType,
+          upsert: true,
+        });
+      if (putErr) {
+        markError(`Upload to storage failed: ${putErr.message}`);
         return false;
       }
 

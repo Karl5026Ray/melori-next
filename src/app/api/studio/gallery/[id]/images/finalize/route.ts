@@ -36,7 +36,7 @@ function isJpeg(buf: Buffer): boolean {
 // Bumped whenever this route's byte-handling changes, so production logs can
 // prove WHICH build actually served a given upload. If an upload corrupts but
 // this marker is missing/old in the logs, production is running stale code.
-const FINALIZE_BUILD = "finalize-v6-admin-fetch-binary-safe";
+const FINALIZE_BUILD = "finalize-v7-client-multipart-upload";
 
 // Cheap fingerprint for read-after-write verification without pulling in a
 // crypto dependency on the hot path. Not cryptographic — just needs to catch

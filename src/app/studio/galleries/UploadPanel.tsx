@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { Camera, RotateCw, CheckCircle2, XCircle, Check } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
-import { getStorageClient } from "@/lib/supabase/storageClient";
 
 interface FileStatus {
   file: File;
@@ -144,31 +143,34 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
         return false;
       }
 
-      // Step 2 — upload the byte snapshot DIRECTLY to Supabase Storage using
-      // supabase-js uploadToSignedUrl(). This bypasses Vercel entirely (no
-      // 4.5 MB body limit) and is authorized by the short-lived token minted
-      // in step 1 for exactly this path.
+      // Step 2 — PUT the file DIRECTLY to Supabase Storage. This bypasses
+      // Vercel entirely (no 4.5 MB body limit); the signed URL only permits an
+      // upload to the exact path from step 1.
       //
-      // CRITICAL — corruption fix: we do NOT do a raw `fetch` PUT of a Blob
-      // here anymore. A raw binary PUT body can be transcoded to UTF-8 by an
-      // intermediary (CDN/proxy content optimization), collapsing every byte
-      // >= 0x80 to EF BF BD and destroying the JPEG while keeping a valid
-      // content-type and an inflated size. uploadToSignedUrl() sends the bytes
-      // as multipart/form-data, where the binary lives inside a MIME part and
-      // is immune to whole-body text transcoding.
+      // CRITICAL — corruption fix. This now mirrors the PROVEN-WORKING profile
+      // photo uploader byte-for-byte: a raw `fetch` PUT whose body is the
+      // original `File` object. The previous gallery code reconstructed a Blob
+      // (`new Blob([await file.arrayBuffer()])`) and PUT that instead — and
+      // THAT reconstruction was what produced the EF BF BD (U+FFFD) corruption:
+      // the round-tripped Blob body got serialized as text somewhere in the
+      // PUT path, collapsing every byte >= 0x80. The profile uploader never
+      // corrupts because it sends `body: file` directly. So we do the same.
       //
-      // We upload `item.blob` (the in-memory snapshot), NOT the raw input File:
-      // the File is a live OS-handle reference Chromium can invalidate once the
-      // <input> is cleared (net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE).
-      const storage = getStorageClient();
-      const { error: putErr } = await storage.storage
-        .from(signedBody.bucket)
-        .uploadToSignedUrl(signedBody.path, signedBody.token, item.blob, {
-          contentType: item.contentType,
-          upsert: true,
-        });
-      if (putErr) {
-        markError(`Upload to storage failed: ${putErr.message}`);
+      // We prefer the original File (item.file) — a File IS a Blob and streams
+      // its bytes straight from disk. We only fall back to the snapshot Blob if
+      // the File handle was invalidated by the input reset
+      // (net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE), which the snapshot exists
+      // to guard against.
+      const putBody: Blob =
+        item.file && item.file.size > 0 ? item.file : item.blob;
+      const putRes = await fetch(signedBody.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": item.contentType },
+        body: putBody,
+      });
+      if (!putRes.ok) {
+        const txt = await putRes.text().catch(() => "");
+        markError(`Upload to storage failed (HTTP ${putRes.status}) ${txt}`);
         return false;
       }
 

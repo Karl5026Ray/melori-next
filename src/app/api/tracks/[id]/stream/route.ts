@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { resolveAudioUrl } from "@/lib/supabase/storagePath";
 import { getRequestMembership } from "@/lib/membership-server";
 import { isSuperfanOrBetter, FREE_SAMPLE_SECONDS } from "@/lib/membership";
 
@@ -84,13 +85,14 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       );
     }
 
-    const { data: signed, error: signError } = await supabaseAdmin.storage
-      .from("audio-files")
-      .createSignedUrl(sourcePath, EXPIRES_IN);
-
-    if (signError) throw signError;
-    if (!signed?.signedUrl) {
-      throw new Error("Signed URL generation returned no URL");
+    const playbackUrl = await resolveAudioUrl(
+      supabaseAdmin,
+      "audio-files",
+      sourcePath,
+      EXPIRES_IN,
+    );
+    if (!playbackUrl) {
+      throw new Error("Could not resolve a playable URL for the track audio");
     }
 
     // For a free listener served the full file, the audible window is the
@@ -133,7 +135,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     }
 
     return NextResponse.json({
-      url: signed.signedUrl,
+      url: playbackUrl,
       expiresIn: EXPIRES_IN,
       sample,
       // Cap the full file for free users; a dedicated preview is already short so

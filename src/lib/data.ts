@@ -547,6 +547,72 @@ export async function getPersonalizedRadioPool(
   return { tracks: scored, personalized: true };
 }
 
+// A single playable track to feature in the homepage hero. Shares the same
+// published/moderation filters as the Melori Favorites catalog so the hero
+// always leads with a real, streamable release track (audio is resolved at play
+// time through the signed-URL stream endpoint, exactly like every other player
+// surface). Returns null when the catalog has nothing playable yet, so the hero
+// can fall back to its static state.
+export interface FeaturedTrack {
+  id: number;
+  sourceType: "legacy";
+  title: string;
+  artistName: string | null;
+  coverUrl: string | null;
+}
+
+export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("tracks")
+    .select(
+      "id, title, audio_url, preview_url, release:releases!inner(title, cover_art_url, is_published, release_date, artist:artists(name))",
+    )
+    .eq("is_published", true)
+    .or("moderation_status.is.null,moderation_status.eq.clean")
+    .limit(200);
+
+  if (error) throw error;
+
+  const rows = ((data as any[] | null) ?? [])
+    .map((row) => {
+      const rel = firstOrSelf(row.release) as
+        | {
+            title?: string | null;
+            cover_art_url?: string | null;
+            is_published?: boolean;
+            release_date?: string | null;
+            artist?: { name: string } | { name: string }[] | null;
+          }
+        | null;
+      const artist = rel ? firstOrSelf(rel.artist) : null;
+      return {
+        id: row.id as number,
+        title: (row.title as string) ?? "Untitled",
+        hasAudio: Boolean(row.audio_url || row.preview_url),
+        releasePublished: rel?.is_published !== false,
+        releaseDate: rel?.release_date ?? null,
+        coverUrl: rel?.cover_art_url ?? null,
+        artistName: artist?.name ?? null,
+      };
+    })
+    // Prefer tracks with cover art and a resolvable audio source on a published
+    // release, newest release first — mirrors "Melori Favorites" ordering.
+    .filter((r) => r.hasAudio && r.releasePublished && r.coverUrl)
+    .sort((a, b) => (b.releaseDate ?? "").localeCompare(a.releaseDate ?? ""));
+
+  const pick = rows[0];
+  if (!pick) return null;
+
+  return {
+    id: pick.id,
+    sourceType: "legacy",
+    title: pick.title,
+    artistName: pick.artistName,
+    coverUrl: pick.coverUrl,
+  };
+}
+
 export async function getReleaseBySlug(slug: string): Promise<{
   release: Release;
   artist: ArtistRef | null;

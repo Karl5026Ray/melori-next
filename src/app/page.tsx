@@ -4,8 +4,9 @@ import ReleaseCard from "@/components/ReleaseCard";
 import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import ProductCard from "@/app/store/ProductCard";
+import HomeHero from "@/components/HomeHero";
 import type { Metadata } from "next";
-import { getReleases, getStoreProducts } from "@/lib/data";
+import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,10 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const [releases, storeProducts] = await Promise.all([
+  const [releases, storeProducts, featuredTrack] = await Promise.all([
     getReleases().catch(() => []),
     getStoreProducts(8).catch(() => []),
+    getFeaturedTrack().catch(() => null),
   ]);
   const meloriFavorites = releases.slice(0, 12);
 
@@ -53,6 +55,11 @@ Stream freely. Support directly.{" "}
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
 An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep 100% of every sale.
 </p>
+
+{/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
+   unmutes on first interaction) using the shared site player. */}
+{featuredTrack && <HomeHero track={featuredTrack} />}
+
 <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
 <Link href="/register" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Sign Up Free</Link>

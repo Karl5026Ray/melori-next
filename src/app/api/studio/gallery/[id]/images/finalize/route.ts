@@ -33,6 +33,27 @@ function isJpeg(buf: Buffer): boolean {
   return buf.length >= 3 && buf.subarray(0, 3).equals(JPEG_MAGIC);
 }
 
+// Bumped whenever this route's byte-handling changes, so production logs can
+// prove WHICH build actually served a given upload. If an upload corrupts but
+// this marker is missing/old in the logs, production is running stale code.
+const FINALIZE_BUILD = "finalize-v3-raw-guard";
+
+// Cheap fingerprint for read-after-write verification without pulling in a
+// crypto dependency on the hot path. Not cryptographic — just needs to catch
+// "the bytes I uploaded are not the bytes now in storage".
+function fnv1a(buf: Buffer): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < buf.length; i++) {
+    h ^= buf[i];
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function head(buf: Buffer): string {
+  return buf.subarray(0, 16).toString("hex");
+}
+
 // POST /api/studio/gallery/[id]/images/finalize
 //
 // STEP 2 of the direct-to-Supabase upload flow. Client has already:
@@ -131,6 +152,31 @@ export async function POST(
 
   const sourceBuffer = Buffer.from(await srcBlob.arrayBuffer());
 
+  // DIAGNOSTIC + integrity gate on the RAW upload. This is the byte state
+  // exactly as the client PUT it, before sharp touches anything. Logging the
+  // build marker, size, head bytes, and hash here lets us pinpoint on the very
+  // next upload whether corruption arrives from the client (source already
+  // EF BF BD) or is introduced later on the server.
+  console.log("finalize source", FINALIZE_BUILD, imageId, {
+    size: sourceBuffer.length,
+    head: head(sourceBuffer),
+    hash: fnv1a(sourceBuffer),
+  });
+  if (!isJpeg(sourceBuffer)) {
+    // The client upload itself is not a valid JPEG (e.g. bytes were round-
+    // tripped through UTF-8 → EF BF BD). sharp with failOn:"none" might still
+    // emit *something*, masking the real problem, so refuse here and tell the
+    // user to retry rather than persist an unreadable gallery.
+    console.error("finalize source not JPEG", imageId, head(sourceBuffer));
+    return NextResponse.json(
+      {
+        error:
+          "Your uploaded photo arrived corrupted (not a valid JPEG). Nothing was saved — please try uploading it again.",
+      },
+      { status: 422 },
+    );
+  }
+
   // Serialize sharp calls so peak memory stays predictable — see
   // gallery-watermark.ts for the libvips-on-serverless tuning notes.
   let originalJpeg: Buffer;
@@ -180,46 +226,91 @@ export async function POST(
     );
   }
 
-  const { error: upErr } = await supabase.storage
-    .from(ORIGINALS_BUCKET)
-    .upload(storageKey, originalJpeg, {
-      contentType: "image/jpeg",
-      upsert: true,
+  // Upload each derived object and then DOWNLOAD IT BACK to verify the bytes
+  // in storage byte-for-byte match what we uploaded. This is the definitive
+  // guard against the EF BF BD corruption class: if anything between here and
+  // Supabase textifies the body, the read-after-write hash won't match and we
+  // fail closed — no corrupt object silently persisted, no DB row inserted.
+  async function verifiedUpload(
+    bucket: string,
+    key: string,
+    body: Buffer,
+    label: string,
+  ): Promise<string | null> {
+    const wantHash = fnv1a(body);
+    console.log("finalize upload", FINALIZE_BUILD, label, {
+      size: body.length,
+      head: head(body),
+      hash: wantHash,
     });
-  if (upErr) {
-    console.error("finalize original upload failed", upErr);
-    return NextResponse.json(
-      { error: `original upload failed: ${upErr.message}` },
-      { status: 500 },
-    );
+    const { error: upErr } = await supabase.storage
+      .from(bucket)
+      .upload(key, body, { contentType: "image/jpeg", upsert: true });
+    if (upErr) return `${label} upload failed: ${upErr.message}`;
+
+    const { data: back, error: dlErr } = await supabase.storage
+      .from(bucket)
+      .download(key);
+    if (dlErr || !back) return `${label} read-back failed: ${dlErr?.message}`;
+    const got = Buffer.from(await back.arrayBuffer());
+    const gotHash = fnv1a(got);
+    if (!isJpeg(got) || gotHash !== wantHash) {
+      console.error("finalize read-after-write mismatch", label, imageId, {
+        wantHash,
+        gotHash,
+        wantHead: head(body),
+        gotHead: head(got),
+        wantSize: body.length,
+        gotSize: got.length,
+      });
+      // Remove the corrupt object so we don't leave junk behind.
+      await supabase.storage
+        .from(bucket)
+        .remove([key])
+        .catch(() => {});
+      return `${label} was corrupted in storage (read-after-write check failed)`;
+    }
+    return null;
   }
 
-  const { error: prevErr } = await supabase.storage
-    .from(PREVIEWS_BUCKET)
-    .upload(previewKey, watermarked.previewBuffer, {
-      contentType: "image/jpeg",
-      upsert: true,
-    });
+  const origErr = await verifiedUpload(
+    ORIGINALS_BUCKET,
+    storageKey,
+    originalJpeg,
+    "original",
+  );
+  if (origErr) {
+    return NextResponse.json({ error: origErr }, { status: 500 });
+  }
+  const prevErr = await verifiedUpload(
+    PREVIEWS_BUCKET,
+    previewKey,
+    watermarked.previewBuffer,
+    "preview",
+  );
   if (prevErr) {
-    console.error("finalize preview upload failed", prevErr);
-    return NextResponse.json(
-      { error: `preview upload failed: ${prevErr.message}` },
-      { status: 500 },
-    );
+    await supabase.storage
+      .from(ORIGINALS_BUCKET)
+      .remove([storageKey])
+      .catch(() => {});
+    return NextResponse.json({ error: prevErr }, { status: 500 });
   }
-
-  const { error: thumbErr } = await supabase.storage
-    .from(PREVIEWS_BUCKET)
-    .upload(thumbnailKey, watermarked.thumbnailBuffer, {
-      contentType: "image/jpeg",
-      upsert: true,
-    });
+  const thumbErr = await verifiedUpload(
+    PREVIEWS_BUCKET,
+    thumbnailKey,
+    watermarked.thumbnailBuffer,
+    "thumbnail",
+  );
   if (thumbErr) {
-    console.error("finalize thumb upload failed", thumbErr);
-    return NextResponse.json(
-      { error: `thumb upload failed: ${thumbErr.message}` },
-      { status: 500 },
-    );
+    await supabase.storage
+      .from(ORIGINALS_BUCKET)
+      .remove([storageKey])
+      .catch(() => {});
+    await supabase.storage
+      .from(PREVIEWS_BUCKET)
+      .remove([previewKey])
+      .catch(() => {});
+    return NextResponse.json({ error: thumbErr }, { status: 500 });
   }
 
   // Highest existing order_index so this image sorts after prior ones.

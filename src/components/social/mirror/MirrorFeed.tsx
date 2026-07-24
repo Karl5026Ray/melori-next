@@ -5,7 +5,7 @@ import Link from "next/link";
 import { VideoCard } from "@/components/social/video/VideoCard";
 import OnlineNowRow from "./OnlineNowRow";
 import type { SocialVideo } from "@/types/social";
-import { Compass } from "lucide-react";
+import { Compass, MessagesSquare } from "lucide-react";
 
 // Melori Mirror — the TikTok "For You"-style vertical feed.
 //
@@ -136,6 +136,18 @@ export default function MirrorFeed({
         <OnlineNowRow />
       </div>
 
+      {/* Community lives INSIDE the Mirror now (moved off the side nav). A
+          floating pill on the top-left keeps the right edge clear for each
+          card's mute toggle. z-30 sits above the video but below any modal. */}
+      <Link
+        href="/social/community"
+        aria-label="Community"
+        className="absolute left-3 top-16 z-30 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-opacity hover:opacity-90"
+      >
+        <MessagesSquare className="h-4 w-4" />
+        Community
+      </Link>
+
       {videos.length === 0 ? (
         // Empty feed state (social_videos has no rows yet) — fills the space
         // below the strip so Mirror never shows a blank screen.
@@ -175,6 +187,9 @@ export default function MirrorFeed({
                 video={video}
                 isActive={index === activeIndex}
                 distance={Math.abs(index - activeIndex)}
+                onDeleted={(id) =>
+                  setVideos((prev) => prev.filter((v) => v.id !== id))
+                }
               />
             </div>
           ))}

@@ -531,6 +531,33 @@ export default function Header() {
                 >
                   My profile
                 </Link>
+                {/* Edit Profile now lives here in the hamburger (moved off the
+                    profile page's action row). It routes to the profile and
+                    fires an event the profile page listens for to open the edit
+                    modal — so it works from any page. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    if (typeof window !== "undefined") {
+                      // If already on the profile page, the listener opens the
+                      // modal immediately. Otherwise navigate first; the profile
+                      // page checks a one-shot flag on mount.
+                      try {
+                        sessionStorage.setItem("melori:open-edit-profile", "1");
+                      } catch {
+                        /* storage disabled — event below still covers same-page */
+                      }
+                      window.dispatchEvent(new CustomEvent("melori:open-edit-profile"));
+                      if (window.location.pathname !== "/social/profile") {
+                        window.location.href = "/social/profile";
+                      }
+                    }
+                  }}
+                  className="block w-full py-2.5 text-left text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Edit Profile
+                </button>
                 <Link
                   href="/settings"
                   onClick={() => setOpen(false)}

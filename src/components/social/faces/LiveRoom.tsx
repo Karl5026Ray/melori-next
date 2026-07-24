@@ -35,6 +35,7 @@ import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
+import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
 import {
   Mic,
   MicOff,
@@ -277,7 +278,16 @@ export default function LiveRoom({
     remoteEls.current.delete(identity);
   }, []);
 
-  const handleLeave = useCallback(async () => {
+  // Recording (item 8): the host may record the live to the Mirror. When the
+  // host ends while recording, we DON'T navigate immediately — we stop the
+  // recording and show the "Post this LIVE to the Mirror?" prompt first, then
+  // finish leaving once the host decides.
+  const [isRecording, setIsRecording] = useState(false);
+  const [showEndPrompt, setShowEndPrompt] = useState(false);
+
+  // The actual teardown + navigation, factored out so it can run either
+  // immediately (not recording) or after the post-prompt decision.
+  const finishLeave = useCallback(async () => {
     if (endTimerRef.current) clearTimeout(endTimerRef.current);
     await leaveVideoRoom();
     if (isHost) {
@@ -301,6 +311,15 @@ export default function LiveRoom({
     }
     router.push("/social/live");
   }, [isHost, spaceId, router, user]);
+
+  const handleLeave = useCallback(async () => {
+    // Host ending mid-recording → run the stop + post-prompt flow first.
+    if (isHost && isRecording) {
+      setShowEndPrompt(true);
+      return;
+    }
+    await finishLeave();
+  }, [isHost, isRecording, finishLeave]);
 
   // Ensure a participant row exists for anyone who joins (audience by default;
   // host row is 'host'). Enables the raise-hand / promote flow.
@@ -1546,6 +1565,14 @@ export default function LiveRoom({
         >
           <Share2 className="h-5 w-5" />
         </button>
+        {/* Record to Mirror (host) — start/stop live recording that can be
+            posted to the Melori Mirror feed. */}
+        {isHost && !showEndPrompt && (
+          <MirrorRecordingControls
+            spaceId={spaceId}
+            onRecordingChange={setIsRecording}
+          />
+        )}
         {/* End Live (host) — primary, prominent, and always reachable. */}
         {isHost && (
           <button
@@ -1558,6 +1585,22 @@ export default function LiveRoom({
           </button>
         )}
       </div>
+
+      {/* End-of-live "Post this LIVE to the Mirror?" prompt. Shown when the host
+          ends while recording; on decision we finish leaving. */}
+      {showEndPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <MirrorRecordingControls
+            spaceId={spaceId}
+            autoStopAndPrompt
+            onRecordingChange={setIsRecording}
+            onDone={() => {
+              setShowEndPrompt(false);
+              void finishLeave();
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,6 @@ import {
   Radio,
   Video,
   MessageSquare,
-  MessagesSquare,
   User,
   LogOut,
   Plus,
@@ -27,7 +26,8 @@ const navItems = [
   { href: "/social/connect", label: "Melori Connect", icon: Heart },
   { href: "/social/spaces", label: "MM Spaces", icon: Radio },
   { href: "/social/live", label: "MM Faces", icon: Video },
-  { href: "/social/community", label: "Community", icon: MessagesSquare },
+  // Community moved INTO Melori Mirror (floating pill) — no longer a top-level
+  // rail item.
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
 ];
 
@@ -39,17 +39,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-brand-border bg-brand-background z-20 shrink-0">
       <div className="p-6 pb-4">
-        <Link href="/" className="flex items-center gap-3 mb-8">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/logo.png" alt="Melori" className="w-10 h-10 object-contain" />
-          <div>
-            <h1 className="font-bold text-lg tracking-tight text-text-primary">
-              MM Social
-            </h1>
-            <p className="text-xs text-text-secondary">Spaces &amp; Faces</p>
-          </div>
-        </Link>
-
+        {/* The "MM Social / Spaces & Faces" wordmark + M logo were removed here
+            (per product) so the Go Live button rides at the top of the rail. */}
         <Link
           href="/social/live"
           className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-3 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"

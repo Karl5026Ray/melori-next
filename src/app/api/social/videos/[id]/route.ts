@@ -13,6 +13,7 @@ function revalidateVideoPaths() {
   revalidatePath("/");
   revalidatePath("/social/video");
   revalidatePath("/video");
+  revalidatePath("/social/mirror");
 }
 
 // Extract the storage-relative object path from a Supabase public URL.

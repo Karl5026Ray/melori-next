@@ -1,5 +1,10 @@
 export type UserRole = "artist" | "superfan" | "admin" | "free";
 
+export interface SocialLink {
+  label: string;
+  url: string;
+}
+
 export interface Profile {
   id: string;
   username: string;
@@ -17,6 +22,8 @@ export interface Profile {
   birth_date?: string | null;
   birthday_visible?: boolean | null;
   city?: string | null;
+  // Up to 5 clickable links shown on the profile (migration 039).
+  social_links?: SocialLink[] | null;
   // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
   membership_tier?: string | null;
   membership_status?: string | null;

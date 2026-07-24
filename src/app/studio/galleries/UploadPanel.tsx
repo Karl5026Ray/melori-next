@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, RotateCw, CheckCircle2, XCircle } from "lucide-react";
+import { Camera, RotateCw, CheckCircle2, XCircle, Check } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 
 interface FileStatus {
@@ -24,6 +24,8 @@ interface FileStatus {
 interface Props {
   galleryId: string;
   onUploaded: () => void;
+  // Optional: called when the user taps "Done" to close out an upload session.
+  onDone?: () => void;
 }
 
 // Phone-first "Add photos" capture flow. A plain <input type=file accept=
@@ -32,7 +34,7 @@ interface Props {
 // upload SEQUENTIALLY (one at a time) so a single request stays small and
 // resilient on spotty mobile connections; failures are retried individually
 // without losing the rest of the batch.
-export default function UploadPanel({ galleryId, onUploaded }: Props) {
+export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -203,6 +205,19 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
 
   const pendingCount = queue.filter((q) => q.status !== "done").length;
   const failedCount = queue.filter((q) => q.status === "error").length;
+  const doneCount = queue.filter((q) => q.status === "done").length;
+  // The batch is "finished" when nothing is in flight and there's at least one
+  // uploaded photo. Failed items don't block finishing — the user can retry
+  // them or walk away; the successful ones are already saved.
+  const canFinish = !uploading && doneCount > 0 && pendingCount === failedCount;
+
+  const finish = () => {
+    // Refresh the gallery grid, clear the finished queue, and hand control back
+    // to the parent (e.g. scroll to the gallery / navigate away).
+    onUploaded();
+    setQueue((prev) => prev.filter((q) => q.status === "error"));
+    onDone?.();
+  };
 
   return (
     <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 sm:p-5">
@@ -320,6 +335,17 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
               </li>
             ))}
           </ul>
+
+          {canFinish && (
+            <button
+              type="button"
+              onClick={finish}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-4 text-base font-semibold text-white transition-colors hover:bg-emerald-500"
+            >
+              <Check className="h-5 w-5" />
+              Done — {doneCount} photo{doneCount === 1 ? "" : "s"} added
+            </button>
+          )}
         </div>
       )}
     </div>

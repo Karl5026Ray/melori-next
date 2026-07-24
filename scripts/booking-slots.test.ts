@@ -114,24 +114,46 @@ run("30-min service, 30-min step", () => {
   assertEq("last slot is 16:30 (ends 17:00)", label(starts[starts.length - 1]), "16:30");
 });
 
-run("buffer does NOT push the last slot past closing", () => {
-  // A 15-min buffer means the service+buffer runs to 17:00 for a slot that
-  // starts at 16:00 for a 45-min service... but the LOOP boundary uses
-  // serviceMs only (buffer is applied to the busy-overlap check, matching the
-  // production behavior). Assert current behavior is preserved: last start is
-  // the largest where serviceMs fits.
+run("end-of-day buffer: 60-min service + 15-min buffer, 30-min step", () => {
+  // NEW behavior: the trailing buffer must fit before close WHEN a later slot
+  // could otherwise follow. With 30-min steps in a 9-5 window:
+  //   - 16:00 start -> ends 17:00, +15 buffer = 17:15 > 17:00. A later slot
+  //     (16:30) exists as a step, so 16:00 is REJECTED.
+  //   - 15:30 start -> ends 16:30, +15 buffer = 16:45 <= 17:00 -> KEPT, and
+  //     it becomes the last slot of the day.
   const starts = generateSlotStarts({
     windowStart: WINDOW_START,
     windowEnd: WINDOW_END,
     serviceMs: 60 * MIN,
     bufferMs: 15 * MIN,
-    stepMs: 60 * MIN,
+    stepMs: 30 * MIN,
     earliestAllowed: EARLIEST,
     latestAllowed: LATEST,
     busy: [],
   });
-  assertEq("hourly steps -> 8 slots (09:00..16:00)", starts.length, 8);
-  assertEq("last slot is 16:00", label(starts[starts.length - 1]), "16:00");
+  const labels = starts.map(label);
+  assertEq("16:00 rejected (buffer would spill past close)", labels.includes("16:00"), false);
+  assertEq("16:30 rejected (service itself spills)", labels.includes("16:30"), false);
+  assertEq("last slot is 15:30 (ends 16:30, buffer to 16:45)", label(starts[starts.length - 1]), "15:30");
+});
+
+run("end-of-day buffer does NOT block a service that fills the whole window", () => {
+  // An 8-hour service in an 8-hour window ends exactly at close; its 15-min
+  // trailing buffer would spill past close, BUT no later slot could ever
+  // follow, so the slot stays bookable (otherwise full-day Weddings would be
+  // impossible to book).
+  const starts = generateSlotStarts({
+    windowStart: WINDOW_START,
+    windowEnd: WINDOW_END,
+    serviceMs: 8 * HOUR,
+    bufferMs: 15 * MIN,
+    stepMs: 30 * MIN,
+    earliestAllowed: EARLIEST,
+    latestAllowed: LATEST,
+    busy: [],
+  });
+  assertEq("still offers exactly 1 slot", starts.length, 1);
+  assertEq("the only slot is 09:00", label(starts[0]), "09:00");
 });
 
 run("busy interval removes the overlapping slot (buffer respected)", () => {

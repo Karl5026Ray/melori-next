@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
 import CommentSheet from "./CommentSheet";
+import PostActionsMenu from "./PostActionsMenu";
 import {
   Heart,
   MessageCircle,
@@ -22,6 +23,9 @@ interface VideoCardProps {
   // paused video's playhead without causing a reload-flash if the user flicks
   // straight back to it.
   distance?: number;
+  // Called after this post is deleted (by its owner or by an admin) so the
+  // parent feed can drop the card from its list.
+  onDeleted?: (videoId: string) => void;
 }
 
 // Resolve a media URL to something the browser can actually load. Video posts
@@ -41,7 +45,7 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   return `${base}/storage/v1/object/public/audio-files/${path}`;
 }
 
-function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
+function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardProps) {
   const isAudio = video.media_type === "audio";
   const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
 
@@ -512,6 +516,11 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
             {shareCopied ? "Copied!" : "Share"}
           </span>
         </button>
+        <PostActionsMenu
+          videoId={video.id}
+          ownerId={video.user_id}
+          onDeleted={onDeleted}
+        />
       </div>
 
       {/* Heart-burst layer. Absolutely positioned so it floats above the

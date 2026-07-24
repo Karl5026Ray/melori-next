@@ -29,7 +29,7 @@ export async function GET(
   const { data: profiles } = await supabase
     .from("profiles")
     .select(
-      "id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, status",
+      "id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, social_links, status",
     )
     .ilike("username", likeSafe)
     .limit(1);

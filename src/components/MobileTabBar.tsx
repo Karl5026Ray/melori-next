@@ -23,7 +23,6 @@ import {
   Camera,
   Info,
   Target,
-  MessageCircle,
   Users,
   ShoppingBag,
   Swords,
@@ -195,6 +194,7 @@ export default function MobileTabBar() {
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
+      // Kept in sync with the desktop SOCIAL_ITEMS list in Header.tsx.
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
@@ -202,6 +202,8 @@ export default function MobileTabBar() {
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
         { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
+        { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
+        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
     {
@@ -229,9 +231,9 @@ export default function MobileTabBar() {
       icon: <Info className="h-5 w-5" />,
       items: [
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
+        // Community moved into Melori Mirror (item 7); Waves now lives under
+        // Social. This category is trimmed to non-duplicated destinations.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
   ];

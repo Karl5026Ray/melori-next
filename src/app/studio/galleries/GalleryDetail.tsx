@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ExternalLink, Trash2, Power } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
@@ -28,6 +28,7 @@ export default function GalleryDetail({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const galleryGridRef = useRef<HTMLDivElement>(null);
 
   const loadImages = useCallback(async () => {
     setLoading(true);
@@ -212,9 +213,17 @@ export default function GalleryDetail({
         </p>
       )}
 
-      <UploadPanel galleryId={gallery.id} onUploaded={loadImages} />
+      <UploadPanel
+        galleryId={gallery.id}
+        onUploaded={loadImages}
+        onDone={() => {
+          // Refresh the count and scroll the freshly uploaded photos into view.
+          void loadImages();
+          galleryGridRef.current?.scrollIntoView({ behavior: "smooth" });
+        }}
+      />
 
-      <div>
+      <div ref={galleryGridRef}>
         <h2 className="text-sm font-semibold text-text-secondary mb-2">
           {gallery.imageCount} photo{gallery.imageCount === 1 ? "" : "s"}
         </h2>

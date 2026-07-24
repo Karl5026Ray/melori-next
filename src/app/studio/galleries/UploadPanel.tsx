@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, RotateCw, CheckCircle2, XCircle } from "lucide-react";
+import { Camera, RotateCw, CheckCircle2, XCircle, Check } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 
 interface FileStatus {
@@ -24,6 +24,8 @@ interface FileStatus {
 interface Props {
   galleryId: string;
   onUploaded: () => void;
+  // Optional: called when the user taps "Done" to close out an upload session.
+  onDone?: () => void;
 }
 
 // Phone-first "Add photos" capture flow. A plain <input type=file accept=
@@ -32,7 +34,7 @@ interface Props {
 // upload SEQUENTIALLY (one at a time) so a single request stays small and
 // resilient on spotty mobile connections; failures are retried individually
 // without losing the rest of the batch.
-export default function UploadPanel({ galleryId, onUploaded }: Props) {
+export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -45,23 +47,47 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
     // the caller clears the <input> (which can invalidate the File's backing
     // OS handle mid-upload). arrayBuffer() forces the bytes to be read now,
     // while the handle is guaranteed live; the resulting Blob is what we PUT.
-    const next: FileStatus[] = await Promise.all(
-      Array.from(files).map(async (file) => {
-        const bytes = await file.arrayBuffer();
+    //
+    // The read is wrapped in try/catch: if the OS handle is unreadable
+    // (permissions, the file moved, or a flaky handle) file.arrayBuffer()
+    // rejects. Left unhandled that becomes an unhandled promise rejection that
+    // can destabilize the tab; instead we surface a failed queue row the user
+    // can retry.
+    const settled = await Promise.all(
+      Array.from(files).map(async (file): Promise<FileStatus> => {
         const contentType = file.type || "image/jpeg";
-        return {
-          file,
-          blob: new Blob([bytes], { type: contentType }),
-          contentType,
-          filename: file.name || "photo.jpg",
-          key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
-          status: "pending" as const,
-        };
+        const filename = file.name || "photo.jpg";
+        const key = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`;
+        try {
+          const bytes = await file.arrayBuffer();
+          if (!bytes || bytes.byteLength === 0) {
+            throw new Error("empty file");
+          }
+          return {
+            file,
+            blob: new Blob([bytes], { type: contentType }),
+            contentType,
+            filename,
+            key,
+            status: "pending",
+          };
+        } catch {
+          return {
+            file,
+            blob: new Blob([], { type: contentType }),
+            contentType,
+            filename,
+            key,
+            status: "error",
+            error: "Couldn't read this file — tap Retry or pick it again.",
+          };
+        }
       }),
     );
-    setQueue((prev) => [...prev, ...next]);
-    // Auto-start the upload as soon as photos are picked — one less tap.
-    void runQueue(next);
+    setQueue((prev) => [...prev, ...settled]);
+    // Auto-start only the rows whose bytes we successfully captured.
+    const ready = settled.filter((s) => s.status === "pending");
+    if (ready.length > 0) void runQueue(ready);
   };
 
   // Three-step upload:
@@ -203,6 +229,19 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
 
   const pendingCount = queue.filter((q) => q.status !== "done").length;
   const failedCount = queue.filter((q) => q.status === "error").length;
+  const doneCount = queue.filter((q) => q.status === "done").length;
+  // The batch is "finished" when nothing is in flight and there's at least one
+  // uploaded photo. Failed items don't block finishing — the user can retry
+  // them or walk away; the successful ones are already saved.
+  const canFinish = !uploading && doneCount > 0 && pendingCount === failedCount;
+
+  const finish = () => {
+    // Refresh the gallery grid, clear the finished queue, and hand control back
+    // to the parent (e.g. scroll to the gallery / navigate away).
+    onUploaded();
+    setQueue((prev) => prev.filter((q) => q.status === "error"));
+    onDone?.();
+  };
 
   return (
     <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 sm:p-5">
@@ -320,6 +359,17 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
               </li>
             ))}
           </ul>
+
+          {canFinish && (
+            <button
+              type="button"
+              onClick={finish}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-4 text-base font-semibold text-white transition-colors hover:bg-emerald-500"
+            >
+              <Check className="h-5 w-5" />
+              Done — {doneCount} photo{doneCount === 1 ? "" : "s"} added
+            </button>
+          )}
         </div>
       )}
     </div>

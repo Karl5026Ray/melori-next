@@ -6,6 +6,16 @@ import { authFetch } from "@/lib/authClient";
 
 interface FileStatus {
   file: File;
+  // An in-memory snapshot of the file's bytes, taken the instant the file is
+  // picked. The raw <input> File is a *reference* to an OS file handle; once we
+  // clear the input (`e.target.value = ""`, needed so re-picking the same file
+  // re-fires onChange) Chromium can release that handle, and the later async
+  // PUT then fails with `net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE` before any
+  // bytes go over the wire. Reading the bytes into a detached Blob up front
+  // makes the upload body self-contained and immune to the input reset.
+  blob: Blob;
+  contentType: string;
+  filename: string;
   key: string;
   status: "pending" | "uploading" | "done" | "error";
   error?: string;
@@ -29,13 +39,26 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
   const [forSale, setForSale] = useState(false);
   const [priceDollars, setPriceDollars] = useState("");
 
-  const handleFilesSelected = (files: FileList | null) => {
+  const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const next: FileStatus[] = Array.from(files).map((file) => ({
-      file,
-      key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
-      status: "pending",
-    }));
+    // Snapshot each picked file's bytes into a detached in-memory Blob BEFORE
+    // the caller clears the <input> (which can invalidate the File's backing
+    // OS handle mid-upload). arrayBuffer() forces the bytes to be read now,
+    // while the handle is guaranteed live; the resulting Blob is what we PUT.
+    const next: FileStatus[] = await Promise.all(
+      Array.from(files).map(async (file) => {
+        const bytes = await file.arrayBuffer();
+        const contentType = file.type || "image/jpeg";
+        return {
+          file,
+          blob: new Blob([bytes], { type: contentType }),
+          contentType,
+          filename: file.name || "photo.jpg",
+          key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+          status: "pending" as const,
+        };
+      }),
+    );
     setQueue((prev) => [...prev, ...next]);
     // Auto-start the upload as soon as photos are picked — one less tap.
     void runQueue(next);
@@ -74,8 +97,8 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            filename: item.file.name,
-            contentType: item.file.type || "image/jpeg",
+            filename: item.filename,
+            contentType: item.contentType,
           }),
         },
       );
@@ -88,17 +111,23 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
         return false;
       }
 
-      // Step 2 — PUT the raw file DIRECTLY to Supabase Storage. This
+      // Step 2 — PUT the byte snapshot DIRECTLY to Supabase Storage. This
       // bypasses Vercel entirely so the 4.5 MB body limit doesn't apply.
       // The signed URL is a JWT that only permits an upload to the exact
       // path returned in step 1.
+      //
+      // We PUT `item.blob` (the in-memory snapshot), NOT the raw input File:
+      // the File is a live OS-handle reference that Chromium can invalidate
+      // once the <input> is cleared, which produced
+      // net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE and silently killed every
+      // upload before it reached the server. Headers mirror the app's other
+      // working signed-URL uploaders (avatar, reels): just Content-Type, no
+      // x-upsert (upsert is encoded in the signed token, not this header, and
+      // the custom header only widened the CORS preflight surface for nothing).
       const putRes = await fetch(signedBody.uploadUrl, {
         method: "PUT",
-        headers: {
-          "Content-Type": item.file.type || "application/octet-stream",
-          "x-upsert": "true",
-        },
-        body: item.file,
+        headers: { "Content-Type": item.contentType },
+        body: item.blob,
       });
       if (!putRes.ok) {
         const txt = await putRes.text().catch(() => "");
@@ -117,7 +146,7 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             imageId: signedBody.imageId,
-            filename: item.file.name,
+            filename: item.filename,
             forSale:
               forSale && Number.isFinite(priceCents) && priceCents > 0,
             priceCents:
@@ -214,9 +243,13 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
           type="file"
           accept="image/*"
           multiple
-          onChange={(e) => {
-            handleFilesSelected(e.target.files);
-            e.target.value = "";
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            // Await the byte snapshot BEFORE resetting the input, so the File's
+            // backing OS handle is still valid while we read it. Resetting
+            // first (the old bug) could invalidate the blob mid-upload.
+            await handleFilesSelected(input.files);
+            input.value = "";
           }}
           className="hidden"
         />

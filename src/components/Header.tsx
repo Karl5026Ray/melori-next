@@ -233,7 +233,7 @@ export default function Header() {
 
           {/* Brand M — always a plain Home link on every screen size. On mobile
              the hamburger to its left opens the drawer; on desktop the top bar
-             (incl. Log In / Sign Up Free) covers nav, so the logo is purely
+             (incl. Log In / Create a Profile) covers nav, so the logo is purely
              Home. */}
           <Link
             href="/"
@@ -362,7 +362,7 @@ export default function Header() {
                 href="/register"
                 className="rounded-md border border-brand-primary px-4 py-1.5 font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-black"
               >
-                Sign Up Free
+                Create a Profile
               </Link>
             </>
           )}
@@ -581,7 +581,7 @@ export default function Header() {
                   onClick={() => setOpen(false)}
                   className="rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
                 >
-                  Sign Up Free
+                  Create a Profile
                 </Link>
               </div>
             )}

@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { X, ShoppingBag, Download, Camera, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  X,
+  ShoppingBag,
+  Download,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
 
 export interface ViewerImage {
   id: string;
@@ -39,6 +47,8 @@ export default function GalleryViewer({
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Group images by folder, preserving order. Images without a folder land in
   // an implicit "Gallery" group rendered first.
@@ -49,17 +59,43 @@ export default function GalleryViewer({
       if (!byFolder.has(key)) byFolder.set(key, []);
       byFolder.get(key)!.push(img);
     }
-    const result: { title: string | null; items: ViewerImage[] }[] = [];
+    const result: { key: string; name: string; items: ViewerImage[] }[] = [];
     const unfiled = byFolder.get(null);
-    if (unfiled?.length) result.push({ title: null, items: unfiled });
+    if (unfiled?.length)
+      result.push({ key: "unfiled", name: "Gallery", items: unfiled });
     for (const folder of folders) {
       const items = byFolder.get(folder.id);
-      if (items?.length) result.push({ title: folder.name, items });
+      if (items?.length)
+        result.push({ key: folder.id, name: folder.name, items });
     }
     return result;
   }, [images, folders]);
 
-  const active = activeIndex !== null ? images[activeIndex] : null;
+  const openGroup = groups.find((g) => g.key === openKey) ?? null;
+
+  // Keep the last opened group mounted so the panel can animate closed instead
+  // of vanishing the instant its content unmounts.
+  const lastOpenRef = useRef(openGroup);
+  if (openGroup) lastOpenRef.current = openGroup;
+  const panelGroup = openGroup ?? lastOpenRef.current;
+
+  const lightboxItems = panelGroup?.items ?? [];
+  const active = activeIndex !== null ? (lightboxItems[activeIndex] ?? null) : null;
+
+  useEffect(() => {
+    if (!openKey) return;
+    const frame = requestAnimationFrame(() => {
+      if (window.innerWidth < 640) {
+        panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [openKey]);
+
+  function toggleGroup(key: string) {
+    setActiveIndex(null);
+    setOpenKey((current) => (current === key ? null : key));
+  }
 
   async function buy(imageId: string) {
     setBuyingId(imageId);
@@ -86,7 +122,7 @@ export default function GalleryViewer({
     setActiveIndex((i) => {
       if (i === null) return i;
       const next = i + dir;
-      if (next < 0 || next >= images.length) return i;
+      if (next < 0 || next >= lightboxItems.length) return i;
       return next;
     });
   }
@@ -118,58 +154,124 @@ export default function GalleryViewer({
             This gallery has no photos yet.
           </div>
         ) : (
-          groups.map((group, gi) => (
-            <section key={group.title ?? `group-${gi}`} className="mb-10">
-              {group.title && (
-                <h2 className="mb-4 text-lg font-semibold text-text-primary">
-                  {group.title}
-                </h2>
-              )}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {group.items.map((img) => {
-                  const idx = images.findIndex((x) => x.id === img.id);
-                  return (
-                    <figure
-                      key={img.id}
-                      className="group relative overflow-hidden rounded-xl border border-brand-border bg-brand-surface"
-                    >
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {groups.map((group) => {
+                const isOpen = group.key === openKey;
+                const cover = group.items[0];
+                return (
+                  <button
+                    key={group.key}
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={isOpen}
+                    aria-controls="gallery-category-panel"
+                    className={`group overflow-hidden rounded-xl border bg-brand-surface text-left transition-colors ${
+                      isOpen
+                        ? "border-brand-primary"
+                        : "border-brand-border hover:border-brand-primary"
+                    }`}
+                  >
+                    <div className="relative aspect-square overflow-hidden bg-brand-muted">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={cover.thumbnailUrl}
+                        alt={group.name}
+                        loading="lazy"
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <span className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-brand-background/80 text-text-primary">
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-300 ${
+                            isOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <p className="truncate text-sm font-semibold">
+                        {group.name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-secondary">
+                        {group.items.length} photo
+                        {group.items.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              id="gallery-category-panel"
+              ref={panelRef}
+              inert={!openGroup}
+              className={`grid transition-all duration-300 ease-out ${
+                openGroup
+                  ? "mt-6 grid-rows-[1fr] opacity-100"
+                  : "grid-rows-[0fr] opacity-0"
+              }`}
+            >
+              <div className="overflow-hidden">
+                {panelGroup && (
+                  <section aria-label={panelGroup.name}>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h2 className="text-lg font-semibold text-text-primary">
+                        {panelGroup.name}
+                      </h2>
                       <button
                         type="button"
-                        onClick={() => setActiveIndex(idx)}
-                        className="relative block aspect-square w-full overflow-hidden"
-                        aria-label={`Open ${img.filename ?? "photo"}`}
+                        onClick={() => toggleGroup(panelGroup.key)}
+                        className="flex items-center gap-1.5 rounded-full border border-brand-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-brand-primary hover:text-text-primary"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.thumbnailUrl}
-                          alt={img.caption ?? img.filename ?? "Gallery photo"}
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
+                        <X className="h-3.5 w-3.5" /> Close
                       </button>
-                      {img.forSale && img.priceCents ? (
-                        <button
-                          type="button"
-                          onClick={() => buy(img.id)}
-                          disabled={buyingId === img.id}
-                          className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {panelGroup.items.map((img, idx) => (
+                        <figure
+                          key={img.id}
+                          className="group relative overflow-hidden rounded-xl border border-brand-border bg-brand-surface"
                         >
-                          <ShoppingBag className="h-3.5 w-3.5" />
-                          {buyingId === img.id
-                            ? "…"
-                            : `Instant ${formatPrice(img.priceCents)}`}
-                        </button>
-                      ) : allowDownloads ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
-                          <Download className="h-3 w-3" /> Download
-                        </span>
-                      ) : null}
-                    </figure>
-                  );
-                })}
+                          <button
+                            type="button"
+                            onClick={() => setActiveIndex(idx)}
+                            className="relative block aspect-square w-full overflow-hidden"
+                            aria-label={`Open ${img.filename ?? "photo"}`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={img.thumbnailUrl}
+                              alt={img.caption ?? img.filename ?? "Gallery photo"}
+                              loading="lazy"
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                          </button>
+                          {img.forSale && img.priceCents ? (
+                            <button
+                              type="button"
+                              onClick={() => buy(img.id)}
+                              disabled={buyingId === img.id}
+                              className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
+                            >
+                              <ShoppingBag className="h-3.5 w-3.5" />
+                              {buyingId === img.id
+                                ? "…"
+                                : `Instant ${formatPrice(img.priceCents)}`}
+                            </button>
+                          ) : allowDownloads ? (
+                            <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
+                              <Download className="h-3 w-3" /> Download
+                            </span>
+                          ) : null}
+                        </figure>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
-            </section>
-          ))
+            </div>
+          </>
         )}
       </div>
 
@@ -202,7 +304,7 @@ export default function GalleryViewer({
               <ChevronLeft className="h-6 w-6" />
             </button>
           )}
-          {activeIndex !== null && activeIndex < images.length - 1 && (
+          {activeIndex !== null && activeIndex < lightboxItems.length - 1 && (
             <button
               type="button"
               aria-label="Next"

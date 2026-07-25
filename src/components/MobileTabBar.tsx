@@ -36,8 +36,8 @@ import {
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
- *                          Connect (Waves lives in About)
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, Connect
+ *                          (Messages is a quick press; Waves lives in About)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
@@ -194,7 +194,7 @@ export default function MobileTabBar() {
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
-      // Kept in sync with the desktop SOCIAL_ITEMS list in Header.tsx.
+      // Mirrors SOCIAL_NAV_ITEMS (see src/lib/socialNav.ts) with icons/blurbs.
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
@@ -202,8 +202,6 @@ export default function MobileTabBar() {
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
         { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
-        { label: "Messages", href: "/social/messages", icon: <MessageSquare className="h-5 w-5" />, desc: "Direct chats" },
-        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
     {
@@ -231,9 +229,9 @@ export default function MobileTabBar() {
       icon: <Info className="h-5 w-5" />,
       items: [
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        // Community moved into Melori Mirror (item 7); Waves now lives under
-        // Social. This category is trimmed to non-duplicated destinations.
+        // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
+        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
   ];

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Camera, Loader2, MapPin, Users } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
 import ProfileTabs from "@/components/social/profile/ProfileTabs";
+import SocialMenuButton from "@/components/social/SocialMenuButton";
 import SocialLinks from "@/components/social/profile/SocialLinks";
 import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
 import type { TileContent } from "@/components/social/profile/ProfileContentTile";
@@ -219,6 +220,10 @@ export default function ProfilePage() {
               <Users className="h-4 w-4" />
               Discover
             </Link>
+            {/* Social sits directly beside Discover and opens the four social
+                apps. Messages and Waves are reachable elsewhere and are
+                deliberately not listed here. */}
+            <SocialMenuButton />
           </div>
         </div>
 
@@ -235,18 +240,6 @@ export default function ProfilePage() {
             </span>{" "}
             <span className="text-melori-muted">Following</span>
           </div>
-        </div>
-
-        {/* "Discover" section header for the profile, with "Social" inline next
-            to it as a quick link into the social area (Melori Mirror). */}
-        <div className="mb-4 flex items-baseline gap-3">
-          <h3 className="text-lg font-bold text-melori-text">Discover</h3>
-          <Link
-            href="/social/mirror"
-            className="text-sm font-semibold text-melori-purple hover:underline"
-          >
-            Social
-          </Link>
         </div>
 
         {/* Tabbed profile experience: Reels · Photos · Liked · Shared · Saves ·

@@ -26,6 +26,7 @@ export interface ViewerImage {
 export interface ViewerFolder {
   id: string;
   name: string;
+  coverPhotoId: string | null;
 }
 
 function formatPrice(cents: number): string {
@@ -59,14 +60,32 @@ export default function GalleryViewer({
       if (!byFolder.has(key)) byFolder.set(key, []);
       byFolder.get(key)!.push(img);
     }
-    const result: { key: string; name: string; items: ViewerImage[] }[] = [];
+    const result: {
+      key: string;
+      name: string;
+      items: ViewerImage[];
+      cover: ViewerImage;
+    }[] = [];
     const unfiled = byFolder.get(null);
     if (unfiled?.length)
-      result.push({ key: "unfiled", name: "Gallery", items: unfiled });
+      result.push({
+        key: "unfiled",
+        name: "Gallery",
+        items: unfiled,
+        cover: unfiled[0],
+      });
     for (const folder of folders) {
       const items = byFolder.get(folder.id);
-      if (items?.length)
-        result.push({ key: folder.id, name: folder.name, items });
+      if (!items?.length) continue;
+      const chosen = folder.coverPhotoId
+        ? items.find((img) => img.id === folder.coverPhotoId)
+        : undefined;
+      result.push({
+        key: folder.id,
+        name: folder.name,
+        items,
+        cover: chosen ?? items[0],
+      });
     }
     return result;
   }, [images, folders]);
@@ -158,7 +177,6 @@ export default function GalleryViewer({
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {groups.map((group) => {
                 const isOpen = group.key === openKey;
-                const cover = group.items[0];
                 return (
                   <button
                     key={group.key}
@@ -175,7 +193,7 @@ export default function GalleryViewer({
                     <div className="relative aspect-square overflow-hidden bg-brand-muted">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={cover.thumbnailUrl}
+                        src={group.cover.thumbnailUrl}
                         alt={group.name}
                         loading="lazy"
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"

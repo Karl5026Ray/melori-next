@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -32,15 +34,9 @@ const standaloneLinks: NavItem[] = [
 // in the center "M" menu (MobileTabBar) as top-bar dropdowns on desktop —
 // Social, Radio, Photography, Profile. Radio/Profile are single destinations
 // (no sub-items) so they render as plain links; Social & Photography mirror
-// the M-menu categories as dropdowns. Kept in sync with MobileTabBar.
-const SOCIAL_ITEMS: NavItem[] = [
-  { label: "Melori Mirror", href: "/social/mirror" },
-  { label: "MM Faces", href: "/social/live" },
-  { label: "MM Spaces", href: "/social/spaces" },
-  { label: "Connect", href: "/social/connect" },
-  { label: "Messages", href: "/social/messages" },
-  { label: "Waves", href: "/social/waves" },
-];
+// the M-menu categories as dropdowns. The Social list is the shared
+// SOCIAL_NAV_ITEMS so the top bar, the profile action row and the M menu can't
+// drift apart.
 const PHOTO_ITEMS: NavItem[] = [
   { label: "Photography", href: "/photography" },
   { label: "Gallery", href: "/gallery" },
@@ -49,6 +45,7 @@ const PHOTO_ITEMS: NavItem[] = [
 ];
 
 export default function Header() {
+  const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
@@ -81,6 +78,13 @@ export default function Header() {
       document.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  // Navigating away closes whatever menu launched the navigation.
+  useEffect(() => {
+    setOpenGroup(null);
+    setAccountOpen(false);
+    setOpen(false);
+  }, [pathname]);
 
   // Lock body scroll while the slide-in drawer is open so the page behind it
   // stays put (a contained off-canvas panel, not a page that keeps scrolling).
@@ -370,19 +374,26 @@ export default function Header() {
           {/* Top-bar app dropdowns (desktop) mirroring the center M menu:
              Social ▾, Radio, Photography ▾, Profile. */}
           {([
-            { key: "Social", items: SOCIAL_ITEMS },
+            { key: "Social", items: SOCIAL_NAV_ITEMS },
             { key: "Photography", items: PHOTO_ITEMS },
           ] as const).map(({ key, items }) => {
             const isOpen = openGroup === key;
+            const groupCurrent = items.some((item) =>
+              isSocialNavCurrent(pathname, item.href),
+            );
             return (
               <div key={key} className="relative">
                 <button
                   type="button"
                   onClick={() => setOpenGroup((g) => (g === key ? null : key))}
                   aria-expanded={isOpen}
-                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+                  aria-haspopup="menu"
+                  aria-current={groupCurrent ? "page" : undefined}
+                  className={`flex items-center gap-1 rounded-md px-3 py-1.5 transition-colors hover:text-brand-primary ${
+                    groupCurrent ? "text-brand-primary" : "text-text-secondary"
+                  }`}
                 >
-                  {key === "Photography" ? "Photography" : key}
+                  {key}
                   <svg
                     viewBox="0 0 24 24"
                     fill="none"
@@ -397,17 +408,30 @@ export default function Header() {
                   </svg>
                 </button>
                 {isOpen && (
-                  <div className="absolute left-0 mt-2 min-w-52 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl">
-                    {items.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setOpenGroup(null)}
-                        className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
+                  <div
+                    role="menu"
+                    aria-label={key}
+                    className="absolute left-0 mt-2 min-w-52 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl"
+                  >
+                    {items.map((item) => {
+                      const current = isSocialNavCurrent(pathname, item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          role="menuitem"
+                          onClick={() => setOpenGroup(null)}
+                          aria-current={current ? "page" : undefined}
+                          className={`block px-4 py-2.5 transition-colors hover:bg-white/5 hover:text-brand-primary ${
+                            current
+                              ? "bg-white/5 font-medium text-brand-primary"
+                              : "text-text-secondary"
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </div>

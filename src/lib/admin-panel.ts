@@ -59,7 +59,7 @@ export async function logAdminAction(
   admin: AdminCaller,
   params: {
     action: AdminAction;
-    targetType: "user" | "artist" | "space";
+    targetType: "user" | "artist" | "space" | "mirror_post";
     targetId: string;
     details?: Record<string, unknown>;
   },

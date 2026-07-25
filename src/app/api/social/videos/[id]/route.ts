@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { isAdmin } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import {
+  archiveAndDeleteSocialVideo,
+  DELETABLE_COLUMNS,
+} from "@/lib/social-video-delete";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,46 +21,36 @@ function revalidateVideoPaths() {
   revalidatePath("/social/mirror");
 }
 
-// Extract the storage-relative object path from a Supabase public URL.
-// Supabase public URLs look like:
-//   `<host>/storage/v1/object/public/<bucket>/<path>`
-// Returns null when the URL doesn't reference the given bucket (external
-// video, signed URL, etc.) so callers can skip the storage delete rather
-// than trying to remove an unrelated path.
-function pathFromPublicUrl(
-  url: string | null,
-  bucket: string,
-): string | null {
-  if (!url) return null;
-  const marker = `/object/public/${bucket}/`;
-  const idx = url.indexOf(marker);
-  if (idx === -1) return null;
-  return url.slice(idx + marker.length);
-}
-
-// DELETE /api/social/videos/[id] — owner-only deletion of a social video.
+// DELETE /api/social/videos/[id] — owner (or admin) deletion of a Mirror post.
 //
-// Ownership: enforced via requireArtist AND an explicit user_id equality
-// on the DELETE. Admins can also delete via this route because requireArtist
-// accepts the admin role. Non-owner artists cannot delete another artist's
-// video because the row-level filter uses `user_id = caller`.
+// The guard is requireAuth, not requireArtist: publishing a native post is open
+// to any signed-in member (POST /api/social/videos), so gating the delete on the
+// artist tier stranded free-tier members with posts they could see a delete
+// button for but never remove. Authorization is the ownership check below plus
+// the `user_id = caller` filter on the DELETE itself, which closes the window
+// between the read and the write. Admins (profiles.role='admin') may delete any
+// post — the same rule the admin panel enforces.
 //
-// Storage cleanup: video file (in the `social-videos` public bucket) and
-// optional thumbnail (in `covers`). The DB row is deleted first — even if
-// storage cleanup partially fails afterward, the video disappears from every
-// listing. Storage errors surface in the response so the client can log them.
-export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+// Removal is archive-then-delete (see src/lib/social-video-delete.ts): the row
+// is copied into social_videos_archive exactly like the 24h rotation does, then
+// dropped from the live table, then its storage objects are swept. YouTube posts
+// have no storage object, so only the row moves.
+export async function DELETE(
+  req: NextRequest,
+  props: { params: Promise<{ id: string }> },
+) {
   const params = await props.params;
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const supabase = getSupabaseAdmin();
+  const callerId = guard.membership.userId!;
+  const callerIsAdmin = isAdmin(guard.membership.profile);
 
-  // Fetch first so we know which storage objects to clean up. If the row
-  // isn't ours (or doesn't exist), return 404 without disclosing which.
+  // Fetch first so we know which storage objects to clean up.
   const { data: row, error: fetchError } = await supabase
     .from("social_videos")
-    .select("id, user_id, video_url, thumbnail_url")
+    .select(DELETABLE_COLUMNS)
     .eq("id", params.id)
     .maybeSingle();
 
@@ -65,43 +60,17 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
   if (!row) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
-
-  // requireArtist returns membership.profile.membership_tier as the effective
-  // role — 'artist' | 'admin' | 'superfan' | 'free'. Only admins can delete a
-  // video that isn't theirs; every other role is limited to their own row.
-  const isAdmin =
-    guard.membership.profile?.membership_tier === "admin";
-  if (!isAdmin && row.user_id !== guard.membership.userId) {
+  if (!callerIsAdmin && row.user_id !== callerId) {
     return NextResponse.json({ error: "Not your video" }, { status: 403 });
   }
 
-  // Delete the row first — that's what the public feed reads. Even if the
-  // storage step fails afterward, the video is gone from every listing.
-  const del = supabase
-    .from("social_videos")
-    .delete()
-    .eq("id", params.id);
-  const scoped = isAdmin ? del : del.eq("user_id", guard.membership.userId!);
-  const { error: deleteError } = await scoped;
-
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
-  }
-
-  const storageErrors: string[] = [];
-
-  const videoPath = pathFromPublicUrl(row.video_url, "social-videos");
-  if (videoPath) {
-    const { error } = await supabase.storage
-      .from("social-videos")
-      .remove([videoPath]);
-    if (error) storageErrors.push(`social-videos:${error.message}`);
-  }
-
-  const thumbPath = pathFromPublicUrl(row.thumbnail_url, "covers");
-  if (thumbPath) {
-    const { error } = await supabase.storage.from("covers").remove([thumbPath]);
-    if (error) storageErrors.push(`covers:${error.message}`);
+  const { error, storageErrors } = await archiveAndDeleteSocialVideo(
+    supabase,
+    row,
+    callerIsAdmin ? null : callerId,
+  );
+  if (error) {
+    return NextResponse.json({ error }, { status: 500 });
   }
 
   revalidateVideoPaths();

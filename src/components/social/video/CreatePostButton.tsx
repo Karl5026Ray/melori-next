@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Video, Mic, Upload, Circle, Square } from "lucide-react";
+import { Plus, X, Video, Mic, Upload, Circle, Square, Youtube } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
+import { parseYouTubeUrl } from "@/lib/youtube";
 
-type Mode = "video" | "audio" | "file";
+type Mode = "video" | "audio" | "file" | "youtube";
 type MediaType = "video" | "audio";
 
 const MAX_SECONDS: Record<MediaType, number> = { video: 60, audio: 120 };
@@ -103,6 +104,7 @@ export default function CreatePostButton() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -152,6 +154,7 @@ export default function CreatePostButton() {
   const closeModal = useCallback(() => {
     cleanup();
     setTitle("");
+    setYoutubeUrl("");
     setOpen(false);
   }, [cleanup]);
 
@@ -173,7 +176,8 @@ export default function CreatePostButton() {
     async (m: Mode) => {
       stopStream();
       setError(null);
-      if (m === "file") return;
+      // Neither the file picker nor a YouTube link needs the camera/mic.
+      if (m === "file" || m === "youtube") return;
       try {
         const constraints =
           m === "video" ? { video: true, audio: true } : { audio: true };
@@ -289,7 +293,44 @@ export default function CreatePostButton() {
     });
   };
 
+  // Artist-only: publish a YouTube link as a Mirror post. Nothing is uploaded —
+  // the server re-validates the URL, extracts the id, and stores the canonical
+  // watch URL plus the YouTube thumbnail. Title is optional here because the
+  // server falls back to the video's own title via oEmbed.
+  const publishYouTube = useCallback(async () => {
+    const parsed = parseYouTubeUrl(youtubeUrl);
+    if (!parsed) {
+      setError("That doesn't look like a YouTube video link.");
+      return;
+    }
+
+    setPublishing(true);
+    setError(null);
+    try {
+      const res = await authFetch("/api/social/videos/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: parsed.url, title: title.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not publish your post.");
+      }
+      closeModal();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setPublishing(false);
+    }
+  }, [youtubeUrl, title, closeModal, router]);
+
   const publish = useCallback(async () => {
+    if (mode === "youtube") {
+      await publishYouTube();
+      return;
+    }
+
     const trimmed = title.trim();
     if (!trimmed) {
       setError("Add a title first.");
@@ -396,7 +437,7 @@ export default function CreatePostButton() {
     } finally {
       setPublishing(false);
     }
-  }, [title, mode, pickedFile, recordedBlob, closeModal, router]);
+  }, [title, mode, pickedFile, recordedBlob, closeModal, router, publishYouTube]);
 
   const handleFabClick = () => {
     if (!user) {
@@ -415,11 +456,23 @@ export default function CreatePostButton() {
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const hasClip = mode === "file" ? !!pickedFile : !!recordedBlob;
 
+  // Linking a YouTube video is artist tooling (POST /api/social/videos/youtube
+  // is gated on requireArtist), so the tab only appears for artists and admins.
+  // The server re-checks — this just avoids offering an action that would 403.
+  const canPostYouTube = user.role === "artist" || user.role === "admin";
+
   const tabs: { key: Mode; label: string; icon: typeof Video }[] = [
     { key: "video", label: "Record Video", icon: Video },
     { key: "audio", label: "Record Audio", icon: Mic },
     { key: "file", label: "Upload File", icon: Upload },
+    ...(canPostYouTube
+      ? [{ key: "youtube" as Mode, label: "YouTube Link", icon: Youtube }]
+      : []),
   ];
+
+  const parsedYouTube = mode === "youtube" ? parseYouTubeUrl(youtubeUrl) : null;
+  const canPublish =
+    mode === "youtube" ? !!parsedYouTube : hasClip && !!title.trim();
 
   return (
     <>
@@ -454,7 +507,11 @@ export default function CreatePostButton() {
             </div>
 
             {/* Mode tabs */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div
+              className={`grid gap-2 mb-4 ${
+                tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"
+              }`}
+            >
               {tabs.map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -537,10 +594,39 @@ export default function CreatePostButton() {
                   />
                 </label>
               )}
+
+              {mode === "youtube" && (
+                <div className="w-full rounded-xl border border-melori-border bg-melori-void p-4">
+                  <input
+                    type="url"
+                    inputMode="url"
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
+                  />
+                  <p className="mt-2 text-xs text-melori-muted">
+                    Paste a YouTube watch, Shorts, or youtu.be link. The video
+                    plays inline in the Mirror — nothing is re-uploaded.
+                  </p>
+                  {parsedYouTube && (
+                    <img
+                      src={parsedYouTube.thumbnailUrl}
+                      alt=""
+                      className="mt-3 w-full rounded-lg object-cover"
+                    />
+                  )}
+                  {youtubeUrl.trim() && !parsedYouTube && (
+                    <p className="mt-2 text-xs text-red-400">
+                      That doesn&apos;t look like a YouTube video link.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Capture controls */}
-            {mode !== "file" && (
+            {mode !== "file" && mode !== "youtube" && (
               <div className="flex justify-center mb-4">
                 {!hasClip && !recording && (
                   <button
@@ -578,7 +664,11 @@ export default function CreatePostButton() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={120}
-              placeholder="Add a title…"
+              placeholder={
+                mode === "youtube"
+                  ? "Add a title… (optional — we'll use the video's own)"
+                  : "Add a title…"
+              }
               className="w-full bg-melori-void/60 border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
             />
 
@@ -600,7 +690,7 @@ export default function CreatePostButton() {
               <button
                 type="button"
                 onClick={publish}
-                disabled={publishing || !hasClip || !title.trim()}
+                disabled={publishing || !canPublish}
                 className="btn-primary px-6 py-2.5 rounded-full font-semibold text-sm disabled:opacity-50"
               >
                 {publishing ? "Posting…" : "Post"}

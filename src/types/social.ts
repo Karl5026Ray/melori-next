@@ -156,6 +156,13 @@ export interface SocialVideo {
   video_url: string;
   thumbnail_url: string | null;
   media_type: "video" | "audio";
+  // Where the media lives (migration 041). 'upload' = a file in Supabase
+  // Storage; 'youtube' = an artist-submitted link rendered as an inline embed
+  // (video_url still holds the canonical watch URL, so consumers that only read
+  // video_url keep working). Optional: rows written before the migration and
+  // any cached payload omit it, and absent means 'upload'.
+  source?: "upload" | "youtube";
+  youtube_id?: string | null;
   likes_count: number;
   comments_count: number;
   created_at: string;

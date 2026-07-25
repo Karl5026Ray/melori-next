@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { authenticateApiKey, slugify } from "@/lib/gallery-auth";
+import { authenticateApiKey } from "@/lib/gallery-auth";
+import { slugify } from "@/lib/slug";
 import { approvedOrigin } from "@/lib/approved-origin";
 import { getResend, MELORI_FROM, MELORI_REPLY_TO } from "@/lib/email";
 

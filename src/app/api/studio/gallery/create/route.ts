@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { sha256Hex, slugify } from "@/lib/gallery-auth";
+import { sha256Hex } from "@/lib/gallery-auth";
+import { slugify } from "@/lib/slug";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

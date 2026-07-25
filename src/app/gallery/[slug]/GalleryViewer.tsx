@@ -9,7 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Share2,
 } from "lucide-react";
+import { SITE_URL } from "@/lib/site";
+import { folderShareKeys, FOLDER_QUERY_PARAM } from "./share";
 
 export interface ViewerImage {
   id: string;
@@ -33,23 +36,49 @@ function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+// Last-resort copy for browsers without the async clipboard API (older iOS
+// Safari, non-secure contexts). Returns whether the copy succeeded.
+function legacyCopy(text: string): boolean {
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.className = "pointer-events-none fixed -left-full top-0 opacity-0";
+  document.body.appendChild(field);
+  try {
+    field.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+  }
+}
+
 export default function GalleryViewer({
+  gallerySlug,
   galleryName,
   clientName,
   allowDownloads,
   folders,
   images,
+  initialFolder,
 }: {
+  gallerySlug: string;
   galleryName: string;
   clientName: string | null;
   allowDownloads: boolean;
   folders: ViewerFolder[];
   images: ViewerImage[];
+  initialFolder: string | null;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [buyingId, setBuyingId] = useState<string | null>(null);
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [shareState, setShareState] = useState<{
+    key: string;
+    copied: boolean;
+  } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const shareTimerRef = useRef<number | null>(null);
 
   // Group images by folder, preserving order. Images without a folder land in
   // an implicit "Gallery" group rendered first.
@@ -87,8 +116,21 @@ export default function GalleryViewer({
         cover: chosen ?? items[0],
       });
     }
-    return result;
+    const shareKeys = folderShareKeys(result);
+    return result.map((group) => ({
+      ...group,
+      shareKey: shareKeys.get(group.key)!,
+    }));
   }, [images, folders]);
+
+  // A `?folder=` deep link opens the matching group on load; anything we can't
+  // match just falls through to the normal collapsed view.
+  const [openKey, setOpenKey] = useState<string | null>(
+    () =>
+      groups.find(
+        (g) => g.shareKey === initialFolder || g.key === initialFolder,
+      )?.key ?? null,
+  );
 
   const openGroup = groups.find((g) => g.key === openKey) ?? null;
 
@@ -101,19 +143,86 @@ export default function GalleryViewer({
   const lightboxItems = panelGroup?.items ?? [];
   const active = activeIndex !== null ? (lightboxItems[activeIndex] ?? null) : null;
 
+  // A deep-linked folder scrolls into view on every viewport, once. Ordinary
+  // taps only scroll on narrow screens, where the panel opens below the fold.
+  const deepLinkScrollRef = useRef(openKey !== null);
   useEffect(() => {
     if (!openKey) return;
+    const fromDeepLink = deepLinkScrollRef.current;
+    deepLinkScrollRef.current = false;
     const frame = requestAnimationFrame(() => {
-      if (window.innerWidth < 640) {
-        panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (fromDeepLink || window.innerWidth < 640) {
+        panelRef.current?.scrollIntoView({
+          behavior: fromDeepLink ? "auto" : "smooth",
+          block: "start",
+        });
       }
     });
     return () => cancelAnimationFrame(frame);
   }, [openKey]);
 
+  // Keep the address bar in sync with the open folder so the page can always be
+  // shared or reloaded as-is. replaceState avoids a navigation (and the RSC
+  // refetch a router.replace would trigger on this force-dynamic route).
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (openGroup) url.searchParams.set(FOLDER_QUERY_PARAM, openGroup.shareKey);
+    else url.searchParams.delete(FOLDER_QUERY_PARAM);
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, "", next);
+  }, [openGroup]);
+
+  useEffect(
+    () => () => {
+      if (shareTimerRef.current) window.clearTimeout(shareTimerRef.current);
+    },
+    [],
+  );
+
   function toggleGroup(key: string) {
     setActiveIndex(null);
     setOpenKey((current) => (current === key ? null : key));
+  }
+
+  function flashShareResult(key: string, copied: boolean) {
+    setShareState({ key, copied });
+    if (shareTimerRef.current) window.clearTimeout(shareTimerRef.current);
+    shareTimerRef.current = window.setTimeout(() => setShareState(null), 1800);
+  }
+
+  async function shareGroup(group: {
+    key: string;
+    name: string;
+    shareKey: string;
+  }) {
+    const url = `${SITE_URL}/gallery/${gallerySlug}?${FOLDER_QUERY_PARAM}=${encodeURIComponent(
+      group.shareKey,
+    )}`;
+    const title = `${group.name} · ${galleryName}`;
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ title, text: title, url });
+        return;
+      }
+    } catch (err) {
+      // AbortError = the visitor dismissed the share sheet; not a failure, and
+      // no reason to fall back to the clipboard behind their back.
+      if (err instanceof Error && err.name === "AbortError") return;
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        flashShareResult(group.key, true);
+        return;
+      }
+    } catch {
+      // Clipboard permission denied — try the legacy path below.
+    }
+
+    flashShareResult(group.key, legacyCopy(url));
   }
 
   async function buy(imageId: string) {
@@ -178,44 +287,67 @@ export default function GalleryViewer({
               {groups.map((group) => {
                 const isOpen = group.key === openKey;
                 return (
-                  <button
+                  <div
                     key={group.key}
-                    type="button"
-                    onClick={() => toggleGroup(group.key)}
-                    aria-expanded={isOpen}
-                    aria-controls="gallery-category-panel"
-                    className={`group overflow-hidden rounded-xl border bg-brand-surface text-left transition-colors ${
+                    className={`group relative overflow-hidden rounded-xl border bg-brand-surface transition-colors ${
                       isOpen
                         ? "border-brand-primary"
                         : "border-brand-border hover:border-brand-primary"
                     }`}
                   >
-                    <div className="relative aspect-square overflow-hidden bg-brand-muted">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={group.cover.thumbnailUrl}
-                        alt={group.name}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <span className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-brand-background/80 text-text-primary">
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform duration-300 ${
-                            isOpen ? "rotate-180" : ""
-                          }`}
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={isOpen}
+                      aria-controls="gallery-category-panel"
+                      className="block w-full text-left"
+                    >
+                      <div className="relative aspect-square overflow-hidden bg-brand-muted">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={group.cover.thumbnailUrl}
+                          alt={group.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
+                        <span className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-brand-background/80 text-text-primary">
+                          <ChevronDown
+                            className={`h-4 w-4 transition-transform duration-300 ${
+                              isOpen ? "rotate-180" : ""
+                            }`}
+                          />
+                        </span>
+                      </div>
+                      <div className="p-3">
+                        <p className="truncate text-sm font-semibold">
+                          {group.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-text-secondary">
+                          {group.items.length} photo
+                          {group.items.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        shareGroup(group);
+                      }}
+                      aria-label={`Share ${group.name}`}
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-brand-background/80 text-text-primary transition-colors hover:bg-brand-background focus-visible:ring-2 focus-visible:ring-brand-primary"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </button>
+                    {shareState?.key === group.key && (
+                      <span
+                        role="status"
+                        className="pointer-events-none absolute right-2 top-11 rounded-full bg-brand-background/90 px-2 py-1 text-[10px] font-semibold text-text-primary"
+                      >
+                        {shareState.copied ? "Link copied" : "Copy failed"}
                       </span>
-                    </div>
-                    <div className="p-3">
-                      <p className="truncate text-sm font-semibold">
-                        {group.name}
-                      </p>
-                      <p className="mt-0.5 text-xs text-text-secondary">
-                        {group.items.length} photo
-                        {group.items.length === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                  </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -237,13 +369,31 @@ export default function GalleryViewer({
                       <h2 className="text-lg font-semibold text-text-primary">
                         {panelGroup.name}
                       </h2>
-                      <button
-                        type="button"
-                        onClick={() => toggleGroup(panelGroup.key)}
-                        className="flex items-center gap-1.5 rounded-full border border-brand-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-brand-primary hover:text-text-primary"
-                      >
-                        <X className="h-3.5 w-3.5" /> Close
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {shareState?.key === panelGroup.key && (
+                          <span
+                            role="status"
+                            className="text-xs font-semibold text-text-secondary"
+                          >
+                            {shareState.copied ? "Link copied" : "Copy failed"}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => shareGroup(panelGroup)}
+                          aria-label={`Share ${panelGroup.name}`}
+                          className="flex items-center gap-1.5 rounded-full border border-brand-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-brand-primary hover:text-text-primary focus-visible:ring-2 focus-visible:ring-brand-primary"
+                        >
+                          <Share2 className="h-3.5 w-3.5" /> Share
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(panelGroup.key)}
+                          className="flex items-center gap-1.5 rounded-full border border-brand-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-brand-primary hover:text-text-primary"
+                        >
+                          <X className="h-3.5 w-3.5" /> Close
+                        </button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                       {panelGroup.items.map((img, idx) => (

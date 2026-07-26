@@ -24,12 +24,17 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     togglePlay,
     setMuted,
     startRadio,
+    unlockPlayback,
   } = usePlayer();
 
   // Guard so we only kick off autoplay once, and only auto-unmute once.
   const startedRef = useRef(false);
   const unmutedRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  // Mirror isPlaying so the (window) first-interaction handler reads the live
+  // value without being re-bound on every play/pause.
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   // What the hero shows: whatever the one shared player has on air, falling
   // back to the server-rendered featured track until the station is tuned.
@@ -56,13 +61,25 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Unmute on the visitor's FIRST interaction anywhere on the page.
+  // Unmute — and, on browsers that blocked the muted autoplay (iOS), actually
+  // START playback — on the visitor's FIRST interaction anywhere on the page.
   useEffect(() => {
     const events = ["pointerdown", "keydown", "touchstart", "wheel"] as const;
-    const onFirstInteraction = () => {
+    const onFirstInteraction = (e: Event) => {
       if (unmutedRef.current) return;
       unmutedRef.current = true;
+      // Bless the shared <audio> element inside this real gesture so a
+      // (re)start of the track is permitted even on strict autoplay policies.
+      unlockPlayback();
       setMuted(false);
+      // If the tap landed on one of the hero's own audio controls, that
+      // control handles playback itself — don't double-trigger it here.
+      const el = e.target as HTMLElement | null;
+      const onControl = Boolean(el && el.closest("[data-hero-audio-control]"));
+      if (!onControl && !isPlayingRef.current) {
+        // Muted autoplay was blocked; kick real (now-unmuted) playback off.
+        togglePlay();
+      }
       cleanup();
     };
     const cleanup = () => {
@@ -77,7 +94,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
       });
     }
     return cleanup;
-  }, [setMuted]);
+  }, [setMuted, unlockPlayback, togglePlay]);
 
   const fraction = duration > 0 ? currentTime / duration : 0;
   const showSoundPrompt = muted && !error;
@@ -96,7 +113,13 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
           />
           <button
             type="button"
-            onClick={togglePlay}
+            data-hero-audio-control
+            onClick={() => {
+              unmutedRef.current = true;
+              unlockPlayback();
+              setMuted(false);
+              togglePlay();
+            }}
             aria-label={isPlaying ? "Pause" : "Play"}
             className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/30 text-white opacity-0 transition-opacity hover:opacity-100 focus:opacity-100"
           >
@@ -166,9 +189,13 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
         {showSoundPrompt && (
           <button
             type="button"
+            data-hero-audio-control
             onClick={() => {
               unmutedRef.current = true;
+              unlockPlayback();
               setMuted(false);
+              // Start playback if the muted autoplay was blocked (iOS).
+              if (!isPlaying) togglePlay();
             }}
             className="absolute -top-3 right-4 flex items-center gap-2 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105 sm:-top-3 sm:right-6"
           >

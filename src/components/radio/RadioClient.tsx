@@ -72,6 +72,7 @@ export default function RadioClient() {
     playRadio,
     reshuffleRadio,
     togglePlay,
+    unlockPlayback,
     next: skip,
     setVolume,
     setMuted,
@@ -91,8 +92,11 @@ export default function RadioClient() {
 
   const tuneIn = useCallback(() => {
     if (!pool.length) return;
+    // Tuning in is a user gesture — bless the shared element before playRadio's
+    // async signed-URL fetch so the first track is allowed to play on iOS.
+    unlockPlayback();
     playRadio(pool, { key: poolKey, preserveOrder: mode === "playlists" });
-  }, [pool, poolKey, mode, playRadio]);
+  }, [pool, poolKey, mode, playRadio, unlockPlayback]);
 
   // Load the shared/for-you pool for the current mode.
   const loadPool = useCallback(async (m: "foryou" | "all") => {

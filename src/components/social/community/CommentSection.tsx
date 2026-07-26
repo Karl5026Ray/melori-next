@@ -8,7 +8,6 @@ import {
   UpgradePrompt,
 } from "@/components/social/UpgradePrompt";
 import { authFetch } from "@/lib/authClient";
-import { WaveButton } from "@/components/social/WaveButton";
 import { MemberActions } from "@/components/social/MemberActions";
 import { MessageSquare } from "lucide-react";
 

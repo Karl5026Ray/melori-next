@@ -11,7 +11,6 @@ import {
   RadioTower,
   Video,
   MessageSquare,
-  Hand,
   Sparkles,
   Heart,
   X,
@@ -37,7 +36,7 @@ import {
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, Connect
- *                          (Messages is a quick press; Waves lives in About)
+ *                          (Messages is a quick press)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
@@ -162,8 +161,6 @@ export default function MobileTabBar() {
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
   // Direct quick-press buttons (top row): Profile, Radio, Messages, Store.
-  // Karl asked to flip-flop Waves and Store on mobile — Store is now promoted
-  // to the quick-press row and Waves moves into the About category below.
   const quickLinks: LaunchItem[] = [
     {
       label: "Profile",
@@ -231,7 +228,6 @@ export default function MobileTabBar() {
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
         // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-        { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],
     },
   ];

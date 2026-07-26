@@ -84,22 +84,6 @@ export interface Space {
   last_activity_at?: string | null;
 }
 
-export type WaveStatus = "pending" | "accepted" | "declined" | "expired";
-
-export interface Wave {
-  id: string;
-  sender_id: string;
-  recipient_id: string;
-  message: string | null;
-  status: WaveStatus;
-  conversation_id: string | null;
-  created_at: string;
-  expires_at: string;
-  responded_at: string | null;
-  sender?: Profile;
-  recipient?: Profile;
-}
-
 export type ParticipantRole = "host" | "speaker" | "audience";
 
 export interface SpaceParticipant {

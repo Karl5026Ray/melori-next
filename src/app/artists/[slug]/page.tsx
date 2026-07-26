@@ -5,6 +5,8 @@ import ShareButton from "@/components/ShareButton";
 import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
 import ProfileGallery from "@/components/ProfileGallery";
+import { MemberActions } from "@/components/social/MemberActions";
+import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 import { getArtistBySlug } from "@/lib/data";
 import type { ReleaseListItem } from "@/lib/data";
 
@@ -102,6 +104,21 @@ export default async function ArtistDetailPage(
             />
           </div>
         </div>
+
+        {/* Message / block / report. Renders nothing when signed out, when this
+           artist has no member profile, or when you're viewing your own page.
+           MemberActions reads the signed-in member from SocialAuthProvider,
+           which only wraps /social/* — so it is provided here for this subtree. */}
+        {artist.profile_id && (
+          <SocialAuthProvider>
+            <div className="mt-5 flex justify-center sm:justify-start">
+              <MemberActions
+                memberId={artist.profile_id}
+                memberName={artist.name}
+              />
+            </div>
+          </SocialAuthProvider>
+        )}
 
         {/* Bio */}
         {artist.bio && (

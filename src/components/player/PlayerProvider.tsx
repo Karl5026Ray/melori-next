@@ -24,6 +24,11 @@ export interface PlayerTrack {
   coverUrl: string | null;
   // Optional — defaults to "legacy" so pre-existing callers keep working.
   sourceType?: TrackSource;
+  // Optional extras carried by radio pool rows (RadioTrack). Declaring them
+  // here lets a RadioTrack be queued directly and lets the OS media session
+  // publish an album name.
+  album?: string | null;
+  score?: number;
 }
 
 // Stable string key used for internal equality checks (e.g. "is this track
@@ -39,6 +44,43 @@ function streamUrlFor(t: PlayerTrack): string {
   return t.sourceType === "studio"
     ? `/api/studio/tracks/${t.id}/stream`
     : `/api/tracks/${t.id}/stream`;
+}
+
+// Build a radio rotation. `preserveOrder` (saved playlists) returns the list
+// untouched. Otherwise: when tracks carry a `score` (the "For You" station) we
+// draw without replacement using Efraimidis–Spirakis weighting so higher-scored
+// tracks tend to land earlier, but it stays probabilistic so discovery tracks
+// still surface. A repair pass then avoids the same artist back-to-back.
+function buildRotation(
+  pool: PlayerTrack[],
+  preserveOrder: boolean,
+): PlayerTrack[] {
+  if (preserveOrder) return [...pool];
+  const hasScores = pool.some((t) => typeof t.score === "number" && t.score > 0);
+  let arr: PlayerTrack[];
+  if (hasScores) {
+    arr = [...pool]
+      .map((t) => {
+        const w = Math.max(0.01, (t.score ?? 0) + 0.5); // floor so score-0 still plays
+        return { t, key: Math.pow(Math.random(), 1 / w) };
+      })
+      .sort((a, b) => b.key - a.key)
+      .map((x) => x.t);
+  } else {
+    arr = [...pool];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i].artistName && arr[i].artistName === arr[i - 1].artistName) {
+      let k = i + 1;
+      while (k < arr.length && arr[k].artistName === arr[i - 1].artistName) k++;
+      if (k < arr.length) [arr[i], arr[k]] = [arr[k], arr[i]];
+    }
+  }
+  return arr;
 }
 
 interface PlayerContextValue {
@@ -66,7 +108,22 @@ interface PlayerContextValue {
   // user already sees — no separate page or second audio engine.
   radioMode: boolean;
   radioLoading: boolean;
-  startRadio: (mode?: "all" | "foryou") => void;
+  // Identity of the station currently on air ("all", "foryou",
+  // "playlist:<id>"). Lets the Radio page tell "this station is already
+  // playing" from "the user switched stations", so opening /social/radio while
+  // the homepage station plays never restarts or double-starts audio.
+  radioStationKey: string | null;
+  startRadio: (
+    mode?: "all" | "foryou",
+    options?: { muted?: boolean },
+  ) => void;
+  // Put an explicit track list on air (the Radio page's stations and saved
+  // playlists). `preserveOrder` keeps a curated playlist in its saved order.
+  playRadio: (
+    tracks: PlayerTrack[],
+    options?: { key?: string; preserveOrder?: boolean },
+  ) => void;
+  reshuffleRadio: () => void;
   stopRadio: () => void;
   playQueue: (tracks: PlayerTrack[], startIndex: number) => void;
   togglePlay: () => void;
@@ -78,10 +135,6 @@ interface PlayerContextValue {
   seek: (fraction: number) => void;
   setVolume: (v: number) => void;
   setMuted: (m: boolean) => void;
-  // Start (or restart) playback of a single track MUTED — the homepage hero's
-  // autoplay entry point. Muted playback is exempt from browser autoplay
-  // blocking; the caller unmutes on first interaction via setMuted(false).
-  playMutedAutoplay: (track: PlayerTrack) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -117,6 +170,10 @@ export default function PlayerProvider({
   const sampleStartRef = useRef<number>(0);
   // A one-shot seek target applied once the new src reports its metadata.
   const pendingSeekRef = useRef<number | null>(null);
+  // Consecutive unplayable tracks skipped on the radio. Bounded by the queue
+  // length so an entirely dead pool surfaces an error instead of spinning.
+  const deadSkipsRef = useRef(0);
+  const queueLengthRef = useRef(0);
 
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -135,12 +192,18 @@ export default function PlayerProvider({
   const [sampleEnded, setSampleEnded] = useState(false);
   const [radioMode, setRadioMode] = useState(false);
   const [radioLoading, setRadioLoading] = useState(false);
+  const [radioStationKey, setRadioStationKey] = useState<string | null>(null);
   // Mirror radioMode into a ref so the (stable) auto-advance handler can read
   // the latest value without being torn down/rebound on every toggle.
   const radioModeRef = useRef(false);
   useEffect(() => {
     radioModeRef.current = radioMode;
   }, [radioMode]);
+  // Whether the station on air plays in its saved order (playlists) or shuffles.
+  const preserveOrderRef = useRef(false);
+  useEffect(() => {
+    queueLengthRef.current = queue.length;
+  }, [queue]);
 
   // --- single shared <audio> element + event wiring ---
   useEffect(() => {
@@ -155,11 +218,20 @@ export default function PlayerProvider({
       // full file. Server-side gating serves a dedicated clip when one exists.
       const limit = sampleLimitRef.current;
       if (limit != null && audio.currentTime >= limit) {
-        userPausedRef.current = true;
+        // Clear the cap first so a late tick can't re-enter while we swap src.
+        sampleLimitRef.current = null;
         audio.pause();
         audio.currentTime = limit;
         setCurrentTime(limit);
-        setSampleEnded(true);
+        if (radioModeRef.current) {
+          // On the radio a preview ending must not end the station — roll on to
+          // the next track. Gating is unchanged: the listener still hears only
+          // the preview window of every track.
+          advanceRef.current();
+        } else {
+          userPausedRef.current = true;
+          setSampleEnded(true);
+        }
         return;
       }
       setCurrentTime(audio.currentTime);
@@ -284,14 +356,17 @@ export default function PlayerProvider({
   useEffect(() => {
     if (typeof window === "undefined" || !current) return;
     try {
-      window.localStorage.setItem(
-        LAST_TRACK_KEY,
-        JSON.stringify({ current, queue, index }),
-      );
+      // A radio rotation is the whole catalog; persisting it on every track
+      // change would bloat (and can blow) the localStorage quota. Remember only
+      // what's on air — radio is re-tuned from the pool on the next visit.
+      const payload = radioMode
+        ? { current, queue: [current], index: 0 }
+        : { current, queue, index };
+      window.localStorage.setItem(LAST_TRACK_KEY, JSON.stringify(payload));
     } catch {
       /* ignore */
     }
-  }, [current, queue, index]);
+  }, [current, queue, index, radioMode]);
 
   const loadAndPlay = useCallback(
     async (track: PlayerTrack, shouldPlay: boolean) => {
@@ -339,6 +414,7 @@ export default function PlayerProvider({
           userPausedRef.current = false;
           await audio.play();
         }
+        deadSkipsRef.current = 0;
       } catch (err) {
         // A blocked autoplay (NotAllowedError) is a browser policy decision, not
         // a broken track — the URL loaded fine and playback works once the user
@@ -346,6 +422,18 @@ export default function PlayerProvider({
         const name = (err as { name?: string } | null)?.name;
         if (name === "NotAllowedError" || name === "AbortError") {
           setIsPlaying(false);
+        } else if (radioModeRef.current) {
+          // The radio must not die on one bad track — roll past it, unless the
+          // whole rotation turns out to be unplayable.
+          loadedIdRef.current = null;
+          deadSkipsRef.current += 1;
+          if (deadSkipsRef.current > queueLengthRef.current) {
+            deadSkipsRef.current = 0;
+            setError("No playable tracks right now.");
+            setIsPlaying(false);
+          } else {
+            advanceRef.current();
+          }
         } else {
           console.error("[player] loadAndPlay failed:", err);
           setError("Unable to play this track.");
@@ -399,6 +487,7 @@ export default function PlayerProvider({
       // reshuffle away from what the user just chose.
       setRadioMode(false);
       radioModeRef.current = false;
+      setRadioStationKey(null);
       // Clicking the already-active track toggles play/pause. Compare via
       // trackKey so legacy id=5 and studio id="5" never masquerade as each
       // other on mixed lists.
@@ -419,19 +508,38 @@ export default function PlayerProvider({
   );
 
   // --- Radio mode -----------------------------------------------------------
-  // Fisher–Yates shuffle (no adjacent-artist repair here; the bar is a simple
-  // sequential player — good enough for a "turn radio on" toggle).
-  function shuffle<T>(arr: T[]): T[] {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
+  // Radio is not a separate engine: it is this player fed a rotation that
+  // reshuffles forever. The homepage hero, the bottom/floating bar and the
+  // /social/radio page are three views of this one station.
+
+  const playRadio = useCallback(
+    (
+      tracks: PlayerTrack[],
+      options: { key?: string; preserveOrder?: boolean } = {},
+    ) => {
+      if (!tracks.length) return;
+      const { key = null, preserveOrder = false } = options;
+      preserveOrderRef.current = preserveOrder;
+      setRadioMode(true);
+      radioModeRef.current = true;
+      setRadioStationKey(key);
+      activateIndex(buildRotation(tracks, preserveOrder), 0, true);
+    },
+    [activateIndex],
+  );
 
   const startRadio = useCallback(
-    async (mode: "all" | "foryou" = "all") => {
+    async (
+      mode: "all" | "foryou" = "all",
+      options: { muted?: boolean } = {},
+    ) => {
+      // Muted starts (homepage autoplay) must set the flag BEFORE the async
+      // load so audio.play() is autoplay-eligible when it finally runs.
+      if (options.muted) {
+        mutedRef.current = true;
+        if (audioRef.current) audioRef.current.muted = true;
+        setMutedState(true);
+      }
       setRadioLoading(true);
       setError(null);
       try {
@@ -440,37 +548,29 @@ export default function PlayerProvider({
           headers: await authHeaders(),
         });
         if (!res.ok) throw new Error("pool request failed");
-        const data: {
-          tracks?: Array<{
-            id: number | string;
-            sourceType?: TrackSource;
-            title: string;
-            artistName: string | null;
-            coverUrl: string | null;
-          }>;
-        } = await res.json();
+        const data: { tracks?: PlayerTrack[] } = await res.json();
         const pool = (data.tracks ?? []).map<PlayerTrack>((t) => ({
-          id: t.id,
-          title: t.title,
-          artistName: t.artistName,
-          coverUrl: t.coverUrl,
+          ...t,
           sourceType: t.sourceType ?? "legacy",
         }));
         if (!pool.length) {
           setError("No tracks available for radio right now.");
           return;
         }
-        setRadioMode(true);
-        radioModeRef.current = true;
-        activateIndex(shuffle(pool), 0, true);
+        playRadio(pool, { key: mode });
       } catch {
         setError("Couldn't start radio.");
       } finally {
         setRadioLoading(false);
       }
     },
-    [activateIndex],
+    [playRadio],
   );
+
+  const reshuffleRadio = useCallback(() => {
+    if (!queue.length) return;
+    activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
+  }, [queue, activateIndex]);
 
   const pause = useCallback(() => {
     const audio = audioRef.current;
@@ -483,6 +583,7 @@ export default function PlayerProvider({
   const stopRadio = useCallback(() => {
     setRadioMode(false);
     radioModeRef.current = false;
+    setRadioStationKey(null);
     const audio = audioRef.current;
     if (audio) {
       userPausedRef.current = true;
@@ -493,7 +594,7 @@ export default function PlayerProvider({
   const next = useCallback(() => {
     if (index + 1 < queue.length) activateIndex(queue, index + 1, true);
     else if (radioModeRef.current && queue.length)
-      activateIndex(shuffle(queue), 0, true);
+      activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
   }, [index, queue, activateIndex]);
 
   const seek = useCallback((fraction: number) => {
@@ -522,19 +623,6 @@ export default function PlayerProvider({
     setMutedState(m);
   }, []);
 
-  const playMutedAutoplay = useCallback(
-    (track: PlayerTrack) => {
-      // Force muted BEFORE the async load so audio.play() is autoplay-eligible.
-      mutedRef.current = true;
-      if (audioRef.current) audioRef.current.muted = true;
-      setMutedState(true);
-      setRadioMode(false);
-      radioModeRef.current = false;
-      activateIndex([track], 0, true);
-    },
-    [activateIndex],
-  );
-
   // Keep the "ended" auto-advance handler pointing at the latest queue/index.
   useEffect(() => {
     advanceRef.current = () => {
@@ -543,8 +631,8 @@ export default function PlayerProvider({
       if (index + 1 < queue.length) {
         activateIndex(queue, index + 1, true);
       } else if (radioModeRef.current && queue.length) {
-        // Radio mode never ends: reshuffle the whole catalog and keep going.
-        activateIndex(shuffle(queue), 0, true);
+        // Radio mode never ends: rebuild the rotation and keep going.
+        activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
       } else {
         // Last track finished: stop cleanly but keep it shown, paused at its
         // end. Do NOT reset progress or clear `current` (no placeholder wipe).
@@ -552,6 +640,112 @@ export default function PlayerProvider({
       }
     };
   }, [index, queue, activateIndex]);
+
+  // --- OS media session -----------------------------------------------------
+  // Publishes the playing track to the OS so Bluetooth head units (AVRCP),
+  // CarPlay, Android Auto and lock screens show real title/artist/artwork and
+  // their hardware buttons drive this player instead of showing "Unknown".
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const ms = navigator.mediaSession;
+    if (!current) {
+      try {
+        ms.metadata = null;
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      ms.metadata = new MediaMetadata({
+        title: current.title || "MELORI MUSIC",
+        artist: current.artistName || "MELORI MUSIC",
+        album: current.album || "MELORI MUSIC",
+        artwork: current.coverUrl
+          ? [
+              // Same URL at several advertised sizes — head units pick what
+              // fits. The sizes hint is a preference signal, not a promise.
+              { src: current.coverUrl, sizes: "96x96", type: "image/jpeg" },
+              { src: current.coverUrl, sizes: "256x256", type: "image/jpeg" },
+              { src: current.coverUrl, sizes: "512x512", type: "image/jpeg" },
+            ]
+          : [],
+      });
+    } catch {
+      /* older browsers may throw constructing MediaMetadata; ignore */
+    }
+  }, [current]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    try {
+      navigator.mediaSession.playbackState = isPlaying
+        ? "playing"
+        : current
+          ? "paused"
+          : "none";
+    } catch {
+      /* ignore */
+    }
+  }, [isPlaying, current]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    if (typeof navigator.mediaSession.setPositionState !== "function") return;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    if (!Number.isFinite(currentTime) || currentTime < 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration,
+        position: Math.min(currentTime, duration),
+        playbackRate: 1,
+      });
+    } catch {
+      /* some browsers reject stale states — ignore */
+    }
+  }, [currentTime, duration]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const ms = navigator.mediaSession;
+    const setHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null,
+    ) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        /* action unsupported on this browser — ignore */
+      }
+    };
+    setHandler("play", () => {
+      if (!isPlaying) togglePlay();
+    });
+    setHandler("pause", () => {
+      if (isPlaying) togglePlay();
+    });
+    setHandler("nexttrack", () => next());
+    setHandler("previoustrack", () => prev());
+    // Some head units send stop instead of pause when audio is cut.
+    setHandler("stop", () => {
+      if (isPlaying) pause();
+    });
+    return () => {
+      setHandler("play", null);
+      setHandler("pause", null);
+      setHandler("nexttrack", null);
+      setHandler("previoustrack", null);
+      setHandler("stop", null);
+    };
+  }, [isPlaying, togglePlay, next, prev, pause]);
 
   return (
     <PlayerContext.Provider
@@ -570,7 +764,10 @@ export default function PlayerProvider({
         sampleEnded,
         radioMode,
         radioLoading,
+        radioStationKey,
         startRadio,
+        playRadio,
+        reshuffleRadio,
         stopRadio,
         hasNext: index + 1 < queue.length,
         hasPrev: queue.length > 1 && index > 0,
@@ -582,7 +779,6 @@ export default function PlayerProvider({
         seek,
         setVolume,
         setMuted,
-        playMutedAutoplay,
       }}
     >
       {children}

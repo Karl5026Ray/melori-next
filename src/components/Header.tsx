@@ -7,6 +7,10 @@ import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
+import {
+  UnreadMessagesBadge,
+  useUnreadMessages,
+} from "@/components/social/messages/UnreadMessagesBadge";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -46,6 +50,7 @@ const PHOTO_ITEMS: NavItem[] = [
 
 export default function Header() {
   const pathname = usePathname() ?? "";
+  const unreadMessages = useUnreadMessages();
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
@@ -444,6 +449,16 @@ export default function Header() {
           >
             Radio
           </Link>
+
+          {user && (
+            <Link
+              href="/social/messages"
+              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+            >
+              Messages
+              <UnreadMessagesBadge count={unreadMessages} />
+            </Link>
+          )}
 
           <Link
             href={user ? "/social/profile" : "/social/auth"}

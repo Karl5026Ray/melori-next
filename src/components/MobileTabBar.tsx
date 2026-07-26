@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import {
+  UnreadMessagesBadge,
+  useUnreadMessages,
+} from "@/components/social/messages/UnreadMessagesBadge";
+import {
   User as UserIcon,
   Radio,
   RadioTower,
@@ -91,6 +95,7 @@ function YouIcon() {
 export default function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const unreadMessages = useUnreadMessages();
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
@@ -157,6 +162,7 @@ export default function MobileTabBar() {
     icon: React.ReactNode;
     desc: string;
     soon?: boolean;
+    badge?: number;
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
@@ -179,6 +185,7 @@ export default function MobileTabBar() {
       href: "/social/messages",
       icon: <MessageSquare className="h-5 w-5" />,
       desc: "Direct chats",
+      badge: unreadMessages,
     },
     {
       label: "Store",
@@ -275,11 +282,17 @@ export default function MobileTabBar() {
                 const inner = (
                   <>
                     <span
-                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                      className={`relative flex h-9 w-9 items-center justify-center rounded-full ${
                         active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
                       }`}
                     >
                       {l.icon}
+                      {!!l.badge && (
+                        <UnreadMessagesBadge
+                          count={l.badge}
+                          className="absolute -right-1 -top-1 border border-brand-surface"
+                        />
+                      )}
                     </span>
                     <span className="text-[11px] font-semibold leading-tight text-text-primary">
                       {l.label}

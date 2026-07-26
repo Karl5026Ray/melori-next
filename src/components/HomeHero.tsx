@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 
-// The homepage "instant listening" hero. On load it drives the SHARED player
-// (same <audio> element and context as the persistent bottom bar) to autoplay a
-// real catalog track MUTED — the only form of autoplay browsers permit — then
-// unmutes on the visitor's first interaction anywhere on the page, TikTok-style.
+// The homepage "instant listening" hero. On load it tunes the SHARED player
+// (same <audio> element and context as the persistent bottom bar, the floating
+// mobile player and the Radio page) into the radio station MUTED — the only
+// form of autoplay browsers permit — then unmutes on the visitor's first
+// interaction anywhere on the page, TikTok-style. Because it's the radio and
+// not a one-track queue, playback rolls on through the catalog instead of
+// stopping after the first song.
 export default function HomeHero({ track }: { track: PlayerTrack }) {
   const {
     current,
@@ -17,9 +20,10 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     currentTime,
     duration,
     error,
+    radioMode,
     togglePlay,
     setMuted,
-    playMutedAutoplay,
+    startRadio,
     unlockPlayback,
   } = usePlayer();
 
@@ -32,8 +36,9 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
 
-  const isThisTrack =
-    current?.sourceType === track.sourceType && current?.id === track.id;
+  // What the hero shows: whatever the one shared player has on air, falling
+  // back to the server-rendered featured track until the station is tuned.
+  const shown = current ?? track;
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -43,12 +48,18 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  // Kick off muted autoplay once on mount.
+  // Tune into the radio once on mount — but never interrupt audio that is
+  // already going. Navigating back to the homepage mid-song must not restart
+  // or double-start anything.
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    playMutedAutoplay(track);
-  }, [track, playMutedAutoplay]);
+    if (isPlaying || radioMode) return;
+    startRadio("all", { muted: true });
+    // Intentionally mount-only: `isPlaying` / `radioMode` are read once as the
+    // "is something already on air?" snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Unmute — and, on browsers that blocked the muted autoplay (iOS), actually
   // START playback — on the visitor's FIRST interaction anywhere on the page.
@@ -86,7 +97,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
   }, [setMuted, unlockPlayback, togglePlay]);
 
   const fraction = duration > 0 ? currentTime / duration : 0;
-  const showSoundPrompt = isThisTrack && muted && !error;
+  const showSoundPrompt = muted && !error;
   const animate = isPlaying && !reducedMotion && !muted;
 
   return (
@@ -95,8 +106,8 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
         {/* Cover art */}
         <div className="relative shrink-0">
           <CoverImage
-            src={track.coverUrl}
-            alt={track.title}
+            src={shown.coverUrl}
+            alt={shown.title}
             className="h-40 w-40 shadow-2xl sm:h-44 sm:w-44"
             rounded="rounded-2xl"
           />
@@ -130,13 +141,13 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
         {/* Now-playing details */}
         <div className="flex min-w-0 flex-1 flex-col items-center text-center sm:items-start sm:text-left">
           <span className="text-xs font-semibold uppercase tracking-widest text-brand-primary">
-            {isPlaying ? "Now playing" : "Featured"}
+            {isPlaying ? (radioMode ? "Melori Radio" : "Now playing") : "Featured"}
           </span>
           <h2 className="mt-1 max-w-full truncate text-2xl font-bold text-text-primary">
-            {track.title}
+            {shown.title}
           </h2>
           <p className="mt-0.5 truncate text-sm text-text-secondary">
-            {track.artistName ?? "MELORI MUSIC"}
+            {shown.artistName ?? "MELORI MUSIC"}
           </p>
 
           {/* Waveform visualization */}
@@ -201,7 +212,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             Tap for sound
           </button>
         )}
-        {isThisTrack && !muted && !error && (
+        {!muted && !error && (
           <button
             type="button"
             onClick={() => setMuted(true)}

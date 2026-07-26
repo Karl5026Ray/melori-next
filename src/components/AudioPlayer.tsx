@@ -91,8 +91,9 @@ export default function AudioPlayer() {
     if (inRoom) pause();
   }, [inRoom, pause]);
 
-  // Melori Radio runs its own dual-deck player; a second global transport there
-  // would be a confusing duplicate set of controls.
+  // The Radio page renders full-size controls for the same shared player, so
+  // the floating transport there would just be a duplicate set of buttons.
+  // Only the UI is hidden — the audio keeps playing from PlayerProvider.
   if (onRadio) return null;
   // Hidden on room screens. The <audio> element lives in PlayerProvider (mounted
   // at the layout root), so playback state survives this component rendering null.

@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 
 // Slimmed, orange-branded social nav. We keep only the destinations people
-// actually use day to day; Waves and the standalone Video page are reachable
-// from within Community/Faces and the mobile launcher, so they no longer clutter
-// this rail. Brand orange (#ff5500) replaces the old purple accents.
+// actually use day to day; the standalone Video page is reachable from within
+// Community/Faces and the mobile launcher, so it no longer clutters this
+// rail. Brand orange (#ff5500) replaces the old purple accents.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
   { href: "/social/mirror", label: "Melori Mirror", icon: Sparkles },

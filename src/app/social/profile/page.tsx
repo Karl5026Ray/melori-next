@@ -221,8 +221,8 @@ export default function ProfilePage() {
               Discover
             </Link>
             {/* Social sits directly beside Discover and opens the four social
-                apps. Messages and Waves are reachable elsewhere and are
-                deliberately not listed here. */}
+                apps. Messages is reachable elsewhere and is deliberately not
+                listed here. */}
             <SocialMenuButton />
           </div>
         </div>

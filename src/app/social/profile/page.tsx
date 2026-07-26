@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Camera, Loader2, MapPin, Users } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
 import ProfileTabs from "@/components/social/profile/ProfileTabs";
+import SocialMenuButton from "@/components/social/SocialMenuButton";
+import SocialLinks from "@/components/social/profile/SocialLinks";
 import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
 import type { TileContent } from "@/components/social/profile/ProfileContentTile";
 import { authFetch } from "@/lib/authClient";
@@ -21,6 +23,25 @@ export default function ProfilePage() {
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Open the edit modal when the hamburger's "Edit Profile" is tapped. That
+  // control lives in the global Header now (item 2), so it reaches us via a
+  // window event (same-page) or a one-shot sessionStorage flag (after a
+  // cross-page navigation to /social/profile).
+  useEffect(() => {
+    const openEditor = () => setEditing(true);
+    window.addEventListener("melori:open-edit-profile", openEditor);
+    try {
+      if (sessionStorage.getItem("melori:open-edit-profile") === "1") {
+        sessionStorage.removeItem("melori:open-edit-profile");
+        setEditing(true);
+      }
+    } catch {
+      /* storage disabled — event path still works */
+    }
+    return () =>
+      window.removeEventListener("melori:open-edit-profile", openEditor);
+  }, []);
 
   // Every signed-in user (free/superfan/artist) has a banner stored on their
   // profile row. Fetch it from the universal profile-media endpoint.
@@ -180,6 +201,7 @@ export default function ProfilePage() {
             <p className="text-melori-muted text-sm">
               {view.bio || "Independent music advocate"}
             </p>
+            <SocialLinks links={view.social_links} className="mt-3" />
             {view.city && (
               <p className="mt-1 flex items-center gap-1 text-xs text-melori-muted">
                 <MapPin className="h-3.5 w-3.5" />
@@ -188,13 +210,7 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="px-6 py-2.5 rounded-full bg-melori-elevated border border-melori-border font-medium text-sm hover:bg-melori-purple/10 hover:border-melori-purple/30 transition"
-            >
-              Edit Profile
-            </button>
+            {/* Edit Profile moved into the hamburger menu (item 2). */}
             {/* Entry point to the TikTok-style profile scroller. Swipe / arrow
                 through every member without leaving the social area. */}
             <Link
@@ -204,6 +220,10 @@ export default function ProfilePage() {
               <Users className="h-4 w-4" />
               Discover
             </Link>
+            {/* Social sits directly beside Discover and opens the four social
+                apps. Messages and Waves are reachable elsewhere and are
+                deliberately not listed here. */}
+            <SocialMenuButton />
           </div>
         </div>
 

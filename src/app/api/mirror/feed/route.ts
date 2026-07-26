@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
       .select(
         `id, user_id, title, description, video_url, thumbnail_url,
          likes_count, comments_count, created_at, media_type,
+         source, youtube_id,
          user:profiles!social_videos_user_id_fkey(
            id, display_name, username, avatar_url, verified, role
          )`,

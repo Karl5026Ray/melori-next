@@ -129,7 +129,13 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
         },
       );
       const signedBody = await signedRes.json().catch(() => ({}));
-      if (!signedRes.ok || !signedBody?.uploadUrl || !signedBody?.imageId) {
+      if (
+        !signedRes.ok ||
+        !signedBody?.token ||
+        !signedBody?.path ||
+        !signedBody?.bucket ||
+        !signedBody?.imageId
+      ) {
         markError(
           signedBody?.error ??
             `Couldn't prepare upload (HTTP ${signedRes.status})`,
@@ -137,23 +143,30 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
         return false;
       }
 
-      // Step 2 — PUT the byte snapshot DIRECTLY to Supabase Storage. This
-      // bypasses Vercel entirely so the 4.5 MB body limit doesn't apply.
-      // The signed URL is a JWT that only permits an upload to the exact
-      // path returned in step 1.
+      // Step 2 — PUT the file DIRECTLY to Supabase Storage. This bypasses
+      // Vercel entirely (no 4.5 MB body limit); the signed URL only permits an
+      // upload to the exact path from step 1.
       //
-      // We PUT `item.blob` (the in-memory snapshot), NOT the raw input File:
-      // the File is a live OS-handle reference that Chromium can invalidate
-      // once the <input> is cleared, which produced
-      // net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE and silently killed every
-      // upload before it reached the server. Headers mirror the app's other
-      // working signed-URL uploaders (avatar, reels): just Content-Type, no
-      // x-upsert (upsert is encoded in the signed token, not this header, and
-      // the custom header only widened the CORS preflight surface for nothing).
+      // CRITICAL — corruption fix. This now mirrors the PROVEN-WORKING profile
+      // photo uploader byte-for-byte: a raw `fetch` PUT whose body is the
+      // original `File` object. The previous gallery code reconstructed a Blob
+      // (`new Blob([await file.arrayBuffer()])`) and PUT that instead — and
+      // THAT reconstruction was what produced the EF BF BD (U+FFFD) corruption:
+      // the round-tripped Blob body got serialized as text somewhere in the
+      // PUT path, collapsing every byte >= 0x80. The profile uploader never
+      // corrupts because it sends `body: file` directly. So we do the same.
+      //
+      // We prefer the original File (item.file) — a File IS a Blob and streams
+      // its bytes straight from disk. We only fall back to the snapshot Blob if
+      // the File handle was invalidated by the input reset
+      // (net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE), which the snapshot exists
+      // to guard against.
+      const putBody: Blob =
+        item.file && item.file.size > 0 ? item.file : item.blob;
       const putRes = await fetch(signedBody.uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": item.contentType },
-        body: item.blob,
+        body: putBody,
       });
       if (!putRes.ok) {
         const txt = await putRes.text().catch(() => "");

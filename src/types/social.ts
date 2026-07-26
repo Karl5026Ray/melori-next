@@ -1,5 +1,10 @@
 export type UserRole = "artist" | "superfan" | "admin" | "free";
 
+export interface SocialLink {
+  label: string;
+  url: string;
+}
+
 export interface Profile {
   id: string;
   username: string;
@@ -17,6 +22,8 @@ export interface Profile {
   birth_date?: string | null;
   birthday_visible?: boolean | null;
   city?: string | null;
+  // Up to 5 clickable links shown on the profile (migration 039).
+  social_links?: SocialLink[] | null;
   // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
   membership_tier?: string | null;
   membership_status?: string | null;
@@ -149,6 +156,13 @@ export interface SocialVideo {
   video_url: string;
   thumbnail_url: string | null;
   media_type: "video" | "audio";
+  // Where the media lives (migration 041). 'upload' = a file in Supabase
+  // Storage; 'youtube' = an artist-submitted link rendered as an inline embed
+  // (video_url still holds the canonical watch URL, so consumers that only read
+  // video_url keep working). Optional: rows written before the migration and
+  // any cached payload omit it, and absent means 'upload'.
+  source?: "upload" | "youtube";
+  youtube_id?: string | null;
   likes_count: number;
   comments_count: number;
   created_at: string;

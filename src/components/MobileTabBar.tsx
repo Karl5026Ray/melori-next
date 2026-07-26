@@ -23,7 +23,6 @@ import {
   Camera,
   Info,
   Target,
-  MessageCircle,
   Users,
   ShoppingBag,
   Swords,
@@ -37,8 +36,8 @@ import {
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
- *                          Connect (Waves lives in About)
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, Connect
+ *                          (Messages is a quick press; Waves lives in About)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
@@ -195,6 +194,7 @@ export default function MobileTabBar() {
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
+      // Mirrors SOCIAL_NAV_ITEMS (see src/lib/socialNav.ts) with icons/blurbs.
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
@@ -229,7 +229,7 @@ export default function MobileTabBar() {
       icon: <Info className="h-5 w-5" />,
       items: [
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
+        // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
         { label: "Waves", href: "/social/waves", icon: <Hand className="h-5 w-5" />, desc: "Say hi" },
       ],

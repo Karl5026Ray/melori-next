@@ -20,6 +20,18 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // is why /api/artists returned fresh rows while the /artists page rendered a stale
 // snapshot (old "KAIEL R" name, taken before the 4th artist was published). Reading
 // no-store keeps every server-side query live.
+//
+// CRITICAL — BINARY UPLOAD CORRUPTION: `cache: "no-store"` must NEVER be applied
+// to a request that carries a binary body (Storage uploads). Next.js patches
+// global fetch with its Data Cache instrumentation; when a cache directive is
+// present, that layer can read/normalize the request body, and a Buffer/stream
+// body gets coerced through a UTF-8 string on the way — every non-ASCII byte
+// collapses to the U+FFFD replacement char (EF BF BD). The result is a stored
+// object with the right size and content-type but mangled bytes that no decoder
+// can read (blank thumbnails/previews). This corrupted larger gallery uploads
+// intermittently. Storage read-backs and PostgREST queries have no binary body,
+// so we only inject the no-store hint for those; requests WITH a body are passed
+// through completely untouched so their bytes reach storage verbatim.
 export function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -32,7 +44,17 @@ export function getSupabaseAdmin(): SupabaseClient {
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
     global: {
-      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      fetch: (input, init) => {
+        // If the request has a body (Storage upload/PUT/POST of bytes), pass it
+        // through verbatim — do NOT add a cache directive, which can trigger
+        // Next's fetch body normalization and corrupt binary payloads.
+        if (init && "body" in init && init.body != null) {
+          return fetch(input, init);
+        }
+        // Body-less requests (PostgREST GET queries, Storage downloads): safe to
+        // force fresh reads.
+        return fetch(input, { ...init, cache: "no-store" });
+      },
     },
   });
 }

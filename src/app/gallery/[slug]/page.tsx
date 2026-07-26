@@ -5,10 +5,19 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { galleryCookieName } from "@/lib/gallery-auth";
 import PasswordGate from "./PasswordGate";
 import GalleryViewer, { type ViewerFolder, type ViewerImage } from "./GalleryViewer";
+import { folderShareKeys, FOLDER_QUERY_PARAM } from "./share";
 
 export const dynamic = "force-dynamic";
 
 const PREVIEWS_BUCKET = "gallery-previews";
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function folderParamOf(searchParams: SearchParams): string | null {
+  const raw = searchParams[FOLDER_QUERY_PARAM];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value?.trim() || null;
+}
 
 interface GalleryRow {
   id: string;
@@ -37,24 +46,93 @@ async function getGallery(slug: string): Promise<GalleryRow | null> {
   }
 }
 
+// Link preview for a shared `?folder=` deep link: the folder's own cover photo.
+// Only for galleries without a password — otherwise the preview would leak the
+// contents of a gate the sharer's recipient hasn't passed yet.
+async function sharedFolderPreview(
+  galleryId: string,
+  folderParam: string,
+): Promise<{ name: string; imageUrl: string } | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: folders } = await supabase
+      .from("photo_gallery_folders")
+      .select("id, name, cover_photo_id, order_index")
+      .eq("gallery_id", galleryId)
+      .order("order_index", { ascending: true });
+    if (!folders?.length) return null;
+
+    const shareKeys = folderShareKeys(
+      folders.map((f) => ({ key: f.id, name: f.name })),
+    );
+    const folder = folders.find(
+      (f) => shareKeys.get(f.id) === folderParam || f.id === folderParam,
+    );
+    if (!folder) return null;
+
+    const query = supabase
+      .from("photo_gallery_images")
+      .select("id, preview_key, order_index")
+      .eq("gallery_id", galleryId)
+      .eq("folder_id", folder.id);
+    const { data: image } = folder.cover_photo_id
+      ? await query.eq("id", folder.cover_photo_id).maybeSingle()
+      : await query.order("order_index", { ascending: true }).limit(1).maybeSingle();
+    if (!image) return null;
+
+    return {
+      name: folder.name,
+      imageUrl: supabase.storage
+        .from(PREVIEWS_BUCKET)
+        .getPublicUrl(image.preview_key).data.publicUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
-  const { slug } = await props.params;
+  const [{ slug }, searchParams] = await Promise.all([
+    props.params,
+    props.searchParams,
+  ]);
   const gallery = await getGallery(slug);
   if (!gallery) return { title: "Gallery | Melori Music" };
+
+  const description = gallery.client_name
+    ? `Photo gallery for ${gallery.client_name} by Melori Music.`
+    : "Photo gallery by Melori Music.";
+
+  const folderParam = folderParamOf(searchParams);
+  const shared =
+    folderParam && !gallery.password_hash
+      ? await sharedFolderPreview(gallery.id, folderParam)
+      : null;
+  if (!shared) {
+    return { title: `${gallery.name} | Melori Gallery`, description };
+  }
+
+  const title = `${shared.name} · ${gallery.name} | Melori Gallery`;
+  const images = [{ url: shared.imageUrl }];
   return {
-    title: `${gallery.name} | Melori Gallery`,
-    description: gallery.client_name
-      ? `Photo gallery for ${gallery.client_name} by Melori Music.`
-      : "Photo gallery by Melori Music.",
+    title,
+    description,
+    openGraph: { title, description, type: "website", images },
+    twitter: { title, description, images },
   };
 }
 
 export default async function GalleryViewerPage(props: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const { slug } = await props.params;
+  const [{ slug }, searchParams] = await Promise.all([
+    props.params,
+    props.searchParams,
+  ]);
   const gallery = await getGallery(slug);
   if (!gallery) notFound();
 
@@ -83,7 +161,7 @@ export default async function GalleryViewerPage(props: {
   const [{ data: folders }, { data: images }] = await Promise.all([
     supabase
       .from("photo_gallery_folders")
-      .select("id, name, order_index")
+      .select("id, name, order_index, cover_photo_id")
       .eq("gallery_id", gallery.id)
       .order("order_index", { ascending: true }),
     supabase
@@ -113,15 +191,18 @@ export default async function GalleryViewerPage(props: {
   const viewerFolders: ViewerFolder[] = (folders ?? []).map((f) => ({
     id: f.id,
     name: f.name,
+    coverPhotoId: f.cover_photo_id,
   }));
 
   return (
     <GalleryViewer
+      gallerySlug={gallery.slug}
       galleryName={gallery.name}
       clientName={gallery.client_name}
       allowDownloads={gallery.allow_downloads}
       folders={viewerFolders}
       images={viewerImages}
+      initialFolder={folderParamOf(searchParams)}
     />
   );
 }

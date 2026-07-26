@@ -41,8 +41,10 @@ const CSP_ENFORCED = [
   // XHR/WebSocket egress: Supabase, Stripe, LiveKit, Agora, PubNub + generic wss.
   "connect-src 'self' https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
   "media-src 'self' blob: https:",
-  // Stripe Checkout + Google OAuth render in iframes; nothing else may embed us.
-  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com",
+  // Stripe Checkout + Google OAuth render in iframes, and both /video and the
+  // Melori Mirror feed embed YouTube players (artist-submitted links; we never
+  // re-host the media). Nothing else may embed us.
+  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

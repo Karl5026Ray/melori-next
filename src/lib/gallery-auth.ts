@@ -58,15 +58,3 @@ export async function authenticateApiKey(
 export function galleryCookieName(slug: string): string {
   return `gallery_pw_${sha256Hex(slug).slice(0, 16)}`;
 }
-
-// URL-safe slug from a gallery name, matching the store's slug conventions.
-export function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]+/g, "")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "");
-}

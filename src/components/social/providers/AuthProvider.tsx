@@ -70,7 +70,7 @@ export function SocialAuthProvider({
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
+          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status, social_links, city, birth_date, birthday_visible",
         )
         .eq("id", id)
         .maybeSingle();

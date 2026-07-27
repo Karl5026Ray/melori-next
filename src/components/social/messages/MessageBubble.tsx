@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { Message } from "@/types/social";
 import { formatTimeAgo } from "@/lib/social";
 
@@ -9,15 +9,23 @@ export function MessageBubble({
   message,
   isMe,
   onDelete,
+  status,
+  onRetry,
 }: {
   message: Message;
   isMe: boolean;
   // Called when the sender chooses to delete their own message. Optional so
   // read-only contexts can omit it.
   onDelete?: (id: string) => void;
+  // Set while an optimistically-rendered message is still in flight, or once
+  // the send has failed. Undefined once the server has confirmed the message.
+  status?: "sending" | "failed";
+  onRetry?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const isDeleted = !!message.deleted_at;
+  const isPending = status === "sending";
+  const hasFailed = status === "failed";
 
   return (
     <div
@@ -40,6 +48,8 @@ export function MessageBubble({
         <div
           className={`px-4 py-2.5 rounded-2xl text-sm ${
             isMe ? "msg-bubble-sent" : "msg-bubble-received"
+          } ${isPending ? "opacity-60" : ""} ${
+            hasFailed ? "ring-1 ring-red-500/70" : ""
           }`}
         >
           {isDeleted ? (
@@ -47,19 +57,35 @@ export function MessageBubble({
           ) : (
             <p className="whitespace-pre-wrap break-words">{message.content}</p>
           )}
-          <span
-            className={`text-[10px] mt-1 block text-right ${
-              isMe ? "text-white/60" : "text-melori-muted"
-            }`}
-          >
-            {formatTimeAgo(message.created_at)}
-          </span>
+          {hasFailed ? (
+            <span className="mt-1 flex items-center justify-end gap-2 text-[10px]">
+              <span className="text-red-300">Not sent</span>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex items-center gap-0.5 font-semibold text-red-200 underline hover:text-white"
+                >
+                  <RotateCcw className="h-2.5 w-2.5" />
+                  Retry
+                </button>
+              )}
+            </span>
+          ) : (
+            <span
+              className={`text-[10px] mt-1 block text-right ${
+                isMe ? "text-white/60" : "text-melori-muted"
+              }`}
+            >
+              {isPending ? "Sending…" : formatTimeAgo(message.created_at)}
+            </span>
+          )}
         </div>
 
         {/* Per-message delete toggle — only on the sender's own, non-deleted
             messages. Appears on hover (desktop) and is always tappable on
             touch. A small confirm step prevents accidental deletes. */}
-        {isMe && !isDeleted && onDelete && (
+        {isMe && !isDeleted && !status && onDelete && (
           <div className="mb-1 flex items-center">
             {confirming ? (
               <span className="flex items-center gap-1 text-[10px]">

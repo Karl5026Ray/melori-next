@@ -47,10 +47,10 @@ export async function GET(req: NextRequest) {
       members:conversation_members(
         user_id,
         last_read_at,
-        user:profiles(id, display_name, avatar_url, role, verified)
+        user:profiles(id, username, display_name, avatar_url, role, verified)
       ),
       messages:messages(
-        id, content, created_at, sender_id
+        id, content, created_at, sender_id, deleted_at
       )
     `,
     )
@@ -62,5 +62,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ conversations: data ?? [] });
+  // Reduce each conversation to what the inbox actually renders: the newest
+  // message plus the caller's unread count. Previously every message of every
+  // conversation was serialised to the client (the list only ever used the
+  // newest one), which made the inbox payload grow without bound.
+  const conversations = (data ?? []).map((conv: any) => {
+    const messages: any[] = conv.messages ?? [];
+    const mine = (conv.members ?? []).find((m: any) => m.user_id === userId);
+    const lastReadAt = mine?.last_read_at
+      ? new Date(mine.last_read_at).getTime()
+      : 0;
+
+    let latest: any = null;
+    let unread = 0;
+    for (const m of messages) {
+      if (m.deleted_at) continue;
+      const at = new Date(m.created_at).getTime();
+      if (!latest || at > new Date(latest.created_at).getTime()) latest = m;
+      if (m.sender_id !== userId && at > lastReadAt) unread += 1;
+    }
+
+    return {
+      ...conv,
+      messages: latest ? [latest] : [],
+      unread_count: unread,
+    };
+  });
+
+  return NextResponse.json({ conversations });
 }

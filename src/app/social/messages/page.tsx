@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { NewMessageModal } from "@/components/social/messages/NewMessageModal";
 import { MessageSquare, PenSquare, Search } from "lucide-react";
@@ -14,11 +15,49 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 // caller and runs the aggregate query with the service-role client.
 export default function MessagesPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"primary" | "requests">("primary");
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  // Deep link: /social/messages?to=<profileId> opens (or creates) the 1:1 thread
+  // with that member. The Discover profile scroller's Message button has always
+  // linked here, but nothing consumed ?to= — it dropped you on the inbox with no
+  // thread open, which is why "Message" looked broken from Discover.
+  //
+  // Read from window.location instead of useSearchParams() so this page does not
+  // need a Suspense boundary to stay prerenderable.
+  useEffect(() => {
+    if (!user?.id) return;
+    const to = new URLSearchParams(window.location.search).get("to");
+    if (!to || to === user.id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch("/api/social/conversations/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient_id: to }),
+        });
+        const body = await res.json().catch(() => ({}) as any);
+        if (cancelled) return;
+        if (res.ok && body?.conversation_id) {
+          router.replace(`/social/messages/${body.conversation_id}`);
+          return;
+        }
+        setStartError(body?.error ?? "Could not open that conversation.");
+      } catch {
+        if (!cancelled) setStartError("Could not open that conversation.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +168,12 @@ export default function MessagesPage() {
             </button>
           </div>
         </div>
+
+        {startError && (
+          <p className="border-b border-red-600/30 bg-red-600/10 px-4 py-2 text-center text-xs text-red-300">
+            {startError}
+          </p>
+        )}
 
         <div className="flex-1 overflow-y-auto p-2 space-y-1 pb-28 md:pb-2">
           {loading ? (

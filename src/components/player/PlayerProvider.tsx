@@ -127,6 +127,11 @@ interface PlayerContextValue {
   stopRadio: () => void;
   playQueue: (tracks: PlayerTrack[], startIndex: number) => void;
   togglePlay: () => void;
+  // Start real, audible playback of `current` — unlocks, guarantees the element
+  // is on the track's signed URL (never the silent unlock clip), unmutes and
+  // plays. Never pauses, so it is safe to call from a bare first-interaction
+  // handler without testing `isPlaying`.
+  playAudible: () => void;
   // Halt playback without toggling — used when entering a live room so
   // background music never fights the room's own audio.
   pause: () => void;
@@ -402,6 +407,16 @@ export default function PlayerProvider({
     unlockedRef.current = true;
     // Something real is already playing → the element is already blessed.
     if (loadedIdRef.current && !audio.paused) return;
+    // The element ALREADY holds the real track (the homepage hero's muted
+    // autoplay loaded it, then the browser refused to start it). Unlock by
+    // playing that, never by swapping in the clip: overwriting a good signed
+    // URL makes the unlock destructive, and every caller then has to remember
+    // to put the track back. The hero's callers only did so conditionally, so
+    // the 0.000125s clip could be left as the source with nothing to reload it.
+    if (realSrcRef.current && audio.src === realSrcRef.current) {
+      void audio.play().catch(() => undefined);
+      return;
+    }
     const restoreMuted = () => {
       audio.muted = mutedRef.current;
     };
@@ -454,9 +469,15 @@ export default function PlayerProvider({
   }, []);
 
   // --- keep <audio> muted flag in sync ---
+  // Mirrors state → element only. It must NOT write `mutedRef`: every writer
+  // (setMuted, startRadio's autoplay branch) already sets ref + element + state
+  // synchronously, whereas this effect first runs a beat LATE with the initial
+  // `muted === false`. React runs child effects before the parent's, so the
+  // homepage hero has already asked for muted autoplay by then — writing the ref
+  // here would reset it to false and make loadAndPlay start the track UNMUTED,
+  // which browsers refuse without a gesture.
   useEffect(() => {
-    mutedRef.current = muted;
-    if (audioRef.current) audioRef.current.muted = muted;
+    if (audioRef.current) audioRef.current.muted = mutedRef.current;
   }, [muted]);
 
   // --- keep <audio> volume in sync + persist ---
@@ -604,12 +625,25 @@ export default function PlayerProvider({
     if (mutedRef.current) setMuted(false);
   }, [setMuted]);
 
+  // True when the element is not currently holding the real track's signed URL —
+  // it has nothing loaded yet, or it still holds the silent unlock clip. Checking
+  // the element's own `src` (not just `loadedIdRef`) is what makes an orphaned
+  // clip self-healing: bookkeeping can say "track loaded" while the source is
+  // actually the clip, and only the element knows the truth.
+  const needsRealSrc = useCallback(
+    (audio: HTMLAudioElement, track: PlayerTrack) =>
+      loadedIdRef.current !== trackKey(track) ||
+      realSrcRef.current === null ||
+      audio.src !== realSrcRef.current,
+    [],
+  );
+
   const togglePlay = useCallback(() => {
     unlockPlayback();
     const audio = getAudio();
     if (!audio || !current) return;
     // Restored or not-yet-loaded track: fetch a fresh signed URL, then play.
-    if (loadedIdRef.current !== trackKey(current)) {
+    if (needsRealSrc(audio, current)) {
       startAudible();
       void loadAndPlay(current, true);
       return;
@@ -622,7 +656,44 @@ export default function PlayerProvider({
       userPausedRef.current = true;
       audio.pause();
     }
-  }, [current, loadAndPlay, getAudio, unlockPlayback, startAudible]);
+  }, [
+    current,
+    loadAndPlay,
+    getAudio,
+    unlockPlayback,
+    startAudible,
+    needsRealSrc,
+  ]);
+
+  // "The visitor just asked to HEAR this" — unlock inside the gesture, guarantee
+  // the element is on the real track's signed URL, unmute, and play. Unlike
+  // togglePlay it can never pause, so a caller that fires on a bare interaction
+  // (the hero's first-tap / Tap-for-sound handlers) needs no `isPlaying` test.
+  // Those tests were the bug: they gated recovery of the real src on a value read
+  // from a stale render closure, so a tap could unlock and then decide not to
+  // reload — stranding the silent clip as the source with `ended: true`.
+  const playAudible = useCallback(() => {
+    const audio = getAudio();
+    if (!audio || !current) return;
+    // Unmute BEFORE unlocking: iOS grants permission matching the element's
+    // muted state at unlock time, so unlocking while muted only buys the right
+    // to keep playing silently.
+    startAudible();
+    unlockPlayback();
+    if (needsRealSrc(audio, current)) {
+      void loadAndPlay(current, true);
+      return;
+    }
+    userPausedRef.current = false;
+    void audio.play().catch(() => undefined);
+  }, [
+    current,
+    getAudio,
+    unlockPlayback,
+    startAudible,
+    loadAndPlay,
+    needsRealSrc,
+  ]);
 
   const playQueue = useCallback(
     (tracks: PlayerTrack[], startIndex: number) => {
@@ -937,6 +1008,7 @@ export default function PlayerProvider({
         hasPrev: queue.length > 1 && index > 0,
         playQueue,
         togglePlay,
+        playAudible,
         pause,
         next,
         prev,

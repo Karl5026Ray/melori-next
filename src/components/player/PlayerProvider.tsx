@@ -121,7 +121,7 @@ interface PlayerContextValue {
   // playlists). `preserveOrder` keeps a curated playlist in its saved order.
   playRadio: (
     tracks: PlayerTrack[],
-    options?: { key?: string; preserveOrder?: boolean },
+    options?: { key?: string; preserveOrder?: boolean; keepMuted?: boolean },
   ) => void;
   reshuffleRadio: () => void;
   stopRadio: () => void;
@@ -152,9 +152,17 @@ const VOLUME_KEY = "melori:volume";
 // invoked on it from within a user gesture. Our real load path awaits a signed
 // URL before play(), which loses the transient activation — so the first gesture
 // primes the element with this clip synchronously, blessing it for the session.
-let _silentWavUrl: string | null = null;
-function getSilentWavUrl(): string {
-  if (_silentWavUrl) return _silentWavUrl;
+//
+// The clip MUST be handed to the element as a `blob:` URL, not a `data:` URI.
+// Our enforced CSP (next.config.js) is `media-src 'self' blob: https:` — it has
+// no `data:` source, so a data: URI is refused before the element ever loads it.
+// Blink reports that refusal as `MEDIA_ELEMENT_ERROR: Media load rejected by URL
+// safety check` with code 4 (MEDIA_ERR_SRC_NOT_SUPPORTED), which read like a
+// broken audio file and made every track look like a format failure. `blob:` is
+// already allow-listed, so the unlock works without weakening the policy.
+let _silentClipUrl: string | null = null;
+function getSilentClipUrl(): string {
+  if (_silentClipUrl) return _silentClipUrl;
   // Minimal PCM WAV: mono, 8kHz, 8-bit, one silent sample (0x80 = midpoint).
   const bytes = new Uint8Array([
     0x52, 0x49, 0x46, 0x46, 0x25, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
@@ -162,10 +170,10 @@ function getSilentWavUrl(): string {
     0x40, 0x1f, 0x00, 0x00, 0x40, 0x1f, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
     0x64, 0x61, 0x74, 0x61, 0x01, 0x00, 0x00, 0x00, 0x80,
   ]);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  _silentWavUrl = `data:audio/wav;base64,${btoa(bin)}`;
-  return _silentWavUrl;
+  _silentClipUrl = URL.createObjectURL(
+    new Blob([bytes], { type: "audio/wav" }),
+  );
+  return _silentClipUrl;
 }
 
 export function usePlayer(): PlayerContextValue {
@@ -201,11 +209,20 @@ export default function PlayerProvider({
   const deadSkipsRef = useRef(0);
   const queueLengthRef = useRef(0);
   // True once the element has been unlocked by a user-gesture play() (see
-  // getSilentWavUrl). Guards the one-time silent prime.
+  // getSilentClipUrl). Guards the one-time silent prime.
   const unlockedRef = useRef(false);
-  // True while the silent unlock clip is (briefly) loaded/playing, so its
-  // play/pause/timeupdate/ended events don't leak into the real UI state.
-  const primingRef = useRef(false);
+  // The exact `audio.src` of the real track currently loaded, or null when the
+  // element holds anything else (nothing yet, or the silent unlock clip).
+  //
+  // Every state-driving listener below gates on this. A boolean "we are priming
+  // right now" flag can't do the job: the unlock clip's failure rejects the
+  // play() promise AND fires `error`, in an order the spec doesn't pin down, so
+  // whichever handler cleared the flag first let the other one through — which
+  // is how a silent 45-byte clip was able to publish "This track's audio format
+  // isn't supported" over a perfectly good track. Comparing against the src we
+  // actually assigned is order-independent: an event either belongs to the real
+  // track or it is ignored, so nothing but real audio can ever move the UI.
+  const realSrcRef = useRef<string | null>(null);
   // True once the <audio> element's event listeners have been wired.
   const wiredRef = useRef(false);
 
@@ -253,9 +270,22 @@ export default function PlayerProvider({
     if (wiredRef.current) return audio;
     wiredRef.current = true;
 
+    // Put the element in the document. A detached `new Audio()` plays fine, but
+    // it is invisible to `document.querySelector("audio")`, which made it
+    // impossible to tell "the UI is faking progress" apart from "real audio is
+    // playing but muted" while debugging playback on the live site.
+    audio.setAttribute("data-melori-player", "");
+    audio.style.display = "none";
+    document.body?.appendChild(audio);
+
+    // An event only counts when the element is holding the real track's src —
+    // see realSrcRef. Anything else (the silent unlock clip, or a load we have
+    // already replaced) must not touch progress, isPlaying, or error state.
+    const isRealTrack = () =>
+      realSrcRef.current !== null && audio.src === realSrcRef.current;
+
     const onTime = () => {
-      // Ignore events from the silent unlock clip.
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       // Hard-cap free previews at the window end: a free listener must not be
       // able to hear past previewEnd even though the audio element holds the
       // full file. Server-side gating serves a dedicated clip when one exists.
@@ -283,7 +313,7 @@ export default function PlayerProvider({
       }
     };
     const onMeta = () => {
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
       }
@@ -302,19 +332,19 @@ export default function PlayerProvider({
       }
     };
     const onPlay = () => {
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       setIsPlaying(true);
     };
     const onPause = () => {
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       setIsPlaying(false);
     };
     const onEnded = () => {
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       advanceRef.current();
     };
     const onError = () => {
-      if (primingRef.current) return;
+      if (!isRealTrack()) return;
       const mediaError = audio.error;
       const code = mediaError?.code;
       // MEDIA_ERR_ABORTED (1) fires whenever we swap `audio.src` to load the
@@ -331,8 +361,12 @@ export default function PlayerProvider({
       } else if (code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
         message = "This track's audio format isn't supported.";
       }
+      // Log the src we ASSIGNED, not `currentSrc`. A load rejected before it
+      // starts (CSP, bad scheme) leaves `currentSrc` holding the previous
+      // track's URL, so the old log blamed whichever URL happened to be stale
+      // and sent us hunting for a nonexistent URL allow-list.
       console.error(
-        `[player] audio error code=${code ?? "?"} src=${audio.currentSrc || "(none)"}: ${
+        `[player] audio error code=${code ?? "?"} src=${realSrcRef.current ?? "(none)"}: ${
           mediaError?.message ?? "unknown"
         }`,
       );
@@ -368,28 +402,25 @@ export default function PlayerProvider({
     unlockedRef.current = true;
     // Something real is already playing → the element is already blessed.
     if (loadedIdRef.current && !audio.paused) return;
-    primingRef.current = true;
-    const clear = () => {
-      primingRef.current = false;
+    const restoreMuted = () => {
       audio.muted = mutedRef.current;
     };
     try {
       // Bless UNMUTED playback (the clip is digital silence, so nothing audible)
       // — a muted unlock only permits muted programmatic playback on iOS.
       audio.muted = false;
-      audio.src = getSilentWavUrl();
-      // The real src is gone; force the next play path to (re)load its track.
+      audio.src = getSilentClipUrl();
+      // The real src is gone; force the next play path to (re)load its track,
+      // and stop counting element events until that track is actually loaded.
       loadedIdRef.current = null;
+      realSrcRef.current = null;
       const p = audio.play();
-      if (p && typeof p.then === "function") p.then(clear).catch(clear);
-      else clear();
+      if (p && typeof p.then === "function")
+        p.then(restoreMuted).catch(restoreMuted);
+      else restoreMuted();
     } catch {
-      clear();
+      restoreMuted();
     }
-    // Safety net in case neither promise handler runs.
-    window.setTimeout(() => {
-      primingRef.current = false;
-    }, 300);
   }, [getAudio]);
 
   // --- restore last track + volume from localStorage (paused; no autoplay) ---
@@ -456,6 +487,12 @@ export default function PlayerProvider({
     }
   }, [current, queue, index, radioMode]);
 
+  const setMuted = useCallback((m: boolean) => {
+    mutedRef.current = m;
+    if (audioRef.current) audioRef.current.muted = m;
+    setMutedState(m);
+  }, []);
+
   const loadAndPlay = useCallback(
     async (track: PlayerTrack, shouldPlay: boolean) => {
       const audio = getAudio();
@@ -494,10 +531,11 @@ export default function PlayerProvider({
         pendingSeekRef.current = start > 0 ? start : null;
         setIsSample(Boolean(data.sample));
 
-        // We're loading a real track now — make sure any lingering silent-unlock
-        // priming flag can't suppress this track's play/timeupdate events.
-        primingRef.current = false;
         audio.src = data.url;
+        // Read the src back rather than storing `data.url`: the setter resolves
+        // and normalizes the value, and the listeners compare against the
+        // getter, so the two must come from the same place to ever match.
+        realSrcRef.current = audio.src;
         audio.volume = volume;
         audio.muted = mutedRef.current;
         loadedIdRef.current = trackKey(track);
@@ -530,6 +568,7 @@ export default function PlayerProvider({
           setError("Unable to play this track.");
           setIsPlaying(false);
           loadedIdRef.current = null;
+          realSrcRef.current = null;
         }
       } finally {
         setIsLoading(false);
@@ -548,10 +587,22 @@ export default function PlayerProvider({
       setCurrentTime(0);
       setDuration(0);
       loadedIdRef.current = null;
+      // Stop crediting the outgoing track's events to the incoming one, so the
+      // progress bar cannot keep creeping while the new signed URL is in flight.
+      realSrcRef.current = null;
       if (shouldPlay) void loadAndPlay(track, true);
     },
     [loadAndPlay],
   );
+
+  // Asking for playback means asking to HEAR it. The homepage hero starts the
+  // shared element muted (the only autoplay browsers allow) and that flag
+  // outlives the hero — a visitor who left the homepage without interacting
+  // would then hit Play on /music and watch the timer run in total silence.
+  // Every deliberate "start playing" path clears it.
+  const startAudible = useCallback(() => {
+    if (mutedRef.current) setMuted(false);
+  }, [setMuted]);
 
   const togglePlay = useCallback(() => {
     unlockPlayback();
@@ -559,17 +610,19 @@ export default function PlayerProvider({
     if (!audio || !current) return;
     // Restored or not-yet-loaded track: fetch a fresh signed URL, then play.
     if (loadedIdRef.current !== trackKey(current)) {
+      startAudible();
       void loadAndPlay(current, true);
       return;
     }
     if (audio.paused) {
+      startAudible();
       userPausedRef.current = false;
       void audio.play().catch(() => undefined);
     } else {
       userPausedRef.current = true;
       audio.pause();
     }
-  }, [current, loadAndPlay, getAudio, unlockPlayback]);
+  }, [current, loadAndPlay, getAudio, unlockPlayback, startAudible]);
 
   const playQueue = useCallback(
     (tracks: PlayerTrack[], startIndex: number) => {
@@ -578,6 +631,7 @@ export default function PlayerProvider({
       // This is a direct user gesture — unlock the element so the async
       // fetch-then-play path below is permitted on iOS.
       unlockPlayback();
+      startAudible();
       // A deliberate track/queue selection exits radio mode so we don't
       // reshuffle away from what the user just chose.
       setRadioMode(false);
@@ -599,7 +653,7 @@ export default function PlayerProvider({
       }
       activateIndex(tracks, startIndex, true);
     },
-    [current, activateIndex, togglePlay, unlockPlayback],
+    [current, activateIndex, togglePlay, unlockPlayback, startAudible],
   );
 
   // --- Radio mode -----------------------------------------------------------
@@ -610,17 +664,24 @@ export default function PlayerProvider({
   const playRadio = useCallback(
     (
       tracks: PlayerTrack[],
-      options: { key?: string; preserveOrder?: boolean } = {},
+      options: {
+        key?: string;
+        preserveOrder?: boolean;
+        keepMuted?: boolean;
+      } = {},
     ) => {
       if (!tracks.length) return;
-      const { key = null, preserveOrder = false } = options;
+      const { key = null, preserveOrder = false, keepMuted = false } = options;
+      // Only the homepage's muted autoplay wants to stay silent; every other
+      // caller is a user gesture asking to hear something.
+      if (!keepMuted) startAudible();
       preserveOrderRef.current = preserveOrder;
       setRadioMode(true);
       radioModeRef.current = true;
       setRadioStationKey(key);
       activateIndex(buildRotation(tracks, preserveOrder), 0, true);
     },
-    [activateIndex],
+    [activateIndex, startAudible],
   );
 
   const startRadio = useCallback(
@@ -662,7 +723,7 @@ export default function PlayerProvider({
           setError("No tracks available for radio right now.");
           return;
         }
-        playRadio(pool, { key: mode });
+        playRadio(pool, { key: mode, keepMuted: options.muted });
       } catch {
         setError("Couldn't start radio.");
       } finally {
@@ -724,12 +785,6 @@ export default function PlayerProvider({
 
   const setVolume = useCallback((v: number) => {
     setVolumeState(Math.max(0, Math.min(1, v)));
-  }, []);
-
-  const setMuted = useCallback((m: boolean) => {
-    mutedRef.current = m;
-    if (audioRef.current) audioRef.current.muted = m;
-    setMutedState(m);
   }, []);
 
   // Keep the "ended" auto-advance handler pointing at the latest queue/index.

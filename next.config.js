@@ -148,6 +148,13 @@ const nextConfig = {
         // Scoped to top-level document navigations by excluding /_next/*,
         // /api/*, and anything with a file extension. Applies to preview and
         // production; adjust only if we start proxying private per-user HTML.
+        //
+        // LIMITATION (2026-07-26): this entry only lands on statically rendered
+        // / ISR routes. Next.js overwrites Cache-Control on `force-dynamic`
+        // routes (/, /music, /social/*) after headers() runs, so those still
+        // shipped `no-store` and kept bouncing wrapper browsers after sign-in.
+        // The real override now lives in src/proxy.ts, which runs late enough
+        // to win. This block stays as a defence-in-depth default.
         source: "/((?!api/|_next/|.*\\.).*)",
         headers: [
           { key: "Cache-Control", value: "private, no-cache, must-revalidate" },

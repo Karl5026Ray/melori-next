@@ -126,6 +126,33 @@ const nextConfig = {
         source: "/:path*",
         headers: SECURITY_HEADERS,
       },
+      {
+        // HTML-document cache override for iOS wrapper-browser compatibility.
+        //
+        // Root `/` (and other pages) use `dynamic = 'force-dynamic'`, which
+        // causes Next.js to auto-emit
+        //   Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+        // on the HTML response. That combination reliably confuses iOS wrapper
+        // browsers built on WKWebView (Comet, Chrome iOS, in-app WebViews on
+        // 5G): the response arrives (HTTP 200, full HTML body) but the browser
+        // discards it and shows "This page couldn't load". Safari native is
+        // unaffected because it doesn't wrap WKWebView.
+        //
+        // Overriding to `no-cache, must-revalidate` keeps the important part
+        // (the browser MUST revalidate every navigation — user always sees
+        // fresh HTML) but drops `no-store`, which was the trigger. Auth state
+        // still can't be cached because SSR pages re-read cookies on every
+        // request; this header only controls whether the intermediate response
+        // may sit briefly in the browser's memory pipeline.
+        //
+        // Scoped to top-level document navigations by excluding /_next/*,
+        // /api/*, and anything with a file extension. Applies to preview and
+        // production; adjust only if we start proxying private per-user HTML.
+        source: "/((?!api/|_next/|.*\\.).*)",
+        headers: [
+          { key: "Cache-Control", value: "private, no-cache, must-revalidate" },
+        ],
+      },
     ];
   },
   // Friendly-URL redirects for well-known aliases users type in the address bar.

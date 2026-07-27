@@ -21,20 +21,16 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     duration,
     error,
     radioMode,
-    togglePlay,
+    playAudible,
+    pause,
     setMuted,
     startRadio,
-    unlockPlayback,
   } = usePlayer();
 
   // Guard so we only kick off autoplay once, and only auto-unmute once.
   const startedRef = useRef(false);
   const unmutedRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
-  // Mirror isPlaying so the (window) first-interaction handler reads the live
-  // value without being re-bound on every play/pause.
-  const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
 
   // What the hero shows: whatever the one shared player has on air, falling
   // back to the server-rendered featured track until the station is tuned.
@@ -61,25 +57,26 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Unmute — and, on browsers that blocked the muted autoplay (iOS), actually
-  // START playback — on the visitor's FIRST interaction anywhere on the page.
+  // Unmute — and, on browsers that blocked the muted autoplay, actually START
+  // playback — on the visitor's FIRST interaction anywhere on the page.
+  //
+  // `playAudible()` is called unconditionally and does the whole sequence in the
+  // right order (unlock inside this gesture → real signed src → unmute → play).
+  // It replaces an `unlockPlayback() + setMuted(false) + if (!isPlaying)
+  // togglePlay()` chain whose `isPlaying` test could skip the reload and leave
+  // the silent unlock clip as the audio source, so the hero showed "unmuted"
+  // while nothing audible ever played.
   useEffect(() => {
     const events = ["pointerdown", "keydown", "touchstart", "wheel"] as const;
     const onFirstInteraction = (e: Event) => {
       if (unmutedRef.current) return;
       unmutedRef.current = true;
-      // Bless the shared <audio> element inside this real gesture so a
-      // (re)start of the track is permitted even on strict autoplay policies.
-      unlockPlayback();
-      setMuted(false);
-      // If the tap landed on one of the hero's own audio controls, that
-      // control handles playback itself — don't double-trigger it here.
+      // A tap on one of the hero's own controls is handled by that control's
+      // onClick. Acting here too would run against the pre-tap render's state
+      // while the click runs against the post-tap one, so the two could disagree
+      // (start here, then immediately pause there).
       const el = e.target as HTMLElement | null;
-      const onControl = Boolean(el && el.closest("[data-hero-audio-control]"));
-      if (!onControl && !isPlayingRef.current) {
-        // Muted autoplay was blocked; kick real (now-unmuted) playback off.
-        togglePlay();
-      }
+      if (!el?.closest("[data-hero-audio-control]")) playAudible();
       cleanup();
     };
     const cleanup = () => {
@@ -94,7 +91,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
       });
     }
     return cleanup;
-  }, [setMuted, unlockPlayback, togglePlay]);
+  }, [playAudible]);
 
   const fraction = duration > 0 ? currentTime / duration : 0;
   const showSoundPrompt = muted && !error;
@@ -116,9 +113,10 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             data-hero-audio-control
             onClick={() => {
               unmutedRef.current = true;
-              unlockPlayback();
-              setMuted(false);
-              togglePlay();
+              // While still muted this is "give me sound", not a pause control —
+              // the visitor has not heard anything yet.
+              if (isPlaying && !muted) pause();
+              else playAudible();
             }}
             aria-label={isPlaying ? "Pause" : "Play"}
             className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/30 text-white opacity-0 transition-opacity hover:opacity-100 focus:opacity-100"
@@ -192,10 +190,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             data-hero-audio-control
             onClick={() => {
               unmutedRef.current = true;
-              unlockPlayback();
-              setMuted(false);
-              // Start playback if the muted autoplay was blocked (iOS).
-              if (!isPlaying) togglePlay();
+              playAudible();
             }}
             className="absolute -top-3 right-4 flex items-center gap-2 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105 sm:-top-3 sm:right-6"
           >

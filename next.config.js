@@ -45,7 +45,12 @@ const CSP_ENFORCED = [
   // Melori Mirror feed embed YouTube players (artist-submitted links; we never
   // re-host the media). Nothing else may embed us.
   "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
-  "frame-ancestors 'none'",
+  // Was 'none'. Loosened to 'self' so wrapper browsers on iOS (Comet, Chrome iOS,
+  // Perplexity, in-app WebViews) that render the top-level page inside their own
+  // frame chrome don't get a hard "This page couldn't load" bounce. Safari native
+  // was unaffected; Comet + Chrome iOS on 5G reproduce the block. Still keeps
+  // third-party framing blocked by X-Frame-Options: SAMEORIGIN below.
+  "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
   // Violation reporting. `report-uri` is the widely-supported legacy directive;
@@ -71,9 +76,12 @@ const SECURITY_HEADERS = [
   // seen this header. `preload` is intentionally omitted until we're sure we
   // want to submit to the HSTS preload list.
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-  // Don't let anyone iframe the app — protects against clickjacking on the
-  // sign-in / checkout / studio surfaces.
-  { key: "X-Frame-Options", value: "DENY" },
+  // Don't let anyone else iframe the app — protects against clickjacking on the
+  // sign-in / checkout / studio surfaces. Was DENY; relaxed to SAMEORIGIN so iOS
+  // wrapper browsers (Comet, Chrome iOS) that render pages inside their own
+  // frame context can display the site. Cross-origin framing is still blocked,
+  // and frame-ancestors 'self' in the CSP above provides the modern equivalent.
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
   // Don't sniff response bodies to guess the MIME type. Belt-and-suspenders
   // against "user uploads a .jpg that's actually HTML with a script tag".
   { key: "X-Content-Type-Options", value: "nosniff" },

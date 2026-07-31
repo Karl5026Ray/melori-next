@@ -28,6 +28,10 @@ on:
         description: "Build number (must be higher than the last uploaded build)"
         required: true
         default: "1"
+      marketing_version:
+        description: "Marketing version / CFBundleShortVersionString (must be higher than the last APPROVED version — approved version trains are closed to new builds)"
+        required: true
+        default: "1.0.1"
   push:
     tags:
       - "ios-v*"
@@ -155,6 +159,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
           BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
+          MARKETING_VERSION: ${{ github.event.inputs.marketing_version || '1.0.1' }}
         run: fastlane ios release
 
       - name: Upload IPA artifact

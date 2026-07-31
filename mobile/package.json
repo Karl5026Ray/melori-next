@@ -4,7 +4,8 @@
   "private": true,
   "description": "Native iOS (and Android) wrapper for Melori Music — loads the live melorimusic.org PWA in a Capacitor WebView.",
   "scripts": {
-    "sync": "cap sync",
+    "sync": "cap sync && npm run icon:ios",
+    "icon:ios": "bash scripts/install-ios-icon.sh",
     "open:ios": "cap open ios",
     "add:ios": "cap add ios",
     "add:android": "cap add android"

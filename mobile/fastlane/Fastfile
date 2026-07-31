@@ -15,7 +15,8 @@ XCODE_PROJECT  = File.join(MOBILE_DIR, "ios/App/App.xcodeproj")
 XCODE_WORKSPACE = File.join(MOBILE_DIR, "ios/App/App.xcworkspace")
 SCHEME = "App"
 TEAM_ID = "ZDPS766DHY"
-PROFILE_NAME = "Melori Music App Store"
+# Fallback label only -- match names its profiles "match AppStore <bundle id>".
+PROFILE_NAME = "match AppStore org.melorimusic.app"
 
 platform :ios do
   desc "Build and upload a signed build to App Store Connect / TestFlight"
@@ -39,32 +40,38 @@ platform :ios do
     marketing_version = ENV["MARKETING_VERSION"] || "1.0.1"
 
     # ------------------------------------------------------------------
-    # Signing: let Fastlane create/fetch a VALID distribution certificate
-    # and App Store provisioning profile via the App Store Connect API key.
-    # This avoids relying on a manually-created cert that Xcode can reject
-    # as "not valid for code signing".
+    # Signing: Fastlane match.
+    #
+    # The previous approach called get_certificates on a fresh CI keychain
+    # every run. Because the generated private key only ever lived in that
+    # throwaway keychain, each run had to create a BRAND NEW distribution
+    # certificate -- and Apple caps a team at 3. The pipeline hit that cap and
+    # died with "Could not create another Distribution certificate", leaving
+    # three certificates nobody held a private key for.
+    #
+    # match stores one certificate + provisioning profile, AES-encrypted, in a
+    # private git repo, and every run reuses that same identity. No new
+    # certificates are ever created, so the cap is a non-issue.
     # ------------------------------------------------------------------
-
-    # Create or download a distribution certificate into the CI keychain.
-    # (get_certificates defaults to a distribution cert; 'development: false'
-    # makes that explicit. It does NOT accept a 'type:' option.)
-    get_certificates(
-      development: false,
-      api_key: api_key,
-      output_path: "./ios/App/certs",
-      keychain_path: ENV["MATCH_KEYCHAIN_NAME"],
-      keychain_password: ENV["MATCH_KEYCHAIN_PASSWORD"]
-    )
-
-    # Create or fetch the App Store provisioning profile for this app id.
-    get_provisioning_profile(
+    sync_code_signing(
+      type: "appstore",
       app_identifier: APP_IDENTIFIER,
+      team_id: TEAM_ID,
       api_key: api_key,
-      provisioning_name: PROFILE_NAME,
-      output_path: "./ios/App/profiles",
-      filename: "melori_appstore.mobileprovision"
+      git_url: ENV["MATCH_GIT_URL"],
+      storage_mode: "git",
+      git_branch: "main",
+      keychain_name: ENV["MATCH_KEYCHAIN_NAME"],
+      keychain_password: ENV["MATCH_KEYCHAIN_PASSWORD"],
+      # CI must be able to create the identity on the first run; afterwards it
+      # simply decrypts and reuses what is already stored.
+      readonly: false
     )
-    profile_name = lane_context[SharedValues::SIGH_NAME] || PROFILE_NAME
+
+    # match exports the profile name it installed, keyed by bundle id.
+    mapping = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {}
+    profile_name = mapping[APP_IDENTIFIER] || PROFILE_NAME
+    UI.success("Signing with profile: #{profile_name}")
 
     # Set the marketing version and build number on the generated Xcode project.
     increment_version_number(
@@ -134,5 +141,31 @@ platform :ios do
       skip_waiting_for_build_processing: true,
       skip_submission: true
     )
+  end
+
+  desc "DESTRUCTIVE: revoke ALL distribution certificates and App Store profiles for this team"
+  desc "Run once to clear orphaned certificates before adopting match. Requires CONFIRM_NUKE=yes."
+  lane :nuke_distribution do
+    UI.user_error!("Refusing to nuke without CONFIRM_NUKE=yes") unless ENV["CONFIRM_NUKE"] == "yes"
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"],
+      in_house: false
+    )
+
+    UI.important("Revoking all distribution certificates + App Store profiles for team #{TEAM_ID}")
+    match_nuke(
+      type: "appstore",
+      app_identifier: APP_IDENTIFIER,
+      team_id: TEAM_ID,
+      api_key: api_key,
+      git_url: ENV["MATCH_GIT_URL"],
+      storage_mode: "git",
+      git_branch: "main",
+      skip_confirmation: true
+    )
+    UI.success("Nuke complete -- the next release run will create one durable identity.")
   end
 end

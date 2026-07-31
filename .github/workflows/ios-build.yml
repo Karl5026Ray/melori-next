@@ -15,9 +15,15 @@ name: iOS Build & Upload (TestFlight)
 #   APP_STORE_CONNECT_KEY_ID        App Store Connect API key ID
 #   APP_STORE_CONNECT_ISSUER_ID     App Store Connect API issuer ID
 #   APP_STORE_CONNECT_KEY_P8        Contents of the AuthKey_XXXX.p8 file (full text)
-#   IOS_DIST_CERT_P12_BASE64        base64 of your Apple Distribution .p12 cert
-#   IOS_DIST_CERT_PASSWORD          password for that .p12
-#   IOS_PROVISIONING_PROFILE_BASE64 base64 of your App Store provisioning profile (.mobileprovision)
+#   MATCH_PASSWORD                  passphrase that encrypts the match storage repo
+#   MATCH_DEPLOY_KEY                SSH private key with write access to the
+#                                   private match storage repo
+#
+# Signing is handled by Fastlane match: one distribution certificate and one
+# App Store provisioning profile live AES-encrypted in a private repo and are
+# reused by every run. The old IOS_DIST_CERT_P12_BASE64 /
+# IOS_DIST_CERT_PASSWORD / IOS_PROVISIONING_PROFILE_BASE64 secrets are no
+# longer read and can be deleted.
 #
 # BUNDLE ID: org.melorimusic.app   APPLE ID (app): 6792791603
 
@@ -32,9 +38,17 @@ on:
         description: "Marketing version / CFBundleShortVersionString (must be higher than the last APPROVED version — approved version trains are closed to new builds)"
         required: true
         default: "1.0.1"
+      nuke_certificates:
+        description: "DESTRUCTIVE: revoke ALL distribution certificates & App Store profiles before building. Only needed once, to clear orphaned certificates. Type 'yes' to run."
+        required: false
+        default: "no"
   push:
     tags:
       - "ios-v*"
+
+env:
+  # Private repo holding the AES-encrypted signing identity managed by match.
+  MATCH_GIT_URL: git@github.com:Karl5026Ray/melori-ios-certificates.git
 
 concurrency:
   group: ios-build-${{ github.ref }}
@@ -108,10 +122,8 @@ jobs:
 
       - name: Prepare signing keychain
         run: |
-          # Create an unlocked keychain that Fastlane's get_certificates will
-          # populate with a freshly generated distribution cert + private key.
-          # (Signing is now driven by the App Store Connect API key, not by
-          # manually-uploaded .p12 / .mobileprovision secrets.)
+          # Create an unlocked keychain for Fastlane match to import the
+          # stored distribution certificate + private key into.
           KEYCHAIN_PATH="$RUNNER_TEMP/melori.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -152,6 +164,40 @@ jobs:
           # Sanity check
           openssl pkey -in "$KEY_FILE" -noout && echo "API key parsed OK" || (echo "API key INVALID" && exit 1)
 
+      - name: Authorize match storage repo
+        env:
+          MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}
+        run: |
+          # match reads/writes the encrypted certificate repo over SSH using a
+          # deploy key, so no personal access token is needed.
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_ed25519
+          chmod 600 ~/.ssh/match_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'EOF'
+          Host github.com
+            User git
+            IdentityFile ~/.ssh/match_ed25519
+            IdentitiesOnly yes
+          EOF
+          ssh -o BatchMode=yes -T git@github.com 2>&1 | head -1 || true
+          # match commits the encrypted identity back to the storage repo, so
+          # the runner needs a git author identity.
+          git config --global user.name "melori-ios-ci"
+          git config --global user.email "ci@melorimusic.org"
+
+      - name: Revoke orphaned certificates (optional, destructive)
+        if: ${{ github.event.inputs.nuke_certificates == 'yes' }}
+        working-directory: mobile
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+          MATCH_GIT_URL: ${{ env.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          CONFIRM_NUKE: "yes"
+        run: fastlane ios nuke_distribution
+
       - name: Build & upload with Fastlane
         working-directory: mobile
         env:
@@ -160,6 +206,8 @@ jobs:
           ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
           BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
           MARKETING_VERSION: ${{ github.event.inputs.marketing_version || '1.0.1' }}
+          MATCH_GIT_URL: ${{ env.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
         run: fastlane ios release
 
       - name: Upload IPA artifact

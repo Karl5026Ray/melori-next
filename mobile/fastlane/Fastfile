@@ -85,6 +85,20 @@ platform :ios do
     unless File.exist?(XCODE_WORKSPACE)
       UI.user_error!("Expected CocoaPods workspace at #{XCODE_WORKSPACE} (run pod install)")
     end
+
+    # Guard against shipping the Capacitor template's placeholder icon again.
+    # scripts/install-ios-icon.sh must have run after `cap sync`.
+    marketing_icon = File.join(
+      MOBILE_DIR,
+      "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+    )
+    unless File.exist?(marketing_icon)
+      UI.user_error!(
+        "App icon not installed (missing #{marketing_icon}). " \
+        "Run mobile/scripts/install-ios-icon.sh after `npx cap sync ios`."
+      )
+    end
+    UI.success("App icon present: #{marketing_icon}")
     build_app(
       workspace: XCODE_WORKSPACE,
       scheme: SCHEME,

@@ -46,6 +46,11 @@ This creates the `ios/` folder (a real Xcode project). It's git-ignored on purpo
 ```bash
 npx cap sync ios
 ```
+This also installs the app icon (`npm run sync` chains `icon:ios`). If you ran
+`npx cap sync ios` directly, install the icon yourself:
+```bash
+npm run icon:ios
+```
 
 ### 5. Open in Xcode
 ```bash
@@ -53,11 +58,26 @@ npx cap open ios
 ```
 Xcode launches with the Melori Music project.
 
-### 6. Set the app icon (in Xcode)
-- In the left sidebar, expand **App → App → Assets** (or `Assets.xcassets`).
-- Click **AppIcon**.
-- Drag `mobile/resources/icon-1024.png` onto the **1024pt "App Store"** slot (single-size icon works on modern Xcode; it auto-generates the rest).
-  - If your Xcode shows multiple slots, install `npm i -g cordova-res` then run `cordova-res ios --skip-config --copy` from the `mobile/` folder to auto-generate all sizes.
+### 6. App icon — automatic, do not set by hand
+The icon is no longer a manual Xcode drag-and-drop step. `mobile/scripts/install-ios-icon.sh`
+renders every AppIcon slot (iPhone, iPad, and the 1024×1024 App Store marketing
+icon) from `mobile/resources/icon-1024.png` and writes the matching `Contents.json`.
+
+**Important:** `npx cap add ios` / `npx cap sync ios` regenerate `ios/App` from the
+Capacitor template and restore its *placeholder* icon. That is why a wrong icon
+shipped to the App Store previously. Always re-run the icon step after any sync:
+```bash
+npm run icon:ios
+```
+CI does this automatically (see `.github/workflows/ios-build.yml`), and Fastlane
+now hard-fails the archive if `AppIcon-1024.png` is missing.
+
+To change the icon in future, replace **only** `mobile/resources/icon-1024.png`.
+It must be exactly 1024×1024 PNG with **no alpha channel / transparency** —
+the script validates both and refuses to run otherwise.
+
+Verify in Xcode before archiving: **App → App → Assets → AppIcon** should show
+the Melori “M” mark in every slot, not a placeholder.
 
 ### 7. Configure signing (in Xcode)
 - Select the top **App** target → **Signing & Capabilities** tab.

@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { cookieStorageAdapter } from "@/lib/supabaseCookieStorage";
+import { authStorageAdapter } from "@/lib/supabaseCookieStorage";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -18,14 +18,16 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 function migrateLegacyLocalStorageSession(): void {
 try {
 if (typeof window === "undefined" || !window.localStorage) return;
-// Already migrated? (cookie present) then do nothing.
-if (cookieStorageAdapter.getItem("melori-auth") !== null) return;
+// Already migrated? then do nothing.
+if (authStorageAdapter.getItem("melori-auth") !== null) return;
 const ref = new URL(supabaseUrl).hostname.split(".")[0];
 if (!ref) return;
 const legacyKey = `sb-${ref}-auth-token`;
 const legacyValue = window.localStorage.getItem(legacyKey);
 if (legacyValue) {
-cookieStorageAdapter.setItem("melori-auth", legacyValue);
+// Writes BOTH the cookie and the localStorage mirror under the new key, so
+// dropping the old key does not leave the session in a single store.
+authStorageAdapter.setItem("melori-auth", legacyValue);
 window.localStorage.removeItem(legacyKey);
 }
 } catch {
@@ -43,16 +45,18 @@ flowType: "pkce",
 autoRefreshToken: true,
 persistSession: true,
 detectSessionInUrl: true,
-// Persist the PKCE code_verifier + session in a COOKIE instead of
-// localStorage. Cookies ride along with the OAuth redirect back from
-// Google regardless of which storage partition the callback opens in,
-// which eliminates the recurring "PKCE code verifier not found in
-// storage" failure on in-app webviews / private tabs / cross-browser
-// handoffs. See src/lib/supabaseCookieStorage.ts for the full rationale.
+// Persist the PKCE code_verifier + session in a COOKIE (mirrored into
+// localStorage) instead of localStorage alone. Cookies ride along with the
+// OAuth redirect back from Google regardless of which storage partition the
+// callback opens in, which eliminates the recurring "PKCE code verifier not
+// found in storage" failure on in-app webviews / private tabs / cross-browser
+// handoffs; the mirror covers the reverse case, where iOS ITP evicts the
+// cookie after 7 days. See src/lib/supabaseCookieStorage.ts for the full
+// rationale.
 // Guarded to the browser: on the server there is no `document`, and this
 // client is only ever used client-side anyway.
 ...(typeof document !== "undefined"
-? { storage: cookieStorageAdapter, storageKey: "melori-auth" }
+? { storage: authStorageAdapter, storageKey: "melori-auth" }
 : {}),
 },
 });

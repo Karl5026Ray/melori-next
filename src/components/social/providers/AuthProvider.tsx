@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { signOutUser } from "@/lib/authSignOut";
 import { Profile } from "@/types/social";
 
 interface AuthContextType {
@@ -179,7 +180,7 @@ export function SocialAuthProvider({
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    await signOutUser();
     userIdRef.current = null;
     setUser(null);
   }, []);

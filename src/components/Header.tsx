@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { signOutUser } from "@/lib/authSignOut";
 import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
 import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 
@@ -199,19 +200,7 @@ export default function Header() {
   }, []);
 
   async function handleLogout() {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      /* ignore */
-    }
-    try {
-      await fetch("/api/admin/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      /* ignore */
-    }
+    await signOutUser();
     window.location.href = "/";
   }
 

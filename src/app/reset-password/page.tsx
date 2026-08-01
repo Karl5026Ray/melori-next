@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { signOutUser } from "@/lib/authSignOut";
 
 // Set-a-new-password page. Reached from the Supabase recovery / invite link
 // emailed by the /welcome flow and the artist-tester script (redirect_to points
@@ -64,7 +65,11 @@ export default function ResetPasswordPage() {
         return;
       }
       setDone(true);
-      await supabase.auth.signOut();
+      // Deliberately GLOBAL: a password reset is often a response to a
+      // suspected compromise, so every other device must lose its session and
+      // be forced to re-authenticate with the new password. Every other
+      // sign-out path in the app is local (see lib/authSignOut.ts).
+      await signOutUser("global");
       setTimeout(() => router.push("/social/auth"), 1500);
     } catch {
       setError("Something went wrong. Please try again.");

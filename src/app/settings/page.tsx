@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Camera } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { signOutUser } from "@/lib/authSignOut";
 import { authFetch } from "@/lib/authClient";
 
 // /settings — Signed-in user settings hub.
@@ -249,7 +250,7 @@ export default function SettingsPage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOutUser();
     router.replace("/social/auth");
   };
 

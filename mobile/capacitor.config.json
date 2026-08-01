@@ -12,7 +12,6 @@
       "js.stripe.com",
       "hooks.stripe.com",
       "checkout.stripe.com",
-      "accounts.google.com",
       "*.livekit.cloud",
       "*.agora.io",
       "*.pubnub.com"

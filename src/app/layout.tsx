@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
 import MobileTabBar from "@/components/MobileTabBar";
+import NativeAuthListener from "@/components/NativeAuthListener";
 import PlayerProvider from "@/components/player/PlayerProvider";
 import { SITE_URL } from "@/lib/site";
 
@@ -76,6 +77,9 @@ export default function RootLayout({
     <html lang="en" className={inter.variable}>
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
         <PlayerProvider>
+          {/* Native-only: catches the OAuth deep link back from the system
+              browser. Renders nothing and does nothing on the web. */}
+          <NativeAuthListener />
           <Header />
           {/* Bottom padding clears the fixed bars: on mobile the tab bar
              (h-14) — the music transport now floats and overlays content — and

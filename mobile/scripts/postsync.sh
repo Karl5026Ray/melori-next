@@ -16,6 +16,7 @@ MOBILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -d "$MOBILE_DIR/ios" ]; then
   echo "--- iOS post-sync ---"
   bash "$MOBILE_DIR/scripts/install-ios-icon.sh"
+  bash "$MOBILE_DIR/scripts/configure-ios.sh"
 else
   echo "--- iOS post-sync skipped (no ios/ folder) ---"
 fi

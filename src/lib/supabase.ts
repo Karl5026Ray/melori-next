@@ -26,7 +26,13 @@ const legacyKey = `sb-${ref}-auth-token`;
 const legacyValue = window.localStorage.getItem(legacyKey);
 if (legacyValue) {
 cookieStorageAdapter.setItem("melori-auth", legacyValue);
+// Drop the old key only once the new representation reads back. The adapter
+// mirrors into localStorage under "melori-auth", so the session still lives in
+// two places afterwards — deleting unconditionally used to leave it in the
+// cookie alone, which iOS ITP expires after 7 days.
+if (cookieStorageAdapter.getItem("melori-auth") !== null) {
 window.localStorage.removeItem(legacyKey);
+}
 }
 } catch {
 /* best-effort: a failed migration just means a one-time re-login */

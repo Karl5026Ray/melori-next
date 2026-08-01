@@ -9,6 +9,7 @@
     "icon:ios": "bash scripts/install-ios-icon.sh",
     "icon:android": "bash scripts/configure-android.sh --icons-only",
     "configure:android": "bash scripts/configure-android.sh",
+    "configure:ios": "bash scripts/configure-ios.sh",
     "open:ios": "cap open ios",
     "open:android": "cap open android",
     "add:ios": "cap add ios --packagemanager CocoaPods",

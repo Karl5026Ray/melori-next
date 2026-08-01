@@ -233,6 +233,14 @@ verify_icons() {
   grep -q "$ADAPTIVE_BACKGROUND" "$RES_DIR/values/ic_launcher_background.xml" 2>/dev/null \
     || { echo "error: adaptive background colour is not $ADAPTIVE_BACKGROUND" >&2; bad=1; }
 
+  for leftover in "$RES_DIR/drawable/ic_launcher_background.xml" \
+                  "$RES_DIR/drawable-v24/ic_launcher_foreground.xml"; do
+    if [ -e "$leftover" ]; then
+      echo "error: Capacitor's placeholder icon drawable survived at $leftover" >&2
+      bad=1
+    fi
+  done
+
   return "$bad"
 }
 
@@ -259,6 +267,16 @@ cat > "$RES_DIR/values/ic_launcher_background.xml" <<XML
     <color name="ic_launcher_background">$ADAPTIVE_BACKGROUND</color>
 </resources>
 XML
+
+# The Capacitor template ships its own adaptive icon as vector drawables: a
+# teal #26A69A grid background and the Android robot foreground. Our
+# mipmap-anydpi-v26 XML supersedes them, so they never render -- but they are
+# still compiled into the release bundle, which means the placeholder artwork
+# this whole script exists to keep out of a store build ships inside it. They
+# also collide by name with the values/ colour resource below. Delete them.
+rm -f "$RES_DIR/drawable/ic_launcher_background.xml" \
+      "$RES_DIR/drawable-v24/ic_launcher_foreground.xml"
+rmdir "$RES_DIR/drawable-v24" 2>/dev/null || true
 
 mkdir -p "$RES_DIR/mipmap-anydpi-v26"
 for name in ic_launcher ic_launcher_round; do

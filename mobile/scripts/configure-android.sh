@@ -35,6 +35,7 @@ set -euo pipefail
 MOBILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_DIR="$MOBILE_DIR/android"
 SOURCE_ICON="$MOBILE_DIR/resources/icon-1024.png"
+PLAY_ICON="$MOBILE_DIR/resources/play-store-icon-512.png"
 RES_DIR="$ANDROID_DIR/app/src/main/res"
 MANIFEST="$ANDROID_DIR/app/src/main/AndroidManifest.xml"
 VARIABLES_GRADLE="$ANDROID_DIR/variables.gradle"
@@ -49,7 +50,19 @@ COMPILE_SDK=36
 TARGET_SDK=36
 
 APP_HOST="melorimusic.org"
-ADAPTIVE_BACKGROUND="#111111"
+
+# The exact flat navy the artwork's own background is filled with. The adaptive
+# background layer must be this colour and nothing else: the foreground layer is
+# the mark keyed off that same navy, so its anti-aliased edge pixels are navy
+# blends. Any other background colour turns those into a visible dark halo.
+ADAPTIVE_BACKGROUND="#061826"
+
+# Fraction of the 108dp adaptive canvas that is guaranteed visible under every
+# OEM mask. Android reserves the outer 18dp of the 108dp canvas for masking and
+# parallax, leaving the centre 72dp (66.7%); a circular mask inscribes a circle
+# in that region, so only a centred circle of ~66% of the canvas always
+# survives. See https://developer.android.com/develop/ui/views/launch/icon_design_adaptive
+SAFE_ZONE_PERCENT=66
 
 # LiveKit needs mic/camera/audio-routing; media playback needs a foreground
 # service; Android 13+ needs POST_NOTIFICATIONS for the playback notification.
@@ -73,7 +86,10 @@ fi
 
 die() { echo "error: $*" >&2; exit 1; }
 
-[ -f "$SOURCE_ICON" ] || die "source icon missing at $SOURCE_ICON"
+# shellcheck source=lib/icon-source.sh
+. "$MOBILE_DIR/scripts/lib/icon-source.sh"
+melori_assert_icon_source "$SOURCE_ICON" || exit 1
+
 [ -d "$ANDROID_DIR" ] || die "$ANDROID_DIR not found. Run 'npx cap add android && npx cap sync android' first."
 
 # --- Image backend ------------------------------------------------------------
@@ -97,17 +113,40 @@ round() { # round <px> <out> -- circular mask for ic_launcher_round
 }
 
 foreground() { # foreground <px> <out>
-  # Adaptive icons render a 108dp canvas but only the centre 72dp is guaranteed
-  # visible (the launcher masks and parallaxes the rest), so the mark is scaled
-  # to 2/3 of the canvas and centred on transparency.
-  local inner=$(( $1 * 2 / 3 ))
-  "$IM" -size "$1x$1" xc:none \
-    \( "$SOURCE_ICON" -resize "${inner}x${inner}" \) \
-    -gravity center -composite -depth 8 -strip "$2"
+  # The adaptive foreground must be the M mark ALONE on transparency, not the
+  # full-bleed square. Dropping the square in here is the trap: its corners --
+  # which is exactly where the red stem-dot and the cyan dot sit -- fall outside
+  # every circular mask and get sliced off.
+  #
+  # The artwork's background is a flat $ADAPTIVE_BACKGROUND, so key it out, trim
+  # to the mark's bounding box, then scale that box to fit the safe zone. The
+  # box is fitted by its DIAGONAL, not its side: a square of side s only fits
+  # inside a circle of diameter s*sqrt(2), so sizing by the side would still
+  # push the corners out under a circular mask. sqrt(2) ~= 1.41421356, and
+  # 10000/14142 keeps the arithmetic integer for Bash.
+  local inner=$(( $1 * SAFE_ZONE_PERCENT * 10000 / 14142 / 100 ))
+  "$IM" "$SOURCE_ICON" \
+    -alpha off -fuzz 6% -transparent "$ADAPTIVE_BACKGROUND" \
+    -trim +repage \
+    -resize "${inner}x${inner}" \
+    -background none -gravity center -extent "$1x$1" \
+    -depth 8 -strip "PNG32:$2"
 }
 
-# --- 1. Launcher icons --------------------------------------------------------
-echo "==> Installing launcher icons from $SOURCE_ICON"
+# Total opaque coverage lying OUTSIDE the safe-zone circle, in pixels. Masks
+# the foreground's alpha with the inverse of the circle a round launcher icon
+# would apply, so a non-zero result means the mark really would be clipped.
+# Proves the sizing above rather than trusting it.
+clipped_pixels() { # clipped_pixels <png> <canvas-px>
+  local size="$2"
+  local c=$(( size / 2 ))
+  local r=$(( size * SAFE_ZONE_PERCENT / 200 ))
+  "$IM" "$1" -alpha extract \
+    \( -size "${size}x${size}" xc:white -fill black \
+       -draw "circle $c,$c $c,$(( c - r ))" \) \
+    -compose multiply -composite \
+    -format "%[fx:int(mean*w*h+0.5)]" info:
+}
 
 # density:legacy-px:adaptive-foreground-px
 DENSITIES=(
@@ -117,6 +156,85 @@ DENSITIES=(
   "xxhdpi:144:324"
   "xxxhdpi:192:432"
 )
+
+verify_icons() {
+  local bad=0 entry density legacy fg dir pair f want got corner clipped
+  local play_dims play_channels play_depth
+
+  for entry in "${DENSITIES[@]}"; do
+    IFS=: read -r density legacy fg <<<"$entry"
+    dir="$RES_DIR/mipmap-$density"
+
+    # Exact dimensions, not just "file exists" -- a silently mis-sized icon is
+    # the same class of bug as the placeholder that reached the App Store.
+    for pair in "ic_launcher.png:$legacy" "ic_launcher_round.png:$legacy" \
+                "ic_launcher_foreground.png:$fg"; do
+      f="${pair%:*}"
+      want="${pair#*:}"
+      if [ ! -s "$dir/$f" ]; then
+        echo "error: missing icon $dir/$f" >&2
+        bad=1
+        continue
+      fi
+      got="$("$IM" identify -format '%wx%h' "$dir/$f")"
+      if [ "$got" != "${want}x${want}" ]; then
+        echo "error: $dir/$f is $got, expected ${want}x${want}" >&2
+        bad=1
+      fi
+    done
+
+    # The adaptive foreground must be transparent where the mask crops, and the
+    # mark must sit entirely inside the safe-zone circle.
+    if [ -s "$dir/ic_launcher_foreground.png" ]; then
+      corner="$("$IM" "$dir/ic_launcher_foreground.png" -format '%[fx:int(u.p{0,0}.a*255)]' info:)"
+      if [ "$corner" != "0" ]; then
+        echo "error: $dir/ic_launcher_foreground.png has an opaque corner (alpha $corner);" \
+             "the adaptive foreground must be the mark on transparency, not the full-bleed square" >&2
+        bad=1
+      fi
+      clipped="$(clipped_pixels "$dir/ic_launcher_foreground.png" "$fg")"
+      if [ "$clipped" != "0" ]; then
+        echo "error: $dir/ic_launcher_foreground.png has ${clipped}px of mark outside the" \
+             "${SAFE_ZONE_PERCENT}% safe-zone circle — a round mask would clip it" >&2
+        bad=1
+      fi
+    fi
+  done
+
+  # Play requires a 32-bit PNG for the store listing icon.
+  if [ ! -s "$PLAY_ICON" ]; then
+    echo "error: missing Play store icon $PLAY_ICON" >&2
+    bad=1
+  else
+    play_dims="$("$IM" identify -format '%wx%h' "$PLAY_ICON")"
+    play_channels="$("$IM" identify -format '%[channels]' "$PLAY_ICON")"
+    play_depth="$("$IM" identify -format '%z' "$PLAY_ICON")"
+    if [ "$play_dims" != "512x512" ]; then
+      echo "error: $PLAY_ICON is $play_dims, expected 512x512" >&2
+      bad=1
+    fi
+    # 8 bits across R, G, B and A. The alpha channel has to be *present* for
+    # Play to accept the upload even though every pixel in it is opaque.
+    case "$play_channels" in
+      *a*) ;;
+      *) echo "error: $PLAY_ICON has channels '$play_channels' — Play requires a" \
+              "32-bit PNG, i.e. one with an alpha channel present" >&2
+         bad=1 ;;
+    esac
+    if [ "$play_depth" != "8" ]; then
+      echo "error: $PLAY_ICON is ${play_depth}-bit per channel, expected 8" >&2
+      bad=1
+    fi
+  fi
+
+  grep -q "$ADAPTIVE_BACKGROUND" "$RES_DIR/values/ic_launcher_background.xml" 2>/dev/null \
+    || { echo "error: adaptive background colour is not $ADAPTIVE_BACKGROUND" >&2; bad=1; }
+
+  return "$bad"
+}
+
+# --- 1. Launcher icons --------------------------------------------------------
+echo "==> Installing launcher icons from $SOURCE_ICON"
 
 for entry in "${DENSITIES[@]}"; do
   IFS=: read -r density legacy fg <<<"$entry"
@@ -129,7 +247,8 @@ for entry in "${DENSITIES[@]}"; do
 done
 
 # The adaptive background is a flat colour resource referenced by
-# mipmap-anydpi-v26/ic_launcher.xml; match the app's dark background.
+# mipmap-anydpi-v26/ic_launcher.xml; it must match the artwork's own background
+# so the keyed foreground's edge pixels blend into it seamlessly.
 mkdir -p "$RES_DIR/values"
 cat > "$RES_DIR/values/ic_launcher_background.xml" <<XML
 <?xml version="1.0" encoding="utf-8"?>
@@ -149,13 +268,26 @@ for name in ic_launcher ic_launcher_round; do
 XML
 done
 
-# Play Console also wants a 512x512 store icon; emit it next to the project so
-# the release build has one to hand rather than re-exporting by hand.
-mkdir -p "$ANDROID_DIR/app/src/main/play"
-resize 512 "$ANDROID_DIR/app/src/main/play/store-icon-512.png"
+# Play Console's store listing icon. Unlike everything else here this is not a
+# build input -- it is uploaded by hand -- so it lives in resources/ under
+# version control rather than in the git-ignored android/ tree, where it was
+# regenerated into oblivion on every sync and could not be reviewed in a diff.
+#
+# Play requires a 32-bit PNG (i.e. with an alpha channel present) even though
+# the artwork is fully opaque, hence PNG32: rather than the plain resize().
+# Regenerated only when absent or wrong-sized, so a normal configure run leaves
+# the working tree clean.
+if [ ! -f "$PLAY_ICON" ] || [ "$("$IM" identify -format '%wx%h' "$PLAY_ICON" 2>/dev/null)" != "512x512" ]; then
+  echo "    generating $PLAY_ICON"
+  "$IM" "$SOURCE_ICON" -resize 512x512 -alpha set -background none \
+    -strip "PNG32:$PLAY_ICON"
+fi
+
+echo "==> Verifying icons"
+verify_icons || die "icon verification failed"
 
 if [ "$ICONS_ONLY" -eq 1 ]; then
-  echo "Icons installed (--icons-only)."
+  echo "Icons installed and verified (--icons-only)."
   exit 0
 fi
 
@@ -302,15 +434,7 @@ fi
 echo "==> Verifying"
 failures=0
 
-for entry in "${DENSITIES[@]}"; do
-  IFS=: read -r density _ _ <<<"$entry"
-  for f in ic_launcher.png ic_launcher_round.png ic_launcher_foreground.png; do
-    if [ ! -s "$RES_DIR/mipmap-$density/$f" ]; then
-      echo "error: missing icon $RES_DIR/mipmap-$density/$f" >&2
-      failures=1
-    fi
-  done
-done
+verify_icons || failures=1
 
 for key in "minSdkVersion = $MIN_SDK" "compileSdkVersion = $COMPILE_SDK" "targetSdkVersion = $TARGET_SDK"; do
   grep -q "$key" "$VARIABLES_GRADLE" || { echo "error: variables.gradle missing '$key'" >&2; failures=1; }

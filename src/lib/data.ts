@@ -20,6 +20,11 @@ export interface ReleaseListItem {
   release_date: string | null;
   artist: ArtistRef | null;
   genre: string | null;
+  // Lifetime plays of each published track on the release, keyed by track id.
+  // Kept per-track instead of pre-summed so the UI can substitute the player's
+  // live total for any track heard in the current session. Optional because
+  // some callers adapt rows that never loaded tracks; those render no count.
+  trackPlayCounts?: Record<number, number>;
 }
 
 interface ReleaseRow {
@@ -43,15 +48,44 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
   return value ?? null;
 }
 
+// Play totals for every published track, grouped by the release they belong
+// to. `releases` has no aggregate column, so the cards sum their own tracks.
+// Deliberately non-fatal: play counts are decoration, and a failure here must
+// never blank the release grid it decorates.
+async function getPlayCountsByRelease(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+): Promise<Map<number, Record<number, number>>> {
+  const byRelease = new Map<number, Record<number, number>>();
+  const { data, error } = await supabase
+    .from("tracks")
+    .select("id, release_id, play_count")
+    .eq("is_published", true);
+
+  if (error) return byRelease;
+
+  for (const row of (data as
+    | { id: number; release_id: number | null; play_count: number | null }[]
+    | null) ?? []) {
+    if (row.release_id === null) continue;
+    const counts = byRelease.get(row.release_id) ?? {};
+    counts[row.id] = typeof row.play_count === "number" ? row.play_count : 0;
+    byRelease.set(row.release_id, counts);
+  }
+  return byRelease;
+}
+
 export async function getReleases(): Promise<ReleaseListItem[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("releases")
-    .select(
-      "id, title, slug, release_type, cover_art_url, price, release_date, artist:artists(name, slug, genre:genres(name))",
-    )
-    .eq("is_published", true)
-    .order("release_date", { ascending: false });
+  const [{ data, error }, playCountsByRelease] = await Promise.all([
+    supabase
+      .from("releases")
+      .select(
+        "id, title, slug, release_type, cover_art_url, price, release_date, artist:artists(name, slug, genre:genres(name))",
+      )
+      .eq("is_published", true)
+      .order("release_date", { ascending: false }),
+    getPlayCountsByRelease(supabase),
+  ]);
 
   if (error) throw error;
 
@@ -68,6 +102,7 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
       release_date: row.release_date,
       artist: artist ? { name: artist.name, slug: artist.slug } : null,
       genre: genre?.name ?? null,
+      trackPlayCounts: playCountsByRelease.get(row.id) ?? {},
     };
   });
 }
@@ -566,6 +601,7 @@ export interface FeaturedTrack {
   title: string;
   artistName: string | null;
   coverUrl: string | null;
+  playCount: number;
 }
 
 export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
@@ -573,7 +609,7 @@ export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
   const { data, error } = await supabase
     .from("tracks")
     .select(
-      "id, title, audio_url, preview_url, release:releases!inner(title, cover_art_url, is_published, release_date, artist:artists(name))",
+      "id, title, audio_url, preview_url, play_count, release:releases!inner(title, cover_art_url, is_published, release_date, artist:artists(name))",
     )
     .eq("is_published", true)
     .or("moderation_status.is.null,moderation_status.eq.clean")
@@ -601,6 +637,7 @@ export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
         releaseDate: rel?.release_date ?? null,
         coverUrl: rel?.cover_art_url ?? null,
         artistName: artist?.name ?? null,
+        playCount: typeof row.play_count === "number" ? row.play_count : 0,
       };
     })
     // Prefer tracks with cover art and a resolvable audio source on a published
@@ -617,6 +654,7 @@ export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
     title: pick.title,
     artistName: pick.artistName,
     coverUrl: pick.coverUrl,
+    playCount: pick.playCount,
   };
 }
 

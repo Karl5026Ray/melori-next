@@ -115,10 +115,16 @@ melori_assert_icon_source "$SOURCE_ICON" || exit 1
 [ -d "$ANDROID_DIR" ] || die "$ANDROID_DIR not found. Run 'npx cap add android && npx cap sync android' first."
 
 # --- Image backend ------------------------------------------------------------
+# ImageMagick 7 dispatches everything through `magick`; ImageMagick 6 -- which is
+# what Debian/Ubuntu still ship -- has no such multiplexer, so `convert identify`
+# there is read as "convert a file called identify" and fails. The two entry
+# points therefore have to be resolved separately.
 if command -v magick >/dev/null 2>&1; then
-  IM=magick        # ImageMagick 7
+  IM=magick                     # ImageMagick 7
+  IDENTIFY=(magick identify)
 elif command -v convert >/dev/null 2>&1; then
-  IM=convert       # ImageMagick 6
+  IM=convert                    # ImageMagick 6
+  IDENTIFY=(identify)
 else
   die "ImageMagick not found. Install it (macOS: 'brew install imagemagick', Debian/Ubuntu: 'apt-get install imagemagick')."
 fi
@@ -217,7 +223,7 @@ verify_icons() {
         bad=1
         continue
       fi
-      got="$("$IM" identify -format '%wx%h' "$dir/$f")"
+      got="$("${IDENTIFY[@]}" -format '%wx%h' "$dir/$f")"
       if [ "$got" != "${want}x${want}" ]; then
         echo "error: $dir/$f is $got, expected ${want}x${want}" >&2
         bad=1
@@ -253,9 +259,9 @@ verify_icons() {
     echo "error: missing Play store icon $PLAY_ICON" >&2
     bad=1
   else
-    play_dims="$("$IM" identify -format '%wx%h' "$PLAY_ICON")"
-    play_channels="$("$IM" identify -format '%[channels]' "$PLAY_ICON")"
-    play_depth="$("$IM" identify -format '%z' "$PLAY_ICON")"
+    play_dims="$("${IDENTIFY[@]}" -format '%wx%h' "$PLAY_ICON")"
+    play_channels="$("${IDENTIFY[@]}" -format '%[channels]' "$PLAY_ICON")"
+    play_depth="$("${IDENTIFY[@]}" -format '%z' "$PLAY_ICON")"
     if [ "$play_dims" != "512x512" ]; then
       echo "error: $PLAY_ICON is $play_dims, expected 512x512" >&2
       bad=1
@@ -344,7 +350,7 @@ done
 # the artwork is fully opaque, hence PNG32: rather than the plain resize().
 # Regenerated only when absent or wrong-sized, so a normal configure run leaves
 # the working tree clean.
-if [ ! -f "$PLAY_ICON" ] || [ "$("$IM" identify -format '%wx%h' "$PLAY_ICON" 2>/dev/null)" != "512x512" ]; then
+if [ ! -f "$PLAY_ICON" ] || [ "$("${IDENTIFY[@]}" -format '%wx%h' "$PLAY_ICON" 2>/dev/null)" != "512x512" ]; then
   echo "    generating $PLAY_ICON"
   "$IM" "$SOURCE_ICON" -resize 512x512 -alpha set -background none \
     -strip "PNG32:$PLAY_ICON"

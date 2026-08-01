@@ -507,16 +507,26 @@ text = text.replace(marker, replacement, 1)
 
 # Version name/code are release inputs, not repo constants -- the workflow
 # passes them as Gradle properties so nothing is hardcoded here.
-text = re.sub(
-    r'^(\s*)versionCode 1$',
+#
+# A silent no-match here is the dangerous case: the build would keep the
+# template's `versionCode 1` and every Play upload after the first would be
+# rejected as a duplicate, with nothing in the log to say why. So this fails
+# loudly instead if the template's wording changes.
+text, n = re.subn(
+    r'^(\s*)versionCode\s+\d+$',
     r'\1versionCode Integer.parseInt(project.findProperty("meloriVersionCode")?.toString() ?: "1")',
     text, count=1, flags=re.M,
 )
-text = re.sub(
-    r'^(\s*)versionName "1.0"$',
+if n != 1:
+    raise SystemExit("error: no 'versionCode <n>' line in app/build.gradle; script needs updating")
+
+text, n = re.subn(
+    r'^(\s*)versionName\s+"[^"]*"$',
     r'\1versionName project.findProperty("meloriVersionName") ?: "1.0"',
     text, count=1, flags=re.M,
 )
+if n != 1:
+    raise SystemExit("error: no 'versionName \"...\"' line in app/build.gradle; script needs updating")
 
 open(path, "w").write(text)
 PY
@@ -541,6 +551,8 @@ grep -q 'android:autoVerify="true"' "$MANIFEST" || { echo "error: App Links inte
 grep -q "android:scheme=\"$AUTH_SCHEME\"" "$MANIFEST" || { echo "error: OAuth callback scheme $AUTH_SCHEME missing from manifest" >&2; failures=1; }
 grep -q "$APP_HOST" "$MANIFEST" || { echo "error: manifest missing host $APP_HOST" >&2; failures=1; }
 grep -q "melori-signing-config" "$APP_GRADLE" || { echo "error: signing config missing" >&2; failures=1; }
+grep -q "meloriVersionCode" "$APP_GRADLE" || { echo "error: versionCode is not driven by -PmeloriVersionCode; Play would reject the second upload as a duplicate" >&2; failures=1; }
+grep -q "meloriVersionName" "$APP_GRADLE" || { echo "error: versionName is not driven by -PmeloriVersionName" >&2; failures=1; }
 
 [ "$failures" -eq 0 ] || die "configure-android.sh verification failed"
 

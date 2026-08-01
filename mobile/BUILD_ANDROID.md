@@ -182,23 +182,18 @@ workflow still builds and uploads the artifact.
 4. **Closed testing.** New personal developer accounts must run a closed test
    with **at least 12 testers opted in for 14 continuous days** before applying
    for production access. Start this early — it is usually the long pole.
-5. **Store listing.** The copy and graphics are version-controlled under
-   `mobile/fastlane/metadata/android/en-US/` and pushed by CI once
-   `PLAY_SERVICE_ACCOUNT_JSON` exists; see
-   [`PLAY_LAUNCH_CHECKLIST.md`](PLAY_LAUNCH_CHECKLIST.md) for the full
-   sequence and for everything that must be done by hand in Play Console.
+5. **Store listing.** Upload the graphics below, then the screenshots, privacy
+   policy URL and data safety form. They are committed rather than generated
+   into `android/`, because the listing is filled in by hand and `android/` is
+   wiped on every sync.
 
-   The graphics are committed rather than generated into `android/`, because
-   `android/` is wiped on every sync:
+   | Asset | File | Regenerate with |
+   |---|---|---|
+   | App icon, 512×512 32-bit | `resources/play-store-icon-512.png` | `scripts/configure-android.sh` |
+   | Feature graphic, 1024×500 | `resources/play-feature-graphic-1024x500.png` | `python3 scripts/make_feature_graphic.py` |
 
-   | Asset | File |
-   |---|---|
-   | App icon, 512×512 32-bit | `resources/play-store-icon-512.png` |
-   | Feature graphic, 1024×500 | `resources/play-feature-graphic-1024x500.png` |
-   | Phone screenshots | `resources/play-screenshots/` |
-
-   Regenerate with `python3 scripts/make_feature_graphic.py` and, from the repo
-   root, `npm run screenshots:play`.
+   The feature graphic is **required** — Play will not publish a listing
+   without one.
 
 ---
 

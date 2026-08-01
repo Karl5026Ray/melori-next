@@ -12,8 +12,7 @@
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install --with-deps chromium",
-    "screenshots:play": "tsx mobile/scripts/capture-store-screenshots.ts"
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

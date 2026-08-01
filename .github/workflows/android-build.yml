@@ -4,15 +4,10 @@ name: Android Build & Upload (Play)
 # runner, signs it with the upload keystore, and produces a Google Play–ready
 # .aab. Optionally publishes to the Play internal testing track.
 #
-# TRIGGER: the build is manual only (workflow_dispatch). Version name, version
-# code and the Play track are inputs rather than repo constants, mirroring the
-# iOS workflow's marketing_version/build_number approach — nothing about a
-# release should be hardcoded in the tree.
-#
-# The listing-metadata check also runs on pull requests that touch
-# mobile/fastlane/metadata, because an over-length description is a failed
-# release and the copy is edited far more often than a build is cut. It is a
-# separate job precisely so a PR never triggers the 40-minute Gradle build.
+# TRIGGER: manual only (workflow_dispatch). Version name and version code are
+# inputs rather than repo constants, mirroring the iOS workflow's
+# marketing_version/build_number approach — nothing about a release should be
+# hardcoded in the tree.
 #
 # PREREQUISITES — set these repository secrets (Settings → Secrets and
 # variables → Actions → New repository secret). See mobile/BUILD_ANDROID.md
@@ -45,41 +40,17 @@ on:
         required: true
         default: "1"
       publish_to_play:
-        description: "Also upload to Play (requires PLAY_SERVICE_ACCOUNT_JSON). Type 'yes' to enable."
+        description: "Also upload to the Play internal testing track (requires PLAY_SERVICE_ACCOUNT_JSON). Type 'yes' to enable."
         required: false
         default: "no"
-      track:
-        description: "Play track to publish to. Production access requires a completed closed test — see mobile/PLAY_LAUNCH_CHECKLIST.md."
-        required: false
-        type: choice
-        default: internal
-        options: [internal, alpha, beta, production]
-  pull_request:
-    paths:
-      - "mobile/fastlane/metadata/**"
-      - "mobile/resources/play-*"
-      - "mobile/scripts/check-play-metadata.py"
-      - ".github/workflows/android-build.yml"
 
 concurrency:
   group: android-build-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  metadata:
-    name: Play listing metadata
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      # stdlib-only, so no Python packaging step is needed here.
-      - run: python3 mobile/scripts/check-play-metadata.py
-
   build:
     name: Build & sign AAB
-    # Only ever on demand: a pull request runs the metadata job above and stops.
-    if: github.event_name == 'workflow_dispatch'
-    needs: metadata
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -115,13 +86,6 @@ jobs:
           # android/ is git-ignored and regenerated, so it is created fresh here.
           npx cap add android || echo "android project already present"
           npx cap sync android
-
-      - name: Install icon pipeline deps
-        # scripts/mark_utils.py keys the adaptive foreground by flood-filling
-        # the background region; ImageMagick can only key by colour, which
-        # punches holes through the mark. scipy is optional — it just makes the
-        # connected-component pass faster than the pure-Python fallback.
-        run: pip install --quiet pillow numpy scipy
 
       - name: Configure Android project
         run: |
@@ -183,8 +147,7 @@ jobs:
       # --- Optional Play publish -------------------------------------------
       # Skipped unless explicitly requested AND the service account secret
       # exists. The Play developer account is not yet verified and there is no
-      # app record for org.melorimusic.app, so this is a no-op today. The
-      # artifact upload above runs regardless, so a build is always retrievable.
+      # app record for org.melorimusic.app, so this is a no-op today.
       - name: Check Play credentials
         id: play
         if: ${{ github.event.inputs.publish_to_play == 'yes' }}
@@ -198,55 +161,12 @@ jobs:
             echo "::notice::publish_to_play was requested but PLAY_SERVICE_ACCOUNT_JSON is not set — skipping upload."
           fi
 
-      - name: Stage release notes for this version code
-        if: ${{ steps.play.outputs.enabled == 'true' }}
-        run: |
-          # upload-google-play wants a directory of `whatsnew-<locale>` files,
-          # while supply keys release notes by version code. Same source of
-          # truth either way: fastlane/metadata/android/<locale>/changelogs/.
-          NOTES="fastlane/metadata/android/en-US/changelogs/${{ github.event.inputs.version_code }}.txt"
-          if [ ! -f "$NOTES" ]; then
-            echo "::error::no release notes at mobile/$NOTES. Add them before publishing" \
-                 "version code ${{ github.event.inputs.version_code }}."
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/whatsnew"
-          cp "$NOTES" "$RUNNER_TEMP/whatsnew/whatsnew-en-US"
-
-      - name: Publish AAB to Play (${{ github.event.inputs.track }})
+      - name: Publish to Play internal testing
         if: ${{ steps.play.outputs.enabled == 'true' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: org.melorimusic.app
           releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
-          track: ${{ github.event.inputs.track }}
-          whatsNewDirectory: ${{ runner.temp }}/whatsnew
+          track: internal
           status: completed
-
-      - name: Setup Ruby (fastlane supply)
-        if: ${{ steps.play.outputs.enabled == 'true' }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-
-      - name: Publish store listing to Play
-        # upload-google-play only carries the binary and its release notes. The
-        # title, descriptions, icon, feature graphic and screenshots come from
-        # the same tree via supply, so the listing is version-controlled rather
-        # than retyped into the Console.
-        if: ${{ steps.play.outputs.enabled == 'true' }}
-        env:
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-        run: |
-          gem install --no-document fastlane
-          KEY="$RUNNER_TEMP/play-service-account.json"
-          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$KEY"
-          trap 'rm -f "$KEY"' EXIT
-          fastlane supply \
-            --package_name org.melorimusic.app \
-            --json_key "$KEY" \
-            --metadata_path fastlane/metadata/android \
-            --track "${{ github.event.inputs.track }}" \
-            --skip_upload_apk true \
-            --skip_upload_aab true

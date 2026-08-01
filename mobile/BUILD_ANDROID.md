@@ -86,7 +86,8 @@ script re-applies everything the release needs:
 - `variables.gradle` → `minSdkVersion 24`, `compileSdkVersion 36`, `targetSdkVersion 36`
 - Launcher icons at every density (mdpi→xxxhdpi) plus the adaptive
   foreground/background, rendered from `resources/icon-1024.png` — the same
-  source the iOS icon script uses
+  source the iOS icon script uses. See [App icons](#app-icons) for why the
+  adaptive foreground is not simply the square artwork
 - The LiveKit / media-playback permissions (`RECORD_AUDIO`, `CAMERA`,
   `MODIFY_AUDIO_SETTINGS`, `BLUETOOTH_CONNECT`, `POST_NOTIFICATIONS`,
   `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`)
@@ -179,9 +180,62 @@ workflow still builds and uploads the artifact.
 4. **Closed testing.** New personal developer accounts must run a closed test
    with **at least 12 testers opted in for 14 continuous days** before applying
    for production access. Start this early — it is usually the long pole.
-5. **Store listing:** icon (512×512, written to
-   `android/app/src/main/play/store-icon-512.png` by the configure script),
-   feature graphic, screenshots, privacy policy URL, data safety form.
+5. **Store listing:** upload **`mobile/resources/play-store-icon-512.png`** as
+   the app icon — 512×512, 32-bit PNG, exactly what Play Console requires. Then
+   the feature graphic, screenshots, privacy policy URL and data safety form.
+
+   The file is committed rather than generated into `android/`, because the
+   store listing is filled in by hand and `android/` is wiped on every sync.
+
+---
+
+## App icons
+
+Everything is rendered from the single source **`resources/icon-1024.png`**
+(1024×1024, opaque RGB, flat `#061826` background). Three separate things come
+out of it, and they are not interchangeable:
+
+| Output | What it contains |
+|---|---|
+| `mipmap-*/ic_launcher.png` (48–192 px) | Full-bleed square artwork — the pre-API-26 legacy icon |
+| `mipmap-*/ic_launcher_round.png` (48–192 px) | Same artwork, circular-masked — the API 25 round icon |
+| `mipmap-*/ic_launcher_foreground.png` (108–432 px) | **The M mark only, on transparency** — the adaptive foreground |
+| `resources/play-store-icon-512.png` | Full-bleed artwork, 32-bit PNG, for the store listing |
+
+### Why the adaptive foreground is not the square artwork
+
+An adaptive icon is a 108dp canvas of which Android reserves the outer 18dp per
+side for masking and parallax. Only the centre **72dp** is guaranteed visible,
+and a circular mask inscribes a circle inside it — so what always survives is a
+centred circle of roughly **66%** of the canvas.
+
+The Melori artwork is full-bleed: the M's strokes and both accent dots run
+almost to the edges. Dropping the square straight into `ic_launcher_foreground`
+puts those dots outside every circular mask, and they get sliced off.
+
+`configure-android.sh` therefore keys the flat `#061826` background out of the
+source, trims to the mark's bounding box, and scales that box **by its
+diagonal** so the whole thing fits inside the safe-zone circle — a square of
+side *s* only fits in a circle of diameter *s*·√2, so fitting by the side would
+still push the corners out. The background layer is the artwork's own
+`#061826`, which is what makes the mark's anti-aliased edges blend in seamlessly
+instead of showing a halo.
+
+The script then re-masks each generated foreground with that circle and fails
+if a single pixel of the mark falls outside it, so this cannot silently
+regress.
+
+### Changing the icon
+
+1. Replace `resources/icon-1024.png` (must be 1024×1024, opaque, PNG).
+2. Update the pin: `shasum -a 256 resources/icon-1024.png | awk '{print $1}' > resources/icon-1024.png.sha256`
+3. Delete `resources/play-store-icon-512.png` so the next configure run
+   regenerates it.
+
+Both `install-ios-icon.sh` and `configure-android.sh` verify the source against
+that checksum and exit non-zero on a mismatch, an absent file, a non-PNG, a
+wrong size or a suspiciously small one. A placeholder `AppIcon-1024.png` reached
+App Store Connect once; these guards exist so that cannot recur unnoticed.
 
 ---
 

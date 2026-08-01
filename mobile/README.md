@@ -26,7 +26,10 @@ native shell loads the **live site** in a WebView via `server.url` in
 | `capacitor.config.json` | App ID `org.melorimusic.app`, name, `server.url` → live site, allowed navigation hosts, dark `#111111` background |
 | `www/index.html` | Branded offline/splash fallback (shown only if the WebView can't reach the site) |
 | `resources/icon-1024.png` | Icon source for **both** platforms (1024², no alpha) |
+| `resources/icon-1024.png.sha256` | Pins the artwork above; both icon scripts refuse to run if it doesn't match |
+| `resources/play-store-icon-512.png` | 512² 32-bit PNG uploaded by hand to the Play Console store listing |
 | `resources/logo-source-1200.png` | Original logo, for regenerating assets |
+| `scripts/lib/icon-source.sh` | Shared icon-source guard (exists, real PNG, 1024², checksum) |
 | `scripts/install-ios-icon.sh` | Renders every iOS AppIcon slot after `cap sync` |
 | `scripts/configure-android.sh` | Applies SDK 36, icons, permissions, App Links + signing after `cap sync` |
 | `scripts/postsync.sh` | Runs whichever of the two apply; chained by `npm run sync` |
@@ -43,6 +46,12 @@ followed by `scripts/postsync.sh`, which applies the iOS icon step and the
 Android configure step, skipping whichever platform folder is absent. This is
 why a placeholder icon once shipped to the App Store — the generated project was
 taken as-is.
+
+Both icon scripts start by checking `resources/icon-1024.png` against
+`resources/icon-1024.png.sha256` and exit non-zero on any mismatch, so a
+missing, truncated or placeholder source fails the build instead of reaching a
+store. **Changing the icon means replacing that one PNG, updating the checksum
+file, and deleting `resources/play-store-icon-512.png` so it regenerates.**
 
 ## Quick start — iOS (Mac)
 

@@ -77,9 +77,21 @@ npm run icon:ios
 CI does this automatically (see `.github/workflows/ios-build.yml`), and Fastlane
 now hard-fails the archive if `AppIcon-1024.png` is missing.
 
-To change the icon in future, replace **only** `mobile/resources/icon-1024.png`.
-It must be exactly 1024×1024 PNG with **no alpha channel / transparency** —
-the script validates both and refuses to run otherwise.
+To change the icon in future, replace **only** `mobile/resources/icon-1024.png`,
+then update its pin:
+
+```bash
+shasum -a 256 mobile/resources/icon-1024.png | awk '{print $1}' \
+  > mobile/resources/icon-1024.png.sha256
+```
+
+It must be exactly 1024×1024 PNG with **no alpha channel / transparency**.
+Before rendering anything the script checks the PNG header, the dimensions, the
+file size and that checksum, and refuses to run on a mismatch — a file merely
+existing at the right path is not enough, which is how the placeholder got
+through last time. If a future source ever does carry alpha it is flattened to
+opaque rather than passed through, and the generated `AppIcon-1024.png` is
+asserted by name to be 1024×1024 and alpha-free.
 
 Verify in Xcode before archiving: **App → App → Assets → AppIcon** should show
 the Melori “M” mark in every slot, not a placeholder.

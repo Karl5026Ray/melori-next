@@ -13,7 +13,8 @@
 #
 # It applies, idempotently:
 #   1. variables.gradle SDK levels (Play requires targetSdk 36 from 2026-08-31)
-#   2. The real Melori launcher icons at every density + the adaptive icon
+#   2. The real Melori launcher icons at every density, plus an adaptive icon
+#      whose foreground is the M mark alone, sized to survive OEM masks
 #   3. The runtime permissions LiveKit audio/video and media playback need
 #   4. The autoVerify App Links intent-filter for https://melorimusic.org
 #   5. A release signing config driven by android/key.properties or env vars
@@ -28,7 +29,9 @@
 # it would silently emit plain squares. Requiring ImageMagick keeps this script
 # honest about failing rather than shipping a wrong icon.
 #
-# Exits non-zero if the icon source or any expected generated file is missing.
+# Exits non-zero if the icon source fails its checksum/dimension guard, if any
+# expected generated file is missing or the wrong size, or if the adaptive
+# foreground would be clipped by a circular launcher mask.
 #
 set -euo pipefail
 

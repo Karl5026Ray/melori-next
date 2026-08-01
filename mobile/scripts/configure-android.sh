@@ -29,6 +29,10 @@
 # it would silently emit plain squares. Requiring ImageMagick keeps this script
 # honest about failing rather than shipping a wrong icon.
 #
+# Also requires Python with Pillow and numpy (`pip install pillow numpy`) for
+# scripts/mark_utils.py, which keys the adaptive foreground. ImageMagick cannot
+# do that step correctly — see the foreground() comment below.
+#
 # Exits non-zero if the icon source fails its checksum/dimension guard, if any
 # expected generated file is missing or the wrong size, or if the adaptive
 # foreground would be clipped by a circular launcher mask.
@@ -59,6 +63,12 @@ APP_HOST="melorimusic.org"
 # the mark keyed off that same navy, so its anti-aliased edge pixels are navy
 # blends. Any other background colour turns those into a visible dark halo.
 ADAPTIVE_BACKGROUND="#061826"
+
+# Sum of absolute per-channel difference from that navy at which a pixel counts
+# as part of the background field. Measured on the real artwork: 6 keeps
+# 545,337px, 12 keeps 540,958px, 20 keeps 531,911px (nibbling the mark), 30
+# keeps 505,633px (clearly damaged). See scripts/mark_utils.py.
+MARK_TOLERANCE=12
 
 # Fraction of the 108dp adaptive canvas that is guaranteed visible under every
 # OEM mask. Android reserves the outer 18dp of the 108dp canvas for masking and
@@ -104,6 +114,19 @@ else
   die "ImageMagick not found. Install it (macOS: 'brew install imagemagick', Debian/Ubuntu: 'apt-get install imagemagick')."
 fi
 
+MARK_UTILS="$MOBILE_DIR/scripts/mark_utils.py"
+[ -f "$MARK_UTILS" ] || die "$MARK_UTILS not found"
+python3 -c 'import numpy, PIL' >/dev/null 2>&1 \
+  || die "Python is missing Pillow and/or numpy, which scripts/mark_utils.py needs
+       to key the adaptive foreground. Install them: pip install pillow numpy"
+
+# The mark keyed off its navy field, holes preserved, cropped to its bounding
+# box. Produced once at full resolution and resized per density, so every
+# density is derived from the same keyed source.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+TRIMMED_MARK="$WORK_DIR/mark-trimmed.png"
+
 resize() { # resize <px> <out>
   "$IM" "$SOURCE_ICON" -resize "$1x$1" -strip "$2"
 }
@@ -121,16 +144,22 @@ foreground() { # foreground <px> <out>
   # which is exactly where the red stem-dot and the cyan dot sit -- fall outside
   # every circular mask and get sliced off.
   #
-  # The artwork's background is a flat $ADAPTIVE_BACKGROUND, so key it out, trim
-  # to the mark's bounding box, then scale that box to fit the safe zone. The
-  # box is fitted by its DIAGONAL, not its side: a square of side s only fits
-  # inside a circle of diameter s*sqrt(2), so sizing by the side would still
-  # push the corners out under a circular mask. sqrt(2) ~= 1.41421356, and
-  # 10000/14142 keeps the arithmetic integer for Bash.
+  # The keying is done by $MARK_UTILS, not here. `-transparent` (and PIL's
+  # equivalents) clear every pixel of the background COLOUR wherever it appears;
+  # the artwork's dark teal shadow tones fall inside any usable tolerance of the
+  # navy, so that punches holes straight through the middle of the glyph. It
+  # looks fine on a composed icon only because the background layer is the same
+  # navy and fills them back in -- but launchers apply independent parallax and
+  # zoom to the two layers, so the holes surface as soon as they shift.
+  # mark_utils.py flood-fills inwards from the image border instead, so only the
+  # background REGION is cleared and interior navy stays part of the mark.
+  #
+  # The trimmed box is then fitted by its DIAGONAL, not its side: a square of
+  # side s only fits inside a circle of diameter s*sqrt(2), so sizing by the
+  # side would still push the corners out under a circular mask.
+  # sqrt(2) ~= 1.41421356, and 10000/14142 keeps the arithmetic integer for Bash.
   local inner=$(( $1 * SAFE_ZONE_PERCENT * 10000 / 14142 / 100 ))
-  "$IM" "$SOURCE_ICON" \
-    -alpha off -fuzz 6% -transparent "$ADAPTIVE_BACKGROUND" \
-    -trim +repage \
+  "$IM" "$TRIMMED_MARK" \
     -resize "${inner}x${inner}" \
     -background none -gravity center -extent "$1x$1" \
     -depth 8 -strip "PNG32:$2"
@@ -201,6 +230,12 @@ verify_icons() {
              "${SAFE_ZONE_PERCENT}% safe-zone circle — a round mask would clip it" >&2
         bad=1
       fi
+
+      # No transparent pixel enclosed by the mark's bounding box. Zero by
+      # construction when the background was keyed by region; non-zero the
+      # moment anyone keys it by colour again. A composed preview cannot catch
+      # this, because the background layer is the same navy as the holes.
+      python3 "$MARK_UTILS" assert-no-holes "$dir/ic_launcher_foreground.png" || bad=1
     fi
   done
 
@@ -246,6 +281,8 @@ verify_icons() {
 
 # --- 1. Launcher icons --------------------------------------------------------
 echo "==> Installing launcher icons from $SOURCE_ICON"
+
+python3 "$MARK_UTILS" trim "$SOURCE_ICON" "$TRIMMED_MARK" --tol "$MARK_TOLERANCE"
 
 for entry in "${DENSITIES[@]}"; do
   IFS=: read -r density legacy fg <<<"$entry"

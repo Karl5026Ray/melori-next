@@ -4,3 +4,6 @@
 /android/
 /node_modules/
 /www/assets/generated/
+
+# Byte-cache from scripts/mark_utils.py, imported by the icon pipeline.
+__pycache__/

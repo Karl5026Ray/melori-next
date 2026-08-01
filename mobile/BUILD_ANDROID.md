@@ -38,7 +38,9 @@ declares `minSdk 24` and the manifest merger hard-fails below it.
 2. **Android Studio** (or just the Android SDK command-line tools) with
    **platform 36** and **build-tools 36.x** installed.
 3. **Node.js 22 or newer.** The Capacitor 8 CLI refuses to run on Node 20.
-4. An **upload keystore** — see below. Generate it once and never lose it.
+4. **ImageMagick**, plus Python with **Pillow and numpy** — the icon pipeline
+   needs both (`brew install imagemagick`, `pip install pillow numpy`).
+5. An **upload keystore** — see below. Generate it once and never lose it.
 
 ---
 
@@ -180,12 +182,23 @@ workflow still builds and uploads the artifact.
 4. **Closed testing.** New personal developer accounts must run a closed test
    with **at least 12 testers opted in for 14 continuous days** before applying
    for production access. Start this early — it is usually the long pole.
-5. **Store listing:** upload **`mobile/resources/play-store-icon-512.png`** as
-   the app icon — 512×512, 32-bit PNG, exactly what Play Console requires. Then
-   the feature graphic, screenshots, privacy policy URL and data safety form.
+5. **Store listing.** The copy and graphics are version-controlled under
+   `mobile/fastlane/metadata/android/en-US/` and pushed by CI once
+   `PLAY_SERVICE_ACCOUNT_JSON` exists; see
+   [`PLAY_LAUNCH_CHECKLIST.md`](PLAY_LAUNCH_CHECKLIST.md) for the full
+   sequence and for everything that must be done by hand in Play Console.
 
-   The file is committed rather than generated into `android/`, because the
-   store listing is filled in by hand and `android/` is wiped on every sync.
+   The graphics are committed rather than generated into `android/`, because
+   `android/` is wiped on every sync:
+
+   | Asset | File |
+   |---|---|
+   | App icon, 512×512 32-bit | `resources/play-store-icon-512.png` |
+   | Feature graphic, 1024×500 | `resources/play-feature-graphic-1024x500.png` |
+   | Phone screenshots | `resources/play-screenshots/` |
+
+   Regenerate with `python3 scripts/make_feature_graphic.py` and, from the repo
+   root, `npm run screenshots:play`.
 
 ---
 
@@ -224,6 +237,36 @@ instead of showing a halo.
 The script then re-masks each generated foreground with that circle and fails
 if a single pixel of the mark falls outside it, so this cannot silently
 regress.
+
+### Why the background is keyed by region, not by colour
+
+The keying is done by `scripts/mark_utils.py`, not by ImageMagick, and the
+distinction matters. `-transparent '#061826'` clears every pixel of that
+**colour** wherever it appears in the image. The artwork's dark teal shadow
+tones fall inside any usable tolerance of the navy, so it also punches holes
+straight through the middle of the M — 853 of them at full resolution, taking
+about 10% of the mark with them.
+
+That is invisible on a composed icon, because the adaptive *background* layer
+is the same `#061826` and fills the holes back in. It stops being invisible the
+moment a launcher applies its independent parallax and zoom to the two layers,
+which Pixel and most OEM launchers do.
+
+`mark_utils.py` flood-fills inwards from the image border instead, so only the
+background **region** is cleared and navy enclosed by the artwork stays part of
+the mark. Tolerance is the sum of absolute per-channel difference, pinned at
+**12** — measured on the real asset, 6 keeps 545,337 px, 12 keeps 540,958 px,
+20 starts nibbling the mark at 531,911 px and 30 clearly damages it at
+505,633 px.
+
+`verify_icons` asserts, at every density, that the number of fully-transparent
+pixels enclosed by the mark's bounding box is **zero**. That is zero by
+construction for a region-keyed mark and non-zero the moment anyone keys by
+colour again, so the bug cannot come back quietly.
+
+This is the one step that needs Python with Pillow and numpy
+(`pip install pillow numpy`; scipy is optional and only speeds up the
+connected-component pass).
 
 ### Changing the icon
 

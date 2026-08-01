@@ -1,30 +1,32 @@
 name: Android Build & Upload (Play)
 
 # Builds the native Android app (Capacitor wrapper in mobile/) on an Ubuntu
-# runner, signs it with the upload keystore, and produces a Google Play–ready
-# .aab. Optionally publishes to the Play internal testing track.
+# runner and produces a Google Play–ready .aab. When the signing secrets are
+# present the bundle is signed with the upload keystore; when they are absent
+# the workflow still succeeds and produces an UNSIGNED bundle, so the pipeline
+# can be verified before the keystore exists.
 #
-# TRIGGER: manual only (workflow_dispatch). Version name and version code are
-# inputs rather than repo constants, mirroring the iOS workflow's
-# marketing_version/build_number approach — nothing about a release should be
-# hardcoded in the tree.
+# TRIGGERS
+#   workflow_dispatch — a real release build, with an explicit version name/code
+#   pull_request      — validation only, whenever mobile/ or this file changes
 #
-# PREREQUISITES — set these repository secrets (Settings → Secrets and
-# variables → Actions → New repository secret). See mobile/BUILD_ANDROID.md
-# for how to generate each value.
+# SIGNING SECRETS (Settings → Secrets and variables → Actions). All four must
+# be set for a signed build; if any is missing the build falls back to unsigned.
+# See mobile/BUILD_ANDROID.md for how to produce each value.
 #
-#   MELORI_KEYSTORE_BASE64      base64 of the upload keystore (.jks)
-#   MELORI_KEYSTORE_PASSWORD    keystore password
-#   MELORI_KEY_ALIAS            key alias inside the keystore
-#   MELORI_KEY_PASSWORD         key password
+#   ANDROID_KEYSTORE_BASE64     base64 of the upload keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD   keystore password
+#   ANDROID_KEY_ALIAS           key alias inside the keystore
+#   ANDROID_KEY_PASSWORD        key password
+#
+# The keystore is decoded into the runner's temp directory, never into the
+# workspace, so it cannot be picked up by an artifact upload. It is deleted
+# again at the end of the job.
 #
 # OPTIONAL — only needed once the Play account is verified and an app record
 # for org.melorimusic.app exists:
 #
 #   PLAY_SERVICE_ACCOUNT_JSON   Google Play service account JSON
-#
-# The publish step is skipped automatically when that secret is absent, so the
-# workflow is useful for producing artifacts long before Play is set up.
 #
 # APPLICATION ID: org.melorimusic.app
 
@@ -32,17 +34,21 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: "Version name / versionName shown in Play (e.g. 1.0.1)"
-        required: true
-        default: "1.0.1"
+        description: "Version name shown in Play (e.g. 1.0.1). Blank = 1.0.<run number>."
+        required: false
+        default: ""
       version_code:
-        description: "Version code — integer, must be higher than the last uploaded build"
-        required: true
-        default: "1"
+        description: "Version code — integer, must be higher than the last upload. Blank = the run number."
+        required: false
+        default: ""
       publish_to_play:
         description: "Also upload to the Play internal testing track (requires PLAY_SERVICE_ACCOUNT_JSON). Type 'yes' to enable."
         required: false
         default: "no"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-build.yml"
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -78,6 +84,16 @@ jobs:
           # Capacitor 8's CLI requires Node >=22 and refuses to run on 20.
           node-version: "22"
 
+      - name: Install icon toolchain
+        run: |
+          # scripts/configure-android.sh renders the launcher icons with
+          # ImageMagick and keys the adaptive foreground with Pillow/numpy, and
+          # fails loudly rather than shipping placeholder artwork if either is
+          # missing. Neither is guaranteed on the runner image.
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          python3 -m pip install --quiet --break-system-packages pillow numpy
+
       - name: Install JS deps (Capacitor)
         run: npm install
 
@@ -105,64 +121,141 @@ jobs:
           echo "--- variables.gradle ---"
           cat android/variables.gradle
 
-      - name: Decode upload keystore
+      - name: Resolve version name & code
+        id: version
         env:
-          MELORI_KEYSTORE_BASE64: ${{ secrets.MELORI_KEYSTORE_BASE64 }}
+          # Play rejects an .aab whose versionCode has been uploaded before, so
+          # the fallback is the run number: monotonically increasing, never
+          # reused, and unlike a repo constant it cannot go stale.
+          INPUT_VERSION_NAME: ${{ github.event.inputs.version_name }}
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
         run: |
-          if [ -z "$MELORI_KEYSTORE_BASE64" ]; then
-            echo "::error::MELORI_KEYSTORE_BASE64 is not set. A Play release must be signed." \
-                 "Generate an upload keystore (see mobile/BUILD_ANDROID.md) and add the secret."
+          VERSION_CODE="${INPUT_VERSION_CODE:-$GITHUB_RUN_NUMBER}"
+          VERSION_NAME="${INPUT_VERSION_NAME:-1.0.$GITHUB_RUN_NUMBER}"
+          case "$VERSION_CODE" in
+            ''|*[!0-9]*)
+              echo "::error::version_code must be a positive integer, got '$VERSION_CODE'"
+              exit 1 ;;
+          esac
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "versionName=$VERSION_NAME versionCode=$VERSION_CODE"
+
+      - name: Check signing credentials
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Signing is gated rather than required: the keystore may not exist
+          # yet, and a green unsigned run still proves the rest of the pipeline.
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD \
+                      ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            # Only the emptiness of each secret is tested; no value is printed.
+            eval "value=\${$name}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "All four signing secrets present — this build will be signed."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Unsigned build — missing secret(s):$missing." \
+                 "The .aab will be produced but cannot be uploaded to Play."
+          fi
+
+      - name: Decode upload keystore
+        if: ${{ steps.signing.outputs.enabled == 'true' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # RUNNER_TEMP, not the workspace: nothing here can be swept up by an
+          # artifact upload or committed by a later step.
+          KEYSTORE="$RUNNER_TEMP/upload-keystore.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          # Sanity check that we decoded a real keystore, not truncated base64.
+          # The password goes in via -storepass:env so it never appears in the
+          # process arguments.
+          if ! keytool -list -keystore "$KEYSTORE" \
+                 -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null 2>&1; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a readable keystore," \
+                 "or ANDROID_KEYSTORE_PASSWORD is wrong. Re-encode the .jks with" \
+                 "[Convert]::ToBase64String([IO.File]::ReadAllBytes('...')) — certutil" \
+                 "output includes headers and line breaks and will not work."
             exit 1
           fi
-          printf '%s' "$MELORI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/melori-upload.jks"
-          # Sanity check that we decoded a real keystore, not truncated base64.
-          keytool -list -keystore "$RUNNER_TEMP/melori-upload.jks" \
-            -storepass "${{ secrets.MELORI_KEYSTORE_PASSWORD }}" >/dev/null
           echo "Keystore decoded OK"
 
-      - name: Build signed AAB
+      - name: Build release AAB
         env:
-          MELORI_KEYSTORE_PATH: ${{ runner.temp }}/melori-upload.jks
-          MELORI_KEYSTORE_PASSWORD: ${{ secrets.MELORI_KEYSTORE_PASSWORD }}
-          MELORI_KEY_ALIAS: ${{ secrets.MELORI_KEY_ALIAS }}
-          MELORI_KEY_PASSWORD: ${{ secrets.MELORI_KEY_PASSWORD }}
+          # Empty when signing is gated off; the Gradle config treats an empty
+          # store path as "no signing config" and emits an unsigned bundle.
+          ANDROID_KEYSTORE_PATH: ${{ steps.signing.outputs.enabled == 'true' && format('{0}/upload-keystore.jks', runner.temp) || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
           ./gradlew bundleRelease \
-            -PmeloriVersionName="${{ github.event.inputs.version_name }}" \
-            -PmeloriVersionCode="${{ github.event.inputs.version_code }}"
+            -PmeloriVersionName="${{ steps.version.outputs.name }}" \
+            -PmeloriVersionCode="${{ steps.version.outputs.code }}"
 
-      - name: Verify the bundle is signed
+      - name: Verify the bundle
         run: |
           AAB=android/app/build/outputs/bundle/release/app-release.aab
           test -f "$AAB" || { echo "::error::no .aab produced at $AAB"; exit 1; }
-          if ! unzip -l "$AAB" | grep -qE 'META-INF/.*\.(RSA|EC|DSA)'; then
-            echo "::error::$AAB is not signed — check the MELORI_* signing secrets."
+          if unzip -l "$AAB" | grep -qE 'META-INF/.*\.(RSA|EC|DSA)'; then
+            SIGNED=yes
+          else
+            SIGNED=no
+          fi
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ] && [ "$SIGNED" = "no" ]; then
+            echo "::error::signing secrets were present but $AAB came out unsigned."
             exit 1
           fi
-          echo "Signed bundle: $AAB"
+          if [ "$SIGNED" = "yes" ]; then
+            echo "Signed bundle ready for Play: $AAB"
+          else
+            echo "::notice::Unsigned bundle at $AAB — add the ANDROID_* signing" \
+                 "secrets to produce a Play-uploadable build."
+          fi
 
       - name: Upload AAB artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          # Scoped to the bundle output directory only. The keystore lives in
+          # RUNNER_TEMP and is outside the workspace, so it cannot be matched.
           name: melori-android-aab
           path: mobile/android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload-keystore.jks"
+
       # --- Optional Play publish -------------------------------------------
-      # Skipped unless explicitly requested AND the service account secret
-      # exists. The Play developer account is not yet verified and there is no
-      # app record for org.melorimusic.app, so this is a no-op today.
+      # Skipped unless explicitly requested on a manual run AND both the signing
+      # secrets and the service account secret exist. The Play developer account
+      # is not yet verified and there is no app record for org.melorimusic.app,
+      # so this is a no-op today.
       - name: Check Play credentials
         id: play
-        if: ${{ github.event.inputs.publish_to_play == 'yes' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_play == 'yes' }}
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
-          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+          if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::publish_to_play was requested but the build is unsigned — skipping upload."
+          elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"

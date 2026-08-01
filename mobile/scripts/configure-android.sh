@@ -446,7 +446,7 @@ PY
 # --- 4. Release signing config ------------------------------------------------
 # android/app/build.gradle is generated, so the signing config is injected here
 # rather than committed. Credentials come from android/key.properties (local,
-# git-ignored) or from MELORI_* env vars (CI). No secret is ever written by
+# git-ignored) or from ANDROID_* env vars (CI). No secret is ever written by
 # this script -- it only wires up the lookup.
 echo "==> Wiring release signing config"
 [ -f "$APP_GRADLE" ] || die "$APP_GRADLE not found"
@@ -463,7 +463,7 @@ text = open(path).read()
 signing = '''
     // melori-signing-config (injected by scripts/configure-android.sh)
     // Credentials come from android/key.properties (local, git-ignored) or
-    // MELORI_* env vars (CI). Release builds are unsigned when absent, so a
+    // ANDROID_* env vars (CI). Release builds are unsigned when absent, so a
     // debug/verification build still works without the keystore.
     signingConfigs {
         release {
@@ -472,12 +472,14 @@ signing = '''
             if (keystorePropertiesFile.exists()) {
                 keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
             }
-            def resolvedStoreFile = keystoreProperties.getProperty("storeFile") ?: System.getenv("MELORI_KEYSTORE_PATH")
+            // An empty ANDROID_KEYSTORE_PATH is how CI signals "no keystore
+            // this run"; Groovy truthiness treats it the same as unset.
+            def resolvedStoreFile = keystoreProperties.getProperty("storeFile") ?: System.getenv("ANDROID_KEYSTORE_PATH")
             if (resolvedStoreFile) {
                 storeFile file(resolvedStoreFile)
-                storePassword keystoreProperties.getProperty("storePassword") ?: System.getenv("MELORI_KEYSTORE_PASSWORD")
-                keyAlias keystoreProperties.getProperty("keyAlias") ?: System.getenv("MELORI_KEY_ALIAS")
-                keyPassword keystoreProperties.getProperty("keyPassword") ?: System.getenv("MELORI_KEY_PASSWORD")
+                storePassword keystoreProperties.getProperty("storePassword") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias keystoreProperties.getProperty("keyAlias") ?: System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword keystoreProperties.getProperty("keyPassword") ?: System.getenv("ANDROID_KEY_PASSWORD")
             }
         }
     }

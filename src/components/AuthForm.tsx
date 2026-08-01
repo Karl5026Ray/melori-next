@@ -164,6 +164,13 @@ function AuthInner() {
           </button>
         </form>
 
+        {/* No "keep me signed in" checkbox: sessions are persistent by default
+            and signing out is local to this device, so there is nothing to opt
+            into. Saying so is the honest version of the control. */}
+        <p className="text-center text-xs text-melori-muted mt-4">
+          You&apos;ll stay signed in on this device until you sign out.
+        </p>
+
         <div className="mt-4 text-center">
           <Link
             href="/forgot-password"

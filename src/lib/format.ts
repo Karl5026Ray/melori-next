@@ -11,6 +11,20 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Compact play counts: exact with separators below 10k ("1,234"), abbreviated
+// above it ("12.3K", "1.2M") so a big number can't squeeze a track row's title.
+export function formatCount(count: number | null | undefined): string {
+  const n =
+    typeof count === "number" && Number.isFinite(count)
+      ? Math.max(0, Math.floor(count))
+      : 0;
+  if (n < 10_000) return n.toLocaleString("en-US");
+  const [value, suffix] =
+    n < 1_000_000 ? [n / 1_000, "K"] : [n / 1_000_000, "M"];
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}${suffix}`;
+}
+
 // Like formatDuration but always returns a clock value (e.g. "0:00") — used by
 // the player's current/total time readouts.
 export function formatTime(seconds: number | null | undefined): string {

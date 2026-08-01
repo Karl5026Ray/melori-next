@@ -26,30 +26,42 @@ if ! command -v sips >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -f "$SOURCE_ICON" ]; then
-  echo "error: source icon missing at $SOURCE_ICON" >&2
-  exit 1
-fi
+# Hard guard on the artwork itself: present, a real PNG, exactly 1024x1024, and
+# matching the committed checksum. Shared with configure-android.sh so a
+# placeholder fails both platforms identically instead of slipping through one.
+# shellcheck source=lib/icon-source.sh
+. "$MOBILE_DIR/scripts/lib/icon-source.sh"
+melori_assert_icon_source "$SOURCE_ICON" || exit 1
 
 if [ ! -d "$ICON_SET" ]; then
   echo "error: $ICON_SET not found. Run 'npx cap add ios && npx cap sync ios' first." >&2
   exit 1
 fi
 
-# --- Validate the source against App Store requirements -----------------------
-# Apple rejects marketing icons that are not exactly 1024x1024 or that contain
-# an alpha channel / transparency.
-width="$(sips -g pixelWidth "$SOURCE_ICON" | awk '/pixelWidth/{print $2}')"
-height="$(sips -g pixelHeight "$SOURCE_ICON" | awk '/pixelHeight/{print $2}')"
-has_alpha="$(sips -g hasAlpha "$SOURCE_ICON" | awk '/hasAlpha/{print $2}')"
-
-if [ "$width" != "1024" ] || [ "$height" != "1024" ]; then
-  echo "error: source icon must be 1024x1024 (found ${width}x${height})." >&2
-  exit 1
-fi
-if [ "$has_alpha" = "yes" ]; then
-  echo "error: source icon has an alpha channel. App Store icons must be opaque." >&2
-  exit 1
+# --- Flatten any alpha out of the source before rendering ---------------------
+# Apple rejects App Store icons containing an alpha channel, and every slot is
+# rendered from this one file, so alpha is removed here rather than being
+# passed through and caught slot-by-slot at the end. The shared source is a PNG
+# and PNGs can carry alpha; today's is opaque RGB, so this is normally a no-op.
+RENDER_SOURCE="$SOURCE_ICON"
+if [ "$(sips -g hasAlpha "$SOURCE_ICON" | awk '/hasAlpha/{print $2}')" = "yes" ]; then
+  if command -v magick >/dev/null 2>&1; then
+    IM=magick
+  elif command -v convert >/dev/null 2>&1; then
+    IM=convert
+  else
+    echo "error: $SOURCE_ICON has an alpha channel and ImageMagick is not" \
+         "installed to flatten it. 'sips' cannot remove alpha. Install" \
+         "ImageMagick ('brew install imagemagick') or re-export the source" \
+         "as opaque RGB." >&2
+    exit 1
+  fi
+  TMP_DIR="$(mktemp -d)"
+  trap 'rm -rf "$TMP_DIR"' EXIT
+  RENDER_SOURCE="$TMP_DIR/icon-opaque.png"
+  echo "note: source has an alpha channel; flattening onto opaque black for iOS"
+  "$IM" "$SOURCE_ICON" -background black -alpha remove -alpha off \
+    -strip "PNG24:$RENDER_SOURCE"
 fi
 
 echo "Installing app icon from $SOURCE_ICON"
@@ -59,7 +71,7 @@ echo "  -> $ICON_SET"
 rm -f "$ICON_SET"/*.png
 
 emit() { # emit <pixel-size> <filename>
-  sips -s format png -z "$1" "$1" "$SOURCE_ICON" --out "$ICON_SET/$2" >/dev/null
+  sips -s format png -z "$1" "$1" "$RENDER_SOURCE" --out "$ICON_SET/$2" >/dev/null
 }
 
 # iPhone
@@ -108,13 +120,46 @@ cat > "$ICON_SET/Contents.json" <<'JSON'
 JSON
 
 # --- Verify every declared slot exists and is opaque --------------------------
-missing=0
+failures=0
+
+# Every filename Contents.json references must exist on disk. A missing
+# AppIcon-1024.png is precisely the bug that shipped a placeholder to App Store
+# Connect, so it is checked by name rather than inferred from a glob.
+for f in $(awk -F'"' '/"filename"/{print $(NF-1)}' "$ICON_SET/Contents.json" | sort -u); do
+  if [ ! -s "$ICON_SET/$f" ]; then
+    echo "error: Contents.json references $f but it is missing or empty." >&2
+    failures=1
+  fi
+done
+
 for f in "$ICON_SET"/*.png; do
   if [ "$(sips -g hasAlpha "$f" | awk '/hasAlpha/{print $2}')" = "yes" ]; then
     echo "error: generated $f has an alpha channel." >&2
-    missing=1
+    failures=1
   fi
 done
-[ "$missing" -eq 0 ] || exit 1
+
+# The App Store marketing slot gets its own explicit assertion: 1024x1024 and
+# fully opaque, the two things Apple rejects the upload for.
+marketing="$ICON_SET/AppIcon-1024.png"
+if [ ! -s "$marketing" ]; then
+  echo "error: $marketing is missing or empty — this is the App Store marketing icon." >&2
+  failures=1
+else
+  m_width="$(sips -g pixelWidth "$marketing" | awk '/pixelWidth/{print $2}')"
+  m_height="$(sips -g pixelHeight "$marketing" | awk '/pixelHeight/{print $2}')"
+  m_alpha="$(sips -g hasAlpha "$marketing" | awk '/hasAlpha/{print $2}')"
+  if [ "$m_width" != "1024" ] || [ "$m_height" != "1024" ]; then
+    echo "error: AppIcon-1024.png is ${m_width}x${m_height}, expected 1024x1024." >&2
+    failures=1
+  fi
+  if [ "$m_alpha" = "yes" ]; then
+    echo "error: AppIcon-1024.png has an alpha channel; App Store icons must be opaque." >&2
+    failures=1
+  fi
+  echo "AppIcon-1024.png: ${m_width}x${m_height}, hasAlpha=${m_alpha}"
+fi
+
+[ "$failures" -eq 0 ] || exit 1
 
 echo "App icon installed: $(ls -1 "$ICON_SET"/*.png | wc -l | tr -d ' ') PNG slots + Contents.json"

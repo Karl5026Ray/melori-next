@@ -52,6 +52,7 @@ export interface Track {
   preview_url: string | null;
   price: number | null;
   is_published: boolean;
+  play_count: number;
   created_at: string;
   vps_track_id: number | null;
 }

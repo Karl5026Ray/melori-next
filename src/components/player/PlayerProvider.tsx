@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { authHeaders } from "@/lib/authClient";
+import { supabase } from "@/lib/supabase";
 
 // A PlayerTrack refers to either a row in the legacy `tracks` table (integer
 // PK) or a row in `studio_tracks` (UUID PK). We keep `id` typed as the union
@@ -37,6 +38,18 @@ export interface PlayerTrack {
 // string happens to be "5".
 function trackKey(t: { id: number | string; sourceType?: TrackSource }): string {
   return `${t.sourceType ?? "legacy"}:${t.id}`;
+}
+
+// Seconds of audible listening before a play is counted.
+const PLAY_COUNT_SECONDS = 20;
+
+// Recover the legacy `tracks.id` from a trackKey, or null when the key belongs
+// to a studio track (uuid PK in a different table, no play_count column).
+function legacyIdFromKey(key: string): number | null {
+  const sep = key.indexOf(":");
+  if (key.slice(0, sep) !== "legacy") return null;
+  const id = Number(key.slice(sep + 1));
+  return Number.isInteger(id) ? id : null;
 }
 
 // Resolve the correct signed-URL endpoint for a track based on its source.
@@ -97,6 +110,10 @@ interface PlayerContextValue {
   // and unmutes on the visitor's first interaction.
   muted: boolean;
   error: string | null;
+  // Live play totals returned by the increment RPC, keyed by legacy track id.
+  // A track missing from here just hasn't been counted in this session — the
+  // UI falls back to the value it fetched from the server.
+  playCounts: Record<number, number>;
   hasNext: boolean;
   hasPrev: boolean;
   // True while the current track is a free 30s preview (not full access).
@@ -230,6 +247,10 @@ export default function PlayerProvider({
   const realSrcRef = useRef<string | null>(null);
   // True once the <audio> element's event listeners have been wired.
   const wiredRef = useRef(false);
+  // trackKeys already credited with a play. Cleared by loadAndPlay, i.e. on
+  // every genuine (re)load of a track, so a fresh listen counts again while
+  // seeking, pausing/resuming and re-renders within one listen do not.
+  const countedRef = useRef<Set<string>>(new Set());
 
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -244,6 +265,7 @@ export default function PlayerProvider({
   // calling audio.play() (state updates lag a render behind).
   const mutedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [playCounts, setPlayCounts] = useState<Record<number, number>>({});
   const [isSample, setIsSample] = useState(false);
   const [sampleEnded, setSampleEnded] = useState(false);
   const [radioMode, setRadioMode] = useState(false);
@@ -260,6 +282,31 @@ export default function PlayerProvider({
   useEffect(() => {
     queueLengthRef.current = queue.length;
   }, [queue]);
+
+  // Credit one audible play to a legacy track and publish the new total so the
+  // number on screen ticks without a refetch. Fire-and-forget by design: the
+  // count is a nice-to-have, so a failed RPC must never interrupt playback.
+  const reportPlay = useCallback(async (trackId: number) => {
+    try {
+      const { data, error: rpcError } = await supabase.rpc(
+        "increment_track_play",
+        { p_track_id: trackId },
+      );
+      if (rpcError) throw rpcError;
+      // bigint can arrive as a string depending on the serializer.
+      const total = Number(data);
+      // 0 means the function declined (unpublished or moderated track) — don't
+      // paint that over a real total already on screen.
+      if (!Number.isFinite(total) || total <= 0) return;
+      setPlayCounts((prev) =>
+        prev[trackId] === total ? prev : { ...prev, [trackId]: total },
+      );
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[player] increment_track_play failed:", err);
+      }
+    }
+  }, []);
 
   // --- single shared <audio> element + event wiring ---
   // Lazily create the element and wire its listeners ON FIRST ACCESS rather than
@@ -289,8 +336,41 @@ export default function PlayerProvider({
     const isRealTrack = () =>
       realSrcRef.current !== null && audio.src === realSrcRef.current;
 
+    // Credit a play once the listener has actually HEARD enough of the track.
+    // Deliberately driven by progress rather than by the play click, and
+    // guarded so nothing but real listening reaches the database:
+    //   * the silent iOS unlock clip is a blob: URL and is never a real track;
+    //   * muted / zero-volume playback (the homepage hero autoplays muted)
+    //     isn't listening, so it must not inflate a count;
+    //   * countedRef makes seeking, pause/resume and re-renders idempotent;
+    //   * only legacy `tracks` rows have a play_count column to increment.
+    const maybeCountPlay = () => {
+      const key = loadedIdRef.current;
+      if (!key || countedRef.current.has(key)) return;
+      if (audio.src.startsWith("blob:")) return;
+      if (audio.muted || audio.volume === 0) return;
+      const trackId = legacyIdFromKey(key);
+      if (trackId === null) return;
+
+      // Measure from the start of the AUDIBLE window: a preview that opens at
+      // 60s would otherwise clear a 20s bar the instant it loads.
+      const start = sampleStartRef.current || 0;
+      const end =
+        sampleLimitRef.current ??
+        (Number.isFinite(audio.duration) ? audio.duration : 0);
+      const span = end > start ? end - start : 0;
+      // Short tracks can never reach 20s, so they count at the halfway mark.
+      const threshold =
+        span > 0 && span < PLAY_COUNT_SECONDS ? span / 2 : PLAY_COUNT_SECONDS;
+      if (audio.currentTime - start < threshold) return;
+
+      countedRef.current.add(key);
+      void reportPlay(trackId);
+    };
+
     const onTime = () => {
       if (!isRealTrack()) return;
+      maybeCountPlay();
       // Hard-cap free previews at the window end: a free listener must not be
       // able to hear past previewEnd even though the audio element holds the
       // full file. Server-side gating serves a dedicated clip when one exists.
@@ -387,7 +467,7 @@ export default function PlayerProvider({
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
     return audio;
-  }, []);
+  }, [reportPlay]);
 
   // Eagerly create the element on mount too, so a restored track and the volume
   // sync effects have something to talk to even before any user interaction.
@@ -521,6 +601,9 @@ export default function PlayerProvider({
       setError(null);
       setIsLoading(true);
       setSampleEnded(false);
+      // A genuine load starts a new listen, so the previous one's play-count
+      // bookkeeping is spent — replaying a track later counts again.
+      countedRef.current.clear();
       try {
         const res = await fetch(streamUrlFor(track), {
           cache: "no-store",
@@ -995,6 +1078,7 @@ export default function PlayerProvider({
         volume,
         muted,
         error,
+        playCounts,
         isSample,
         sampleEnded,
         radioMode,

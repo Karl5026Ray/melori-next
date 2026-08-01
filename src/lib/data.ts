@@ -266,6 +266,9 @@ export interface RadioTrack {
   album: string | null;
   genre: string | null;
   durationSeconds: number | null;
+  // Lifetime audible plays. Legacy tracks only — `studio_tracks` has no
+  // equivalent column yet, so those report null and render no badge.
+  playCount: number | null;
   // Owning artist's profile id, when known. Used to match against the
   // listener's follow graph for the "For You" station.
   ownerProfileId?: string | null;
@@ -282,7 +285,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
   const legacyPromise = supabase
     .from("tracks")
     .select(
-      "id, title, duration_seconds, is_published, moderation_status, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
+      "id, title, duration_seconds, is_published, moderation_status, play_count, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
     )
     .eq("is_published", true)
     .or("moderation_status.is.null,moderation_status.eq.clean");
@@ -318,6 +321,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
         album: rel?.title ?? null,
         genre: genre?.name ?? null,
         ownerProfileId: artist?.profile_id ?? null,
+        playCount: typeof row.play_count === "number" ? row.play_count : 0,
         durationSeconds:
           typeof row.duration_seconds === "number"
             ? row.duration_seconds
@@ -339,6 +343,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
         album: row.album ?? null,
         genre: row.genre ?? null,
         ownerProfileId: row.profile_id ?? null,
+        playCount: null,
         durationSeconds:
           typeof row.duration === "number" ? row.duration : null,
       });
@@ -407,6 +412,7 @@ export async function getRadioTracksByIds(refs: {
         album: rel?.title ?? null,
         genre: genre?.name ?? null,
         ownerProfileId: artist?.profile_id ?? null,
+        playCount: typeof row.play_count === "number" ? row.play_count : 0,
         durationSeconds:
           typeof row.duration_seconds === "number"
             ? row.duration_seconds
@@ -428,6 +434,7 @@ export async function getRadioTracksByIds(refs: {
         album: row.album ?? null,
         genre: row.genre ?? null,
         ownerProfileId: row.profile_id ?? null,
+        playCount: null,
         durationSeconds:
           typeof row.duration === "number" ? row.duration : null,
       });
@@ -640,7 +647,7 @@ export async function getReleaseBySlug(slug: string): Promise<{
   const { data: tracks, error: tracksError } = await supabase
     .from("tracks")
     .select(
-      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, created_at, vps_track_id",
+      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, play_count, created_at, vps_track_id",
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)

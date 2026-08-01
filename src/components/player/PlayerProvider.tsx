@@ -30,6 +30,9 @@ export interface PlayerTrack {
   // publish an album name.
   album?: string | null;
   score?: number;
+  // Server-fetched lifetime play total. Legacy tracks only — studio uploads
+  // have no play_count column, so they leave it undefined and render no count.
+  playCount?: number | null;
 }
 
 // Stable string key used for internal equality checks (e.g. "is this track

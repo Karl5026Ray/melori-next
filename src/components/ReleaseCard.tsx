@@ -1,5 +1,6 @@
 import Link from "next/link";
 import CoverImage from "@/components/CoverImage";
+import PlayCount from "@/components/PlayCount";
 import { formatPrice } from "@/lib/format";
 import type { ReleaseListItem } from "@/lib/data";
 
@@ -23,12 +24,18 @@ export default function ReleaseCard({ release }: { release: ReleaseListItem }) {
             {release.artist.name}
           </p>
         )}
-        <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="uppercase tracking-wide text-text-secondary">
+        {/* Plays join the existing stats line rather than taking a row of their
+            own, so the card keeps its height when a release's first play lands
+            mid-listen. */}
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <span className="truncate uppercase tracking-wide text-text-secondary">
             {release.release_type}
           </span>
-          <span className="font-medium text-brand-primary">
-            {formatPrice(release.price)}
+          <span className="flex shrink-0 items-center gap-2">
+            <PlayCount baseline={release.trackPlayCounts ?? {}} />
+            <span className="font-medium text-brand-primary">
+              {formatPrice(release.price)}
+            </span>
           </span>
         </div>
         {/* Every release streams free (30s previews for everyone); the price is

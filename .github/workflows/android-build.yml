@@ -154,9 +154,9 @@ jobs:
           missing=""
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD \
                       ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            # Only the emptiness of each secret is tested; no value is printed.
-            eval "value=\${$name}"
-            [ -n "$value" ] || missing="$missing $name"
+            # Indirect expansion: only the emptiness of each secret is tested,
+            # no value is ever expanded into the log or a command line.
+            [ -n "${!name:-}" ] || missing="$missing $name"
           done
           if [ -z "$missing" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"

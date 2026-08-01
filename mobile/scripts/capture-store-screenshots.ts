@@ -192,10 +192,15 @@ async function main() {
     if (stale.endsWith(".png")) await unlink(path.join(OUT_DIR, stale));
   }
 
+  // playwright.config.ts pairs this descriptor with `defaultBrowserType:
+  // "chromium"` to steer the runner's project resolution. That key belongs to
+  // the descriptor, not to BrowserContextOptions, and is redundant here since
+  // the browser we launched is already chromium -- so drop it on the way in.
+  const { defaultBrowserType, ...iphone13 } = devices["iPhone 13"];
+
   const browser = await chromium.launch();
   const context = await browser.newContext({
-    ...devices["iPhone 13"],
-    defaultBrowserType: "chromium",
+    ...iphone13,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
     reducedMotion: "reduce",
     extraHTTPHeaders: BYPASS

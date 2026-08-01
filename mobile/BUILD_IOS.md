@@ -9,7 +9,7 @@ You do this on your **Mac**. No Swift/iOS coding required. Budget ~45 min the fi
 ## What you need (one-time)
 
 1. **Xcode** — free from the Mac App Store. Search "Xcode", install (~7 GB, slow — start this first).
-2. **Node.js** — if `node -v` in Terminal fails, install from [nodejs.org](https://nodejs.org) (LTS).
+2. **Node.js 22 or newer** — check with `node -v`. The Capacitor 8 CLI refuses to run on Node 20. Install from [nodejs.org](https://nodejs.org) (LTS).
 3. **CocoaPods** — in Terminal: `sudo gem install cocoapods` (Capacitor uses it).
 4. Your **Apple ID** that owns the developer account (karlrayphotography@gmail.com), signed into Xcode.
 
@@ -38,16 +38,21 @@ npm install
 
 ### 3. Add the native iOS project
 ```bash
-npx cap add ios
+npm run add:ios     # = npx cap add ios --packagemanager CocoaPods
 ```
 This creates the `ios/` folder (a real Xcode project). It's git-ignored on purpose — it's generated, not committed.
+
+**Use `npm run add:ios`, not a bare `npx cap add ios`.** Capacitor 8 defaults
+the iOS template to Swift Package Manager, which generates a `CapApp-SPM`
+package and **no `Podfile` / `App.xcworkspace`**. Fastlane and CI build the
+workspace, so a bare `cap add ios` produces a project they can't archive.
 
 ### 4. Sync config into the native project
 ```bash
 npx cap sync ios
 ```
-This also installs the app icon (`npm run sync` chains `icon:ios`). If you ran
-`npx cap sync ios` directly, install the icon yourself:
+This also installs the app icon (`npm run sync` chains the post-sync steps). If
+you ran `npx cap sync ios` directly, install the icon yourself:
 ```bash
 npm run icon:ios
 ```
@@ -115,7 +120,8 @@ The wrapper already declares standard HTTPS-only encryption (exempt). If Xcode/A
 - **App Store review risk (thin-wrapper rule):** Apple sometimes rejects apps that are "just a website." Melori is a rich PWA with streaming, accounts, community, live audio, and purchases, which satisfies the "app-like" bar, but if reviewers push back, the reply is: it's a full-featured streaming/community platform, not a repackaged marketing page. Having native status-bar handling + offline fallback (both included here) helps.
 - **In-app purchases:** the app loads your Stripe/web checkout. Under Apple's rules, digital-goods purchases inside the app normally require Apple IAP. Safest v1 posture: the iOS app is stream + discover + community; if a reviewer flags the buy buttons, either (a) apply for the **Reader App** entitlement, or (b) hide purchase buttons on iOS via a user-agent check. Ask me and I'll add the iOS-detection toggle to the web app.
 - **Push notifications, deep links:** not included in v1. Can be added later.
-- **Android:** the same wrapper supports Android — run `npx cap add android` and build in Android Studio when you tackle Google Play.
+- **Minimum iOS version:** Capacitor 8 raises the deployment target to **iOS 15.0** (Capacitor 6 was 13.0). Devices on iOS 13/14 can no longer install new builds.
+- **Android:** now first-class — see **BUILD_ANDROID.md** and `.github/workflows/android-build.yml`.
 
 ---
 

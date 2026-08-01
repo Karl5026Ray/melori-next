@@ -22,5 +22,11 @@
     "contentInset": "always",
     "backgroundColor": "#111111",
     "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "backgroundColor": "#111111",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
   }
 }

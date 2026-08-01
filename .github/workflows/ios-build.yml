@@ -82,7 +82,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Capacitor 8's CLI requires Node >=22 and refuses to run on 20.
+          node-version: "22"
 
       - name: Install JS deps (Capacitor)
         working-directory: mobile
@@ -92,7 +93,12 @@ jobs:
         working-directory: mobile
         run: |
           # Capacitor config lives in mobile/, so add/sync must run here.
-          npx cap add ios || echo "ios project already present"
+          #
+          # --packagemanager CocoaPods is REQUIRED. Capacitor 8 defaults the iOS
+          # template to Swift Package Manager, which generates CapApp-SPM and
+          # NO Podfile / App.xcworkspace. Fastlane below builds the workspace,
+          # so without this flag `pod install` and the archive both fail.
+          npx cap add ios --packagemanager CocoaPods || echo "ios project already present"
           npx cap sync ios
           # Bake the real Melori app icon into the freshly generated project.
           # `cap add/sync` restores the Capacitor template's placeholder AppIcon,

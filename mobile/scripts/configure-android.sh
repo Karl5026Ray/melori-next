@@ -16,7 +16,8 @@
 #   2. The real Melori launcher icons at every density, plus an adaptive icon
 #      whose foreground is the M mark alone, sized to survive OEM masks
 #   3. The runtime permissions LiveKit audio/video and media playback need
-#   4. The autoVerify App Links intent-filter for https://melorimusic.org
+#   4. The autoVerify App Links intent-filter for https://melorimusic.org, plus
+#      the org.melorimusic.app:// intent-filter the OAuth callback comes back on
 #   5. A release signing config driven by android/key.properties or env vars
 #
 # Usage:
@@ -57,6 +58,14 @@ COMPILE_SDK=36
 TARGET_SDK=36
 
 APP_HOST="melorimusic.org"
+
+# Custom URL scheme for the OAuth callback (src/lib/nativeAuth.ts). Sign-in runs
+# in a Chrome Custom Tab because Google rejects OAuth in a WebView, and this
+# scheme is how the provider's redirect gets back into the app. It is NOT an
+# App Link: verified https links need /.well-known/assetlinks.json signed with
+# the release keystore's SHA-256, which does not exist yet — the autoVerify
+# filter below is therefore inert today, while this one works immediately.
+AUTH_SCHEME="org.melorimusic.app"
 
 # The exact flat navy the artwork's own background is filled with. The adaptive
 # background layer must be this colour and nothing else: the foreground layer is
@@ -377,11 +386,11 @@ grep -E "minSdkVersion|compileSdkVersion|targetSdkVersion" "$VARIABLES_GRADLE" |
 echo "==> Patching AndroidManifest.xml"
 [ -f "$MANIFEST" ] || die "$MANIFEST not found"
 
-python3 - "$MANIFEST" "$APP_HOST" "${PERMISSIONS[@]}" <<'PY'
+python3 - "$MANIFEST" "$APP_HOST" "$AUTH_SCHEME" "${PERMISSIONS[@]}" <<'PY'
 import sys
 
-path, host = sys.argv[1], sys.argv[2]
-permissions = sys.argv[3:]
+path, host, auth_scheme = sys.argv[1], sys.argv[2], sys.argv[3]
+permissions = sys.argv[4:]
 text = open(path).read()
 
 missing = [p for p in permissions if f'android:name="{p}"' not in text]
@@ -391,9 +400,23 @@ if missing:
     )
     text = text.replace("</manifest>", f"{block}\n</manifest>", 1)
 
+marker = """                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+"""
+
+
+def add_intent_filter(text, intent_filter):
+    if marker not in text:
+        raise SystemExit(
+            "error: LAUNCHER intent-filter not found in manifest; "
+            "the Capacitor template changed and this script needs updating"
+        )
+    return text.replace(marker, marker + intent_filter, 1)
+
+
 # App Links: verified https deep links so melorimusic.org URLs open in the app.
 if "android.intent.action.VIEW" not in text:
-    intent_filter = f"""
+    text = add_intent_filter(text, f"""
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -401,16 +424,20 @@ if "android.intent.action.VIEW" not in text:
                 <data android:scheme="https" android:host="{host}" />
                 <data android:scheme="https" android:host="www.{host}" />
             </intent-filter>
-"""
-    marker = """                <category android:name="android.intent.category.LAUNCHER" />
+""")
+
+# Custom scheme: how the OAuth callback re-enters the app after sign-in ran in
+# a Custom Tab. Unlike the App Links filter above this needs no server-side
+# verification, so it works without assetlinks.json.
+if f'android:scheme="{auth_scheme}"' not in text:
+    text = add_intent_filter(text, f"""
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="{auth_scheme}" android:host="auth" />
             </intent-filter>
-"""
-    if marker not in text:
-        raise SystemExit(
-            "error: LAUNCHER intent-filter not found in manifest; "
-            "the Capacitor template changed and this script needs updating"
-        )
-    text = text.replace(marker, marker + intent_filter, 1)
+""")
 
 open(path, "w").write(text)
 print(f"    permissions added: {len(missing)} (total {len(permissions)})")
@@ -503,6 +530,7 @@ for perm in "${PERMISSIONS[@]}"; do
 done
 
 grep -q 'android:autoVerify="true"' "$MANIFEST" || { echo "error: App Links intent-filter missing" >&2; failures=1; }
+grep -q "android:scheme=\"$AUTH_SCHEME\"" "$MANIFEST" || { echo "error: OAuth callback scheme $AUTH_SCHEME missing from manifest" >&2; failures=1; }
 grep -q "$APP_HOST" "$MANIFEST" || { echo "error: manifest missing host $APP_HOST" >&2; failures=1; }
 grep -q "melori-signing-config" "$APP_GRADLE" || { echo "error: signing config missing" >&2; failures=1; }
 

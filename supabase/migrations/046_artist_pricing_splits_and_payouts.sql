@@ -1,4 +1,4 @@
--- 045_artist_pricing_splits_and_payouts.sql
+-- 046_artist_pricing_splits_and_payouts.sql
 -- =====================================================================
 -- Artist self-uploads become first-class, priced catalog items.
 --
@@ -9,7 +9,7 @@
 -- and are the only sellable items. This migration closes that gap and
 -- adds an optional collaborator revenue-split model on top.
 --
--- NOT YET APPLIED. Karl must run this against the Supabase project.
+-- APPLIED to production 2026-08-02 as 046_artist_pricing_splits_and_payouts.
 -- Everything is additive and idempotent:
 --   * ADD COLUMN IF NOT EXISTS / CREATE TABLE IF NOT EXISTS
 --   * guarded ALTER ... ADD CONSTRAINT (pg_constraint probe)

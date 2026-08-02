@@ -13,6 +13,8 @@
     "test:cookies": "tsx scripts/supabase-cookie-storage.test.ts",
     "test:stripe-webhook": "tsx scripts/stripe-webhook-secrets.test.ts",
     "test:favorites": "tsx scripts/melori-favorites.test.ts",
+    "test:import": "tsx scripts/import-library.test.ts",
+    "import:library": "tsx scripts/import-library.ts",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",

@@ -4,6 +4,15 @@ export function formatPrice(price: number | null | undefined): string {
   return `$${price.toFixed(2)}`;
 }
 
+// Integer-cent prices — the unit used by artist-set prices and Stripe. Kept
+// separate from formatPrice (which takes DECIMAL dollars from the legacy
+// `releases`/`tracks` columns) so the two units can never be silently mixed.
+export function formatPriceCents(cents: number | null | undefined): string {
+  if (cents == null || !Number.isFinite(cents)) return "—";
+  if (cents === 0) return "Free";
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return "";
   const m = Math.floor(seconds / 60);

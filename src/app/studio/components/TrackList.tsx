@@ -5,6 +5,7 @@ import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
 import TrackReplacePanel from "./TrackReplacePanel";
 import TrackEditModal, { type EditableTrack } from "./TrackEditModal";
+import { formatPriceCents } from "@/lib/format";
 
 interface Track {
   id: string;
@@ -17,6 +18,7 @@ interface Track {
   created_at: string;
   duration: number | null;
   sort_order: number | null;
+  price_cents: number | null;
 }
 
 interface TrackListProps {
@@ -340,6 +342,7 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                           <p className="text-xs text-[#666] mt-1">
                             {track.preview_url ? "✓ Preview ready" : "⚠ No preview"}
                             {track.duration && ` • ${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, "0")}`}
+                            {` • ${formatPriceCents(track.price_cents)}`}
                           </p>
                         </div>
                       </div>
@@ -355,10 +358,11 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                               artist: track.artist,
                               album: track.album,
                               genre: track.genre,
+                              price_cents: track.price_cents,
                             })
                           }
                           className="px-3 sm:px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"
-                          title="Edit title, artist, album, genre"
+                          title="Edit title, artist, album, genre, price"
                         >
                           ✏️ Edit
                         </button>

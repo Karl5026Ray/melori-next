@@ -28,6 +28,7 @@ export async function GET(req: Request) {
       payoutsEnabled: false,
       detailsSubmitted: false,
       needsOnboarding: true,
+      state: "not_started",
     });
   }
 
@@ -42,6 +43,7 @@ export async function GET(req: Request) {
       payoutsEnabled: false,
       detailsSubmitted: false,
       needsOnboarding: true,
+      state: "not_started",
     });
   }
 
@@ -53,6 +55,7 @@ export async function GET(req: Request) {
       payoutsEnabled: false,
       detailsSubmitted: false,
       needsOnboarding: true,
+      state: "not_started",
     });
   }
 
@@ -67,12 +70,35 @@ export async function GET(req: Request) {
     const payoutsEnabled = Boolean(account.payouts_enabled);
     const detailsSubmitted = Boolean(account.details_submitted);
 
+    // Report what Stripe actually says rather than inferring. "Details
+    // submitted but payouts still off and nothing outstanding" is Stripe
+    // reviewing the account, which is a genuinely different situation for the
+    // artist than "you still owe us information".
+    const requirements = account.requirements ?? null;
+    const currentlyDue = requirements?.currently_due ?? [];
+    const pastDue = requirements?.past_due ?? [];
+    const pendingVerification = requirements?.pending_verification ?? [];
+    const disabledReason = requirements?.disabled_reason ?? null;
+
+    const state: "restricted" | "enabled" | "pending" | "incomplete" =
+      pastDue.length > 0 || (disabledReason && detailsSubmitted)
+        ? "restricted"
+        : payoutsEnabled
+          ? "enabled"
+          : detailsSubmitted && currentlyDue.length === 0
+            ? "pending"
+            : "incomplete";
+
     return NextResponse.json({
       connected: true,
       chargesEnabled,
       payoutsEnabled,
       detailsSubmitted,
       needsOnboarding: !payoutsEnabled || !detailsSubmitted,
+      state,
+      requirementsDue: [...pastDue, ...currentlyDue],
+      pendingVerification,
+      disabledReason,
     });
   } catch (err: unknown) {
     if (isConnectNotEnabled(err)) {

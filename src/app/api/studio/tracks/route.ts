@@ -7,6 +7,12 @@ import {
   isOwnedStudioPath,
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
+import {
+  DEFAULT_SINGLE_PRICE_CENTS,
+  PRICE_RANGE_MESSAGE,
+  parsePriceCents,
+} from "@/lib/pricing";
+import { ensureStudioAlbum } from "@/lib/studio-albums";
 
 // GET /api/studio/tracks — List all studio tracks
 export async function GET(req: NextRequest) {
@@ -23,7 +29,7 @@ export async function GET(req: NextRequest) {
     const { data: tracks, error } = await supabase
       .from("studio_tracks")
       .select(
-        "id, title, artist, album, genre, status, preview_url, created_at, duration, sort_order"
+        "id, title, artist, album, genre, status, preview_url, created_at, duration, sort_order, price_cents"
       )
       .eq(OWNER_COLUMN, guard.membership.userId)
       .order("album", { ascending: true, nullsFirst: false })
@@ -81,6 +87,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // The artist sets their own price. Omitting it takes the $0.99 default;
+    // an explicitly bad value is rejected rather than silently coerced, so a
+    // typo can't publish a track at the wrong price.
+    const priceCents =
+      body.price_cents === undefined
+        ? DEFAULT_SINGLE_PRICE_CENTS
+        : parsePriceCents(body.price_cents);
+    if (priceCents === null) {
+      return NextResponse.json({ error: PRICE_RANGE_MESSAGE }, { status: 400 });
+    }
+
     // Assign the next sort_order within this (owner_id, album) partition so a
     // newly created track lands at the end of its album, not somewhere
     // arbitrary. Two concurrent inserts to the same album could collide on
@@ -120,6 +137,7 @@ export async function POST(req: NextRequest) {
         file_path: body.file_path,
         cover_url: body.cover_url,
         type: body.type,
+        price_cents: priceCents,
         sort_order: nextSortOrder,
         status: body.status || "draft",
         // Both ownership columns must be the caller's uid: profile_id
@@ -136,6 +154,17 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("Insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Materialise the album side-car so the artist can price the album as a
+    // whole. Best-effort: a failure here must not undo a successful upload.
+    if (albumForOrder) {
+      await ensureStudioAlbum(
+        supabase,
+        userId,
+        albumForOrder,
+        body.cover_url ?? null,
+      ).catch(() => null);
     }
 
     // A new track — even a draft — shows up in the artist's own listings

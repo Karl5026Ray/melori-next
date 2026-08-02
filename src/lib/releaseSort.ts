@@ -1,11 +1,18 @@
-import type { ReleaseListItem } from "@/lib/data";
-
-// Type-only import above is erased at build time, so this module stays
+// Type-only imports are erased at build time, so this module stays
 // client-safe (it never pulls in the server-only admin client).
 
 // Sort options shared by the /music catalog and artist discography.
 // Default is newest first (most recent releases surface at the top).
 export type ReleaseSort = "release_date" | "alpha" | "artist";
+
+// The minimum shape the sort needs. Generic over the concrete item type so the
+// same comparators serve legacy releases and artist self-uploads — both flow
+// through the unified catalog now.
+export interface SortableItem {
+  title: string;
+  release_date: string | null;
+  artist: { name: string } | null;
+}
 
 // The first entry is the default sort used across the catalog and discography.
 export const DEFAULT_RELEASE_SORT: ReleaseSort = "release_date";
@@ -16,14 +23,14 @@ export const RELEASE_SORT_OPTIONS: { value: ReleaseSort; label: string }[] = [
   { value: "artist", label: "Artist name" },
 ];
 
-const byTitle = (a: ReleaseListItem, b: ReleaseListItem) =>
+const byTitle = (a: SortableItem, b: SortableItem) =>
   a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
 
 // Returns a new sorted array; never mutates the input.
-export function sortReleases(
-  releases: ReleaseListItem[],
+export function sortReleases<T extends SortableItem>(
+  releases: T[],
   sort: ReleaseSort,
-): ReleaseListItem[] {
+): T[] {
   const copy = [...releases];
   switch (sort) {
     case "release_date":

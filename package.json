@@ -11,6 +11,7 @@
     "test:splits": "tsx scripts/revenue-splits.test.ts",
     "test:youtube": "tsx scripts/youtube-url.test.ts",
     "test:cookies": "tsx scripts/supabase-cookie-storage.test.ts",
+    "test:stripe-webhook": "tsx scripts/stripe-webhook-secrets.test.ts",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",

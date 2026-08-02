@@ -64,7 +64,17 @@ const SEEDED_TRACK = {
   index: 0,
 };
 
+/** Assert the target is really there before synthesising events on it.
+ *  `locator.evaluate` would otherwise sit on the element for the whole test
+ *  timeout and report "test timeout exceeded", which says nothing about the
+ *  element being absent. */
+async function requireVisible(locator: Locator, what: string) {
+  await expect(locator, `${what} must be present before dispatching pointer events`)
+    .toBeVisible({ timeout: 10_000 });
+}
+
 async function firePointerTap(locator: Locator) {
+  await requireVisible(locator, "pointer target");
   await locator.evaluate((el) => {
     const rect = el.getBoundingClientRect();
     const x = rect.x + rect.width / 2;
@@ -93,6 +103,7 @@ async function firePointerDrag(
   dy: number,
   holdMs: number,
 ) {
+  await requireVisible(locator, "drag handle");
   await locator.evaluate(
     async (el, { dx, dy, holdMs }) => {
       const rect = el.getBoundingClientRect();
@@ -130,6 +141,12 @@ async function openPlayer(page: Page): Promise<Locator> {
   await page.goto(START_URL, { waitUntil: "domcontentloaded" });
   const player = page.getByRole("region", { name: "Music player" });
   await expect(player).toBeVisible({ timeout: 20_000 });
+  // Fail here, loudly, if the build under test predates the transport pill —
+  // rather than 45s later inside whichever helper first touches the handle.
+  await expect(
+    handleOf(page),
+    "no drag handle: the build under test has no transport pill",
+  ).toBeVisible({ timeout: 10_000 });
   // The pill positions itself in a mount effect; wait for it to leave (0,0).
   await expect
     .poll(async () => (await player.boundingBox())?.x ?? 0, {

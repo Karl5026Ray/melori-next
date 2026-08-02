@@ -238,8 +238,8 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
 
     await firePointerTap(handle);
 
-    // Full controls: play/pause, prev, next, seek, volume, title, close.
-    await expect(page.getByRole("button", { name: "Collapse player" })).toBeVisible();
+    // Full controls: play/pause, prev, next, seek, volume, title.
+    await expect(page.getByTestId("player-panel")).toBeVisible();
     await expect(page.getByRole("button", { name: "Previous track" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Next track" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Seek" })).toBeVisible();
@@ -251,25 +251,92 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     await expect(player.getByText("E2E Artist", { exact: true })).toBeVisible();
 
     await firePointerTap(handle);
-    await expect(page.getByRole("button", { name: "Collapse player" })).toBeHidden();
+    await expect(page.getByTestId("player-panel")).toBeHidden();
   });
 
-  test("tapping the X collapses the panel back to the pill", async ({ page }) => {
+  test("there is no X button — tapping the top bar collapses the panel", async ({
+    page,
+  }) => {
     const player = await openPlayer(page);
     await firePointerTap(handleOf(page));
 
-    const closeButton = page.getByRole("button", { name: "Collapse player" });
-    await expect(closeButton).toBeVisible();
+    const panel = page.getByTestId("player-panel");
+    await expect(panel).toBeVisible();
 
-    // The X uses onClick, so a normal click works. If it didn't collapse the
-    // panel that would mean the tab bar was intercepting the click OR the
-    // close button's own handler regressed.
-    await closeButton.click();
-    await expect(closeButton, "close button hides the panel").toBeHidden();
+    // The close X was removed as redundant once tap-to-toggle worked in both
+    // states. If it ever comes back, this fails.
+    await expect(
+      page.getByRole("button", { name: "Collapse player" }),
+      "the redundant X button must not exist",
+    ).toHaveCount(0);
+
+    // Tapping the top bar is now the way to close.
+    await firePointerTap(handleOf(page));
+    await expect(panel, "tapping the top bar hides the panel").toBeHidden();
 
     const box = (await player.boundingBox())!;
     expect(box.height, "back to the collapsed pill").toBeLessThan(80);
     expect(box.width).toBeGreaterThan(box.height * 1.5);
+  });
+
+  test("expanded, the ENTIRE top bar is the drag handle", async ({ page }) => {
+    const player = await openPlayer(page);
+    await firePointerTap(handleOf(page));
+
+    const panel = page.getByTestId("player-panel");
+    await expect(panel).toBeVisible();
+
+    const panelBox = (await panel.boundingBox())!;
+    const barBox = (await handleOf(page).boundingBox())!;
+
+    // The old affordance was a 44px circle. The bar must span essentially the
+    // whole panel width — that is the entire point of this change.
+    expect(
+      barBox.width,
+      `expanded drag handle should span the panel, got ${barBox.width} of ${panelBox.width}`,
+    ).toBeGreaterThan(panelBox.width * 0.8);
+    expect(barBox.width, "and be far wider than the old circle").toBeGreaterThan(120);
+
+    // Still a comfortable touch height, and sitting at the top of the panel.
+    expect(barBox.height, "bar keeps a 44px-class touch height").toBeGreaterThanOrEqual(40);
+    expect(barBox.y).toBeLessThan(panelBox.y + 60);
+
+    // Every point along the bar is actually the handle, not a dead zone.
+    for (const t of [0.1, 0.5, 0.9]) {
+      const hit = await page.evaluate(
+        ([x, y]) => {
+          const el = document.elementFromPoint(x as number, y as number);
+          return Boolean(el?.closest('[data-testid="player-handle"]'));
+        },
+        [barBox.x + barBox.width * t, barBox.y + barBox.height / 2],
+      );
+      expect(hit, `point at ${t * 100}% across the bar is draggable`).toBe(true);
+    }
+  });
+
+  test("press-and-hold on the expanded top bar drags the panel without closing it", async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await firePointerTap(handleOf(page));
+
+    const panel = page.getByTestId("player-panel");
+    await expect(panel).toBeVisible();
+    const before = (await player.boundingBox())!;
+
+    // Same gesture contract as the collapsed pill: hold past the threshold,
+    // then move.
+    await firePointerDrag(handleOf(page), -40, -180, 450);
+
+    await expect(panel, "dragging must not close the panel").toBeVisible();
+
+    const after = (await player.boundingBox())!;
+    expect(after.y, "panel moved up").toBeLessThan(before.y - 80);
+
+    const stored = await page.evaluate(() =>
+      localStorage.getItem("melori:player:pos"),
+    );
+    expect(stored, "the dropped position is persisted").not.toBeNull();
   });
 
   test("a quick tap toggles without moving the pill", async ({ page }) => {
@@ -277,9 +344,9 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     const before = (await player.boundingBox())!;
 
     await firePointerTap(handleOf(page));
-    await expect(page.getByRole("button", { name: "Collapse player" })).toBeVisible();
-    await page.getByRole("button", { name: "Collapse player" }).click();
-    await expect(page.getByRole("button", { name: "Collapse player" })).toBeHidden();
+    await expect(page.getByTestId("player-panel")).toBeVisible();
+    await firePointerTap(handleOf(page));
+    await expect(page.getByTestId("player-panel")).toBeHidden();
 
     const after = (await player.boundingBox())!;
     expect(after.x).toBeCloseTo(before.x, 0);
@@ -301,7 +368,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     await firePointerDrag(handleOf(page), -120, -200, 450);
 
     await expect(
-      page.getByRole("button", { name: "Collapse player" }),
+      page.getByTestId("player-panel"),
       "a drag must never open the panel",
     ).toBeHidden();
 
@@ -366,7 +433,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
 
     await firePointerTap(handleOf(page));
     await expect(
-      page.getByRole("button", { name: "Collapse player" }),
+      page.getByTestId("player-panel"),
       "panel expands on tap",
     ).toBeVisible();
 
@@ -391,7 +458,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     const player = await openPlayer(page);
     await firePointerTap(handleOf(page));
     await expect(
-      page.getByRole("button", { name: "Collapse player" }),
+      page.getByTestId("player-panel"),
       "panel expands on tap",
     ).toBeVisible();
 

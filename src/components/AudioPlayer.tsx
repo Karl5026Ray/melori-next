@@ -58,14 +58,6 @@ function VolumeIcon() {
   );
 }
 
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-      <path d="M6 6l12 12M18 6 6 18" />
-    </svg>
-  );
-}
-
 function ChevronIcon({ down }: { down: boolean }) {
   return (
     <svg
@@ -330,12 +322,16 @@ function DesktopBar() {
 // Mobile (< md): the floating transport pill.
 //   - Collapsed = a horizontal pill: white circle handle on the LEFT, cover +
 //     track text in the middle, play/pause on the RIGHT (usable while closed).
-//   - The white circle is the only gesture surface: a clean tap toggles the
-//     pill open/closed, a tap-and-hold (or a grab past the move threshold)
-//     engages drag mode with a single haptic pulse and moves it anywhere.
 //   - Expanded = the same pill grown into a panel with the full transport:
-//     cover art, title/artist, prev / play / next / radio, a seek scrubber,
-//     volume, and a close button.
+//     cover art, title/artist, prev / play / next / radio, a seek scrubber and
+//     volume, under a full-width drag bar.
+//   - ONE gesture surface per state, and it behaves identically in both: a
+//     clean tap toggles open/closed, a tap-and-hold (or a grab past the move
+//     threshold) engages drag mode with a haptic pulse and moves it anywhere.
+//     Collapsed that surface is the white circle; expanded it is the ENTIRE
+//     top bar, so the target is a full-width bar instead of a 44px circle.
+//   - There is deliberately no X button. Tap-to-toggle works in both states,
+//     so a separate close control was redundant surface area.
 // Every control drives the one shared engine in PlayerProvider — this file
 // renders views of that player and never touches an <audio> element itself.
 // Hand-rolled with pointer events + translate3d per the design consult — no
@@ -435,6 +431,8 @@ function FloatingPlayer() {
   const fraction = duration > 0 ? currentTime / duration : 0;
 
   const ref = useRef<HTMLDivElement | null>(null);
+  // The live drag surface. Only one is mounted at a time (circle when
+  // collapsed, top bar when expanded), so a single ref serves both.
   const handleRef = useRef<HTMLButtonElement | null>(null);
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -533,10 +531,12 @@ function FloatingPlayer() {
     return () => cancelAnimationFrame(id);
   }, [mounted, layout]);
 
-  // Gesture state for the white circle handle — the ONLY drag surface. Keeping
-  // it off the container is what lets every other control (play/pause, seek,
-  // volume) stay a plain button: they can't arm a drag, and a drag can never
-  // swallow their taps (the #180 "player got stuck" failure mode).
+  // Gesture state for the drag surface — the ONLY place a drag can start.
+  // Keeping it off the container is what lets every other control (play/pause,
+  // seek, volume) stay a plain button: they can't arm a drag, and a drag can
+  // never swallow their taps (the #180 "player got stuck" failure mode). The
+  // expanded top bar is wide, but it is still a single dedicated surface with
+  // no interactive children, so that guarantee is unchanged.
   const gesture = useRef({
     startX: 0,
     startY: 0,
@@ -668,36 +668,69 @@ function FloatingPlayer() {
   const trackLabel = current ? current.title : "Nothing playing";
   const artistLabel = error ?? current?.artistName ?? "MELORI MUSIC";
 
-  // The white circle: tap toggles open/closed, hold drags. Rendered in both
-  // states so the drag surface never disappears once the panel is open.
-  const dragHandle = (
+  // Everything that makes an element the drag surface. Shared verbatim by the
+  // collapsed circle and the expanded top bar so the two states cannot drift:
+  // tap toggles open/closed, press-and-hold drags, in both.
+  const dragSurfaceProps = {
+    ref: handleRef,
+    type: "button" as const,
+    "data-testid": "player-handle",
+    "aria-label": expanded ? "Player handle — tap to close, hold to drag" : "Player handle — tap to open, hold to drag",
+    "aria-expanded": expanded,
+    title: "Tap to open or close · hold to drag",
+    onPointerDown: onHandlePointerDown,
+    onPointerMove: onHandlePointerMove,
+    onPointerUp: onHandlePointerUp,
+    onPointerCancel: onHandlePointerCancel,
+    onLostPointerCapture: resetGesture,
+    // Keyboard-generated clicks report detail 0; pointer clicks are already
+    // handled by the gesture above, so this only serves Enter/Space. With the
+    // X button gone this is the sole keyboard route to closing the panel.
+    onClick: (e: React.MouseEvent) => {
+      if (e.detail === 0) setExpanded((v) => !v);
+    },
+    style: {
+      touchAction: "none" as const,
+      WebkitUserSelect: "none" as const,
+      WebkitTouchCallout: "none" as const,
+    },
+  };
+
+  // Collapsed: the white circle on the left of the pill.
+  const collapsedHandle = (
     <button
-      ref={handleRef}
-      type="button"
-      data-testid="player-handle"
-      aria-label="Player handle"
-      aria-expanded={expanded}
-      title="Tap to open or close · hold to drag"
-      onPointerDown={onHandlePointerDown}
-      onPointerMove={onHandlePointerMove}
-      onPointerUp={onHandlePointerUp}
-      onPointerCancel={onHandlePointerCancel}
-      onLostPointerCapture={resetGesture}
-      // Keyboard-generated clicks report detail 0; pointer clicks are already
-      // handled by the gesture above, so this only serves Enter/Space.
-      onClick={(e) => {
-        if (e.detail === 0) setExpanded((v) => !v);
-      }}
+      {...dragSurfaceProps}
       className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-md ring-1 ring-black/10 transition-transform ${
         dragging ? "scale-105 cursor-grabbing" : "cursor-grab"
       }`}
-      style={{
-        touchAction: "none",
-        WebkitUserSelect: "none",
-        WebkitTouchCallout: "none",
-      }}
     >
       <ChevronIcon down={expanded} />
+    </button>
+  );
+
+  // Expanded: the WHOLE top bar is the handle. Same gesture contract, ~7x the
+  // touch area of the circle it replaces. It has no interactive children, so
+  // there are no control taps for the enlarged region to swallow — the real
+  // transport controls all live below it.
+  const expandedDragBar = (
+    <button
+      {...dragSurfaceProps}
+      className={`relative mb-2 flex h-11 w-full items-center justify-center rounded-xl transition-colors ${
+        dragging ? "cursor-grabbing bg-white/10" : "cursor-grab hover:bg-white/5"
+      }`}
+    >
+      {/* Grabber: the visible "you can drag this" affordance. */}
+      <span
+        aria-hidden
+        className={`h-1.5 w-10 rounded-full transition-colors ${
+          dragging ? "bg-white" : "bg-white/40"
+        }`}
+      />
+      {/* Chevron parked on the right so tap-to-close stays discoverable. It is
+          decoration inside the same button, never a separate hit target. */}
+      <span aria-hidden className="absolute right-2 text-text-secondary">
+        <ChevronIcon down={expanded} />
+      </span>
     </button>
   );
 
@@ -707,8 +740,8 @@ function FloatingPlayer() {
       role="region"
       aria-label="Music player"
       // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
-      // and its launcher sheet — otherwise the X and transport row sit BEHIND
-      // the nav and can't be tapped, which looked like "stuck, can't stop".
+      // and its launcher sheet — otherwise the drag bar and transport row sit
+      // BEHIND the nav and can't be tapped ("stuck, can't stop").
       className={`md:hidden fixed left-0 top-0 ${
         expanded ? "z-[80]" : "z-40"
       } select-none`}
@@ -720,19 +753,12 @@ function FloatingPlayer() {
       }}
     >
       {expanded ? (
-        <div className="w-[min(20rem,calc(100vw-1.25rem))] rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur">
-          {/* Header: the same white circle handle (drag / close) + close X */}
-          <div className="mb-2 flex items-center gap-2">
-            {dragHandle}
-            <button
-              type="button"
-              onClick={() => setExpanded(false)}
-              aria-label="Collapse player"
-              className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
-            >
-              <CloseIcon />
-            </button>
-          </div>
+        <div
+          data-testid="player-panel"
+          className="w-[min(20rem,calc(100vw-1.25rem))] rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur"
+        >
+          {/* Header: the full-width drag bar. Tap anywhere on it to close. */}
+          {expandedDragBar}
 
           {/* Track info */}
           <div className="flex items-center gap-3">
@@ -860,7 +886,7 @@ function FloatingPlayer() {
       ) : (
         // Collapsed pill: white circle handle | cover + track text | play/pause.
         <div className="flex h-14 max-w-[calc(100vw-1.25rem)] items-center gap-2 rounded-full border border-brand-border bg-brand-surface/95 px-1.5 shadow-2xl backdrop-blur">
-          {dragHandle}
+          {collapsedHandle}
           <CoverImage
             src={current?.coverUrl}
             alt={trackLabel}

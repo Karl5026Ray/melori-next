@@ -105,6 +105,12 @@ export default async function ArtistDetailPage(
           </div>
         </div>
 
+        {/* Photos sit above the message actions — only renders when this
+           artist's profile has gallery photos. */}
+        {artist.profile_id && (
+          <ProfileGallery profileId={artist.profile_id} className="mt-8" />
+        )}
+
         {/* Message / block / report. Renders nothing when signed out, when this
            artist has no member profile, or when you're viewing your own page.
            MemberActions reads the signed-in member from SocialAuthProvider,
@@ -133,11 +139,6 @@ export default async function ArtistDetailPage(
           <h2 className="mb-6 text-2xl font-bold">Discography</h2>
           <ArtistDiscography releases={releaseItems} />
         </section>
-
-        {/* Photos — only renders when this artist's profile has gallery photos */}
-        {artist.profile_id && (
-          <ProfileGallery profileId={artist.profile_id} className="pb-12" />
-        )}
       </div>
     </article>
   );

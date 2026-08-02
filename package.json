@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "echo 'next lint was removed in Next 16; no standalone linter configured for this project' && exit 0",
     "test:slots": "tsx scripts/booking-slots.test.ts",
+    "test:splits": "tsx scripts/revenue-splits.test.ts",
     "test:youtube": "tsx scripts/youtube-url.test.ts",
     "test:cookies": "tsx scripts/supabase-cookie-storage.test.ts",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",

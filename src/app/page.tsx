@@ -8,7 +8,7 @@ import HomeHero from "@/components/HomeHero";
 import type { Metadata } from "next";
 import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
 import { getCatalogItems } from "@/lib/catalog";
-import { sortReleases } from "@/lib/releaseSort";
+import { sortMeloriFavorites } from "@/lib/releaseSort";
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +39,10 @@ export default async function HomePage() {
   ]);
   // Favorites is drawn from the WHOLE catalog — an artist's self-uploaded
   // single is eligible for the homepage on the same terms as a curated
-  // release. Newest first so fresh uploads actually surface here.
+  // release. Albums lead, ranked by lifetime plays, then everything else
+  // newest-first so fresh uploads still surface. See sortMeloriFavorites.
   const catalogItems = await getCatalogItems(releases);
-  const meloriFavorites = sortReleases(catalogItems, "release_date").slice(0, 12);
+  const meloriFavorites = sortMeloriFavorites(catalogItems).slice(0, 12);
 
   return (
     <div>

@@ -1,12 +1,14 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import ReleaseCard from "@/components/ReleaseCard";
+import CatalogCard from "@/components/CatalogCard";
 import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import ProductCard from "@/app/store/ProductCard";
 import HomeHero from "@/components/HomeHero";
 import type { Metadata } from "next";
 import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
+import { getCatalogItems } from "@/lib/catalog";
+import { sortReleases } from "@/lib/releaseSort";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +37,11 @@ export default async function HomePage() {
     getStoreProducts(8).catch(() => []),
     getFeaturedTrack().catch(() => null),
   ]);
-  const meloriFavorites = releases.slice(0, 12);
+  // Favorites is drawn from the WHOLE catalog — an artist's self-uploaded
+  // single is eligible for the homepage on the same terms as a curated
+  // release. Newest first so fresh uploads actually surface here.
+  const catalogItems = await getCatalogItems(releases);
+  const meloriFavorites = sortReleases(catalogItems, "release_date").slice(0, 12);
 
   return (
     <div>
@@ -76,8 +82,8 @@ An independent music platform where fans stream the full catalog for free and su
 <Link href="/music" className="text-sm font-semibold text-brand-primary hover:underline">View all</Link>
 </div>
 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-{meloriFavorites.map((release) => (
-<ReleaseCard key={release.id} release={release} />
+{meloriFavorites.map((item) => (
+<CatalogCard key={item.key} item={item} />
 ))}
 </div>
 </section>

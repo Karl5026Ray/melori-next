@@ -7,11 +7,18 @@ interface BuyButtonProps {
   releaseId?: number;
   /** Supabase track id — used for single-track purchases. Takes precedence. */
   trackId?: number;
+  /** Artist self-upload (studio_tracks.id, a UUID). */
+  studioTrackId?: string;
+  /** Artist self-upload album (studio_albums.id, a UUID). */
+  studioAlbumId?: string;
   /** @deprecated legacy alias for releaseId (VPS era) */
   vpsReleaseId?: number;
   /** @deprecated legacy alias for trackId (VPS era) */
   vpsTrackId?: number;
-  price: number;
+  /** Price in DECIMAL dollars (legacy items). Ignored when priceCents is set. */
+  price?: number;
+  /** Price in integer cents (artist-set prices). Preferred. */
+  priceCents?: number;
   title?: string;
   /**
    * "default" = full-width primary button (release page).
@@ -35,9 +42,12 @@ interface BuyButtonProps {
 export default function BuyButton({
   releaseId,
   trackId,
+  studioTrackId,
+  studioAlbumId,
   vpsReleaseId,
   vpsTrackId,
   price,
+  priceCents,
   title,
   variant = "default",
 }: BuyButtonProps) {
@@ -49,20 +59,23 @@ export default function BuyButton({
   const effectiveTrackId = trackId ?? vpsTrackId;
   const effectiveReleaseId = releaseId ?? vpsReleaseId;
 
+  // Display only. The server re-reads the authoritative price from the row the
+  // id points at, so a tampered value here changes nothing about what is charged.
+  const displayDollars =
+    priceCents != null ? priceCents / 100 : typeof price === "number" ? price : 0;
+
   async function handleBuy() {
     setError(null);
     setLoading(true);
     try {
-      const body =
-        effectiveTrackId != null
-          ? { trackId: effectiveTrackId }
-          : { releaseId: effectiveReleaseId };
+      const body: Record<string, string | number> = {};
+      if (studioAlbumId) body.studioAlbumId = studioAlbumId;
+      else if (studioTrackId) body.studioTrackId = studioTrackId;
+      else if (effectiveTrackId != null) body.trackId = effectiveTrackId;
+      else if (effectiveReleaseId != null) body.releaseId = effectiveReleaseId;
 
-      if (
-        ("releaseId" in body && body.releaseId == null) &&
-        ("trackId" in body && body.trackId == null)
-      ) {
-        throw new Error("BuyButton requires a trackId or releaseId");
+      if (Object.keys(body).length === 0) {
+        throw new Error("BuyButton requires an item id");
       }
 
       const res = await fetch("/api/music/checkout", {
@@ -98,8 +111,8 @@ export default function BuyButton({
   const label = loading
     ? "…"
     : isCompact
-      ? `$${price.toFixed(2)}`
-      : `Buy${title ? ` ${title}` : ""} · $${price.toFixed(2)}`;
+      ? `$${displayDollars.toFixed(2)}`
+      : `Buy${title ? ` ${title}` : ""} · $${displayDollars.toFixed(2)}`;
 
   if (isCompact) {
     return (
@@ -112,8 +125,8 @@ export default function BuyButton({
           aria-busy={loading}
           aria-label={
             title
-              ? `Buy ${title} for $${price.toFixed(2)}`
-              : `Buy for $${price.toFixed(2)}`
+              ? `Buy ${title} for $${displayDollars.toFixed(2)}`
+              : `Buy for $${displayDollars.toFixed(2)}`
           }
         >
           {label}

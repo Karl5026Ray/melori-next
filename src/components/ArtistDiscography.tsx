@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import ReleaseCard from "@/components/ReleaseCard";
-import type { ReleaseListItem } from "@/lib/data";
+import CatalogCard from "@/components/CatalogCard";
+import type { CatalogItem } from "@/lib/catalog";
 import {
   DEFAULT_RELEASE_SORT,
   RELEASE_SORT_OPTIONS,
@@ -11,17 +11,14 @@ import {
 } from "@/lib/releaseSort";
 
 // Client-side discography grid with a sort control, matching the /music
-// catalog. Default sort is Newest first.
-export default function ArtistDiscography({
-  releases,
-}: {
-  releases: ReleaseListItem[];
-}) {
+// catalog. Default sort is Newest first. `items` covers the artist's whole
+// body of work — curated releases AND their Artist Studio self-uploads.
+export default function ArtistDiscography({ items }: { items: CatalogItem[] }) {
   const [sort, setSort] = useState<ReleaseSort>(DEFAULT_RELEASE_SORT);
 
-  const sorted = useMemo(() => sortReleases(releases, sort), [releases, sort]);
+  const sorted = useMemo(() => sortReleases(items, sort), [items, sort]);
 
-  if (releases.length === 0) {
+  if (items.length === 0) {
     return <p className="text-text-secondary">No releases yet.</p>;
   }
 
@@ -44,8 +41,8 @@ export default function ArtistDiscography({
         </label>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {sorted.map((release) => (
-          <ReleaseCard key={release.id} release={release} />
+        {sorted.map((item) => (
+          <CatalogCard key={item.key} item={item} />
         ))}
       </div>
     </div>

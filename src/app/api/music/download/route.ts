@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
 
   const { data: purchase, error } = await supabase
     .from("music_purchases")
-    .select("id, release_id, track_id, item_name, status")
+    .select(
+      "id, release_id, track_id, studio_track_id, studio_album_id, item_name, status",
+    )
     .eq("stripe_session_id", sessionId)
     .maybeSingle();
 
@@ -50,7 +52,41 @@ export async function GET(req: NextRequest) {
   // Collect the audio objects to sign.
   const files: { title: string; audio_url: string }[] = [];
 
-  if (purchase.track_id) {
+  // Artist self-uploads live in studio_tracks and keep their master in
+  // `file_path` (bucket-relative) rather than the legacy `audio_url`.
+  if (purchase.studio_track_id) {
+    const { data: track } = await supabase
+      .from("studio_tracks")
+      .select("title, file_path")
+      .eq("id", purchase.studio_track_id)
+      .maybeSingle();
+    if (track?.file_path) {
+      files.push({ title: track.title ?? "track", audio_url: track.file_path });
+    }
+  } else if (purchase.studio_album_id) {
+    const { data: album } = await supabase
+      .from("studio_albums")
+      .select("title, profile_id")
+      .eq("id", purchase.studio_album_id)
+      .maybeSingle();
+    if (album) {
+      const { data: tracks } = await supabase
+        .from("studio_tracks")
+        .select("title, file_path, sort_order")
+        .eq("profile_id", (album as { profile_id: string }).profile_id)
+        .eq("album", (album as { title: string }).title)
+        .eq("status", "published")
+        .order("sort_order", { ascending: true, nullsFirst: false });
+      for (const t of (tracks ?? []) as Array<{
+        title: string | null;
+        file_path: string | null;
+      }>) {
+        if (t.file_path) {
+          files.push({ title: t.title ?? "track", audio_url: t.file_path });
+        }
+      }
+    }
+  } else if (purchase.track_id) {
     const { data: track } = await supabase
       .from("tracks")
       .select("title, audio_url")

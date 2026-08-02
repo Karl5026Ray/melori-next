@@ -86,6 +86,38 @@ group("parseFilename", () => {
   });
 });
 
+group("parseFilename handles underscores", () => {
+  assertEq("underscore separator, underscore words", parseFilename("07_Get_You_On_This_Flight.mp3"), {
+    number: 7,
+    title: "Get You On This Flight",
+  });
+  assertEq("no number, underscore words", parseFilename("My_Baby_Boo.wav"), {
+    number: null,
+    title: "My Baby Boo",
+  });
+  assertEq("underscore after a dash", parseFilename("03_-_My_Victory.mp3"), {
+    number: 3,
+    title: "My Victory",
+  });
+  assertEq("double underscore collapses", parseFilename("05__Fight__For__You.mp3"), {
+    number: 5,
+    title: "Fight For You",
+  });
+  assertEq("mixed spaces and underscores", parseFilename("12 _ Waves_of Echoes.mp3"), {
+    number: 12,
+    title: "Waves of Echoes",
+  });
+  assertEq("trailing underscore trimmed", parseFilename("Tie_Me_Up_.mp3"), {
+    number: null,
+    title: "Tie Me Up",
+  });
+  // Must still not eat a numeric title.
+  assertEq("numeric title with underscores survives", parseFilename("1999_Remaster.mp3"), {
+    number: null,
+    title: "1999 Remaster",
+  });
+});
+
 group("normalizeTitle collapses the same recording", () => {
   const same = (a: string, b: string) =>
     assertEq(`"${a}" == "${b}"`, normalizeTitle(a), normalizeTitle(b));
@@ -102,6 +134,11 @@ group("normalizeTitle collapses the same recording", () => {
   same("As If To Pray", "as-if-to-pray");
   same("Wanna", "The Wanna");
   same("Fire and Ice (feat. Someone)", "Fire and Ice");
+  // Underscored filenames must match the spaced titles already in the catalog,
+  // or the importer would duplicate every song in an underscore-named library.
+  same("My_Baby_Boo", "My Baby Boo");
+  same("Step_Into_the_Groove", "Step Into the Groove");
+  same("Lets_Try_It_Again", "Let's Try It Again");
 });
 
 group("normalizeTitle keeps different songs apart", () => {
@@ -129,6 +166,9 @@ group("slugify matches existing release slugs", () => {
   assertEq("Waves Of Echoes", slugify("Waves Of Echoes"), "waves-of-echoes");
   assertEq("Emotional Path", slugify("Emotional Path"), "emotional-path");
   assertEq("trims stray punctuation", slugify("  Morning Light!  "), "morning-light");
+  // Album FOLDERS are just as likely to be underscored as the files inside.
+  assertEq("underscored folder", slugify("Your_Grace_is_Where_I_Stand"), "your-grace-is-where-i-stand");
+  assertEq("underscored folder matches spaced", slugify("KRP_Steppers"), slugify("KRP Steppers"));
 });
 
 group("edge cases", () => {

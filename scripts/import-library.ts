@@ -164,19 +164,33 @@ export function slugify(s: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-// "07 - Get You On This Flight.mp3" → { number: 7, title: "Get You On This Flight" }
-// "Baby Boo.wav"                    → { number: null, title: "Baby Boo" }
+// Underscores are treated as word separators throughout, because exports from
+// most DAWs and every "download all" zip arrive as My_Baby_Boo.mp3 rather than
+// "My Baby Boo.mp3". They become spaces in the stored title.
+function tidyTitle(s: string): string {
+  return s.replace(/_+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+// "07 - Get You On This Flight.mp3" → { number: 7,    title: "Get You On This Flight" }
+// "07_Get_You_On_This_Flight.mp3"   → { number: 7,    title: "Get You On This Flight" }
+// "Baby_Boo.wav"                    → { number: null, title: "Baby Boo" }
+//
+// The number is only consumed when a separator follows it, so "1999.mp3" keeps
+// its title intact. Caveat: a title that genuinely opens with a number and a
+// separator — "24_7 Love" — will read as track 24 titled "7 Love". Rename those
+// few by hand, or let the dry run show you before anything is written.
 export function parseFilename(file: string): {
   number: number | null;
   title: string;
 } {
   const base = file.slice(0, file.length - path.extname(file).length);
-  const m = base.match(/^\s*(\d{1,3})\s*[-._)]*\s+(.+)$/);
+  const m = base.match(/^\s*(\d{1,3})\s*(?:[-._)\]]+\s*|\s+)(.+)$/);
   if (m) {
     const n = Number(m[1]);
-    return { number: Number.isFinite(n) && n > 0 ? n : null, title: m[2].trim() };
+    const title = tidyTitle(m[2]);
+    if (title && Number.isFinite(n) && n > 0) return { number: n, title };
   }
-  return { number: null, title: base.trim() };
+  return { number: null, title: tidyTitle(base) };
 }
 
 // Is ffprobe on PATH? Checked once so the summary can explain missing runtimes.

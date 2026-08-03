@@ -24,6 +24,7 @@
 //   track's resolution/bitrate via the profile passed in JoinVideoOptions.
 
 import { authFetch } from "@/lib/authClient";
+import { assertCaptureSupported } from "@/lib/mediaCapture";
 
 type AnyRoom = any;
 type AnyTrack = any;
@@ -176,6 +177,11 @@ async function enableLocalCameraAndMic(
   room: AnyRoom,
   onLocalVideo?: (el: HTMLVideoElement) => void,
 ): Promise<HTMLVideoElement | null> {
+  // The capture API itself can be missing (iOS WKWebView without the camera/mic
+  // usage descriptions, or a non-secure origin). LiveKit would surface that as a
+  // bare "undefined is not an object" TypeError, so check first and explain.
+  assertCaptureSupported();
+
   // If the user has explicitly BLOCKED access, don't fire getUserMedia (it just
   // rejects); surface an actionable message the UI can show instead.
   if ((await getMediaPermission()) === "denied") {

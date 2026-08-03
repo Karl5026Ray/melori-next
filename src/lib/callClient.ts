@@ -27,6 +27,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "@/lib/supabase";
+import { requestUserMedia } from "@/lib/mediaCapture";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type CallMode = "video" | "voice";
@@ -141,7 +142,7 @@ export class CallSession {
       audio: true,
       video: mode === "video" ? { facingMode: "user" } : false,
     };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await requestUserMedia(constraints);
     this.localStream = stream;
     this.handlers.onLocalStream?.(stream);
     return stream;

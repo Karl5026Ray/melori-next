@@ -22,6 +22,7 @@
 // - Publisher = host + speakers; subscriber = audience.
 
 import { authFetch } from "@/lib/authClient";
+import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { supabase } from "@/lib/supabase";
 
 type AnyRoom = any;
@@ -319,6 +320,10 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
 
     // Publishers start with the mic enabled; subscribers stay silent.
     if (creds.role === "publisher") {
+      // LiveKit reaches for navigator.mediaDevices internally. Check first so a
+      // container without capture support reports why instead of throwing
+      // "undefined is not an object" at the user.
+      assertCaptureSupported();
       await room.localParticipant.setMicrophoneEnabled(true, capture, {
         audioPreset: publish.audioPreset,
         dtx: publish.dtx,

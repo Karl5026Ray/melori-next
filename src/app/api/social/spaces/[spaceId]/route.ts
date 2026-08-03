@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { isHandRaiseMode } from "@/lib/spacesStage";
+import { endRoomAndTeardown } from "@/lib/endRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,29 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ spaceId
   }
 
   const now = new Date().toISOString();
+
+  // "end" goes through the shared helper instead of a bare column update so
+  // this path (reachable but not currently used by any UI — the host's End
+  // button posts to /api/social/spaces/[spaceId]/end instead) doesn't
+  // silently strand connected LiveKit participants the same way that route
+  // used to. Keeping this action working correctly rather than removing it,
+  // since it is part of the route's public contract.
+  if (action === "end") {
+    if (space.status !== "live") {
+      return NextResponse.json({ error: "Space is not live" }, { status: 409 });
+    }
+    const result = await endRoomAndTeardown(params.spaceId, "host-ended");
+    if (!result.found) {
+      return NextResponse.json({ error: "Space not found" }, { status: 404 });
+    }
+    const { data: refreshed } = await supabase
+      .from("spaces")
+      .select()
+      .eq("id", params.spaceId)
+      .single();
+    return NextResponse.json({ space: refreshed });
+  }
+
   let update: Record<string, unknown> = {};
   if (action === "go_live") {
     if (space.status !== "scheduled") {
@@ -50,12 +74,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ spaceId
         { status: 409 },
       );
     }
-    update = { status: "live", last_activity_at: now };
-  } else if (action === "end") {
-    if (space.status !== "live") {
-      return NextResponse.json({ error: "Space is not live" }, { status: 409 });
-    }
-    update = { status: "ended", ended_at: now };
+    update = { status: "live", last_activity_at: now, host_last_seen_at: now };
   } else {
     // set_hand_raise_mode
     if (!isHandRaiseMode(body.hand_raise_mode)) {

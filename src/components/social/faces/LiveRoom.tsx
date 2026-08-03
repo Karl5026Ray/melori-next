@@ -34,6 +34,7 @@ import {
 import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoMirror";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
+import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
 import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
@@ -141,6 +142,10 @@ export default function LiveRoom({
   // Set when the host removes/bans us: PARTICIPANT_REMOVED, no auto-reconnect.
   // Drives a terminal "You were removed" overlay instead of a generic error.
   const [removed, setRemoved] = useState(false);
+  // Distinct from `removed` (kicked) and `error` (network/other failure): the
+  // room itself was deliberately ended (host ended it, or the lazy
+  // abandonment reaper closed it after the host went quiet). Calm, not scary.
+  const [roomEnded, setRoomEnded] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   // Facing mode of MY OWN active camera ("user" = front/selfie, "environment"
@@ -343,6 +348,25 @@ export default function LiveRoom({
       );
   }, [user, spaceId, isHost]);
 
+  // Heartbeat every 60s, mirroring MM Spaces (page.tsx). Keeps
+  // spaces.last_activity_at fresh for the idle reaper, and — when the caller
+  // is the host — also stamps host_last_seen_at (see src/lib/endRoom.ts) so
+  // the lazy abandonment reaper doesn't treat a genuinely-broadcasting host as
+  // gone after HOST_GRACE_PERIOD_SECONDS. Faces previously had no heartbeat at
+  // all, which would have made a broadcasting host look abandoned to the new
+  // reaper after 2 minutes even mid-stream; this is the smallest fix that
+  // makes host_last_seen_at meaningful for Faces rooms.
+  useEffect(() => {
+    if (!user) return;
+    const ping = () =>
+      authFetch(`/api/social/spaces/${spaceId}/heartbeat`, {
+        method: "POST",
+      }).catch(() => undefined);
+    ping();
+    const interval = setInterval(ping, 60_000);
+    return () => clearInterval(interval);
+  }, [user, spaceId]);
+
   // Connect to the LiveKit room on mount.
   useEffect(() => {
     let cancelled = false;
@@ -393,6 +417,12 @@ export default function LiveRoom({
             if (!cancelled) {
               setReconnecting(false);
               setRemoved(true);
+            }
+          },
+          onRoomEnded: () => {
+            if (!cancelled) {
+              setReconnecting(false);
+              setRoomEnded(true);
             }
           },
           onError: (e) => {
@@ -1437,14 +1467,38 @@ export default function LiveRoom({
         </div>
       )}
 
+      {/* Room-ended overlay — calm, non-alarming, distinct from the terminal
+          "removed" (kicked) overlay above and from the generic `error`
+          overlay below. The room was deliberately closed (host ended it, or
+          the lazy abandonment reaper closed it after the host went quiet for
+          too long), not a failure, so no error styling / "Dismiss" affordance
+          — just a way back to the Faces list. Takes precedence over `error`
+          in case both fire during the same disconnect. */}
+      {roomEnded && !removed && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6 backdrop-blur"
+          data-testid="faces-room-ended"
+        >
+          <div className="w-[min(90%,24rem)] rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
+            <p className="text-base font-semibold text-text-primary">{ROOM_ENDED_MESSAGE}</p>
+            <Link
+              href="/social/live"
+              className="mt-4 inline-block rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark"
+            >
+              Back to MM Faces
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Status overlays */}
-      {(connecting || reconnecting) && !removed && (
+      {(connecting || reconnecting) && !removed && !roomEnded && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm text-white backdrop-blur">
           <Loader2 className="h-4 w-4 animate-spin" />
           {reconnecting ? "Reconnecting…" : "Connecting…"}
         </div>
       )}
-      {error && (
+      {error && !roomEnded && !removed && (
         <div className="absolute left-1/2 top-1/2 z-30 w-[min(90%,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
           <p className="text-sm text-text-secondary">{error}</p>
           <div className="mt-4 flex justify-center gap-3">

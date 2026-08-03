@@ -66,6 +66,14 @@ export function getRoomFormatConfig(format: RoomFormat | null | undefined) {
   );
 }
 
+// Host-controlled hand-raise policy (Clubhouse parity):
+//   "off"      - raise-hand disabled; host invites only.
+//   "followed" - limited to accounts the host follows. TODO: enforcement is
+//                 not yet wired (see raise-hand route) — treated as "off"
+//                 today so we never silently grant more access than intended.
+//   "everyone" - any signed-in participant may raise a hand (default).
+export type HandRaiseMode = "off" | "followed" | "everyone";
+
 export interface Space {
   id: string;
   title: string;
@@ -82,6 +90,7 @@ export interface Space {
   agora_channel: string | null;
   scheduled_at?: string | null;
   last_activity_at?: string | null;
+  hand_raise_mode?: HandRaiseMode;
 }
 
 export type ParticipantRole = "host" | "speaker" | "audience";

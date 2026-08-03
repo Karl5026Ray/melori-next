@@ -24,6 +24,11 @@
 //   track's resolution/bitrate via the profile passed in JoinVideoOptions.
 
 import { authFetch } from "@/lib/authClient";
+import {
+  preferLoudspeaker,
+  startRouteWatch,
+  stopRouteWatch,
+} from "@/lib/audioOutput";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 
 type AnyRoom = any;
@@ -533,6 +538,16 @@ export async function ensureVideoAudio(): Promise<void> {
     const p = el.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
   });
+
+  // On iOS, mic capture drags output to the earpiece. Push it back to the
+  // loudspeaker now that we are inside a user gesture (Safari 26+ only; no-ops
+  // everywhere else and never overrides a connected headset).
+  try {
+    await preferLoudspeaker(session.remoteAudioEls);
+    startRouteWatch(() => session.remoteAudioEls);
+  } catch (err) {
+    console.warn("[faces] loudspeaker routing skipped", err);
+  }
 }
 
 export async function setCameraEnabled(enabled: boolean): Promise<void> {
@@ -565,6 +580,9 @@ export async function switchCamera(): Promise<void> {
 }
 
 export async function leaveVideoRoom(): Promise<void> {
+  // Drop any pinned audio sink and stop watching route changes; a pin must
+  // never outlive the session it was applied for.
+  stopRouteWatch();
   const { room, cleanups } = session;
   cleanups.forEach((fn) => {
     try {

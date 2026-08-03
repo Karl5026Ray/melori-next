@@ -1,5 +1,12 @@
 import "server-only";
-import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
+import {
+  RoomServiceClient,
+  TrackSource,
+  EgressClient,
+  EncodedFileType,
+  EncodedFileOutput,
+  S3Upload,
+} from "livekit-server-sdk";
 
 // Server-only LiveKit control-plane helper.
 //
@@ -15,6 +22,27 @@ import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
 const LIVEKIT_URL = process.env.LIVEKIT_URL ?? "";
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY ?? "";
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
+
+// --- Egress (recording) config ---------------------------------------------
+// Recording a Mirror live session writes an MP4 to S3-compatible storage. We
+// point LiveKit egress at the Supabase Storage S3 endpoint (Supabase Storage is
+// S3-compatible) using dedicated S3 access keys generated in the Supabase
+// dashboard (Storage → S3 Access Keys). These are SEPARATE from the service-role
+// key and must be added to the environment before recording can work:
+//   STORAGE_S3_ENDPOINT   e.g. https://<ref>.supabase.co/storage/v1/s3
+//   STORAGE_S3_REGION     e.g. us-east-2 (the project region)
+//   STORAGE_S3_ACCESS_KEY / STORAGE_S3_SECRET_KEY
+//   STORAGE_S3_BUCKET     defaults to the public "social-videos" bucket
+// When any of these are missing, recordingConfigured() returns false and the
+// Go-Live-on-Mirror flow degrades gracefully (records nothing, tells the host
+// recording isn't set up) instead of throwing.
+const S3_ENDPOINT = process.env.STORAGE_S3_ENDPOINT ?? "";
+const S3_REGION = process.env.STORAGE_S3_REGION ?? "";
+const S3_ACCESS_KEY = process.env.STORAGE_S3_ACCESS_KEY ?? "";
+const S3_SECRET_KEY = process.env.STORAGE_S3_SECRET_KEY ?? "";
+const S3_BUCKET = process.env.STORAGE_S3_BUCKET ?? "social-videos";
+const PUBLIC_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
 
 export type SocialRole = "audience" | "speaker" | "moderator" | "host";
 
@@ -42,6 +70,92 @@ function client(): RoomServiceClient {
     cached = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
   }
   return cached;
+}
+
+let cachedEgress: EgressClient | null = null;
+
+// Recording is available only when LiveKit is configured AND the S3 output
+// credentials are present. UI/routes should gate on this and degrade nicely.
+export function recordingConfigured(): boolean {
+  return !!(
+    livekitConfigured() &&
+    S3_ENDPOINT &&
+    S3_ACCESS_KEY &&
+    S3_SECRET_KEY &&
+    S3_BUCKET
+  );
+}
+
+function egress(): EgressClient {
+  if (!recordingConfigured()) {
+    throw new Error("LiveKit egress (recording) is not configured");
+  }
+  if (!cachedEgress) {
+    cachedEgress = new EgressClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+  }
+  return cachedEgress;
+}
+
+export interface StartRecordingResult {
+  egressId: string;
+  // Storage key (path within the bucket) the MP4 will be written to.
+  storageKey: string;
+  // Public URL the finished MP4 will be reachable at (bucket is public).
+  publicUrl: string;
+}
+
+// Start a room-composite recording (single MP4 of the whole live scene) and
+// return the egress id + the storage key/URL it will land at. The caller should
+// persist egressId on the space row so it can be stopped when the host ends the
+// live. Best-effort by design: throws only if egress is configured but the API
+// call itself fails; callers catch and continue (the live still works, just
+// unrecorded).
+export async function startRoomRecording(
+  roomName: string,
+): Promise<StartRecordingResult> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const storageKey = `mirror-live/${roomName}/${stamp}.mp4`;
+
+  const output = new EncodedFileOutput({
+    fileType: EncodedFileType.MP4,
+    filepath: storageKey,
+    output: {
+      case: "s3",
+      value: new S3Upload({
+        accessKey: S3_ACCESS_KEY,
+        secret: S3_SECRET_KEY,
+        bucket: S3_BUCKET,
+        region: S3_REGION || undefined,
+        endpoint: S3_ENDPOINT,
+        forcePathStyle: true, // Supabase S3 requires path-style addressing
+      }),
+    },
+  });
+
+  // Modern SDK signature: (roomName, output, RoomCompositeOptions). Pass the
+  // EncodedFileOutput directly; "speaker" layout records the active speaker /
+  // host full-frame which suits a single-host Mirror live.
+  const info = await egress().startRoomCompositeEgress(roomName, output, {
+    layout: "speaker",
+  });
+
+  const publicUrl = `${PUBLIC_SUPABASE_URL}/storage/v1/object/public/${S3_BUCKET}/${storageKey}`;
+  return { egressId: info.egressId, storageKey, publicUrl };
+}
+
+// Stop a running recording. Best-effort: a missing/already-stopped egress is not
+// an error. Returns true if a stop was issued.
+export async function stopRoomRecording(egressId: string): Promise<boolean> {
+  if (!egressId) return false;
+  try {
+    await egress().stopEgress(egressId);
+    return true;
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|already|complete/i.test(msg)) return false;
+    console.warn("[livekitServer] stopEgress failed", msg);
+    return false;
+  }
 }
 
 interface ApplyOptions {

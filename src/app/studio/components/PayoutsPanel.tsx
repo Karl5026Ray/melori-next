@@ -3,14 +3,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/authClient";
 
+type PayoutState =
+  | "not_started"
+  | "incomplete"
+  | "pending"
+  | "enabled"
+  | "restricted";
+
 interface StatusResponse {
   connected: boolean;
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
   detailsSubmitted: boolean;
   needsOnboarding: boolean;
+  state?: PayoutState;
+  requirementsDue?: string[];
+  pendingVerification?: string[];
+  disabledReason?: string | null;
   error?: string;
   connectDisabled?: boolean;
+}
+
+// Stripe's requirement keys are machine-readable ("individual.id_number").
+// Show the artist something they can act on instead.
+function humanizeRequirement(key: string): string {
+  const label = key
+    .replace(/^(individual|company|business_profile|external_account)\./, "")
+    .replace(/_/g, " ")
+    .replace(/\./g, " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 export default function PayoutsPanel() {
@@ -99,7 +120,15 @@ export default function PayoutsPanel() {
     }
   }, []);
 
-  const active = status?.connected && status?.payoutsEnabled;
+  const state: PayoutState =
+    status?.state ??
+    (status?.connected
+      ? status.payoutsEnabled
+        ? "enabled"
+        : "incomplete"
+      : "not_started");
+  const active = state === "enabled";
+  const requirements = status?.requirementsDue ?? [];
 
   return (
     <div className="max-w-xl space-y-6">
@@ -111,6 +140,23 @@ export default function PayoutsPanel() {
           processing fee is deducted.
         </p>
       </div>
+
+      {/* The consequence of NOT finishing setup, stated plainly. Sales still
+          go through — the money just lands on Melori's account until the
+          artist's own account can receive it. */}
+      {!loading && !status?.connectDisabled && !active && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="text-sm font-medium text-amber-300">
+            Your payouts aren&apos;t active yet
+          </p>
+          <p className="mt-1 text-xs text-amber-200/80">
+            Your music still sells normally — but until this is finished, sales
+            are collected into the Melori platform account instead of paid
+            straight to you. Karl reconciles anything earned in the meantime
+            once your account is live.
+          </p>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-[#888] text-sm">Checking payout status…</p>
@@ -141,12 +187,58 @@ export default function PayoutsPanel() {
         </div>
       ) : (
         <div className="space-y-4">
-          {status?.connected && (
+          {state === "pending" && (
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-4">
+              <p className="text-sm font-medium text-blue-300">
+                Pending verification
+              </p>
+              <p className="mt-1 text-xs text-blue-200/80">
+                Stripe has everything it asked for and is reviewing your
+                account. This usually takes a day or two — nothing more is
+                needed from you.
+              </p>
+              {(status?.pendingVerification?.length ?? 0) > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-blue-200/70">
+                  {status?.pendingVerification?.map((r) => (
+                    <li key={r}>{humanizeRequirement(r)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {state === "restricted" && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+              <p className="text-sm font-medium text-red-300">
+                Payouts restricted
+              </p>
+              <p className="mt-1 text-xs text-red-200/80">
+                Stripe has paused payouts on your account until it gets more
+                information from you.
+              </p>
+              {requirements.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-200/70">
+                  {requirements.map((r) => (
+                    <li key={r}>{humanizeRequirement(r)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {state === "incomplete" && status?.connected && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
               <p className="text-sm text-amber-300">
                 Your payout setup isn&apos;t finished yet. Continue onboarding to
                 start receiving payouts.
               </p>
+              {requirements.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-200/70">
+                  {requirements.map((r) => (
+                    <li key={r}>{humanizeRequirement(r)}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
           <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
@@ -173,17 +265,30 @@ export default function PayoutsPanel() {
     or stores your ID or bank details. Setup takes about 5 minutes.
   </p>
 </div>
-          <button
-            onClick={startOnboarding}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#c9a96e] px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-[#f0d99c] disabled:opacity-50"
-          >
-            {busy
-              ? "Starting…"
-              : status?.connected
-                ? "Continue payout setup"
-                : "Set up payouts with Stripe"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={startOnboarding}
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#c9a96e] px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-[#f0d99c] disabled:opacity-50"
+            >
+              {busy
+                ? "Starting…"
+                : state === "restricted"
+                  ? "Fix payout setup"
+                  : status?.connected
+                    ? "Continue payout setup"
+                    : "Set up payouts with Stripe"}
+            </button>
+            {status?.connected && (
+              <button
+                onClick={openDashboard}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium transition-colors hover:border-[#c9a96e]/40 disabled:opacity-50"
+              >
+                Open Stripe dashboard
+              </button>
+            )}
+          </div>
         </div>
       )}
 

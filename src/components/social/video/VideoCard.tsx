@@ -4,7 +4,9 @@ import { useState, useRef, useEffect, memo } from "react";
 import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
+import { youtubeEmbedUrl } from "@/lib/youtube";
 import CommentSheet from "./CommentSheet";
+import PostActionsMenu from "./PostActionsMenu";
 import {
   Heart,
   MessageCircle,
@@ -22,6 +24,9 @@ interface VideoCardProps {
   // paused video's playhead without causing a reload-flash if the user flicks
   // straight back to it.
   distance?: number;
+  // Called after this post is deleted (by its owner or by an admin) so the
+  // parent feed can drop the card from its list.
+  onDeleted?: (videoId: string) => void;
 }
 
 // Resolve a media URL to something the browser can actually load. Video posts
@@ -41,9 +46,15 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   return `${base}/storage/v1/object/public/audio-files/${path}`;
 }
 
-function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
+function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardProps) {
   const isAudio = video.media_type === "audio";
   const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
+  // Artist-submitted YouTube post (migration 041): played through YouTube's own
+  // iframe rather than a <video> element, so none of the media-element refs or
+  // effects below apply to it. `source` may be absent on older cached payloads,
+  // so the id alone is enough to switch rendering.
+  const youtubeId =
+    video.source === "youtube" || video.youtube_id ? video.youtube_id : null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -367,7 +378,37 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
       className="relative h-full w-full bg-melori-void"
       onPointerDown={handleTapSurface}
     >
-      {isAudio ? (
+      {youtubeId ? (
+        // The player is mounted ONLY while the card is active. Unmounting on
+        // scroll-away is what stops playback (there is no ref to pause on a
+        // cross-origin iframe) and keeps a long feed from holding a dozen live
+        // YouTube players. The poster stands in for inactive cards so the frame
+        // is never blank during a fast scroll.
+        <div className="absolute inset-0 bg-black">
+          {isActive ? (
+            <iframe
+              // Remount per card so the src is applied cleanly on activation.
+              key={youtubeId}
+              src={youtubeEmbedUrl(youtubeId, { autoplay: true, muted: true })}
+              title={video.title}
+              // Autoplay is only granted to a muted player; the viewer unmutes
+              // with YouTube's own controls, which is why this card has no
+              // Melori mute toggle.
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full border-0"
+            />
+          ) : (
+            video.thumbnail_url && (
+              <img
+                src={video.thumbnail_url}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            )
+          )}
+        </div>
+      ) : isAudio ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
           <div className="absolute inset-0 bg-gradient-to-br from-melori-purple/30 via-melori-void to-melori-pink/20" />
           {video.thumbnail_url ? (
@@ -426,7 +467,7 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 pointer-events-none" />
 
-      {!isAudio && (
+      {!isAudio && !youtubeId && (
         <button
           onClick={toggleMute}
           className="absolute top-4 right-4 p-2 bg-black/30 backdrop-blur rounded-full text-white"
@@ -479,7 +520,11 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
         </p>
         <div className="flex items-center gap-2 mt-3 text-xs text-white/70">
           <Music className="w-4 h-4" />
-          <span>Original Sound — {video.user?.display_name}</span>
+          <span>
+            {youtubeId
+              ? `YouTube — shared by ${video.user?.display_name}`
+              : `Original Sound — ${video.user?.display_name}`}
+          </span>
         </div>
       </div>
 
@@ -512,6 +557,11 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
             {shareCopied ? "Copied!" : "Share"}
           </span>
         </button>
+        <PostActionsMenu
+          videoId={video.id}
+          ownerId={video.user_id}
+          onDeleted={onDeleted}
+        />
       </div>
 
       {/* Heart-burst layer. Absolutely positioned so it floats above the

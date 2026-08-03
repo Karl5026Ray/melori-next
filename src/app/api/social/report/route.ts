@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 //   details?: string,  // free-text
 // }
 
-const CONTENT_TYPES = ["message", "comment", "gallery", "profile", "track", "other"];
+const CONTENT_TYPES = ["message", "comment", "gallery", "profile", "track", "video", "other"];
 
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req);

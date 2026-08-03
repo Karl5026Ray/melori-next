@@ -1,5 +1,10 @@
 export type UserRole = "artist" | "superfan" | "admin" | "free";
 
+export interface SocialLink {
+  label: string;
+  url: string;
+}
+
 export interface Profile {
   id: string;
   username: string;
@@ -17,6 +22,8 @@ export interface Profile {
   birth_date?: string | null;
   birthday_visible?: boolean | null;
   city?: string | null;
+  // Up to 5 clickable links shown on the profile (migration 039).
+  social_links?: SocialLink[] | null;
   // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
   membership_tier?: string | null;
   membership_status?: string | null;
@@ -59,6 +66,14 @@ export function getRoomFormatConfig(format: RoomFormat | null | undefined) {
   );
 }
 
+// Host-controlled hand-raise policy (Clubhouse parity):
+//   "off"      - raise-hand disabled; host invites only.
+//   "followed" - limited to accounts the host follows. TODO: enforcement is
+//                 not yet wired (see raise-hand route) — treated as "off"
+//                 today so we never silently grant more access than intended.
+//   "everyone" - any signed-in participant may raise a hand (default).
+export type HandRaiseMode = "off" | "followed" | "everyone";
+
 export interface Space {
   id: string;
   title: string;
@@ -75,22 +90,7 @@ export interface Space {
   agora_channel: string | null;
   scheduled_at?: string | null;
   last_activity_at?: string | null;
-}
-
-export type WaveStatus = "pending" | "accepted" | "declined" | "expired";
-
-export interface Wave {
-  id: string;
-  sender_id: string;
-  recipient_id: string;
-  message: string | null;
-  status: WaveStatus;
-  conversation_id: string | null;
-  created_at: string;
-  expires_at: string;
-  responded_at: string | null;
-  sender?: Profile;
-  recipient?: Profile;
+  hand_raise_mode?: HandRaiseMode;
 }
 
 export type ParticipantRole = "host" | "speaker" | "audience";
@@ -149,6 +149,13 @@ export interface SocialVideo {
   video_url: string;
   thumbnail_url: string | null;
   media_type: "video" | "audio";
+  // Where the media lives (migration 041). 'upload' = a file in Supabase
+  // Storage; 'youtube' = an artist-submitted link rendered as an inline embed
+  // (video_url still holds the canonical watch URL, so consumers that only read
+  // video_url keep working). Optional: rows written before the migration and
+  // any cached payload omit it, and absent means 'upload'.
+  source?: "upload" | "youtube";
+  youtube_id?: string | null;
   likes_count: number;
   comments_count: number;
   created_at: string;

@@ -9,12 +9,11 @@ export const dynamic = "force-dynamic";
 // GET /api/social/conversations/[id]
 // Returns the conversation's request status + the OTHER participant + whether
 // a block exists in either direction. Runs under service_role after verifying
-// the caller is a member, because:
-//   - the `conversations` SELECT RLS policy is currently self-referential and
-//     matches nothing, and
-//   - `member_blocks` has RLS enabled with no SELECT policy,
-// so the browser (anon) client cannot read either table. Centralizing the read
-// here keeps the chat page correct regardless of those policies.
+// the caller is a member, because `member_blocks` has RLS enabled with no
+// SELECT policy, so the browser (anon) client cannot read it. Centralizing the
+// read here also keeps the chat page correct independently of the
+// `conversations` SELECT policy (which migration 042 repairs — it was a broken
+// self-join in production that matched nothing).
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const { userId } = await getRequestMembership(req);

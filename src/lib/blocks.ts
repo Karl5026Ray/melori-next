@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // `member_blocks` (blocker_id, blocked_id) but is enforced SYMMETRICALLY: once
 // either party blocks the other, all interaction and visibility is severed in
 // BOTH directions. Every social surface (feed, profile view, profile content,
-// messaging, waves) funnels through these helpers so the rule stays consistent.
+// messaging) funnels through these helpers so the rule stays consistent.
 
 // True when a block exists between `a` and `b` in EITHER direction.
 //

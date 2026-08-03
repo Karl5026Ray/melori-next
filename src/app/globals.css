@@ -82,6 +82,20 @@ a {
   );
 }
 
+/* Homepage hero waveform — bars "breathe" while a track plays. Applied inline
+   with a per-bar delay so the row animates like a live visualization. Gated in
+   JS on isPlaying + !prefers-reduced-motion, so this only ever runs when the
+   visitor has opted into motion and audio is actually playing. */
+@keyframes meloriWave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* ============================================================ */
 /* MM SOCIAL utilities (scoped visual language for /social/*)    */
 /* ============================================================ */
@@ -319,5 +333,74 @@ select {
   }
   .safe-area-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Safe-area-aware BOTTOM OFFSETS for `fixed`/`absolute` elements positioned
+   with `bottom-*`. Same reasoning as `.safe-area-bottom` above (viewportFit:
+   'cover' lets content run under the iPhone home indicator), but these add
+   the inset to a fixed offset instead of to padding, for floating overlays
+   that must clear the mobile tab bar AND the home indicator. Used by the MM
+   Spaces page (src/app/social/spaces/[spaceId]/page.tsx) for its floating
+   reaction/toast layers and its bottom control bar. Falls back to the plain
+   pixel offset when env() is unsupported. */
+.safe-bottom-offset-32 {
+  bottom: 8rem; /* Tailwind bottom-32 fallback */
+}
+.safe-bottom-offset-44 {
+  bottom: 11rem; /* Tailwind bottom-44 fallback */
+}
+@supports (bottom: max(0px)) {
+  .safe-bottom-offset-32 {
+    bottom: calc(8rem + env(safe-area-inset-bottom));
+  }
+  .safe-bottom-offset-44 {
+    bottom: calc(11rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Adds the home-indicator inset ON TOP OF an element's existing responsive
+   `p-4 md:p-6` bottom padding, instead of replacing it (unlike
+   `.safe-area-bottom`, which assumes no other bottom padding to preserve).
+   Used for the Spaces in-flow control bar, which must keep the exact same
+   1rem/1.5rem bottom padding on desktop/tablet — only mobile (<768px) gets
+   the extra home-indicator inset added on top, and only on devices where
+   env() actually resolves to something non-zero. */
+.safe-area-pad-extra-bottom {
+  padding-bottom: 1rem;
+}
+@media (min-width: 768px) {
+  .safe-area-pad-extra-bottom {
+    padding-bottom: 1.5rem;
+  }
+}
+@supports (padding: max(0px)) {
+  .safe-area-pad-extra-bottom {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .safe-area-pad-extra-bottom {
+      padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Same idea as `.safe-area-pad-extra-bottom` above, but for the per-person
+   reaction picker's `p-5` bottom sheet (Spaces page). Below the `sm:`
+   breakpoint it renders as a bottom sheet (`items-end`) so it needs the
+   home-indicator inset added on top of its 1.25rem (p-5) padding; at `sm:`
+   and up it re-centers as a normal modal (`sm:items-center`) with nothing to
+   clear, so the extra inset is dropped there entirely. */
+.safe-area-pad-extra-bottom-5 {
+  padding-bottom: 1.25rem;
+}
+@supports (padding: max(0px)) {
+  .safe-area-pad-extra-bottom-5 {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 640px) {
+  .safe-area-pad-extra-bottom-5 {
+    padding-bottom: 1.25rem;
   }
 }

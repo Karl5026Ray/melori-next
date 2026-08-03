@@ -58,10 +58,19 @@ function VolumeIcon() {
   );
 }
 
-function CloseIcon() {
+function ChevronIcon({ down }: { down: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-      <path d="M6 6l12 12M18 6 6 18" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`h-4 w-4 transition-transform ${down ? "rotate-180" : ""}`}
+      aria-hidden
+    >
+      <path d="M6 15l6-6 6 6" />
     </svg>
   );
 }
@@ -91,8 +100,9 @@ export default function AudioPlayer() {
     if (inRoom) pause();
   }, [inRoom, pause]);
 
-  // Melori Radio runs its own dual-deck player; a second global transport there
-  // would be a confusing duplicate set of controls.
+  // The Radio page renders full-size controls for the same shared player, so
+  // the floating transport there would just be a duplicate set of buttons.
+  // Only the UI is hidden — the audio keeps playing from PlayerProvider.
   if (onRadio) return null;
   // Hidden on room screens. The <audio> element lives in PlayerProvider (mounted
   // at the layout root), so playback state survives this component rendering null.
@@ -309,25 +319,37 @@ function DesktopBar() {
 }
 
 // -------------------------------------------------------------------------
-// Mobile (< md): a draggable floating mini-player.
-//   - Collapsed = a ~64px bubble (album art + play/pause).
-//   - Tap the bubble to expand to the full transport; tap the close button
-//     (or the bubble again) to collapse.
-//   - Tap-and-hold (~300ms) OR grab-and-drag past the move threshold engages
-//     drag mode (with a single haptic pulse) to move it anywhere; position
-//     persists.
+// Mobile (< md): the floating transport pill.
+//   - Collapsed = a horizontal pill: white circle handle on the LEFT, cover +
+//     track text in the middle, play/pause on the RIGHT (usable while closed).
+//   - Expanded = the same pill grown into a panel with the full transport:
+//     cover art, title/artist, prev / play / next / radio, a seek scrubber and
+//     volume, under a full-width drag bar.
+//   - ONE gesture surface per state, and it behaves identically in both: a
+//     clean tap toggles open/closed, a tap-and-hold (or a grab past the move
+//     threshold) engages drag mode with a haptic pulse and moves it anywhere.
+//     Collapsed that surface is the white circle; expanded it is the ENTIRE
+//     top bar, so the target is a full-width bar instead of a 44px circle.
+//   - There is deliberately no X button. Tap-to-toggle works in both states,
+//     so a separate close control was redundant surface area.
+// Every control drives the one shared engine in PlayerProvider — this file
+// renders views of that player and never touches an <audio> element itself.
 // Hand-rolled with pointer events + translate3d per the design consult — no
 // drag library, no animating top/left.
 // -------------------------------------------------------------------------
 const POS_KEY = "melori:player:pos";
 const MARGIN = 8;
-// Reserve for the fixed mobile tab bar (h-14 = 56px) plus the iOS home
-// indicator so the player never parks underneath the nav.
-const BOTTOM_RESERVE = 76;
-const BUBBLE = 64;
-// Movement thresholds that disambiguate tap / long-press-drag / scroll.
+// Height of the fixed mobile tab bar (h-14). Reserved below the pill, on top
+// of whatever the home-indicator safe-area inset reports, so the pill can
+// never park behind the nav.
+const TAB_BAR = 56;
+// Footprint assumed before the element has been measured (first clamp on
+// mount, and any clamp while the ref is detached).
+const PILL_W = 240;
+const PILL_H = 56;
+// Thresholds that disambiguate tap / hold-drag / grab-drag.
 const MOVE_THRESHOLD = 10;
-const LONG_PRESS_MS = 300;
+const HOLD_MS = 400;
 
 // Fire a short haptic buzz on capable devices. Silent no-op elsewhere; the
 // try/catch guards against Permissions-Policy denials that would otherwise
@@ -350,6 +372,39 @@ function getViewport() {
   };
 }
 
+interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+const NO_INSETS: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+// Resolve the iOS safe-area insets in pixels. `env()` is only usable from CSS,
+// so we let the engine resolve it as padding on a throwaway probe and read the
+// computed values back. The layout sets viewportFit:"cover", which is what
+// makes these non-zero on notched devices — without honouring them the pill
+// can be dropped under the home indicator or the rounded-corner bezel.
+function readInsets(): Insets {
+  if (typeof document === "undefined" || !document.body) return NO_INSETS;
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;" +
+    "padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);" +
+    "padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);";
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const insets: Insets = {
+    top: parseFloat(cs.paddingTop) || 0,
+    right: parseFloat(cs.paddingRight) || 0,
+    bottom: parseFloat(cs.paddingBottom) || 0,
+    left: parseFloat(cs.paddingLeft) || 0,
+  };
+  probe.remove();
+  return insets;
+}
+
 function FloatingPlayer() {
   const {
     current,
@@ -357,6 +412,7 @@ function FloatingPlayer() {
     isLoading,
     currentTime,
     duration,
+    volume,
     error,
     isSample,
     hasNext,
@@ -369,11 +425,15 @@ function FloatingPlayer() {
     next,
     prev,
     seek,
+    setVolume,
   } = usePlayer();
 
   const fraction = duration > 0 ? currentTime / duration : 0;
 
   const ref = useRef<HTMLDivElement | null>(null);
+  // The live drag surface. Only one is mounted at a time (circle when
+  // collapsed, top bar when expanded), so a single ref serves both.
+  const handleRef = useRef<HTMLButtonElement | null>(null);
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -381,86 +441,117 @@ function FloatingPlayer() {
   // Mirror of pos read synchronously inside pointer handlers (state lags a tick).
   const posRef = useRef(pos);
   posRef.current = pos;
+  // Safe-area insets, re-read whenever the viewport geometry can change.
+  const insetsRef = useRef<Insets>(NO_INSETS);
+  // Where the listener parked the pill. `pos` is what's on screen and can
+  // differ while the wider expanded panel is open; the dock is what the
+  // collapsed pill always returns to, and what gets persisted.
+  const dockRef = useRef({ x: 0, y: 0 });
 
-  // Clamp a candidate position so the whole player stays inside the visual
-  // viewport (accurate on mobile Safari, where the URL bar changes innerHeight).
+  // Clamp a candidate position so the whole pill stays inside the visual
+  // viewport (accurate on mobile Safari, where the URL bar changes innerHeight),
+  // clear of the notch/bezel insets and of the fixed mobile tab bar.
   const clampPos = useCallback((x: number, y: number) => {
     const el = ref.current;
-    const w = el?.offsetWidth ?? BUBBLE;
-    const h = el?.offsetHeight ?? BUBBLE;
+    const w = el?.offsetWidth || PILL_W;
+    const h = el?.offsetHeight || PILL_H;
     const vp = getViewport();
-    const maxX = Math.max(MARGIN, vp.w - w - MARGIN);
-    const maxY = Math.max(MARGIN, vp.h - h - MARGIN - BOTTOM_RESERVE);
+    const i = insetsRef.current;
+    const minX = MARGIN + i.left;
+    const minY = MARGIN + i.top;
+    const maxX = Math.max(minX, vp.w - w - MARGIN - i.right);
+    const maxY = Math.max(minY, vp.h - h - MARGIN - TAB_BAR - i.bottom);
     return {
-      x: Math.min(Math.max(MARGIN, x), maxX),
-      y: Math.min(Math.max(MARGIN, y), maxY),
+      x: Math.min(Math.max(minX, x), maxX),
+      y: Math.min(Math.max(minY, y), maxY),
     };
   }, []);
 
-  // Mount: restore saved position or default to the bottom-right corner.
+  // Project the dock onto the screen for the current state. Expanding must
+  // never move the dock itself, otherwise collapsing again would leave the pill
+  // wherever the wider panel happened to fit.
+  const layout = useCallback(() => {
+    const dock = dockRef.current;
+    const w = ref.current?.offsetWidth || PILL_W;
+    const vp = getViewport();
+    // Expanding near the right edge: mirror to the opposite edge instead of
+    // letting the wider panel get slammed inward ("popped to the left").
+    const x = expanded && dock.x + w + MARGIN > vp.w ? MARGIN : dock.x;
+    setPos(clampPos(x, dock.y));
+  }, [clampPos, expanded]);
+
+  // Mount: restore the saved position or default to the bottom-right dock.
   useEffect(() => {
+    insetsRef.current = readInsets();
     setMounted(true);
     let saved: { x: number; y: number } | null = null;
     try {
       const raw = localStorage.getItem(POS_KEY);
-      if (raw) saved = JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
+          saved = { x: parsed.x, y: parsed.y };
+        }
+      }
     } catch {
       /* ignore malformed storage */
     }
-    const vp = getViewport();
-    const fallback = {
-      x: vp.w - BUBBLE - MARGIN,
-      y: vp.h - BUBBLE - MARGIN - BOTTOM_RESERVE,
-    };
-    setPos(clampPos((saved ?? fallback).x, (saved ?? fallback).y));
+    // Clamping a deliberately out-of-range fallback docks the pill bottom-right
+    // using its real measured size, with no duplicate inset arithmetic here.
+    const start = saved ?? { x: Number.MAX_SAFE_INTEGER, y: Number.MAX_SAFE_INTEGER };
+    const docked = clampPos(start.x, start.y);
+    dockRef.current = docked;
+    setPos(docked);
   }, [clampPos]);
 
-  // Re-clamp when the viewport changes (rotation, URL-bar show/hide).
+  // Re-clamp when the viewport changes (rotation, URL-bar show/hide). Rotation
+  // also swaps which edge carries the notch, so the insets are re-read too.
   useEffect(() => {
-    const onResize = () => setPos((p) => clampPos(p.x, p.y));
+    const onResize = () => {
+      insetsRef.current = readInsets();
+      dockRef.current = clampPos(dockRef.current.x, dockRef.current.y);
+      layout();
+    };
     window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
     window.visualViewport?.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
       window.visualViewport?.removeEventListener("resize", onResize);
     };
-  }, [clampPos]);
+  }, [clampPos, layout]);
 
-  // Re-clamp after expand/collapse since the footprint changes. When expanding
-  // near the right edge the wider panel would otherwise get slammed to x=MARGIN
-  // ("popped to the left"). Mirror to the opposite edge in that case so the
-  // panel opens next to where the bubble sat.
+  // Re-project after expand/collapse: the footprint changes, so the panel may
+  // need mirroring and the collapsed pill must land back on its dock.
   useEffect(() => {
     if (!mounted) return;
     // Wait a frame so ref.current reflects the new (expanded/collapsed) size.
-    const id = requestAnimationFrame(() => {
-      setPos((p) => {
-        const el = ref.current;
-        const w = el?.offsetWidth ?? BUBBLE;
-        const vp = getViewport();
-        if (expanded && p.x + w + MARGIN > vp.w) {
-          return clampPos(MARGIN, p.y);
-        }
-        return clampPos(p.x, p.y);
-      });
-    });
+    const id = requestAnimationFrame(layout);
     return () => cancelAnimationFrame(id);
-  }, [expanded, mounted, clampPos]);
+  }, [mounted, layout]);
 
+  // Gesture state for the drag surface — the ONLY place a drag can start.
+  // Keeping it off the container is what lets every other control (play/pause,
+  // seek, volume) stay a plain button: they can't arm a drag, and a drag can
+  // never swallow their taps (the #180 "player got stuck" failure mode). The
+  // expanded top bar is wide, but it is still a single dedicated surface with
+  // no interactive children, so that guarantee is unchanged.
   const gesture = useRef({
     startX: 0,
     startY: 0,
     originX: 0,
     originY: 0,
-    armed: false, // long-press timer fired → drag is now allowed
+    active: false, // a pointer is down on the handle
+    armed: false, // hold timer fired → this gesture is a drag, never a tap
     dragging: false, // actively moving
-    scrolling: false, // gesture handled by a child button → not a drag/tap
+    moved: false, // travelled past the move threshold
     buzzed: false, // engage haptic already fired for this gesture
     timer: 0 as ReturnType<typeof setTimeout> | 0,
   });
 
   // Fire the "drag mode engaged" haptic exactly once per gesture, whether drag
-  // engaged via the long-press timer or by dragging past the move threshold.
+  // engaged via the hold timer or by dragging past the move threshold.
   const engageHaptic = () => {
     const g = gesture.current;
     if (g.buzzed) return;
@@ -468,58 +559,65 @@ function FloatingPlayer() {
     buzz();
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    const el = ref.current;
-    if (!el) return;
-    // NOTE: capture is claimed only once a drag actually begins (see
-    // onPointerMove), NOT here. Capturing on every pointerdown meant a missed
-    // pointerup (common on mobile — scroll momentum, gesture interruptions)
-    // left the container holding a stale capture that retargeted the NEXT
-    // tap's events to it. That swallowed taps on the transport buttons, so the
-    // player "got stuck" — you couldn't pause/close it.
+  const resetGesture = () => {
+    const g = gesture.current;
+    clearTimeout(g.timer);
+    g.timer = 0;
+    g.active = false;
+    g.armed = false;
+    g.dragging = false;
+    g.moved = false;
+    g.buzzed = false;
+    setDragging(false);
+  };
+
+  const onHandlePointerDown = (e: React.PointerEvent) => {
+    // Secondary mouse buttons open context menus; they must not grab the pill.
+    if (e.button > 0) return;
     const g = gesture.current;
     g.startX = e.clientX;
     g.startY = e.clientY;
     g.originX = posRef.current.x;
     g.originY = posRef.current.y;
+    g.active = true;
     g.armed = false;
     g.dragging = false;
-    g.scrolling = false;
+    g.moved = false;
     g.buzzed = false;
     clearTimeout(g.timer);
     g.timer = setTimeout(() => {
-      // Tap-and-hold: arm drag mode and pulse so the user feels the control is
-      // now grabbable, even before they start moving.
-      if (g.scrolling || g.dragging) return;
+      // Tap-and-hold: arm drag mode and pulse so the user feels the pill is now
+      // grabbable, even before they start moving.
+      if (!g.active || g.dragging) return;
       g.armed = true;
       engageHaptic();
       setDragging(true);
-    }, LONG_PRESS_MS);
+    }, HOLD_MS);
   };
 
-  const onPointerMove = (e: React.PointerEvent) => {
+  const onHandlePointerMove = (e: React.PointerEvent) => {
     const g = gesture.current;
-    if (g.scrolling) return;
+    if (!g.active) return;
     const dx = e.clientX - g.startX;
     const dy = e.clientY - g.startY;
+    if (Math.hypot(dx, dy) > MOVE_THRESHOLD) g.moved = true;
 
     if (g.dragging) {
       setPos(clampPos(g.originX + dx, g.originY + dy));
       return;
     }
-    // Engage the drag when either the long-press timer has armed us, OR the
-    // finger has travelled past the move threshold (grab-and-drag). Either way
-    // this is the moment drag mode begins: pulse once and claim the pointer NOW
-    // (never on pointerdown — see the #180 note) so subsequent moves keep
-    // tracking even if the finger slides off the bubble. endGesture / cancel /
-    // lostpointercapture all release it.
-    if (g.armed || Math.hypot(dx, dy) > MOVE_THRESHOLD) {
+    // Drag begins on either signal: the hold timer armed us, or the finger
+    // travelled past the move threshold (grab-and-drag, from #185). Claim the
+    // pointer NOW rather than on pointerdown — capturing every press is what
+    // left stale captures that swallowed the next tap in #180.
+    if (g.armed || g.moved) {
       clearTimeout(g.timer);
+      g.timer = 0;
       g.armed = true;
       g.dragging = true;
       engageHaptic();
       try {
-        ref.current?.setPointerCapture(e.pointerId);
+        handleRef.current?.setPointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
@@ -528,112 +626,139 @@ function FloatingPlayer() {
     }
   };
 
-  const endGesture = (e: React.PointerEvent) => {
-    const g = gesture.current;
-    clearTimeout(g.timer);
+  const releaseCapture = (pointerId: number) => {
     try {
-      ref.current?.releasePointerCapture(e.pointerId);
+      handleRef.current?.releasePointerCapture(pointerId);
     } catch {
       /* ignore */
     }
+  };
+
+  const onHandlePointerUp = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g.active) return;
+    releaseCapture(e.pointerId);
     if (g.dragging) {
-      // Snap to the nearest horizontal edge so it never blocks centre content.
-      const el = ref.current;
-      const w = el?.offsetWidth ?? BUBBLE;
-      const vp = getViewport();
-      const center = posRef.current.x + w / 2;
-      const snappedX = center < vp.w / 2 ? MARGIN : vp.w - w - MARGIN;
-      const final = clampPos(snappedX, posRef.current.y);
+      // Drop wherever the finger let go — the pill lives anywhere the listener
+      // parks it — then persist the clamped result.
+      const final = clampPos(posRef.current.x, posRef.current.y);
+      dockRef.current = final;
       setPos(final);
       try {
         localStorage.setItem(POS_KEY, JSON.stringify(final));
       } catch {
         /* ignore */
       }
-    } else if (!g.armed && !g.scrolling) {
-      // Clean tap: quick press + release, no long-press, no movement → toggle
-      // expand. A long-press that armed drag mode (even without moving) is NOT
-      // a tap, so it must not toggle here.
+    } else if (!g.armed && !g.moved) {
+      // Clean tap: quick press + release, no hold, no movement → toggle open.
+      // A hold that armed drag mode (even without moving) is NOT a tap.
       setExpanded((v) => !v);
     }
-    g.armed = false;
-    g.dragging = false;
-    g.scrolling = false;
-    g.buzzed = false;
-    setDragging(false);
+    resetGesture();
   };
 
-  // Interactive children must not start a drag; swallow the pointerdown so the
-  // container gesture never arms on them. Also cancel any pending long-press
-  // timer and mark the gesture as non-tap so a stray pointerup on the parent
-  // (from pointer capture) doesn't re-toggle expanded after the child handled
-  // the tap.
-  const stop = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    const g = gesture.current;
-    clearTimeout(g.timer);
-    g.armed = false;
-    g.dragging = false;
-    g.scrolling = true;
-    g.buzzed = false;
-  };
-
-  // Safety net: if the browser force-releases the capture mid-drag (OS gesture,
-  // element removed), reset gesture state so a stale capture can never linger
-  // and swallow the next tap (the #180 failure mode).
-  const onLostCapture = () => {
-    const g = gesture.current;
-    clearTimeout(g.timer);
-    g.armed = false;
-    g.dragging = false;
-    g.scrolling = false;
-    g.buzzed = false;
-    setDragging(false);
+  // pointercancel (OS gesture, scroll takeover) and a force-released capture
+  // both abandon the gesture: reset without toggling, so a stale capture can
+  // never linger and swallow the next tap (the #180 failure mode).
+  const onHandlePointerCancel = (e: React.PointerEvent) => {
+    releaseCapture(e.pointerId);
+    resetGesture();
   };
 
   const trackLabel = current ? current.title : "Nothing playing";
+  const artistLabel = error ?? current?.artistName ?? "MELORI MUSIC";
+
+  // Everything that makes an element the drag surface. Shared verbatim by the
+  // collapsed circle and the expanded top bar so the two states cannot drift:
+  // tap toggles open/closed, press-and-hold drags, in both.
+  const dragSurfaceProps = {
+    ref: handleRef,
+    type: "button" as const,
+    "data-testid": "player-handle",
+    "aria-label": expanded ? "Player handle — tap to close, hold to drag" : "Player handle — tap to open, hold to drag",
+    "aria-expanded": expanded,
+    title: "Tap to open or close · hold to drag",
+    onPointerDown: onHandlePointerDown,
+    onPointerMove: onHandlePointerMove,
+    onPointerUp: onHandlePointerUp,
+    onPointerCancel: onHandlePointerCancel,
+    onLostPointerCapture: resetGesture,
+    // Keyboard-generated clicks report detail 0; pointer clicks are already
+    // handled by the gesture above, so this only serves Enter/Space. With the
+    // X button gone this is the sole keyboard route to closing the panel.
+    onClick: (e: React.MouseEvent) => {
+      if (e.detail === 0) setExpanded((v) => !v);
+    },
+    style: {
+      touchAction: "none" as const,
+      WebkitUserSelect: "none" as const,
+      WebkitTouchCallout: "none" as const,
+    },
+  };
+
+  // Collapsed: the white circle on the left of the pill.
+  const collapsedHandle = (
+    <button
+      {...dragSurfaceProps}
+      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-md ring-1 ring-black/10 transition-transform ${
+        dragging ? "scale-105 cursor-grabbing" : "cursor-grab"
+      }`}
+    >
+      <ChevronIcon down={expanded} />
+    </button>
+  );
+
+  // Expanded: the WHOLE top bar is the handle. Same gesture contract, ~7x the
+  // touch area of the circle it replaces. It has no interactive children, so
+  // there are no control taps for the enlarged region to swallow — the real
+  // transport controls all live below it.
+  const expandedDragBar = (
+    <button
+      {...dragSurfaceProps}
+      className={`relative mb-2 flex h-11 w-full items-center justify-center rounded-xl transition-colors ${
+        dragging ? "cursor-grabbing bg-white/10" : "cursor-grab hover:bg-white/5"
+      }`}
+    >
+      {/* Grabber: the visible "you can drag this" affordance. */}
+      <span
+        aria-hidden
+        className={`h-1.5 w-10 rounded-full transition-colors ${
+          dragging ? "bg-white" : "bg-white/40"
+        }`}
+      />
+      {/* Chevron parked on the right so tap-to-close stays discoverable. It is
+          decoration inside the same button, never a separate hit target. */}
+      <span aria-hidden className="absolute right-2 text-text-secondary">
+        <ChevronIcon down={expanded} />
+      </span>
+    </button>
+  );
 
   return (
     <div
       ref={ref}
       role="region"
       aria-label="Music player"
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endGesture}
-      onPointerCancel={endGesture}
-      onLostPointerCapture={onLostCapture}
       // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
-      // and its launcher sheet — otherwise the X and transport row sit BEHIND
-      // the nav and can't be tapped, which looked like "stuck, can't stop".
+      // and its launcher sheet — otherwise the drag bar and transport row sit
+      // BEHIND the nav and can't be tapped ("stuck, can't stop").
       className={`md:hidden fixed left-0 top-0 ${
         expanded ? "z-[80]" : "z-40"
-      } cursor-grab select-none ${dragging ? "cursor-grabbing" : ""}`}
+      } select-none`}
       style={{
         transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-        touchAction: "none",
         WebkitUserSelect: "none",
-        WebkitTouchCallout: "none",
         willChange: "transform",
         visibility: mounted ? "visible" : "hidden",
       }}
     >
       {expanded ? (
-        <div className="w-[min(20rem,calc(100vw-1.25rem))] rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur">
-          {/* Header: grip indicator (drag) + close */}
-          <div className="mb-2 flex items-center">
-            <span className="mx-auto h-1 w-8 rounded-full bg-brand-muted" aria-hidden />
-            <button
-              type="button"
-              onPointerDown={stop}
-              onClick={() => setExpanded(false)}
-              aria-label="Collapse player"
-              className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
-            >
-              <CloseIcon />
-            </button>
-          </div>
+        <div
+          data-testid="player-panel"
+          className="w-[min(20rem,calc(100vw-1.25rem))] rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur"
+        >
+          {/* Header: the full-width drag bar. Tap anywhere on it to close. */}
+          {expandedDragBar}
 
           {/* Track info */}
           <div className="flex items-center gap-3">
@@ -657,9 +782,7 @@ function FloatingPlayer() {
                   </span>
                 )}
               </p>
-              <p className="truncate text-xs text-text-secondary">
-                {error ?? current?.artistName ?? "MELORI MUSIC"}
-              </p>
+              <p className="truncate text-xs text-text-secondary">{artistLabel}</p>
             </div>
           </div>
 
@@ -667,7 +790,6 @@ function FloatingPlayer() {
           <div className="mt-3 flex items-center justify-center gap-2">
             <button
               type="button"
-              onPointerDown={stop}
               onClick={prev}
               disabled={!current || !hasPrev}
               aria-label="Previous track"
@@ -677,7 +799,6 @@ function FloatingPlayer() {
             </button>
             <button
               type="button"
-              onPointerDown={stop}
               onClick={togglePlay}
               disabled={!current}
               aria-label={isPlaying ? "Pause" : "Play"}
@@ -691,7 +812,6 @@ function FloatingPlayer() {
             </button>
             <button
               type="button"
-              onPointerDown={stop}
               onClick={next}
               disabled={!current || !hasNext}
               aria-label="Next track"
@@ -701,7 +821,6 @@ function FloatingPlayer() {
             </button>
             <button
               type="button"
-              onPointerDown={stop}
               onClick={() => (radioMode ? stopRadio() : startRadio("all"))}
               aria-label={radioMode ? "Turn radio off" : "Turn radio on"}
               aria-pressed={radioMode}
@@ -726,7 +845,6 @@ function FloatingPlayer() {
             </span>
             <button
               type="button"
-              onPointerDown={stop}
               aria-label="Seek"
               disabled={!current || duration <= 0}
               onClick={(e) => {
@@ -746,24 +864,49 @@ function FloatingPlayer() {
               {formatTime(duration)}
             </span>
           </div>
+
+          {/* Volume */}
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-text-secondary">
+              <VolumeIcon />
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              aria-label="Volume"
+              className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-brand-muted"
+              style={{ accentColor: "#ff5500" }}
+            />
+          </div>
         </div>
       ) : (
-        // Collapsed bubble: album art with a centred play/pause control. Tapping
-        // the art ring expands; the play button toggles playback.
-        <div className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-brand-border bg-brand-surface shadow-lg">
+        // Collapsed pill: white circle handle | cover + track text | play/pause.
+        <div className="flex h-14 max-w-[calc(100vw-1.25rem)] items-center gap-2 rounded-full border border-brand-border bg-brand-surface/95 px-1.5 shadow-2xl backdrop-blur">
+          {collapsedHandle}
           <CoverImage
             src={current?.coverUrl}
             alt={trackLabel}
-            className="absolute inset-0 h-full w-full"
+            className="h-9 w-9 shrink-0"
             rounded="rounded-full"
           />
+          <div className="min-w-0 max-w-[7.5rem] flex-1">
+            <p className="truncate text-xs font-medium leading-tight text-text-primary">
+              {trackLabel}
+            </p>
+            <p className="truncate text-[11px] leading-tight text-text-secondary">
+              {artistLabel}
+            </p>
+          </div>
           <button
             type="button"
-            onPointerDown={stop}
             onClick={togglePlay}
             disabled={!current}
             aria-label={isPlaying ? "Pause" : "Play"}
-            className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white transition-colors hover:bg-black/70 disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark disabled:opacity-40"
           >
             {isLoading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

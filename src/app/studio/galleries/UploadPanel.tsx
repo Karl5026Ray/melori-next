@@ -1,11 +1,21 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, RotateCw, CheckCircle2, XCircle } from "lucide-react";
-import { authFetch, authHeaders } from "@/lib/authClient";
+import { Camera, RotateCw, CheckCircle2, XCircle, Check } from "lucide-react";
+import { authFetch } from "@/lib/authClient";
 
 interface FileStatus {
   file: File;
+  // An in-memory snapshot of the file's bytes, taken the instant the file is
+  // picked. The raw <input> File is a *reference* to an OS file handle; once we
+  // clear the input (`e.target.value = ""`, needed so re-picking the same file
+  // re-fires onChange) Chromium can release that handle, and the later async
+  // PUT then fails with `net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE` before any
+  // bytes go over the wire. Reading the bytes into a detached Blob up front
+  // makes the upload body self-contained and immune to the input reset.
+  blob: Blob;
+  contentType: string;
+  filename: string;
   key: string;
   status: "pending" | "uploading" | "done" | "error";
   error?: string;
@@ -14,6 +24,8 @@ interface FileStatus {
 interface Props {
   galleryId: string;
   onUploaded: () => void;
+  // Optional: called when the user taps "Done" to close out an upload session.
+  onDone?: () => void;
 }
 
 // Phone-first "Add photos" capture flow. A plain <input type=file accept=
@@ -22,48 +34,169 @@ interface Props {
 // upload SEQUENTIALLY (one at a time) so a single request stays small and
 // resilient on spotty mobile connections; failures are retried individually
 // without losing the rest of the batch.
-export default function UploadPanel({ galleryId, onUploaded }: Props) {
+export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
   const [uploading, setUploading] = useState(false);
   const [forSale, setForSale] = useState(false);
   const [priceDollars, setPriceDollars] = useState("");
 
-  const handleFilesSelected = (files: FileList | null) => {
+  const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const next: FileStatus[] = Array.from(files).map((file) => ({
-      file,
-      key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
-      status: "pending",
-    }));
-    setQueue((prev) => [...prev, ...next]);
-    // Auto-start the upload as soon as photos are picked — one less tap.
-    void runQueue(next);
+    // Snapshot each picked file's bytes into a detached in-memory Blob BEFORE
+    // the caller clears the <input> (which can invalidate the File's backing
+    // OS handle mid-upload). arrayBuffer() forces the bytes to be read now,
+    // while the handle is guaranteed live; the resulting Blob is what we PUT.
+    //
+    // The read is wrapped in try/catch: if the OS handle is unreadable
+    // (permissions, the file moved, or a flaky handle) file.arrayBuffer()
+    // rejects. Left unhandled that becomes an unhandled promise rejection that
+    // can destabilize the tab; instead we surface a failed queue row the user
+    // can retry.
+    const settled = await Promise.all(
+      Array.from(files).map(async (file): Promise<FileStatus> => {
+        const contentType = file.type || "image/jpeg";
+        const filename = file.name || "photo.jpg";
+        const key = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`;
+        try {
+          const bytes = await file.arrayBuffer();
+          if (!bytes || bytes.byteLength === 0) {
+            throw new Error("empty file");
+          }
+          return {
+            file,
+            blob: new Blob([bytes], { type: contentType }),
+            contentType,
+            filename,
+            key,
+            status: "pending",
+          };
+        } catch {
+          return {
+            file,
+            blob: new Blob([], { type: contentType }),
+            contentType,
+            filename,
+            key,
+            status: "error",
+            error: "Couldn't read this file — tap Retry or pick it again.",
+          };
+        }
+      }),
+    );
+    setQueue((prev) => [...prev, ...settled]);
+    // Auto-start only the rows whose bytes we successfully captured.
+    const ready = settled.filter((s) => s.status === "pending");
+    if (ready.length > 0) void runQueue(ready);
   };
 
+  // Three-step upload:
+  //   1. POST /signed-url         → { uploadUrl, imageId }
+  //   2. PUT uploadUrl (direct)   → Supabase Storage (no Vercel 4.5 MB cap)
+  //   3. POST /finalize           → kicks off sharp watermarking + DB row
+  //
+  // Previously step 2 was a POST straight to the Next.js route with the
+  // file in a multipart FormData body — that hit Vercel's HARD 4.5 MB
+  // serverless function body limit (not configurable), so any real phone
+  // photo returned 413 before reaching the route.
   async function uploadOne(item: FileStatus): Promise<boolean> {
+    const markError = (msg: string) =>
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.key === item.key ? { ...q, status: "error", error: msg } : q,
+        ),
+      );
+
     setQueue((prev) =>
-      prev.map((q) => (q.key === item.key ? { ...q, status: "uploading", error: undefined } : q)),
+      prev.map((q) =>
+        q.key === item.key
+          ? { ...q, status: "uploading", error: undefined }
+          : q,
+      ),
     );
 
     try {
-      const form = new FormData();
-      form.append("files", item.file, item.file.name);
-      const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
-      if (forSale && Number.isFinite(priceCents) && priceCents > 0) {
-        form.append("forSale", "true");
-        form.append("priceCents", String(priceCents));
+      // Step 1 — mint a signed upload URL scoped to this gallery.
+      const signedRes = await authFetch(
+        `/api/studio/gallery/${galleryId}/images/signed-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: item.filename,
+            contentType: item.contentType,
+          }),
+        },
+      );
+      const signedBody = await signedRes.json().catch(() => ({}));
+      if (
+        !signedRes.ok ||
+        !signedBody?.token ||
+        !signedBody?.path ||
+        !signedBody?.bucket ||
+        !signedBody?.imageId
+      ) {
+        markError(
+          signedBody?.error ??
+            `Couldn't prepare upload (HTTP ${signedRes.status})`,
+        );
+        return false;
       }
 
-      const headers = await authHeaders();
-      const res = await fetch(`/api/studio/gallery/${galleryId}/images`, {
-        method: "POST",
-        headers,
-        body: form,
+      // Step 2 — PUT the file DIRECTLY to Supabase Storage. This bypasses
+      // Vercel entirely (no 4.5 MB body limit); the signed URL only permits an
+      // upload to the exact path from step 1.
+      //
+      // CRITICAL — corruption fix. This now mirrors the PROVEN-WORKING profile
+      // photo uploader byte-for-byte: a raw `fetch` PUT whose body is the
+      // original `File` object. The previous gallery code reconstructed a Blob
+      // (`new Blob([await file.arrayBuffer()])`) and PUT that instead — and
+      // THAT reconstruction was what produced the EF BF BD (U+FFFD) corruption:
+      // the round-tripped Blob body got serialized as text somewhere in the
+      // PUT path, collapsing every byte >= 0x80. The profile uploader never
+      // corrupts because it sends `body: file` directly. So we do the same.
+      //
+      // We prefer the original File (item.file) — a File IS a Blob and streams
+      // its bytes straight from disk. We only fall back to the snapshot Blob if
+      // the File handle was invalidated by the input reset
+      // (net::ERR_BLOB_REFERENCED_FILE_UNAVAILABLE), which the snapshot exists
+      // to guard against.
+      const putBody: Blob =
+        item.file && item.file.size > 0 ? item.file : item.blob;
+      const putRes = await fetch(signedBody.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": item.contentType },
+        body: putBody,
       });
-      const body = await res.json().catch(() => ({}));
-      const result = body?.results?.[0];
-      const ok = res.ok && result?.success;
+      if (!putRes.ok) {
+        const txt = await putRes.text().catch(() => "");
+        markError(`Upload to storage failed (HTTP ${putRes.status}) ${txt}`);
+        return false;
+      }
+
+      // Step 3 — tell the server the raw file is up so it can watermark,
+      // upload the preview/thumb, and insert the DB row. Tiny request
+      // body, no size concerns.
+      const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
+      const finalizeRes = await authFetch(
+        `/api/studio/gallery/${galleryId}/images/finalize`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: signedBody.imageId,
+            filename: item.filename,
+            forSale:
+              forSale && Number.isFinite(priceCents) && priceCents > 0,
+            priceCents:
+              forSale && Number.isFinite(priceCents) && priceCents > 0
+                ? priceCents
+                : null,
+          }),
+        },
+      );
+      const finalizeBody = await finalizeRes.json().catch(() => ({}));
+      const ok = finalizeRes.ok && finalizeBody?.success;
 
       setQueue((prev) =>
         prev.map((q) =>
@@ -71,24 +204,17 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
             ? {
                 ...q,
                 status: ok ? "done" : "error",
-                error: ok ? undefined : result?.error ?? body?.error ?? "Upload failed",
+                error: ok
+                  ? undefined
+                  : finalizeBody?.error ??
+                    `Finalize failed (HTTP ${finalizeRes.status})`,
               }
             : q,
         ),
       );
       return Boolean(ok);
     } catch (err) {
-      setQueue((prev) =>
-        prev.map((q) =>
-          q.key === item.key
-            ? {
-                ...q,
-                status: "error",
-                error: err instanceof Error ? err.message : "Network error",
-              }
-            : q,
-        ),
-      );
+      markError(err instanceof Error ? err.message : "Network error");
       return false;
     }
   }
@@ -116,6 +242,19 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
 
   const pendingCount = queue.filter((q) => q.status !== "done").length;
   const failedCount = queue.filter((q) => q.status === "error").length;
+  const doneCount = queue.filter((q) => q.status === "done").length;
+  // The batch is "finished" when nothing is in flight and there's at least one
+  // uploaded photo. Failed items don't block finishing — the user can retry
+  // them or walk away; the successful ones are already saved.
+  const canFinish = !uploading && doneCount > 0 && pendingCount === failedCount;
+
+  const finish = () => {
+    // Refresh the gallery grid, clear the finished queue, and hand control back
+    // to the parent (e.g. scroll to the gallery / navigate away).
+    onUploaded();
+    setQueue((prev) => prev.filter((q) => q.status === "error"));
+    onDone?.();
+  };
 
   return (
     <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 sm:p-5">
@@ -156,9 +295,13 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
           type="file"
           accept="image/*"
           multiple
-          onChange={(e) => {
-            handleFilesSelected(e.target.files);
-            e.target.value = "";
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            // Await the byte snapshot BEFORE resetting the input, so the File's
+            // backing OS handle is still valid while we read it. Resetting
+            // first (the old bug) could invalidate the blob mid-upload.
+            await handleFilesSelected(input.files);
+            input.value = "";
           }}
           className="hidden"
         />
@@ -229,6 +372,17 @@ export default function UploadPanel({ galleryId, onUploaded }: Props) {
               </li>
             ))}
           </ul>
+
+          {canFinish && (
+            <button
+              type="button"
+              onClick={finish}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-4 text-base font-semibold text-white transition-colors hover:bg-emerald-500"
+            >
+              <Check className="h-5 w-5" />
+              Done — {doneCount} photo{doneCount === 1 ? "" : "s"} added
+            </button>
+          )}
         </div>
       )}
     </div>

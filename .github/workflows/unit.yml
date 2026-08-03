@@ -1,0 +1,54 @@
+name: Unit tests
+
+# Runs the pure TypeScript test scripts in scripts/*.test.ts.
+#
+# WHY THIS EXISTS
+# ---------------
+# The repo had eight of these — booking slots, revenue splits, YouTube URL
+# parsing, Supabase cookie storage, Stripe webhook secrets, favorites, library
+# import, media capture — and NOTHING ran them. `npm run test:*` had to be
+# typed by hand, so a change could break any of them and still merge green,
+# because the only automated check was the Playwright E2E job.
+#
+# These are deliberately cheap: no database, no network, no browser, no
+# `next build`. The whole suite runs in well under a minute on a plain Ubuntu
+# runner, which is why it can gate every pull request rather than being
+# reserved for release time.
+#
+# Adding a test: create scripts/<name>.test.ts, add a `test:<name>` script to
+# package.json, and chain it into `test:unit`. It is then enforced here.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run pointless.
+concurrency:
+  group: unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Chained with && in package.json, so the job fails on the first broken
+      # suite and the log ends at the failure rather than scrolling past it.
+      - name: Run unit tests
+        run: npm run test:unit

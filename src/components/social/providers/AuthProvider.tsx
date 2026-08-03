@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { signOutThisDevice } from "@/lib/authSession";
 import { Profile } from "@/types/social";
 
 interface AuthContextType {
@@ -70,7 +71,7 @@ export function SocialAuthProvider({
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
+          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status, social_links, city, birth_date, birthday_visible",
         )
         .eq("id", id)
         .maybeSingle();
@@ -179,7 +180,7 @@ export function SocialAuthProvider({
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    await signOutThisDevice();
     userIdRef.current = null;
     setUser(null);
   }, []);

@@ -55,8 +55,8 @@ const TAB_META: {
   icon: typeof Film;
   ownerOnly?: boolean;
 }[] = [
-  { key: "reels", label: "Reels", icon: Film },
   { key: "photos", label: "Photos", icon: ImageIcon },
+  { key: "reels", label: "Reels", icon: Film },
   { key: "liked", label: "Liked", icon: Heart, ownerOnly: true },
   { key: "shared", label: "Shared", icon: Share2 },
   { key: "saves", label: "Saves", icon: Bookmark, ownerOnly: true },
@@ -77,7 +77,7 @@ export default function ProfileTabs({
   onEditProfile?: () => void;
   onOpenContent?: (content: TileContent, type: "video" | "photo") => void;
 }) {
-  const [active, setActive] = useState<TabKey>("reels");
+  const [active, setActive] = useState<TabKey>("photos");
   const [data, setData] = useState<TabsData | null>(null);
   const [loading, setLoading] = useState(true);
 

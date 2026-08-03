@@ -22,8 +22,9 @@ import {
   ListPlus,
 } from "lucide-react";
 import { authHeaders } from "@/lib/authClient";
+import { formatCount } from "@/lib/format";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useRadioMixer } from "@/components/radio/useRadioMixer";
+import { usePlayer } from "@/components/player/PlayerProvider";
 import { usePlaylists } from "@/components/radio/usePlaylists";
 import AddToPlaylistSheet from "@/components/radio/AddToPlaylistSheet";
 import type { RadioTrack } from "@/lib/data";
@@ -52,8 +53,35 @@ export default function RadioClient() {
   const [addSheetTrack, setAddSheetTrack] = useState<RadioTrack | null>(null);
   const wasTunedRef = useRef(false);
 
-  // Stable identity for the current station so the mixer rebuilds its rotation
-  // (and stops old audio) when the user switches stations or loads a playlist.
+  // This page is a VIEW of the one shared player — it owns no audio element of
+  // its own, so opening it while the homepage station is playing just shows
+  // what's already on air instead of starting a second stream.
+  const {
+    current,
+    queue,
+    index,
+    isPlaying,
+    isLoading,
+    currentTime,
+    duration,
+    volume,
+    muted,
+    isSample,
+    error: playerError,
+    playCounts,
+    radioMode,
+    radioStationKey,
+    playRadio,
+    reshuffleRadio,
+    togglePlay,
+    unlockPlayback,
+    next: skip,
+    setVolume,
+    setMuted,
+  } = usePlayer();
+
+  // Stable identity for the current station so we can tell "already on air"
+  // from "the user switched stations or loaded a playlist".
   const poolKey =
     mode === "playlists"
       ? activePlaylistId
@@ -61,12 +89,16 @@ export default function RadioClient() {
         : "playlists:none"
       : mode; // "foryou" | "all"
 
-  const { state, tuneIn, togglePlay, skip, reshuffle, setVolume } =
-    useRadioMixer(pool, {
-      poolKey,
-      // Saved playlists play in their curated order; radio stations shuffle.
-      preserveOrder: mode === "playlists",
-    });
+  const tuned = radioMode && radioStationKey === poolKey;
+  const ready = pool.length > 0;
+
+  const tuneIn = useCallback(() => {
+    if (!pool.length) return;
+    // Tuning in is a user gesture — bless the shared element before playRadio's
+    // async signed-URL fetch so the first track is allowed to play on iOS.
+    unlockPlayback();
+    playRadio(pool, { key: poolKey, preserveOrder: mode === "playlists" });
+  }, [pool, poolKey, mode, playRadio, unlockPlayback]);
 
   // Load the shared/for-you pool for the current mode.
   const loadPool = useCallback(async (m: "foryou" | "all") => {
@@ -127,26 +159,48 @@ export default function RadioClient() {
   }, [mode]);
 
   useEffect(() => {
-    if (state.tuned) wasTunedRef.current = true;
-  }, [state.tuned]);
+    if (tuned) wasTunedRef.current = true;
+  }, [tuned]);
 
-  // Auto-resume playback after the pool for a new station is ready.
+  // Auto-tune into the new station once its pool is ready — but only if the
+  // listener had already tuned in, so arriving on the page never force-starts
+  // audio they didn't ask for.
   useEffect(() => {
-    if (
-      !loadingPool &&
-      pool.length > 0 &&
-      wasTunedRef.current &&
-      state.ready &&
-      !state.tuned
-    ) {
-      void tuneIn();
+    if (!loadingPool && ready && wasTunedRef.current && !tuned) {
+      tuneIn();
     }
-  }, [loadingPool, pool.length, state.ready, state.tuned, tuneIn]);
+  }, [loadingPool, ready, tuned, tuneIn]);
 
-  const { current, next, isPlaying, isLoading, currentTime, duration, volume } =
-    state;
-  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  // Up next in the rotation (wraps back to the top at the end of the queue).
+  const next = tuned ? (queue[index + 1] ?? queue[0] ?? null) : null;
+  // Before tuning in, preview the first track of the loaded pool.
+  const display = (tuned ? current : null) ?? pool[0] ?? null;
+  const audible = !muted && volume > 0;
+  // Transport readouts belong to the on-air station only — before tuning in
+  // they'd otherwise show the progress of whatever else the player last held.
+  const elapsed = tuned ? currentTime : 0;
+  const total = tuned ? duration : 0;
+  const progress = total > 0 ? Math.min(1, elapsed / total) : 0;
   const showPicker = mode === "playlists" && !activePlaylistId;
+  // The add-to-playlist sheet needs the full RadioTrack row, not the trimmed
+  // queue entry, so resolve the shown track back through the loaded pool.
+  const displayRadioTrack =
+    (display &&
+      pool.find(
+        (t) =>
+          String(t.id) === String(display.id) &&
+          t.sourceType === (display.sourceType ?? "legacy"),
+      )) ||
+    null;
+  // Play total for the shown track, or null when it has none to show (studio
+  // uploads have no play_count column). The player's live map wins so the
+  // number ticks up the moment this listen is counted.
+  const displayPlays =
+    displayRadioTrack?.sourceType === "legacy"
+      ? (playCounts[Number(displayRadioTrack.id)] ??
+        displayRadioTrack.playCount ??
+        0)
+      : null;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-24 md:pb-8">
@@ -269,11 +323,11 @@ export default function RadioClient() {
                     it never eats the whole viewport on short screens — that was
                     what pushed the volume bar + up-next below the fold. */}
                 <div className="relative mx-auto aspect-square w-full max-w-[180px] max-h-[35vh] overflow-hidden rounded-2xl bg-brand-muted">
-                  {current?.coverUrl ? (
+                  {display?.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={current.coverUrl}
-                      alt={current.title}
+                      src={display.coverUrl}
+                      alt={display.title}
                       className="h-full w-full object-cover"
                     />
                   ) : (
@@ -281,16 +335,16 @@ export default function RadioClient() {
                       <Music2 className="h-16 w-16" />
                     </div>
                   )}
-                  {state.tuned && isPlaying && (
+                  {tuned && isPlaying && (
                     <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
                       <span className="h-2 w-2 animate-pulse rounded-full bg-brand-primary" />
                       ON AIR
                     </span>
                   )}
                   {/* Add-to-playlist quick action */}
-                  {current && (
+                  {displayRadioTrack && (
                     <button
-                      onClick={() => setAddSheetTrack(current)}
+                      onClick={() => setAddSheetTrack(displayRadioTrack)}
                       aria-label="Add to playlist"
                       className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur transition-colors hover:bg-brand-primary"
                     >
@@ -302,13 +356,20 @@ export default function RadioClient() {
                 {/* Track meta */}
                 <div className="mt-3 text-center">
                   <p className="truncate text-lg font-bold text-text-primary">
-                    {current?.title ?? "—"}
+                    {display?.title ?? "—"}
                   </p>
                   <p className="truncate text-sm text-text-secondary">
-                    {current?.artistName ?? "Unknown artist"}
-                    {current?.album ? ` · ${current.album}` : ""}
+                    {display?.artistName ?? "Unknown artist"}
+                    {display?.album ? ` · ${display.album}` : ""}
                   </p>
-                  {state.isSample && (
+                  {displayPlays !== null && (
+                    <p className="mt-1 flex items-center justify-center gap-1 text-xs text-text-secondary">
+                      <Play className="h-3 w-3 fill-current" />
+                      {formatCount(displayPlays)}{" "}
+                      {displayPlays === 1 ? "play" : "plays"}
+                    </p>
+                  )}
+                  {tuned && isSample && (
                     <p className="mt-1 text-xs text-brand-primary">
                       Preview ·{" "}
                       <Link href="/membership" className="underline">
@@ -327,15 +388,21 @@ export default function RadioClient() {
                     />
                   </div>
                   <div className="mt-1 flex justify-between text-[11px] text-text-secondary">
-                    <span>{fmt(currentTime)}</span>
-                    <span>{fmt(duration)}</span>
+                    <span>{fmt(elapsed)}</span>
+                    <span>{fmt(total)}</span>
                   </div>
                 </div>
+
+                {playerError && (
+                  <p className="mt-2 text-center text-xs text-text-secondary">
+                    {playerError}
+                  </p>
+                )}
 
                 {/* Controls */}
                 <div className="mt-3 flex items-center justify-center gap-6">
                   <button
-                    onClick={reshuffle}
+                    onClick={() => (tuned ? reshuffleRadio() : tuneIn())}
                     aria-label="Reshuffle"
                     className="flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
                   >
@@ -343,13 +410,13 @@ export default function RadioClient() {
                   </button>
 
                   <button
-                    onClick={togglePlay}
+                    onClick={() => (tuned ? togglePlay() : tuneIn())}
                     aria-label={isPlaying ? "Pause" : "Play"}
                     className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
                   >
-                    {isLoading ? (
+                    {tuned && isLoading ? (
                       <Loader2 className="h-7 w-7 animate-spin" />
-                    ) : isPlaying ? (
+                    ) : tuned && isPlaying ? (
                       <Pause className="h-7 w-7" />
                     ) : (
                       <Play className="ml-0.5 h-7 w-7" />
@@ -357,7 +424,7 @@ export default function RadioClient() {
                   </button>
 
                   <button
-                    onClick={skip}
+                    onClick={() => (tuned ? skip() : tuneIn())}
                     aria-label="Skip"
                     className="flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
                   >
@@ -368,11 +435,18 @@ export default function RadioClient() {
                 {/* Volume */}
                 <div className="mt-3 flex items-center gap-3">
                   <button
-                    onClick={() => setVolume(volume > 0 ? 0 : 1)}
-                    aria-label={volume > 0 ? "Mute" : "Unmute"}
+                    onClick={() => {
+                      if (audible) {
+                        setMuted(true);
+                      } else {
+                        setMuted(false);
+                        if (volume === 0) setVolume(1);
+                      }
+                    }}
+                    aria-label={audible ? "Mute" : "Unmute"}
                     className="text-text-secondary hover:text-brand-primary"
                   >
-                    {volume > 0 ? (
+                    {audible ? (
                       <Volume2 className="h-5 w-5" />
                     ) : (
                       <VolumeX className="h-5 w-5" />
@@ -383,8 +457,12 @@ export default function RadioClient() {
                     min={0}
                     max={1}
                     step={0.01}
-                    value={volume}
-                    onChange={(e) => setVolume(Number(e.target.value))}
+                    value={muted ? 0 : volume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setVolume(v);
+                      if (v > 0) setMuted(false);
+                    }}
                     aria-label="Volume"
                     className="h-1 flex-1 cursor-pointer accent-brand-primary"
                   />
@@ -422,7 +500,7 @@ export default function RadioClient() {
                 )}
 
                 {/* Tune In (first play) */}
-                {!state.tuned && (
+                {!tuned && (
                   <button
                     onClick={tuneIn}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-brand-primary py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
@@ -433,7 +511,8 @@ export default function RadioClient() {
                 )}
 
                 <p className="mt-3 text-center text-[11px] text-text-secondary">
-                  {state.queueLength} tracks in rotation · crossfaded, non-stop
+                  {(tuned ? queue.length : pool.length)} tracks in rotation ·
+                  non-stop
                 </p>
               </>
             )}

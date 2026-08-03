@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { signOutAllDevices } from "@/lib/authSession";
 import { authFetch } from "@/lib/authClient";
 
 // Client-side delete control for /account/delete.
@@ -49,7 +50,8 @@ export default function DeleteAccountClient() {
         throw new Error(data?.error ?? "Account deletion failed.");
       }
       setDone(true);
-      await supabase.auth.signOut();
+      // The account is gone, so every session for it must go too.
+      await signOutAllDevices();
       setTimeout(() => router.replace("/"), 2500);
     } catch (err: any) {
       setError(err?.message ?? "Account deletion failed.");

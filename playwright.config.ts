@@ -7,7 +7,9 @@ import { defineConfig, devices } from "@playwright/test";
 // BASE_URL override lets you point the same tests at a Vercel preview URL:
 //   BASE_URL=https://melori-next-git-<branch>-melori.vercel.app pnpm test:e2e
 // Without it we spin up `next dev` locally.
-const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:3000";
+// `||` rather than `??`: CI exports BASE_URL as an empty string on the
+// build-and-serve path, and an empty base URL is not a base URL.
+const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:3000";
 
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
@@ -24,12 +26,17 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  // Two local retries (and three on CI) because the /music catalog is
-  // force-dynamic and can be slow to render on cold Vercel serverless
-  // starts — the tests themselves are deterministic once the page loads.
-  retries: process.env.CI ? 3 : 2,
+  // One retry. The generous retry budget existed for cold Vercel serverless
+  // starts; CI now serves a local build, so a failure here is a real failure
+  // and re-running it just burns the job's time budget.
+  retries: 1,
   workers: 1,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
+  // A genuinely missing element costs one timeout per attempt, so an across-
+  // the-board breakage used to grind through every test and get killed at the
+  // job deadline with no summary. Bailing after three bounds the worst case to
+  // ~4.5 min and guarantees the failures actually get reported.
+  maxFailures: process.env.CI ? 3 : undefined,
   timeout: 45_000,
   expect: { timeout: 10_000 },
   use: {
@@ -53,11 +60,13 @@ export default defineConfig({
       },
     },
   ],
-  // Only start the dev server when we're pointing at localhost; against a
-  // preview URL we skip webServer entirely.
+  // Only start a server when we're pointing at localhost; against a deployed
+  // URL we skip webServer entirely. CI builds first and serves the production
+  // output, so the suite exercises the same code path a user gets — and, more
+  // importantly, the commit under test rather than whatever is deployed.
   webServer: BASE_URL.startsWith("http://127.0.0.1")
     ? {
-        command: "npm run dev",
+        command: process.env.CI ? "npm run start" : "npm run dev",
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

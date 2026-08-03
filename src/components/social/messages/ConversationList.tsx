@@ -39,10 +39,18 @@ export function ConversationList({
         const myLastRead = myMember?.last_read_at
           ? new Date(myMember.last_read_at).getTime()
           : 0;
-        const hasUnread =
-          !!lastMessage &&
-          lastMessage.sender_id !== user?.id &&
-          new Date(lastMessage.created_at).getTime() > myLastRead;
+        // unread_count comes from GET /api/social/conversations, which sees
+        // every message. Fall back to the newest-message comparison for callers
+        // that pass conversations through without it.
+        const unreadCount: number =
+          typeof conv.unread_count === "number"
+            ? conv.unread_count
+            : !!lastMessage &&
+                lastMessage.sender_id !== user?.id &&
+                new Date(lastMessage.created_at).getTime() > myLastRead
+              ? 1
+              : 0;
+        const hasUnread = unreadCount > 0;
         const isActive = pathname === `/social/messages/${conv.id}`;
 
         return (
@@ -89,7 +97,12 @@ export function ConversationList({
                   {lastMessage?.content || "No messages yet"}
                 </p>
                 {hasUnread && (
-                  <span className="w-2.5 h-2.5 rounded-full bg-melori-purple shrink-0" />
+                  <span
+                    aria-label={`${unreadCount} unread`}
+                    className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-primary px-1.5 text-[11px] font-bold leading-none text-white"
+                  >
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
                 )}
               </div>
             </div>

@@ -1,11 +1,14 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import ReleaseCard from "@/components/ReleaseCard";
+import CatalogCard from "@/components/CatalogCard";
 import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import ProductCard from "@/app/store/ProductCard";
+import HomeHero from "@/components/HomeHero";
 import type { Metadata } from "next";
-import { getReleases, getStoreProducts } from "@/lib/data";
+import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
+import { getCatalogItems } from "@/lib/catalog";
+import { sortMeloriFavorites } from "@/lib/releaseSort";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +32,17 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const [releases, storeProducts] = await Promise.all([
+  const [releases, storeProducts, featuredTrack] = await Promise.all([
     getReleases().catch(() => []),
     getStoreProducts(8).catch(() => []),
+    getFeaturedTrack().catch(() => null),
   ]);
-  const meloriFavorites = releases.slice(0, 12);
+  // Favorites is drawn from the WHOLE catalog — an artist's self-uploaded
+  // single is eligible for the homepage on the same terms as a curated
+  // release. Albums lead, ranked by lifetime plays, then everything else
+  // newest-first so fresh uploads still surface. See sortMeloriFavorites.
+  const catalogItems = await getCatalogItems(releases);
+  const meloriFavorites = sortMeloriFavorites(catalogItems).slice(0, 12);
 
   return (
     <div>
@@ -53,9 +62,14 @@ Stream freely. Support directly.{" "}
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
 An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep 100% of every sale.
 </p>
+
+{/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
+   unmutes on first interaction) using the shared site player. */}
+{featuredTrack && <HomeHero track={featuredTrack} />}
+
 <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
-<Link href="/register" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Sign Up Free</Link>
+<Link href="/register" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Create a Profile</Link>
 <ShareButton />
 </div>
 </div>
@@ -69,8 +83,8 @@ An independent music platform where fans stream the full catalog for free and su
 <Link href="/music" className="text-sm font-semibold text-brand-primary hover:underline">View all</Link>
 </div>
 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-{meloriFavorites.map((release) => (
-<ReleaseCard key={release.id} release={release} />
+{meloriFavorites.map((item) => (
+<CatalogCard key={item.key} item={item} />
 ))}
 </div>
 </section>

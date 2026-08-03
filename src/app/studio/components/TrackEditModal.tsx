@@ -2,6 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { authFetch } from "@/lib/authClient";
+import {
+  PRICE_RANGE_MESSAGE,
+  centsToDollarsInput,
+  dollarsToCentsInput,
+} from "@/lib/pricing";
 
 // Track metadata editor. Renders as a fixed-position modal over the studio
 // grid. Only patches fields the artist changed — sending unchanged values
@@ -14,6 +19,7 @@ export interface EditableTrack {
   artist: string;
   album: string | null;
   genre: string | null;
+  price_cents?: number | null;
 }
 
 interface TrackEditModalProps {
@@ -31,6 +37,7 @@ export default function TrackEditModal({
   const [artist, setArtist] = useState(track.artist);
   const [album, setAlbum] = useState(track.album ?? "");
   const [genre, setGenre] = useState(track.genre ?? "");
+  const [price, setPrice] = useState(centsToDollarsInput(track.price_cents));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +56,7 @@ export default function TrackEditModal({
     // Build a diff of only the fields that actually changed. The PATCH
     // endpoint requires at least one field or it 400s, so an unchanged save
     // is a no-op — just close.
-    const payload: Record<string, string> = {};
+    const payload: Record<string, string | number> = {};
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError("Title cannot be empty.");
@@ -65,6 +72,15 @@ export default function TrackEditModal({
 
     const trimmedGenre = genre.trim();
     if (trimmedGenre !== (track.genre ?? "")) payload.genre = trimmedGenre;
+
+    const nextPriceCents = dollarsToCentsInput(price);
+    if (nextPriceCents === null) {
+      setError(PRICE_RANGE_MESSAGE);
+      return;
+    }
+    if (nextPriceCents !== track.price_cents) {
+      payload.price_cents = nextPriceCents;
+    }
 
     if (Object.keys(payload).length === 0) {
       onClose();
@@ -91,6 +107,7 @@ export default function TrackEditModal({
         artist: trimmedArtist,
         album: trimmedAlbum || null,
         genre: trimmedGenre || null,
+        price_cents: nextPriceCents,
       });
     } finally {
       setSaving(false);
@@ -154,6 +171,22 @@ export default function TrackEditModal({
             />
             <span className="text-xs text-[#666] mt-1 block">
               Moving to a different album resets this track's position to the end of that album.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-[#888] uppercase tracking-wide">Price (USD)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="0.99"
+              className="mt-1 w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:border-[#c9a96e]/40 focus:outline-none"
+              disabled={saving}
+            />
+            <span className="text-xs text-[#666] mt-1 block">
+              0.00 makes this track a free download.
             </span>
           </label>
 

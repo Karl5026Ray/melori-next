@@ -12,6 +12,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
 import PayoutsPanel from "./components/PayoutsPanel";
+import PricingPanel from "./components/PricingPanel";
 import SuperfansPanel from "./components/SuperfansPanel";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +27,7 @@ type Tab =
   | "superfans"
   | "schedule"
   | "profile"
+  | "pricing"
   | "payouts";
 
 export default function StudioPage() {
@@ -193,6 +195,7 @@ export default function StudioPage() {
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
     { id: "profile", label: "Profile", icon: "\u{1F5BC}\uFE0F" },
+    { id: "pricing", label: "Pricing & Splits", icon: "\uD83C\uDFF7\uFE0F" },
     { id: "payouts", label: "Payouts", icon: "\uD83D\uDCB8" },
   ];
 
@@ -304,6 +307,7 @@ export default function StudioPage() {
         {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "superfans" && <SuperfansPanel />}
         {activeTab === "schedule" && <ReleaseScheduler />}
+        {activeTab === "pricing" && <PricingPanel />}
         {activeTab === "payouts" && <PayoutsPanel />}
         {activeTab === "profile" && (
       <div className="space-y-8 max-w-xl">

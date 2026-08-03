@@ -1,9 +1,8 @@
 // Shared helper for locating (or opening) a true 1:1 direct conversation
-// between two users. Previously the waves-accept flow and the
-// /conversations/start endpoint both looked for "any conversation both users
+// between two users. Callers used to look for "any conversation both users
 // belong to" — which happily returned an existing GROUP conversation with 5+
-// members whenever both users happened to be in it. Accepting a wave then
-// mis-routed the invitee into a totally unrelated group chat.
+// members whenever both users happened to be in it, mis-routing people into a
+// totally unrelated group chat.
 //
 // A true 1:1 must contain *exactly* those two users and nobody else. This
 // helper finds one, or opens a new one, atomically enough for our needs
@@ -11,7 +10,7 @@
 //
 // This intentionally runs with the service-role client so it can bypass RLS
 // on conversation_members. Callers are always responsible for their own
-// permission checks (block list, membership tier, wave ownership, etc.).
+// permission checks (block list, membership tier, etc.).
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ServiceClient = any;

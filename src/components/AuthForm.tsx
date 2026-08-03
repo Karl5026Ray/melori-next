@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { startOAuthSignIn } from "@/lib/nativeAuth";
 import { Music, Mail, Lock, ArrowRight } from "lucide-react";
 
 // Shared Supabase login surface. Rendered by BOTH the /social/auth gateway and
@@ -53,15 +54,7 @@ function AuthInner() {
     setGoogleLoading(true);
     setError("");
     try {
-      const redirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo },
-      });
-      if (oauthError) throw oauthError;
+      await startOAuthSignIn("google", `next=${encodeURIComponent(next)}`);
     } catch (err: any) {
       setError(err?.message ?? "Google sign-in failed.");
       setGoogleLoading(false);
@@ -75,15 +68,7 @@ function AuthInner() {
     setAppleLoading(true);
     setError("");
     try {
-      const redirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "apple",
-        options: { redirectTo },
-      });
-      if (oauthError) throw oauthError;
+      await startOAuthSignIn("apple", `next=${encodeURIComponent(next)}`);
     } catch (err: any) {
       setError(err?.message ?? "Apple sign-in failed.");
       setAppleLoading(false);
@@ -178,6 +163,13 @@ function AuthInner() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+
+        {/* No "keep me signed in" checkbox: sessions are persistent by default
+            and signing out is local to this device, so there is nothing to opt
+            into. Saying so is the honest version of the control. */}
+        <p className="text-center text-xs text-melori-muted mt-4">
+          You&apos;ll stay signed in on this device until you sign out.
+        </p>
 
         <div className="mt-4 text-center">
           <Link

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
+import { executeSplitPayouts } from "@/lib/split-payouts";
+import type { MusicItemKind } from "@/lib/music-items";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -220,9 +222,13 @@ async function fulfillGalleryPurchase(session: Stripe.Checkout.Session) {
   }
 }
 
-// Records a paid album/single-track purchase. Writing the row is what grants
-// the buyer download access (verified by /api/music/download). Idempotent on
-// the Stripe session id.
+// Records a paid music purchase — legacy release/track OR an artist-uploaded
+// studio track/album. Writing the row is what grants the buyer download access
+// (verified by /api/music/download). Idempotent on the Stripe session id.
+//
+// When the checkout carried a transfer_group, the charge settled on the Melori
+// platform account because collaborator splits are configured; the payout
+// fan-out happens here, after the real Stripe fee is known.
 async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
   const supabase = createServiceClient();
   const sessionId = session.id;
@@ -237,11 +243,15 @@ async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
   const meta = session.metadata ?? {};
   const releaseId = meta.release_id ? Number(meta.release_id) : null;
   const trackId = meta.track_id ? Number(meta.track_id) : null;
-  if (!releaseId && !trackId) {
-    console.error("stripe/webhook music purchase missing release_id/track_id");
+  const studioTrackId = meta.studio_track_id || null;
+  const studioAlbumId = meta.studio_album_id || null;
+  if (!releaseId && !trackId && !studioTrackId && !studioAlbumId) {
+    console.error("stripe/webhook music purchase missing item id metadata");
     return;
   }
   const artistId = meta.artist_id ? Number(meta.artist_id) : null;
+  const ownerProfileId = meta.owner_profile_id || null;
+  const transferGroup = meta.transfer_group || null;
 
   const paymentIntentId =
     typeof session.payment_intent === "string"
@@ -256,26 +266,72 @@ async function fulfillMusicPurchase(session: Stripe.Checkout.Session) {
   const buyerEmail =
     session.customer_details?.email || session.customer_email || null;
 
-  const { error: insErr } = await supabase.from("music_purchases").insert({
-    buyer_user_id: buyerUserId,
-    buyer_email: buyerEmail,
-    release_id: releaseId,
-    track_id: trackId,
-    artist_id: artistId,
-    item_name: typeof meta.item_name === "string" ? meta.item_name : "",
-    amount_cents: session.amount_total ?? null,
-    stripe_session_id: sessionId,
-    stripe_payment_intent_id: paymentIntentId,
-    connected_account_id:
-      typeof meta.connected_account_id === "string"
-        ? meta.connected_account_id
-        : null,
-    status: "paid",
-  });
+  const itemName = typeof meta.item_name === "string" ? meta.item_name : "";
+  const amountCents = session.amount_total ?? 0;
+  const currency = session.currency || "usd";
+
+  const { data: inserted, error: insErr } = await supabase
+    .from("music_purchases")
+    .insert({
+      buyer_user_id: buyerUserId,
+      buyer_email: buyerEmail,
+      release_id: releaseId,
+      track_id: trackId,
+      studio_track_id: studioTrackId,
+      studio_album_id: studioAlbumId,
+      artist_id: artistId,
+      seller_profile_id: ownerProfileId,
+      item_name: itemName,
+      amount_cents: session.amount_total ?? null,
+      currency,
+      stripe_session_id: sessionId,
+      stripe_payment_intent_id: paymentIntentId,
+      connected_account_id:
+        typeof meta.connected_account_id === "string"
+          ? meta.connected_account_id
+          : null,
+      transfer_group: transferGroup,
+      splits_applied: false,
+      status: "paid",
+    })
+    .select("id")
+    .maybeSingle();
 
   if (insErr) {
     if (insErr.code === "23505") return; // benign race
     throw new Error(`music purchase insert failed: ${insErr.message}`);
+  }
+
+  if (!transferGroup) return;
+
+  const itemKind = (meta.item_kind as MusicItemKind | undefined) ?? null;
+  const itemId = meta.item_id || null;
+  if (!itemKind || !itemId) return;
+
+  const purchaseId = (inserted as { id: string } | null)?.id ?? null;
+
+  // A payout failure must never undo a recorded sale — the buyer paid and has
+  // already earned their download. Errors land in the ledger and the logs.
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+    await executeSplitPayouts({
+      stripe,
+      supabase,
+      item: { kind: itemKind, id: itemId, name: itemName, ownerProfileId },
+      purchaseId,
+      paymentIntentId,
+      transferGroup,
+      grossCents: amountCents,
+      currency,
+    });
+    if (purchaseId) {
+      await supabase
+        .from("music_purchases")
+        .update({ splits_applied: true })
+        .eq("id", purchaseId);
+    }
+  } catch (err) {
+    console.error("stripe/webhook split payout error:", err);
   }
 }
 

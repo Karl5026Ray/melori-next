@@ -20,13 +20,43 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// A message plus its client-side send state. `_status` is only set on messages
+// this client rendered optimistically; it is cleared once the server confirms.
+type ChatMessage = Message & { _status?: "sending" | "failed" };
+
+// Realtime and the POST response can both deliver the same row, and the sender
+// already has an optimistic copy on screen. Reconcile on the server id first,
+// then fall back to matching the in-flight local copy by sender + content.
+function mergeIncoming(
+  prev: ChatMessage[],
+  incoming: Message,
+): ChatMessage[] {
+  if (prev.some((m) => m.id === incoming.id)) {
+    return prev.map((m) =>
+      m.id === incoming.id ? { ...m, ...incoming, _status: undefined } : m,
+    );
+  }
+  const localIdx = prev.findIndex(
+    (m) =>
+      m._status === "sending" &&
+      m.sender_id === incoming.sender_id &&
+      m.content === incoming.content,
+  );
+  if (localIdx >= 0) {
+    const next = [...prev];
+    next[localIdx] = { ...next[localIdx], ...incoming, _status: undefined };
+    return next;
+  }
+  return [...prev, incoming];
+}
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const conversationId = params.conversationId as string;
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -34,6 +64,7 @@ export default function ChatPage() {
   const [convStatus, setConvStatus] = useState<string>("accepted");
   const [requestedBy, setRequestedBy] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // ---- Calling state --------------------------------------------------------
@@ -99,7 +130,8 @@ export default function ChatPage() {
         },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            setMessages((prev) => [...prev, payload.new as Message]);
+            const incoming = payload.new as Message;
+            setMessages((prev) => mergeIncoming(prev, incoming));
             void authFetch(
               `/api/social/conversations/${conversationId}/read`,
               { method: "PATCH", keepalive: true },
@@ -189,29 +221,100 @@ export default function ChatPage() {
     setIncoming(false);
   };
 
+  // Send the message and reconcile the optimistic bubble with the server row.
+  // On failure the bubble stays on screen marked "Not sent" with a Retry
+  // action, so the text is never silently lost (it used to be an alert() that
+  // dismissed and dropped the message).
+  const postMessage = useCallback(
+    async (localId: string, content: string) => {
+      const markFailed = (message: string) => {
+        setSendError(message);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === localId ? { ...m, _status: "failed" as const } : m,
+          ),
+        );
+      };
+
+      try {
+        const res = await authFetch("/api/social/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            content,
+          }),
+        });
+        const j = await res.json().catch(() => ({}) as any);
+        if (!res.ok) {
+          markFailed(j?.error ?? "Could not send message.");
+          return;
+        }
+        const saved = j?.message as Message | undefined;
+        setSendError(null);
+        setMessages((prev) => {
+          if (!saved) {
+            return prev.map((m) =>
+              m.id === localId ? { ...m, _status: undefined } : m,
+            );
+          }
+          // Realtime may have delivered the row first; if so just drop the
+          // local copy instead of rendering the message twice.
+          if (prev.some((m) => m.id === saved.id)) {
+            return prev.filter((m) => m.id !== localId);
+          }
+          return prev.map((m) =>
+            m.id === localId ? { ...m, ...saved, _status: undefined } : m,
+          );
+        });
+      } catch {
+        markFailed("Could not send message. Check your connection.");
+      }
+    },
+    [conversationId],
+  );
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !user) return;
-    const res = await authFetch("/api/social/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const content = input.trim();
+    if (!content || !user) return;
+
+    const localId = `local-${crypto.randomUUID()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
         conversation_id: conversationId,
-        content: input.trim(),
-      }),
+        sender_id: user.id,
+        content,
+        created_at: new Date().toISOString(),
+        is_edited: false,
+        _status: "sending",
+      },
+    ]);
+    setInput("");
+    setSendError(null);
+
+    void supabase.channel(`typing:${conversationId}`).send({
+      type: "broadcast",
+      event: "typing",
+      payload: { user_id: user.id, typing: false },
     });
-    if (res.ok) {
-      setInput("");
-      await supabase.channel(`typing:${conversationId}`).send({
-        type: "broadcast",
-        event: "typing",
-        payload: { user_id: user.id, typing: false },
-      });
-    } else {
-      const j = await res.json().catch(() => ({}));
-      alert(j.error ?? "Could not send message.");
-    }
+
+    await postMessage(localId, content);
   };
+
+  const retryMessage = useCallback(
+    (localId: string, content: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === localId ? { ...m, _status: "sending" as const } : m,
+        ),
+      );
+      void postMessage(localId, content);
+    },
+    [postMessage],
+  );
 
   const deleteMessage = useCallback(async (id: string) => {
     // Optimistic tombstone.
@@ -358,6 +461,12 @@ export default function ChatPage() {
             message={msg}
             isMe={msg.sender_id === user?.id}
             onDelete={deleteMessage}
+            status={msg._status}
+            onRetry={
+              msg._status === "failed"
+                ? () => retryMessage(msg.id, msg.content)
+                : undefined
+            }
           />
         ))}
         {isTyping && (
@@ -406,7 +515,13 @@ export default function ChatPage() {
             Unblock this member to send a message.
           </p>
         ) : (
-          <form onSubmit={sendMessage} className="flex items-end gap-2">
+          <>
+            {sendError && (
+              <p role="status" className="mb-2 text-xs text-red-400">
+                {sendError}
+              </p>
+            )}
+            <form onSubmit={sendMessage} className="flex items-end gap-2">
             <button
               type="button"
               className="p-3 text-melori-muted hover:text-melori-text transition"
@@ -431,7 +546,8 @@ export default function ChatPage() {
             <button type="submit" className="p-3 btn-primary rounded-full shadow-lg">
               <Send className="w-5 h-5" />
             </button>
-          </form>
+            </form>
+          </>
         )}
       </div>
 

@@ -5,13 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 import {
   User as UserIcon,
   Radio,
   RadioTower,
   Video,
   MessageSquare,
-  Hand,
   Sparkles,
   Heart,
   X,
@@ -23,7 +23,6 @@ import {
   Camera,
   Info,
   Target,
-  MessageCircle,
   Users,
   ShoppingBag,
   Swords,
@@ -37,8 +36,8 @@ import {
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
- *                          Waves, Connect
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, Connect
+ *                          (Messages is a quick press)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
  *
@@ -93,6 +92,16 @@ function YouIcon() {
 export default function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
+  // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
+  // PR that runs on every page for a signed-in member, and it was what broke
+  // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
+  // in the root layout, so each signed-in page opened two Supabase Realtime
+  // subscriptions on the same channel topic ("dm-unread-badge") and re-polled
+  // /api/social/conversations/unread from both copies on every navigation.
+  // Bisected against production builds: 8405e9c (pre-#221) signs in fine,
+  // 2785ca4 (#221) does not. Messaging itself is untouched and still works at
+  // /social/messages. Re-enable only behind a single shared subscription.
+  const unreadMessages = 0;
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
@@ -159,10 +168,11 @@ export default function MobileTabBar() {
     icon: React.ReactNode;
     desc: string;
     soon?: boolean;
+    badge?: number;
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
-  // Direct quick-press buttons (top row): Profile, Radio, Messages, Waves.
+  // Direct quick-press buttons (top row): Profile, Radio, Messages, Store.
   const quickLinks: LaunchItem[] = [
     {
       label: "Profile",
@@ -181,18 +191,20 @@ export default function MobileTabBar() {
       href: "/social/messages",
       icon: <MessageSquare className="h-5 w-5" />,
       desc: "Direct chats",
+      badge: unreadMessages,
     },
     {
-      label: "Waves",
-      href: "/social/waves",
-      icon: <Hand className="h-5 w-5" />,
-      desc: "Say hi",
+      label: "Store",
+      href: "/store",
+      icon: <ShoppingBag className="h-5 w-5" />,
+      desc: "Merch & music",
     },
   ];
 
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
+      // Mirrors SOCIAL_NAV_ITEMS (see src/lib/socialNav.ts) with icons/blurbs.
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
@@ -227,9 +239,8 @@ export default function MobileTabBar() {
       icon: <Info className="h-5 w-5" />,
       items: [
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
+        // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-        { label: "Store", href: "/store", icon: <ShoppingBag className="h-5 w-5" />, desc: "Merch & music" },
       ],
     },
   ];
@@ -277,11 +288,17 @@ export default function MobileTabBar() {
                 const inner = (
                   <>
                     <span
-                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                      className={`relative flex h-9 w-9 items-center justify-center rounded-full ${
                         active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
                       }`}
                     >
                       {l.icon}
+                      {!!l.badge && (
+                        <UnreadMessagesBadge
+                          count={l.badge}
+                          className="absolute -right-1 -top-1 border border-brand-surface"
+                        />
+                      )}
                     </span>
                     <span className="text-[11px] font-semibold leading-tight text-text-primary">
                       {l.label}

@@ -76,7 +76,7 @@ export default function CatalogCard({ item }: { item: CatalogItem }) {
           >
             <path d="M8 5v14l11-7z" />
           </svg>
-          {isFree ? "Free download" : "Free to stream"}
+          {isFree ? "Free download" : "Free 30-sec preview"}
         </span>
 
         {canBuy && (

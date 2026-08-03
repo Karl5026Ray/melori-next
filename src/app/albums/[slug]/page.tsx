@@ -92,7 +92,8 @@ export default async function AlbumDetailPage(
               <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span>
-              100% goes to {artist?.name ?? "the artist"} — Melori takes no cut.
+              No platform cut — {artist?.name ?? "the artist"} keeps every dollar after
+              payment processing.
             </span>
           </p>
           {release.description && (

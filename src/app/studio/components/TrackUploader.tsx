@@ -318,12 +318,14 @@ export default function TrackUploader() {
                     value={state.price}
                     onChange={(e) => setState((p) => ({ ...p, price: e.target.value }))}
                     className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
-                    placeholder="0.99"
+                    placeholder="1.99"
                   />
                 </div>
                 <p className="text-xs text-[#666] mt-1">
-                  You keep 100% minus Stripe&apos;s processing fee. Enter 0.00 to give
-                  it away free.
+                  No platform cut — you keep every dollar after Stripe&apos;s processing
+                  fee. Prices at or above $1.99 keep more of each sale in your pocket,
+                  because the flat per-transaction fee hurts small tickets. Enter 0.00
+                  to give it away free.
                 </p>
               </div>
             </div>

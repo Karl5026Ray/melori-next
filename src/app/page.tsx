@@ -5,6 +5,7 @@ import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import ProductCard from "@/app/store/ProductCard";
 import HomeHero from "@/components/HomeHero";
+import NameMeaning from "@/components/NameMeaning";
 import type { Metadata } from "next";
 import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
 import { getCatalogItems } from "@/lib/catalog";
@@ -13,7 +14,7 @@ import { sortMeloriFavorites } from "@/lib/releaseSort";
 export const dynamic = "force-dynamic";
 
 const description =
-  "Stream freely, support directly, create endlessly. Discover independent music and artists on MELORI Music.";
+  "Preview any song free, go Superfan for full playback, or buy the track to own it. Independent music with no platform cut — artists keep every dollar after payment processing.";
 
 export const metadata: Metadata = {
   title: { absolute: "MELORI MUSIC — Independent Music Platform" },
@@ -56,11 +57,11 @@ export default async function HomePage() {
 <div className="max-w-5xl mx-auto px-6 pt-14 pb-12 flex flex-col items-center text-center">
 <h1 className="text-5xl md:text-6xl font-bold tracking-tight">MELORI MUSIC</h1>
 <p className="mt-4 text-lg md:text-xl text-text-secondary">
-Stream freely. Support directly.{" "}
+Preview freely. Support directly.{" "}
 <span className="whitespace-nowrap">Create endlessly.</span>
 </p>
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
-An independent music platform where fans stream the full catalog for free and support artists directly — and artists keep 100% of every sale.
+Preview any song free. Go Superfan for full playback, or buy the track to own it. No platform cut — artists keep every dollar after payment processing.
 </p>
 
 {/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
@@ -106,20 +107,23 @@ An independent music platform where fans stream the full catalog for free and su
 </section>
 )}
 
+{/* The meaning of the name — mel (melody) + lori (lullaby). */}
+<NameMeaning />
+
 {/* Why Melori — value props */}
 <section className="max-w-6xl mx-auto px-6 pb-20">
 <div className="grid gap-6 sm:grid-cols-3">
 <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
-<h3 className="text-lg font-semibold text-text-primary">Stream freely</h3>
-<p className="mt-2 text-sm text-text-secondary">Play the full catalog with no gatekeeping. Discover independent artists on your terms.</p>
+<h3 className="text-lg font-semibold text-text-primary">Preview freely</h3>
+<p className="mt-2 text-sm text-text-secondary">Every song in the catalog opens with a free 30-second preview — no account, no gate. Superfan unlocks full playback.</p>
 </div>
 <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
 <h3 className="text-lg font-semibold text-text-primary">Support directly</h3>
-<p className="mt-2 text-sm text-text-secondary">Buy singles and albums or become a member. Your support goes straight to the artists you love.</p>
+<p className="mt-2 text-sm text-text-secondary">Buy a single or an album to own it and keep it. Your money goes to the artist, not to a platform cut.</p>
 </div>
 <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
 <h3 className="text-lg font-semibold text-text-primary">Create &amp; earn</h3>
-<p className="mt-2 text-sm text-text-secondary">Upload your music, keep 100% of every sale, and build a fanbase that pays you fairly.</p>
+<p className="mt-2 text-sm text-text-secondary">Upload your music and sell it with no platform cut — you keep every dollar after payment processing.</p>
 </div>
 </div>
 </section>

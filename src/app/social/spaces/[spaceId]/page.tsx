@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useCanParticipate } from "@/components/social/UpgradePrompt";
+import { useCanParticipate, useCanRequestStage } from "@/components/social/UpgradePrompt";
+import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
 import { authFetch, authHeaders } from "@/lib/authClient";
 import {
   joinChannel as agoraJoin,
@@ -45,6 +46,11 @@ export default function SpaceDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const canParticipate = useCanParticipate();
+  // Clubhouse parity: raising a hand is gated on being signed in ONLY (no
+  // Superfan requirement) — see src/lib/spacesStage.ts. Speaking itself is
+  // gated separately below on the caller's own participant role, which only
+  // changes once the host promotes them.
+  const canRequestStage = useCanRequestStage();
   const spaceId = params.spaceId as string;
 
   const [space, setSpace] = useState<Space | null>(null);
@@ -248,6 +254,18 @@ export default function SpaceDetailPage() {
     router.push("/social/spaces");
   }, [user, spaceId, router]); 
 
+  // My own current on-stage role, mirrored from the participants table
+  // (server-authoritative -- set only by the host's moderation actions or the
+  // join flow). Drives whether the mic/PTT controls render at all: Clubhouse
+  // parity means this is NOT the Superfan gate any more, it is "has the host
+  // put me on stage". Declared here (above applyMute/toggleMute/toggleHand)
+  // since those callbacks depend on it.
+  const myRole = participants.find((p) => p.user_id === user?.id && !p.left_at)?.role ?? null;
+  const canSpeakNow = canSpeak(myRole);
+  const handRaiseMode = space?.hand_raise_mode ?? "everyone";
+  const canRaiseHandNow =
+    canRequestStage && handRaiseAllowed(handRaiseMode, { signedIn: !!user });
+
   // Central helper: change mute state locally + on LiveKit + in the DB.
   // The audio session is the source of truth: we drive the mic first, then
   // mirror local state, then persist. A Supabase/RLS hiccup on the DB write
@@ -289,18 +307,18 @@ export default function SpaceDetailPage() {
 
   const toggleMute = useCallback(async () => {
     if (!user) return;
-    // Speaking is a vocal-conversation action → Superfan+ only. (The Agora token
-    // endpoint enforces this server-side; free users cannot obtain a publisher
-    // token even if this button were bypassed.)
-    if (!canParticipate) {
-      router.push("/membership");
+    // Speaking requires the host to have put us on stage (role 'host' or
+    // 'speaker') -- Clubhouse parity, no membership tier check. The
+    // livekit-token route enforces the same rule server-side for Spaces, so
+    // this can never be bypassed even if this button were tampered with.
+    if (!canSpeakNow) {
       return;
     }
     // Keyboard/click activation is also a user gesture — unlock playback here
     // too so non-pointer paths still enable remote audio.
     void agoraEnsureAudio();
     await applyMute(!isMuted);
-  }, [user, isMuted, canParticipate, router, applyMute]);
+  }, [user, isMuted, canSpeakNow, applyMute]);
 
   // Press-and-hold-to-talk (PTT). While the mic button is held down we
   // unmute; on release we return to whatever mute state the user had before.
@@ -313,7 +331,7 @@ export default function SpaceDetailPage() {
   const suppressClickRef = useRef(false);
 
   const startPTT = useCallback(() => {
-    if (!user || !canParticipate) return;
+    if (!user || !canSpeakNow) return;
     // Unlock remote audio playback from this genuine user gesture (pointer/
     // touch/mouse down) so browsers allow everyone to be heard instantly.
     void agoraEnsureAudio();
@@ -324,7 +342,7 @@ export default function SpaceDetailPage() {
     // Optimistically go live while the button is held. For a quick tap we
     // reconcile this into a normal toggle in endPTT.
     if (isMuted) void applyMute(false);
-  }, [user, canParticipate, isMuted, applyMute]);
+  }, [user, canSpeakNow, isMuted, applyMute]);
 
   const endPTT = useCallback(() => {
     if (!pttHeldRef.current) return false;
@@ -362,24 +380,43 @@ export default function SpaceDetailPage() {
   }, [endPTT]);
 
   const toggleHand = useCallback(async () => {
-    if (!user) return;
-    // Raising a hand requests the mic (to speak) → Superfan+ only.
-    if (!canParticipate) {
-      router.push("/membership");
+    if (!user) {
+      router.push("/social/auth");
+      return;
+    }
+    // Clubhouse parity: raising a hand is signed-in-only, no Superfan gate.
+    // The host may still turn hand-raising off (or, later, limit it to
+    // followed accounts) via hand_raise_mode -- enforced server-side by the
+    // raise-hand route and mirrored here so the control doesn't even render
+    // when it would be rejected (see canRaiseHandNow below the button).
+    if (!canRequestStage) {
+      router.push("/social/auth");
       return;
     }
     const newHand = !hasRaisedHand;
+    // Optimistic UI, reverted below if the server rejects the request (e.g.
+    // the host just switched hand-raise mode to "off") so we never leave the
+    // hand shown as raised when it wasn't actually recorded.
     setHasRaisedHand(newHand);
-    // Instant fan-out so the host/room sees the hand go up without waiting for
-    // the Supabase Realtime round-trip. The DB write below stays the source of
-    // truth (the host's promote flow reads `has_raised_hand`).
     void pubnubPublishSignal(spaceId, { type: "hand", raised: newHand });
-    await supabase
-      .from("space_participants")
-      .update({ has_raised_hand: newHand })
-      .eq("space_id", spaceId)
-      .eq("user_id", user.id);
-  }, [user, spaceId, hasRaisedHand, canParticipate, router]);
+    try {
+      const res = await authFetch(`/api/social/spaces/${spaceId}/raise-hand`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raised: newHand }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setHasRaisedHand(!newHand);
+        setShareToast(data?.error ?? "Could not raise hand");
+        setTimeout(() => setShareToast(null), 2500);
+      }
+    } catch {
+      setHasRaisedHand(!newHand);
+      setShareToast("Network error");
+      setTimeout(() => setShareToast(null), 2500);
+    }
+  }, [user, spaceId, hasRaisedHand, canRequestStage, router]);
 
   const isHost = user?.id === space?.host_id;
 
@@ -497,6 +534,37 @@ export default function SpaceDetailPage() {
     }
   }, [isHost, spaceId]);
 
+  // Host-only: change who is allowed to raise a hand in this space (Clubhouse
+  // parity control #4). Optimistic with revert-on-failure, same pattern as
+  // the other host actions in this file (runHostAction) -- a failed call must
+  // never leave the menu silently lying about the active mode.
+  const setHandRaiseMode = useCallback(
+    async (mode: "off" | "followed" | "everyone") => {
+      if (!isHost) return;
+      const prevMode = space?.hand_raise_mode ?? "everyone";
+      setSpace((prev) => (prev ? { ...prev, hand_raise_mode: mode } : prev));
+      try {
+        const res = await authFetch(`/api/social/spaces/${spaceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "set_hand_raise_mode", hand_raise_mode: mode }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setSpace((prev) => (prev ? { ...prev, hand_raise_mode: prevMode } : prev));
+          setShareToast(data?.error ?? "Could not update hand-raise mode");
+        } else {
+          setShareToast(`Hand-raise: ${mode}`);
+        }
+      } catch {
+        setSpace((prev) => (prev ? { ...prev, hand_raise_mode: prevMode } : prev));
+        setShareToast("Network error");
+      }
+      setTimeout(() => setShareToast(null), 2200);
+    },
+    [isHost, spaceId, space?.hand_raise_mode],
+  );
+
   const handleEndSpace = useCallback(async () => {
     if (!isHost) return;
     if (
@@ -576,9 +644,12 @@ export default function SpaceDetailPage() {
 
   // ---- Agora audio lifecycle -----------------------------------------------
   // We (re)join whenever role changes. Audience → subscriber, speaker/host →
-  // publisher. Option 1 (freemium): any signed-in user joins as a SUBSCRIBER to
-  // LISTEN for free; only speakers/hosts publish, and the token endpoint gates
-  // publisher tokens to Superfan+ so free users can't obtain one.
+  // publisher. Any signed-in user joins as a SUBSCRIBER to LISTEN for free.
+  // Clubhouse parity: publishing (speaking) is gated on the participant's
+  // *role* (host/speaker, i.e. host-promoted), not on membership tier -- the
+  // livekit-token route mints a publisher token for any promoted Spaces
+  // participant regardless of tier (MM Faces video rooms still require
+  // Superfan+ even once promoted; see that route's comments).
   useEffect(() => {
     if (!isJoined || !user || !space?.agora_channel) return;
 
@@ -932,13 +1003,52 @@ export default function SpaceDetailPage() {
                 Report space
               </button>
               {isHost && (
+                <div className="border-t border-melori-border">
+                  <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-melori-muted">
+                    Who can raise a hand
+                  </p>
+                  {(
+                    [
+                      { value: "everyone" as const, label: "Everyone" },
+                      { value: "off" as const, label: "Off (host invites only)" },
+                      { value: "followed" as const, label: "Followed (TODO)" },
+                    ]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={opt.value === "followed"}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        void setHandRaiseMode(opt.value);
+                      }}
+                      title={
+                        opt.value === "followed"
+                          ? "Not implemented yet -- no follow-graph check is wired up. See spacesStage.ts."
+                          : undefined
+                      }
+                      className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-sm transition ${
+                        opt.value === "followed"
+                          ? "text-melori-muted/50 cursor-not-allowed"
+                          : "text-melori-text hover:bg-white/5"
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {handRaiseMode === opt.value && (
+                        <span className="text-melori-purple text-xs">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {isHost && (
                 <button
                   type="button"
                   onClick={() => {
                     setMoreOpen(false);
                     void handleEndSpace();
                   }}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition"
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition border-t border-melori-border"
                 >
                   <Trash2 className="w-4 h-4" />
                   End space
@@ -1242,13 +1352,16 @@ export default function SpaceDetailPage() {
               <span className="hidden sm:inline">Leave Quietly</span>
             </button>
 
-            {/* Mic button — centered focal control. Only speakers (canParticipate)
-               see it; listeners get the reactions control only.
+            {/* Mic button — centered focal control. Only participants the
+               host has put on stage (canSpeakNow: role 'host'/'speaker') see
+               it; listeners get the reactions control only. Clubhouse parity:
+               this is no longer gated on Superfan membership, only on the
+               host's own promotion decision.
                  - Tap: toggle mute (classic behavior).
                  - Press & hold: push-to-talk. Unmutes for as long as you're
                    holding it, then restores the previous mute state on
                    release. Works with mouse and touch. */}
-            {canParticipate && (
+            {canSpeakNow && (
               <button
                 type="button"
                 onClick={() => {
@@ -1296,7 +1409,11 @@ export default function SpaceDetailPage() {
 
             {/* Right corner: raise-hand / End Space + quick reactions. */}
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              {!isHost && (
+              {/* Raise-hand: hidden for the host, for anyone already on stage
+                 (they don't need to ask), and whenever the host has set
+                 hand_raise_mode to "off" (or the not-yet-enforced
+                 "followed" -- see spacesStage.ts). */}
+              {!isHost && !canSpeakNow && canRaiseHandNow && (
                 <button
                   onClick={toggleHand}
                   aria-label="Raise hand"

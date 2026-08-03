@@ -36,6 +36,7 @@ import {
   type AudioProfile,
 } from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
+import type { FacingMode } from "@/lib/videoMirror";
 
 type AnyRoom = any;
 type AnyTrack = any;
@@ -84,6 +85,13 @@ export interface JoinVideoOptions {
   // Called when the local camera track is published so the UI can show the
   // host's own preview tile.
   onLocalVideo?: (element: HTMLVideoElement) => void;
+  // Fired whenever the LOCAL camera's facing mode is known/changes (initial
+  // capture, or after switchCamera() flips front/back). "user" = front-facing
+  // (selfie) camera, "environment" = rear camera, null = undetermined (e.g. a
+  // desktop webcam that doesn't report facingMode). The UI uses this to decide
+  // whether to mirror the local preview — it must NEVER affect the published
+  // track, only the on-screen CSS.
+  onFacingModeChange?: (facingMode: FacingMode) => void;
   onParticipantCountChange?: (count: number) => void;
   // Full set of identities currently CONNECTED to the LiveKit room (local
   // INCLUDED). Emitted on connect and on every join/leave so the UI roster
@@ -123,6 +131,9 @@ interface ActiveVideoSession {
   remoteAudioEls: HTMLMediaElement[];
   // Active audio profile, so mic re-publish reuses the same tuning.
   audioProfile: AudioProfile;
+  // Facing mode of the currently-active LOCAL camera. Drives self-preview
+  // mirroring in the UI only — never touches the published track.
+  facingMode: FacingMode;
   cleanups: Array<() => void>;
   // Remembered so a subscriber can later upgrade to publisher (becomePublisher)
   // by reconnecting with the same callbacks but a publisher token.
@@ -139,6 +150,7 @@ let session: ActiveVideoSession = {
   remoteVideoEls: new Map(),
   remoteAudioEls: [],
   audioProfile: "performance",
+  facingMode: null,
   cleanups: [],
   lastOpts: null,
 };
@@ -199,6 +211,7 @@ export async function getMediaPermission(): Promise<MediaPermissionState> {
 async function enableLocalCameraAndMic(
   room: AnyRoom,
   onLocalVideo?: (el: HTMLVideoElement) => void,
+  onFacingModeChange?: (facingMode: FacingMode) => void,
 ): Promise<HTMLVideoElement | null> {
   // The capture API itself can be missing (iOS WKWebView without the camera/mic
   // usage descriptions, or a non-secure origin). LiveKit would surface that as a
@@ -249,10 +262,34 @@ async function enableLocalCameraAndMic(
     el.autoplay = true;
     el.muted = true; // never echo your own mic
     session.localVideoEl = el;
+    setFacingMode(readFacingMode(camTrack), onFacingModeChange);
     onLocalVideo?.(el);
     return el;
   }
   return session.localVideoEl;
+}
+
+// Read the active facing mode off a local camera track's MediaStreamTrack
+// settings. Most laptop webcams and some browsers never report facingMode at
+// all, so this legitimately returns null — callers must treat that as "do not
+// mirror" rather than guessing.
+function readFacingMode(track: AnyTrack): FacingMode {
+  try {
+    const settings = track?.mediaStreamTrack?.getSettings?.();
+    const facingMode = settings?.facingMode;
+    if (facingMode === "user" || facingMode === "environment") return facingMode;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function setFacingMode(
+  facingMode: FacingMode,
+  onFacingModeChange?: (facingMode: FacingMode) => void,
+) {
+  session.facingMode = facingMode;
+  onFacingModeChange?.(facingMode);
 }
 
 export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
@@ -550,7 +587,7 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     // Publisher (host) turns on camera + mic. Viewers stay receive-only. Uses a
     // single combined request so a persisted grant is reused with no re-prompt.
     if (creds.role === "publisher") {
-      await enableLocalCameraAndMic(room, opts.onLocalVideo);
+      await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
     }
 
     emitCount();
@@ -611,6 +648,10 @@ export async function switchCamera(): Promise<void> {
       ?.getSettings?.()?.deviceId;
     const next = devices.find((d: any) => d.deviceId !== current) ?? devices[0];
     if (next) await session.room.switchActiveDevice("videoinput", next.deviceId);
+    // Re-read the facing mode off the (now switched) camera track so the UI
+    // can flip self-preview mirroring to match — front mirrors, back doesn't.
+    const camTrack = lp.getTrackPublication?.("camera")?.track;
+    setFacingMode(readFacingMode(camTrack), session.lastOpts?.onFacingModeChange);
   } catch (err) {
     console.warn("[faces] switchCamera failed", err);
   }
@@ -660,6 +701,7 @@ export async function leaveVideoRoom(): Promise<void> {
     spaceId: null,
     identity: null,
     audioProfile: "performance",
+    facingMode: null,
     role: "subscriber",
     tier: "free",
     localVideoEl: null,
@@ -715,6 +757,7 @@ export async function publishLocalMedia(): Promise<HTMLVideoElement | null> {
   const el = await enableLocalCameraAndMic(
     session.room,
     session.lastOpts?.onLocalVideo,
+    session.lastOpts?.onFacingModeChange,
   );
   session.role = "publisher";
   return el;
@@ -726,6 +769,7 @@ export function getVideoSession() {
     identity: session.identity,
     role: session.role,
     tier: session.tier,
+    facingMode: session.facingMode,
     connected: !!session.room,
   };
 }

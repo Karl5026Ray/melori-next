@@ -92,8 +92,16 @@ jobs:
           # Re-applies everything `cap add/sync` overwrites: SDK 36 levels, the
           # real launcher icons, LiveKit/media permissions, App Links, and the
           # release signing config. Fails loudly if any of it doesn't stick.
-          chmod +x scripts/configure-android.sh
-          ./scripts/configure-android.sh
+          #
+          # Goes through postsync.sh, the single entry point, rather than
+          # calling configure-android.sh directly. The iOS workflow called one
+          # of the chained scripts directly and so never ran configure-ios.sh at
+          # all — build 17 shipped to App Store Connect with no camera
+          # permission and no OAuth callback scheme as a result. Same trap here:
+          # anything added to postsync.sh is now picked up automatically. It
+          # skips iOS when mobile/ios is absent, which it is on this runner.
+          chmod +x scripts/postsync.sh scripts/configure-android.sh
+          ./scripts/postsync.sh
           echo "--- variables.gradle ---"
           cat android/variables.gradle
 

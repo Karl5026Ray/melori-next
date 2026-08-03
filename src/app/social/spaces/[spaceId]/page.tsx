@@ -923,7 +923,7 @@ export default function SpaceDetailPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full animate-fade-in">
+    <div className="flex-1 flex flex-col h-[calc(100dvh-4rem)] min-h-0 animate-fade-in">
       <div className="border-b border-melori-border p-4 md:p-6 flex items-center justify-between bg-melori-void/95 backdrop-blur z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <Link
@@ -933,8 +933,8 @@ export default function SpaceDetailPage() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold text-lg truncate">{space.title}</h2>
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="font-bold text-lg truncate min-w-0">{space.title}</h2>
               {(() => {
                 const format = getRoomFormatConfig(space.room_format);
                 return (
@@ -957,7 +957,7 @@ export default function SpaceDetailPage() {
             <p className="text-xs text-melori-muted truncate">{space.topic}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative shrink-0">
           <button
             type="button"
             onClick={handleShare}
@@ -1064,7 +1064,7 @@ export default function SpaceDetailPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
         <div className="max-w-2xl mx-auto">
           {space.status === "scheduled" && (
             <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">
@@ -1100,7 +1100,7 @@ export default function SpaceDetailPage() {
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-melori-purple/20 to-melori-pink/20 flex items-center justify-center mx-auto mb-4">
                 <Volume2 className="w-10 h-10 text-melori-purple" />
               </div>
-              <h3 className="text-xl font-bold mb-2">{space.title}</h3>
+              <h3 className="text-xl font-bold mb-2 break-words">{space.title}</h3>
               <p className="text-melori-muted mb-6">
                 {space.participant_count} people listening
               </p>
@@ -1262,7 +1262,7 @@ export default function SpaceDetailPage() {
 
       {/* Floating reaction bursts */}
       {reactions.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-32 z-30 flex justify-center gap-3">
+        <div className="pointer-events-none fixed inset-x-0 safe-bottom-offset-32 z-30 flex justify-center gap-3">
           {reactions.map((r) => {
             // r has the form "<ts>-<seq>:<emoji>". Split on the first ':'.
             const emoji = r.slice(r.indexOf(":") + 1) || "❤️";
@@ -1281,7 +1281,7 @@ export default function SpaceDetailPage() {
 
       {/* Peer raised-hand heads-up (instant via PubNub signal) */}
       {peerHandToast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-44 z-30 flex justify-center">
+        <div className="pointer-events-none fixed inset-x-0 safe-bottom-offset-44 z-30 flex justify-center">
           <span
             className="rounded-full bg-melori-warning/90 text-melori-void text-xs font-semibold px-4 py-2 shadow-lg"
             data-testid="toast-peer-hand"
@@ -1301,7 +1301,7 @@ export default function SpaceDetailPage() {
           aria-label={`React to ${reactTarget.user?.display_name ?? "participant"}`}
         >
           <div
-            className="w-full max-w-sm rounded-t-2xl border border-melori-border bg-melori-void p-5 shadow-xl sm:rounded-2xl animate-fade-in"
+            className="safe-area-pad-extra-bottom-5 w-full max-w-sm rounded-t-2xl border border-melori-border bg-melori-void p-5 shadow-xl sm:rounded-2xl animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -1337,7 +1337,7 @@ export default function SpaceDetailPage() {
       )}
 
       {isJoined && (
-        <div className="border-t border-melori-border p-4 md:p-6 bg-melori-void/95 backdrop-blur shrink-0">
+        <div className="safe-area-pad-extra-bottom border-t border-melori-border p-4 md:p-6 bg-melori-void/95 backdrop-blur shrink-0">
           {/* Control bar: the mic sits ALONE, centered and prominent. The Leave
              button is pinned to the bottom-left and the secondary controls
              (raise-hand / End Space + reactions) to the bottom-right, so

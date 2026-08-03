@@ -9,6 +9,11 @@ import {
 } from "@/lib/membership-sync";
 import { ensureArtistRow } from "@/lib/artist";
 import { banAuthUser, unbanAuthUser } from "@/lib/account-lockout";
+import {
+  constructWebhookEvent,
+  webhookSecretCandidates,
+  type StripeAccountOrigin,
+} from "@/lib/stripe";
 
 // Hard login lockout for lapsed paid subscribers. When enabled, a subscription
 // that Stripe has finally canceled (AFTER its dunning/retry grace window)
@@ -41,12 +46,26 @@ export const dynamic = "force-dynamic";
 // with the /welcome onboarding flow via @/lib/membership-sync so both grant
 // identical entitlements.
 
+// Dual-account inbound verification. This endpoint is the one the pre-cutover
+// Stripe account still posts to for its in-flight subscription renewals, and
+// that account's endpoint has its own signing secret. Accept either.
+//
+// STRIPE_WEBHOOK_SECRET_LEGACY is optional: with it unset there is a single
+// candidate and behaviour is identical to verifying against the primary secret
+// alone, so this is safe to deploy before the secret exists. Remove the legacy
+// half once the last legacy subscription has lapsed.
+function membersWebhookSecrets() {
+  return webhookSecretCandidates(
+    process.env.STRIPE_MEMBERS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET,
+    process.env.STRIPE_WEBHOOK_SECRET_LEGACY,
+  );
+}
+
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_SECRET_KEY;
-  const webhookSecret =
-    process.env.STRIPE_MEMBERS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+  const secrets = membersWebhookSecrets();
 
-  if (!secret || !webhookSecret) {
+  if (!secret || secrets.length === 0) {
     console.error("members/stripe-webhook: missing STRIPE keys");
     return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
@@ -57,19 +76,28 @@ export async function POST(req: NextRequest) {
   }
 
   const rawBody = await req.text();
+  // Outbound calls made while handling the event use the PRIMARY key only,
+  // even for a legacy-signed event. See applySubscriptionState.
   const stripe = new Stripe(secret);
 
   let event: Stripe.Event;
+  let origin: StripeAccountOrigin;
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+    ({ event, origin } = constructWebhookEvent(stripe, rawBody, sig, secrets));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "bad signature";
     console.error("members/stripe-webhook signature error:", msg);
     return NextResponse.json({ error: `Webhook error: ${msg}` }, { status: 400 });
   }
 
+  if (origin === "legacy") {
+    console.info(
+      `members/stripe-webhook: legacy-account event ${event.id} (${event.type})`,
+    );
+  }
+
   try {
-    await handleEvent(stripe, event);
+    await handleEvent(stripe, event, origin);
   } catch (err) {
     // Return 500 (not 200) so Stripe RETRIES on its bounded schedule. A
     // transient failure here (e.g. a brief DB blip while granting a tier) used
@@ -88,7 +116,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-async function handleEvent(stripe: Stripe, event: Stripe.Event) {
+async function handleEvent(
+  stripe: Stripe,
+  event: Stripe.Event,
+  origin: StripeAccountOrigin,
+) {
   const supabase = createServiceClient();
 
   // Idempotency: we no longer short-circuit on a `seen` row before running the
@@ -105,7 +137,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // Only handle subscription checkouts here; one-time (store/donate) is
       // owned by their own handlers.
       if (session.mode !== "subscription") return;
-      await applySubscriptionState(stripe, supabase, event, {
+      await applySubscriptionState(stripe, supabase, event, origin, {
         customerId:
           typeof session.customer === "string"
             ? session.customer
@@ -138,7 +170,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
         sub.status === "unpaid" ||
         sub.status === "incomplete_expired";
 
-      await applySubscriptionState(stripe, supabase, event, {
+      await applySubscriptionState(stripe, supabase, event, origin, {
         customerId:
           typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
         subscriptionId: sub.id,
@@ -159,7 +191,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const invoice = event.data.object as Stripe.Invoice;
       const line = invoice.lines?.data?.[0];
       const amount = line?.amount ?? invoice.amount_paid ?? null;
-      await applySubscriptionState(stripe, supabase, event, {
+      await applySubscriptionState(stripe, supabase, event, origin, {
         customerId:
           typeof invoice.customer === "string"
             ? invoice.customer
@@ -180,7 +212,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
 
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
-      await applySubscriptionState(stripe, supabase, event, {
+      await applySubscriptionState(stripe, supabase, event, origin, {
         customerId:
           typeof invoice.customer === "string"
             ? invoice.customer
@@ -229,6 +261,7 @@ async function applySubscriptionState(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   event: Stripe.Event,
+  origin: StripeAccountOrigin,
   args: StateArgs
 ) {
   const { tier, interval } = classifyPrice({
@@ -239,8 +272,15 @@ async function applySubscriptionState(
   const resolvedInterval = args.intervalOverride ?? interval;
 
   // Resolve the customer email if we only have a customer id.
+  //
+  // Skipped for legacy-account events: the Stripe client here holds the PRIMARY
+  // key, and a customer id from the other account resolves to a guaranteed 404
+  // there. Those subscribers are already linked by stripe_customer_id /
+  // stripe_subscription_id on `profiles`, which findProfile tries first, so
+  // dropping the lookup costs nothing and avoids a pointless API round trip on
+  // every legacy renewal.
   let email = args.email;
-  if (!email && args.customerId) {
+  if (!email && args.customerId && origin === "primary") {
     try {
       const customer = await stripe.customers.retrieve(args.customerId);
       if (customer && !("deleted" in customer && customer.deleted)) {

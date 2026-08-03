@@ -6,6 +6,10 @@ import { Plus, X, Video, Mic, Upload, Circle, Square, Youtube } from "lucide-rea
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
 import { parseYouTubeUrl } from "@/lib/youtube";
+import {
+  MediaCaptureUnavailableError,
+  requestUserMedia,
+} from "@/lib/mediaCapture";
 
 type Mode = "video" | "audio" | "file" | "youtube";
 type MediaType = "video" | "audio";
@@ -181,15 +185,19 @@ export default function CreatePostButton() {
       try {
         const constraints =
           m === "video" ? { video: true, audio: true } : { audio: true };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const stream = await requestUserMedia(constraints);
         streamRef.current = stream;
         if (m === "video" && livePreviewRef.current) {
           livePreviewRef.current.srcObject = stream;
           livePreviewRef.current.play().catch(() => {});
         }
-      } catch {
+      } catch (err) {
+        // An unsupported container reports WHY (and how to fix it); an ordinary
+        // denial keeps the shorter permission hint.
         setError(
-          "Camera/mic blocked. Grant permission or use Upload File instead.",
+          err instanceof MediaCaptureUnavailableError
+            ? err.message
+            : "Camera/mic blocked. Grant permission or use Upload File instead.",
         );
       }
     },

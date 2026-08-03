@@ -31,6 +31,7 @@ import {
   type VideoTier,
   type RemoteVideo,
 } from "@/lib/livekitVideoClient";
+import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoMirror";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -142,6 +143,10 @@ export default function LiveRoom({
   const [removed, setRemoved] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  // Facing mode of MY OWN active camera ("user" = front/selfie, "environment"
+  // = rear, null = unknown/desktop webcam). Drives whether my own preview tile
+  // is mirrored — never affects what remote viewers see (display-only CSS).
+  const [facingMode, setFacingMode] = useState<FacingMode>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
@@ -376,6 +381,7 @@ export default function LiveRoom({
           },
           onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
           onActiveSpeakersChange: (ids) => setSpeakers(new Set(ids)),
+          onFacingModeChange: (mode) => setFacingMode(mode),
           onLocalPermissionsChanged: (allowed) => {
             // Server promoted me (host/mod approved my raised hand). Publish in
             // place — no reconnect — per the runtime-permission flow.
@@ -955,11 +961,26 @@ export default function LiveRoom({
       const el = t.isLocal ? localElRef.current : remoteEls.current.get(t.identity);
       if (container && el && el.parentElement !== container) {
         el.className = "absolute inset-0 h-full w-full object-cover";
+        // Mirror ONLY my own tile, and only while the front-facing camera is
+        // active — a fresh attach must carry the current mirror state too, or
+        // switching layouts would silently un-mirror the self-view.
+        el.style.transform = mirrorTransform(shouldMirrorTile(t.isLocal, facingMode));
         container.querySelectorAll("video").forEach((v) => v.remove());
         container.appendChild(el);
       }
     });
-  }, [tiles, layout, featuredId]);
+  }, [tiles, layout, featuredId, facingMode]);
+
+  // Keep the local tile's mirror CSS in sync with facingMode even when no
+  // re-attach happens (e.g. flipping front/back camera while the layout is
+  // unchanged). Display-only: this NEVER touches the published LiveKit track,
+  // only the local <video> element's on-screen transform, so remote viewers
+  // always see the correct, un-mirrored orientation regardless of this.
+  useEffect(() => {
+    const el = localElRef.current;
+    if (!el) return;
+    el.style.transform = mirrorTransform(shouldMirrorTile(true, facingMode));
+  }, [facingMode, tiles]);
 
   const gridClass = useMemo(() => gridClassFor(Math.max(1, tiles.length)), [tiles.length]);
   const showStageFallback = tiles.length === 0;

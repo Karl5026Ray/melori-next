@@ -22,9 +22,17 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
 //  - FREE-TIER ACCESS (Option 1): any signed-in user may join a room as a
 //    SUBSCRIBER (watch live video / listen to audio, comment, react). This is
 //    the growth + data hook.
-//  - PUBLISHING (camera/mic) requires a paid tier: a publisher token is only
-//    issued to the host, or to an active speaker who is ALSO Superfan-or-better
-//    and not host_muted. Everyone else gets subscribe-only.
+//  - PUBLISHING (camera/mic) requires being on stage (host, moderator, or a
+//    host-promoted speaker) and not host_muted.
+//      * MM Faces (video, room_format starts with live_): a promoted speaker
+//        ALSO still needs Superfan-or-better to publish camera+mic.
+//      * MM Spaces (audio-only): Clubhouse parity ungate. ANY signed-in user
+//        who has been promoted to speaker/host/mod by that space's host may
+//        publish mic audio, regardless of membership tier. Membership is not
+//        rechecked here because the promotion itself is the gate: only the
+//        host can flip a participant's role to speaker (see the participants
+//        PATCH route), and raising a hand to request that promotion is also
+//        tier-free (see src/lib/spacesStage.ts + raise-hand route).
 export async function POST(req: NextRequest) {
   try {
     if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
@@ -136,10 +144,16 @@ export async function POST(req: NextRequest) {
           .is("left_at", null);
         // Falls through as audience (onStage stays false).
       } else if (isMod || isSpeaker) {
-        // Going on stage (speaking / camera) is a Superfan perk. A free user
-        // can still WATCH/LISTEN as audience, but never receives a publish
-        // grant even if promoted in the DB.
-        if (isSuperfanOrBetter(membershipProfile) && !participant?.host_muted) {
+        // Clubhouse parity: in an AUDIO Space, a free member who has been
+        // promoted by the host (role/badge already reflects that) may publish
+        // just like a Superfan — speaking is gated on host approval, not on
+        // membership tier. MM Faces (video, withVideo=true) is UNCHANGED: going
+        // on camera still requires Superfan-or-better even once promoted, so
+        // this narrow ungate never leaks into video rooms.
+        const eligible = withVideo
+          ? isSuperfanOrBetter(membershipProfile)
+          : true;
+        if (eligible && !participant?.host_muted) {
           socialRole = isMod ? "moderator" : "speaker";
           onStage = true;
         }

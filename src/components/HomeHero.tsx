@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CoverImage from "@/components/CoverImage";
+import PlayCount from "@/components/PlayCount";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 
 // The homepage "instant listening" hero. On load it tunes the SHARED player
@@ -35,6 +36,15 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
   // What the hero shows: whatever the one shared player has on air, falling
   // back to the server-rendered featured track until the station is tuned.
   const shown = current ?? track;
+
+  // Play baseline for whatever is on air, keyed by legacy track id. Radio pool
+  // rows carry their own total, so the count follows the station from song to
+  // song; studio uploads have none and contribute an empty map.
+  const playBaseline = useMemo(() => {
+    const id = Number(shown.id);
+    if (shown.sourceType === "studio" || !Number.isInteger(id)) return {};
+    return { [id]: shown.playCount ?? 0 };
+  }, [shown.id, shown.sourceType, shown.playCount]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -144,8 +154,13 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
           <h2 className="mt-1 max-w-full truncate text-2xl font-bold text-text-primary">
             {shown.title}
           </h2>
-          <p className="mt-0.5 truncate text-sm text-text-secondary">
-            {shown.artistName ?? "MELORI MUSIC"}
+          {/* The count shares the artist's existing line so it can appear
+              mid-listen without nudging the layout. */}
+          <p className="mt-0.5 flex max-w-full items-center justify-center gap-2 text-sm text-text-secondary sm:justify-start">
+            <span className="min-w-0 truncate">
+              {shown.artistName ?? "MELORI MUSIC"}
+            </span>
+            <PlayCount baseline={playBaseline} />
           </p>
 
           {/* Waveform visualization */}

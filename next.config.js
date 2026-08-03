@@ -39,8 +39,13 @@ const CSP_ENFORCED = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
   // XHR/WebSocket egress: Supabase, Stripe, LiveKit, Agora, PubNub + generic wss.
-  "connect-src 'self' https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
-  "media-src 'self' blob: https:",
+  // blob: is required by the shared audio player: it fetches the unlock clip and
+  // streamed track data as blob URLs, and XHR/fetch to a blob: URL is governed by
+  // connect-src (not media-src). Without it the homepage radio fails to start.
+  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
+  // data: covers the tiny inline silent clip the player uses to unlock autoplay
+  // on iOS, which was being blocked on / and /music.
+  "media-src 'self' data: blob: https:",
   // Stripe Checkout + Google OAuth render in iframes, and both /video and the
   // Melori Mirror feed embed YouTube players (artist-submitted links; we never
   // re-host the media). Nothing else may embed us.

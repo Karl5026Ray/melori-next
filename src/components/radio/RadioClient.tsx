@@ -22,6 +22,7 @@ import {
   ListPlus,
 } from "lucide-react";
 import { authHeaders } from "@/lib/authClient";
+import { formatCount } from "@/lib/format";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { usePlaylists } from "@/components/radio/usePlaylists";
@@ -67,6 +68,7 @@ export default function RadioClient() {
     muted,
     isSample,
     error: playerError,
+    playCounts,
     radioMode,
     radioStationKey,
     playRadio,
@@ -190,6 +192,15 @@ export default function RadioClient() {
           t.sourceType === (display.sourceType ?? "legacy"),
       )) ||
     null;
+  // Play total for the shown track, or null when it has none to show (studio
+  // uploads have no play_count column). The player's live map wins so the
+  // number ticks up the moment this listen is counted.
+  const displayPlays =
+    displayRadioTrack?.sourceType === "legacy"
+      ? (playCounts[Number(displayRadioTrack.id)] ??
+        displayRadioTrack.playCount ??
+        0)
+      : null;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-4 pb-24 md:pb-8">
@@ -351,6 +362,13 @@ export default function RadioClient() {
                     {display?.artistName ?? "Unknown artist"}
                     {display?.album ? ` · ${display.album}` : ""}
                   </p>
+                  {displayPlays !== null && (
+                    <p className="mt-1 flex items-center justify-center gap-1 text-xs text-text-secondary">
+                      <Play className="h-3 w-3 fill-current" />
+                      {formatCount(displayPlays)}{" "}
+                      {displayPlays === 1 ? "play" : "plays"}
+                    </p>
+                  )}
                   {tuned && isSample && (
                     <p className="mt-1 text-xs text-brand-primary">
                       Preview ·{" "}

@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { startOAuthSignIn } from "@/lib/nativeAuth";
 
 // /register — the canonical signup surface.
 //   • Free Fan  → create the Supabase account immediately (role "free").
@@ -89,18 +90,10 @@ function RegisterInner() {
     setError("");
     try {
       // Route Google through the dedicated /auth/callback page, which runs
-      // exchangeCodeForSession client-side (same localStorage that holds the
-      // PKCE code verifier). Redirecting straight to `next` skips the exchange
-      // and throws "PKCE code verifier not found in storage".
-      const redirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo },
-      });
-      if (oauthError) throw oauthError;
+      // exchangeCodeForSession client-side (same store that holds the PKCE code
+      // verifier). Redirecting straight to `next` skips the exchange and throws
+      // "PKCE code verifier not found in storage".
+      await startOAuthSignIn("google", `next=${encodeURIComponent(next)}`);
     } catch (err: any) {
       setError(err?.message ?? "Google sign-in failed.");
     }

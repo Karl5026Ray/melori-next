@@ -5,10 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import {
-  UnreadMessagesBadge,
-  useUnreadMessages,
-} from "@/components/social/messages/UnreadMessagesBadge";
+import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 import {
   User as UserIcon,
   Radio,
@@ -95,7 +92,16 @@ function YouIcon() {
 export default function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const unreadMessages = useUnreadMessages();
+  // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
+  // PR that runs on every page for a signed-in member, and it was what broke
+  // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
+  // in the root layout, so each signed-in page opened two Supabase Realtime
+  // subscriptions on the same channel topic ("dm-unread-badge") and re-polled
+  // /api/social/conversations/unread from both copies on every navigation.
+  // Bisected against production builds: 8405e9c (pre-#221) signs in fine,
+  // 2785ca4 (#221) does not. Messaging itself is untouched and still works at
+  // /social/messages. Re-enable only behind a single shared subscription.
+  const unreadMessages = 0;
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);

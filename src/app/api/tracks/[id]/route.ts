@@ -18,7 +18,7 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
     const { data: track, error } = await supabaseAdmin
       .from("tracks")
       .select(
-        "id, title, release_id, track_number, duration_seconds, preview_url, price, is_published, created_at",
+        "id, title, release_id, track_number, duration_seconds, preview_url, price, is_published, play_count, created_at",
       )
       .eq("id", id)
       .eq("is_published", true)

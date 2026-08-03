@@ -100,12 +100,22 @@ jobs:
           # so without this flag `pod install` and the archive both fail.
           npx cap add ios --packagemanager CocoaPods || echo "ios project already present"
           npx cap sync ios
-          # Bake the real Melori app icon into the freshly generated project.
-          # `cap add/sync` restores the Capacitor template's placeholder AppIcon,
-          # so this MUST run after sync and before the archive — otherwise the
-          # placeholder icon ships to App Store Connect.
-          chmod +x scripts/install-ios-icon.sh
-          ./scripts/install-ios-icon.sh
+          # Re-apply EVERYTHING `cap sync` discards, via the one script that
+          # owns that job. mobile/ios is git-ignored and regenerated from the
+          # Capacitor template on every sync, so the real app icon, the OAuth
+          # callback URL scheme and the camera/microphone usage descriptions all
+          # have to be written back afterwards.
+          #
+          # This MUST be postsync.sh and not install-ios-icon.sh alone. Calling
+          # the icon script directly is how build 17 shipped with neither the
+          # OAuth scheme nor NSCameraUsageDescription: configure-ios.sh existed
+          # and was correct, but nothing in this workflow ever invoked it, so
+          # WKWebView kept hiding navigator.mediaDevices and MM Faces / MM Spaces
+          # still could not go live. postsync.sh is the single entry point —
+          # anything added to it is picked up here automatically. It skips
+          # Android when mobile/android is absent, which it is on this runner.
+          chmod +x scripts/postsync.sh scripts/install-ios-icon.sh scripts/configure-ios.sh
+          ./scripts/postsync.sh
           # Ensure CocoaPods (Capacitor pods) are installed so the workspace
           # links the 'Capacitor' module — otherwise the build fails with
           # "Unable to find module dependency: 'Capacitor'".
@@ -203,6 +213,50 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           CONFIRM_NUKE: "yes"
         run: fastlane ios nuke_distribution
+
+      # Last gate before anything is archived. configure-ios.sh already fails
+      # when a key is missing, but this re-reads the plist the archive will
+      # actually be built from, so a future step that regenerates or overwrites
+      # the project cannot quietly ship a build that has no camera access.
+      - name: Verify Info.plist is release-ready
+        working-directory: mobile
+        run: |
+          python3 - ios/App/App/Info.plist <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], "rb") as fh:
+              plist = plistlib.load(fh)
+
+          problems = []
+          for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription"):
+              if not str(plist.get(key, "")).strip():
+                  problems.append(
+                      f"{key} is missing - WKWebView hides navigator.mediaDevices "
+                      "without it and live streaming ships broken"
+                  )
+
+          schemes = [
+              s
+              for entry in plist.get("CFBundleURLTypes", [])
+              for s in entry.get("CFBundleURLSchemes", [])
+          ]
+          if "org.melorimusic.app" not in schemes:
+              problems.append(
+                  "org.melorimusic.app:// is missing from CFBundleURLTypes - the "
+                  "OAuth callback cannot re-enter the app and sign-in ships broken"
+              )
+
+          if problems:
+              for problem in problems:
+                  print(f"error: {problem}", file=sys.stderr)
+              raise SystemExit(
+                  "Info.plist is not release-ready. Did scripts/postsync.sh run "
+                  "after 'npx cap sync ios'?"
+              )
+
+          print("Info.plist verified: camera, microphone and OAuth scheme present.")
+          PY
 
       - name: Build & upload with Fastlane
         working-directory: mobile

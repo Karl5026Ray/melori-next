@@ -45,8 +45,21 @@ melori_file_bytes() { # melori_file_bytes <file>
 # Reads width and height straight out of the PNG IHDR chunk (bytes 16..23,
 # two big-endian uint32s). Avoids depending on an image tool, which differs
 # between the macOS and Linux runners.
+#
+# The `tr` is load-bearing. How od lays those 8 bytes out is not portable: GNU
+# od emits one line, while BSD od on the macOS runner adds a trailing blank
+# line. awk then ran a second time on the empty record and appended "0 0", so
+# the dimensions came back as "1024 10240 0" and a perfectly valid 1024x1024
+# icon was rejected with the mangled message
+#   "is 1024 10240x10240 0 — expected 1024x1024"
+# which failed the iOS build at `cap sync`. Flattening every byte onto a single
+# record first makes the parse independent of od's line breaking.
 melori_png_dimensions() { # melori_png_dimensions <file> -> "<width> <height>"
-  od -An -v -tu1 -j16 -N8 "$1" | awk '{
+  od -An -v -tu1 -j16 -N8 "$1" | tr '\n' ' ' | awk '{
+    if (NF != 8) {
+      printf "unreadable"
+      exit
+    }
     printf "%d %d", $1*16777216 + $2*65536 + $3*256 + $4,
                     $5*16777216 + $6*65536 + $7*256 + $8
   }'
@@ -83,6 +96,11 @@ melori_assert_icon_source() { # melori_assert_icon_source <source-icon>
 
   local dims width height
   dims="$(melori_png_dimensions "$src")"
+  if [ "$dims" = "unreadable" ]; then
+    echo "error: could not read the PNG IHDR header of $src — the file is a PNG" \
+         "but its header is truncated or unreadable." >&2
+    return 1
+  fi
   width="${dims% *}"
   height="${dims#* }"
   if [ "$width" != "$MELORI_ICON_EXPECTED_WIDTH" ] || [ "$height" != "$MELORI_ICON_EXPECTED_HEIGHT" ]; then

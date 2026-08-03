@@ -29,6 +29,12 @@ import {
   startRouteWatch,
   stopRouteWatch,
 } from "@/lib/audioOutput";
+import {
+  audioProfileForType,
+  captureDefaultsFor,
+  publishDefaultsFor,
+  type AudioProfile,
+} from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 
 type AnyRoom = any;
@@ -61,6 +67,15 @@ export interface JoinVideoOptions {
   spaceId: string;
   role: VideoRole;
   tier?: VideoTier;
+  // Drives the audio capture + publish profile. Faces defaults to
+  // "performance" (music-grade capture that keeps echo cancellation, so a host
+  // on loudspeaker with live co-hosts cannot feed back). Pass "music" for a
+  // headphones-on performance to get full 128 kbps stereo with all DSP off, or
+  // "voice" for a talk-only room.
+  audioProfile?: AudioProfile;
+  // Optional space type, mapped through audioProfileForType when audioProfile
+  // is not given explicitly.
+  spaceType?: string | null;
   // Called when a remote participant's camera track is subscribed. The UI
   // should place `element` (an attached <video>) into a tile.
   onRemoteVideo?: (video: RemoteVideo) => void;
@@ -106,6 +121,8 @@ interface ActiveVideoSession {
   localVideoEl: HTMLVideoElement | null;
   remoteVideoEls: Map<string, HTMLVideoElement>;
   remoteAudioEls: HTMLMediaElement[];
+  // Active audio profile, so mic re-publish reuses the same tuning.
+  audioProfile: AudioProfile;
   cleanups: Array<() => void>;
   // Remembered so a subscriber can later upgrade to publisher (becomePublisher)
   // by reconnecting with the same callbacks but a publisher token.
@@ -121,6 +138,7 @@ let session: ActiveVideoSession = {
   localVideoEl: null,
   remoteVideoEls: new Map(),
   remoteAudioEls: [],
+  audioProfile: "performance",
   cleanups: [],
   lastOpts: null,
 };
@@ -243,7 +261,8 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
   }
 
   const lk = await import("livekit-client");
-  const { Room, RoomEvent, Track, VideoPresets, DisconnectReason } = lk as any;
+  const { Room, RoomEvent, Track, VideoPresets, DisconnectReason, AudioPresets } =
+    lk as any;
 
   const tier: VideoTier = opts.tier || "free";
   const limits = VIDEO_TIER_LIMITS[tier];
@@ -251,6 +270,18 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
 
   try {
     const creds = await fetchToken(opts.spaceId, opts.role);
+
+    // Audio profile. Without this, Faces fell back to LiveKit's library
+    // defaults — 48 kbps MONO with DTX on, plus the browser's full DSP chain
+    // (noise suppression + auto gain) shredding any music the host performs.
+    // "performance" is the right default for a video room: music-grade capture
+    // at 96 kbps stereo with DTX off, echo cancellation retained for safety.
+    const audioProfile: AudioProfile =
+      opts.audioProfile ??
+      (opts.spaceType ? audioProfileForType(opts.spaceType) : "performance");
+    const audioCapture = captureDefaultsFor(audioProfile);
+    const audioPublish = publishDefaultsFor(audioProfile, AudioPresets);
+    session.audioProfile = audioProfile;
 
     const room: AnyRoom = new Room({
       adaptiveStream: true,
@@ -262,6 +293,8 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
           frameRate: limits.maxFramerate,
         },
       },
+      // Keep the raw musical signal instead of the browser's call-tuned DSP.
+      audioCaptureDefaults: audioCapture,
       publishDefaults: {
         videoEncoding: {
           maxBitrate: limits.maxBitrate,
@@ -270,6 +303,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
         // Simulcast lets viewers on weak connections get a lower layer while
         // strong connections get full quality — best-in-class default.
         simulcast: true,
+        audioPreset: audioPublish.audioPreset,
+        dtx: audioPublish.dtx,
+        red: audioPublish.red,
+        forceStereo: audioPublish.forceStereo,
       },
       stopLocalTrackOnUnpublish: true,
     });
@@ -622,6 +659,7 @@ export async function leaveVideoRoom(): Promise<void> {
     room: null,
     spaceId: null,
     identity: null,
+    audioProfile: "performance",
     role: "subscriber",
     tier: "free",
     localVideoEl: null,

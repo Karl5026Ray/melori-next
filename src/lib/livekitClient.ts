@@ -27,6 +27,12 @@ import {
   startRouteWatch,
   stopRouteWatch,
 } from "@/lib/audioOutput";
+import {
+  audioProfileForType as resolveAudioProfile,
+  captureDefaultsFor,
+  publishDefaultsFor,
+  type AudioProfile,
+} from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { supabase } from "@/lib/supabase";
 
@@ -34,20 +40,11 @@ type AnyRoom = any;
 type AnyTrack = any;
 
 export type LiveKitRole = "publisher" | "subscriber";
-export type AudioProfile = "music" | "voice";
 
-// Map a space type to the audio profile that should drive capture + publish.
-export function audioProfileForType(spaceType?: string | null): AudioProfile {
-  switch ((spaceType || "").toLowerCase()) {
-    case "listening":
-    case "dj_set":
-    case "dj set":
-    case "creation":
-      return "music";
-    default:
-      return "voice";
-  }
-}
+// Audio profiles live in @/lib/audioProfile so MM Faces shares the exact same
+// capture + publish tuning. Re-exported here for existing callers.
+export type { AudioProfile } from "@/lib/audioProfile";
+export { audioProfileForType } from "@/lib/audioProfile";
 
 export interface JoinOptions {
   spaceId: string;
@@ -133,46 +130,6 @@ async function writeLocalSpeaking(spaceId: string, identity: string, speaking: b
   }
 }
 
-// Capture (getUserMedia) constraints tuned per profile.
-function captureDefaultsFor(profile: AudioProfile) {
-  if (profile === "music") {
-    // Preserve the source: disable the DSP that mangles music.
-    return {
-      autoGainControl: false,
-      echoCancellation: false,
-      noiseSuppression: false,
-      channelCount: 2,
-      sampleRate: 48000,
-    };
-  }
-  // Voice: clean speech.
-  return {
-    autoGainControl: true,
-    echoCancellation: true,
-    noiseSuppression: true,
-    channelCount: 1,
-    sampleRate: 48000,
-  };
-}
-
-// Publish options tuned per profile.
-function publishDefaultsFor(profile: AudioProfile, AudioPresets: any) {
-  if (profile === "music") {
-    return {
-      audioPreset: AudioPresets?.musicHighQualityStereo,
-      dtx: false,
-      red: false,
-      forceStereo: true,
-    };
-  }
-  return {
-    audioPreset: AudioPresets?.speech,
-    dtx: true,
-    red: true,
-    forceStereo: false,
-  };
-}
-
 export async function joinChannel(opts: JoinOptions): Promise<void> {
   // Re-join cleanly if already connected somewhere.
   if (session.room) {
@@ -183,7 +140,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   const { Room, RoomEvent, AudioPresets, Track } = lk as any;
 
   const profile =
-    opts.audioProfile || audioProfileForType(opts.spaceType);
+    opts.audioProfile || resolveAudioProfile(opts.spaceType);
   const capture = captureDefaultsFor(profile);
   const publish = publishDefaultsFor(profile, AudioPresets);
 

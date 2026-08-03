@@ -1336,8 +1336,14 @@ export default function SpaceDetailPage() {
         </div>
       )}
 
+      {/* pb clears MobileTabBar, which is `md:hidden fixed bottom-0 z-[70]`
+          and h-14 (3.5rem) + env(safe-area-inset-bottom). Without this the tab
+          bar renders directly on top of these controls on iPhone and they look
+          "cut off". Same pattern as ConnectProfileEditor and the MobileTabBar
+          sheet. md:pb-6 restores normal desktop padding, where the bar is
+          hidden. */}
       {isJoined && (
-        <div className="safe-area-pad-extra-bottom border-t border-melori-border p-4 md:p-6 bg-melori-void/95 backdrop-blur shrink-0">
+        <div className="border-t border-melori-border p-4 md:p-6 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6 bg-melori-void/95 backdrop-blur shrink-0">
           {/* Control bar: the mic sits ALONE, centered and prominent. The Leave
              button is pinned to the bottom-left and the secondary controls
              (raise-hand / End Space + reactions) to the bottom-right, so

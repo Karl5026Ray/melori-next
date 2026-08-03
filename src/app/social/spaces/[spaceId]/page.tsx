@@ -1343,7 +1343,10 @@ export default function SpaceDetailPage() {
           sheet. md:pb-6 restores normal desktop padding, where the bar is
           hidden. */}
       {isJoined && (
-        <div className="border-t border-melori-border p-4 md:p-6 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6 bg-melori-void/95 backdrop-blur shrink-0">
+        <div
+          data-testid="spaces-control-bar"
+          className="border-t border-melori-border p-4 md:p-6 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6 bg-melori-void/95 backdrop-blur shrink-0"
+        >
           {/* Control bar: the mic sits ALONE, centered and prominent. The Leave
              button is pinned to the bottom-left and the secondary controls
              (raise-hand / End Space + reactions) to the bottom-right, so

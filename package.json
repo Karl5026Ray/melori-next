@@ -14,11 +14,13 @@
     "test:stripe-webhook": "tsx scripts/stripe-webhook-secrets.test.ts",
     "test:favorites": "tsx scripts/melori-favorites.test.ts",
     "test:import": "tsx scripts/import-library.test.ts",
+    "test:capture": "tsx scripts/media-capture.test.ts",
     "import:library": "tsx scripts/import-library.ts",
     "test:presence": "tsx scripts/pubnub-presence-sim.ts",
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install --with-deps chromium"
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "test:unit": "npm run test:slots && npm run test:splits && npm run test:youtube && npm run test:cookies && npm run test:stripe-webhook && npm run test:favorites && npm run test:import && npm run test:capture"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

@@ -204,10 +204,10 @@ async function seedSignedInSession(page: Page) {
 // { name: /Leave Quietly/i }) cannot find it on mobile. A page-wide
 // `svg.lucide-log-out` selector is also ambiguous: the account menu's
 // "Sign Out" button uses the same icon. Scope to the in-flow bottom control
-// bar via `.safe-area-pad-extra-bottom` — the utility class this fix
-// applies to that exact container — which uniquely identifies it.
+// bar via its data-testid, which is a stable hook that does not break when
+// the container's utility classes change (an earlier class-based locator did).
 function leaveButtonLocator(page: Page) {
-  return page.locator(".safe-area-pad-extra-bottom button:has(svg.lucide-log-out)");
+  return page.locator("[data-testid='spaces-control-bar'] button:has(svg.lucide-log-out)");
 }
 
 async function openJoinedSpace(page: Page) {

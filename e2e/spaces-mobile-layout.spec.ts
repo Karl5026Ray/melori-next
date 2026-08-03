@@ -1,0 +1,308 @@
+import { test, expect, type Page } from "@playwright/test";
+
+// Regression tests for the two mobile layout defects reported against MM
+// Spaces on iOS (Capacitor app, WKWebView loading https://melorimusic.org):
+//
+//   1. The page shifted side to side (unwanted horizontal scroll).
+//   2. The bottom control bar (mic / leave / raise-hand / end space) was cut
+//      off / not visible under the iPhone home indicator.
+//
+// Root causes fixed alongside this test:
+//   - `src/app/social/spaces/[spaceId]/page.tsx`: the pre-join screen's
+//     `<h3>{space.title}</h3>` had no `break-words`, so a long, space-free
+//     title overflowed its container horizontally (masked, not fixed, by the
+//     app-wide `overflow-x-hidden` on <body>).
+//   - The page's floating overlays (`bottom-32` / `bottom-44`) and its
+//     in-flow bottom control bar never accounted for
+//     `env(safe-area-inset-bottom)`, even though `viewportFit: "cover"`
+//     (src/app/layout.tsx) puts content under the home indicator.
+//   - `src/app/social/layout.tsx` sized the Spaces shell with
+//     `min-h-[calc(100vh-4rem)]`; `100vh` on iOS Safari/WKWebView is taller
+//     than the real visible viewport (collapsing URL bar + safe-area), which
+//     pushed the bottom bar out of view. Switched to `100dvh`.
+//
+// Runs at the same 390x844 viewport as the rest of the mobile suite
+// (mobile-chromium project, see playwright.config.ts).
+//
+// The Spaces detail page reads/writes Supabase directly from the client, and
+// CI builds against a placeholder Supabase project (see .github/workflows/
+// e2e.yml), so a real space can never be fetched over the network. Instead
+// we intercept the Supabase REST/auth calls the page makes and serve a fixed
+// space + an already-joined participant row for a fake signed-in user. This
+// mirrors the floating-player suite's approach of seeding local state rather
+// than depending on a live backend.
+
+const SPACE_ID = "e2e-space-0001";
+const USER_ID = "e2e-user-0001";
+
+const FAKE_PROFILE = {
+  id: USER_ID,
+  username: "e2e_listener",
+  display_name: "E2E Listener",
+  full_name: "E2E Listener",
+  avatar_url: null,
+  role: "free",
+  bio: null,
+  verified: false,
+  followers_count: 0,
+  following_count: 0,
+  created_at: new Date().toISOString(),
+  membership_status: null,
+  social_links: null,
+  city: null,
+  birth_date: null,
+  birthday_visible: false,
+};
+
+// A long, space-free title. This is the exact shape of string that overflows
+// a block container when `break-words` (`overflow-wrap: break-word`) is
+// missing: no natural break point for the browser's line-breaking algorithm
+// to wrap on.
+const LONG_UNBROKEN_TITLE =
+  "ThisIsADeliberatelyLongSpaceTitleWithAbsolutelyNoSpacesAnywhereInItAtAllSoItCannotWrapNaturallyOnAnySmallMobileScreenWidthWithoutHelp";
+
+const FAKE_SPACE = {
+  id: SPACE_ID,
+  title: LONG_UNBROKEN_TITLE,
+  topic: "E2E layout regression fixture",
+  type: "discussion",
+  room_format: "discussion",
+  status: "live",
+  host_id: "e2e-host-0001",
+  host: {
+    id: "e2e-host-0001",
+    display_name: "E2E Host",
+    avatar_url: null,
+    role: "free",
+    verified: false,
+  },
+  participant_count: 2,
+  max_participants: 50,
+  created_at: new Date().toISOString(),
+  ended_at: null,
+  // null so the page's LiveKit-join effect (`if (!space?.agora_channel)
+  // return;`) never attempts a real connection.
+  agora_channel: null,
+  scheduled_at: null,
+  last_activity_at: new Date().toISOString(),
+  hand_raise_mode: "everyone",
+};
+
+// One row for the fake signed-in user (audience — no mic button, keeps the
+// control-bar assertions focused on the always-present Leave / raise-hand /
+// reactions controls) plus a second participant so the page has more than a
+// single-person room to render.
+const FAKE_PARTICIPANTS = [
+  {
+    id: "e2e-participant-0001",
+    space_id: SPACE_ID,
+    user_id: USER_ID,
+    user: FAKE_PROFILE,
+    role: "audience",
+    joined_at: new Date().toISOString(),
+    left_at: null,
+    is_speaking: false,
+    is_muted: true,
+    has_raised_hand: false,
+    host_muted: false,
+  },
+  {
+    id: "e2e-participant-0002",
+    space_id: SPACE_ID,
+    user_id: "e2e-host-0001",
+    user: FAKE_SPACE.host,
+    role: "host",
+    joined_at: new Date().toISOString(),
+    left_at: null,
+    is_speaking: false,
+    is_muted: false,
+    has_raised_hand: false,
+    host_muted: false,
+  },
+];
+
+function jsonResponse(body: unknown) {
+  return {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  };
+}
+
+/** Intercept every Supabase call the Spaces page makes so it reaches the
+ *  fully-joined, control-bar-visible state without any real backend. */
+async function mockSupabase(page: Page) {
+  // profiles fetch (AuthProvider.loadProfile) — PostgREST filters by id.
+  await page.route("**/rest/v1/profiles*", async (route) => {
+    await route.fulfill(jsonResponse(FAKE_PROFILE));
+  });
+
+  // spaces fetch (fetchSpace) — `.select(...).eq("id", spaceId).single()`.
+  await page.route("**/rest/v1/spaces*", async (route) => {
+    await route.fulfill(jsonResponse(FAKE_SPACE));
+  });
+
+  // space_participants fetch (fetchParticipants).
+  await page.route("**/rest/v1/space_participants*", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill(jsonResponse(FAKE_PARTICIPANTS));
+    } else {
+      // upsert from handleJoin, if ever hit — no-op success.
+      await route.fulfill(jsonResponse(FAKE_PARTICIPANTS[0]));
+    }
+  });
+
+  // Any other REST/RPC call (increment_space_participants, etc.) — best
+  // effort, must not 404/hang.
+  await page.route("**/rest/v1/rpc/**", async (route) => {
+    await route.fulfill(jsonResponse({}));
+  });
+
+  // Realtime subscribe is WebSocket-based and can't be intercepted here; the
+  // page tolerates it never connecting (postgres_changes just never fires).
+}
+
+/** Seed a Supabase session the SDK will pick up on boot, signing the fake
+ *  user in before AuthProvider's first render. Mirrors the shape used by
+ *  scripts/supabase-cookie-storage.test.ts. Stored under the same
+ *  "melori-auth" key/localStorage-mirror the app's cookie adapter reads. */
+async function seedSignedInSession(page: Page) {
+  await page.addInitScript(
+    ({ userId }) => {
+      const farFutureExpiry = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365;
+      const session = {
+        access_token: "e2e.fake.token",
+        refresh_token: "e2e-fake-refresh-token",
+        expires_at: farFutureExpiry,
+        expires_in: 60 * 60 * 24 * 365,
+        token_type: "bearer",
+        user: {
+          id: userId,
+          aud: "authenticated",
+          role: "authenticated",
+          email: "e2e-listener@example.com",
+          app_metadata: {},
+          user_metadata: {},
+          identities: [],
+          created_at: new Date().toISOString(),
+        },
+      };
+      try {
+        window.localStorage.setItem("melori-auth", JSON.stringify(session));
+      } catch {
+        /* storage unavailable — the test will fail downstream with a clear
+           "not joined" state instead of a silent pass */
+      }
+    },
+    { userId: USER_ID },
+  );
+}
+
+// The "Leave Quietly" label is `hidden sm:inline` — icon-only below the
+// `sm` breakpoint, which is exactly our 390px mobile viewport — so it is
+// NOT part of the button's accessible name there and getByRole("button",
+// { name: /Leave Quietly/i }) cannot find it on mobile. A page-wide
+// `svg.lucide-log-out` selector is also ambiguous: the account menu's
+// "Sign Out" button uses the same icon. Scope to the in-flow bottom control
+// bar via `.safe-area-pad-extra-bottom` — the utility class this fix
+// applies to that exact container — which uniquely identifies it.
+function leaveButtonLocator(page: Page) {
+  return page.locator(".safe-area-pad-extra-bottom button:has(svg.lucide-log-out)");
+}
+
+async function openJoinedSpace(page: Page) {
+  await seedSignedInSession(page);
+  await mockSupabase(page);
+  await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
+  // The control bar only renders once isJoined flips true (participants
+  // fetch resolves and finds our seeded row) — wait for the Leave control
+  // rather than a fixed timeout.
+  await expect(leaveButtonLocator(page)).toBeVisible({
+    timeout: 20_000,
+  });
+}
+
+test.describe("MM Spaces mobile layout (390x844)", () => {
+  test("the page never scrolls horizontally", async ({ page }) => {
+    await openJoinedSpace(page);
+
+    const overflowInfo = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+
+    expect(
+      overflowInfo.scrollWidth,
+      `document.documentElement.scrollWidth (${overflowInfo.scrollWidth}) must not exceed clientWidth (${overflowInfo.clientWidth}) — the page must not scroll sideways`,
+    ).toBeLessThanOrEqual(overflowInfo.clientWidth);
+  });
+
+  test("the long space title wraps instead of overflowing", async ({ page }) => {
+    // Exercise the pre-join screen directly: sign in but don't seed a
+    // participant row, so the page renders the "Join Space" card with the
+    // unguarded title from the original bug.
+    await seedSignedInSession(page);
+    await page.route("**/rest/v1/profiles*", async (route) => {
+      await route.fulfill(jsonResponse(FAKE_PROFILE));
+    });
+    await page.route("**/rest/v1/spaces*", async (route) => {
+      await route.fulfill(jsonResponse(FAKE_SPACE));
+    });
+    await page.route("**/rest/v1/space_participants*", async (route) => {
+      await route.fulfill(jsonResponse([]));
+    });
+    await page.route("**/rest/v1/rpc/**", async (route) => {
+      await route.fulfill(jsonResponse({}));
+    });
+
+    await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
+
+    // The page header ALSO renders an <h2> with the same title (truncated,
+    // already safe), so a plain getByRole("heading", { name }) match is
+    // ambiguous (strict-mode violation). Scope to the pre-join card's <h3>
+    // specifically — the one this fix actually touches.
+    const title = page.locator("h3", { hasText: LONG_UNBROKEN_TITLE });
+    await expect(title).toBeVisible({ timeout: 20_000 });
+
+    const overflowInfo = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(
+      overflowInfo.scrollWidth,
+      `a long unbroken space title must not push the page wider than the viewport (scrollWidth=${overflowInfo.scrollWidth}, clientWidth=${overflowInfo.clientWidth})`,
+    ).toBeLessThanOrEqual(overflowInfo.clientWidth);
+  });
+
+  test("the bottom control bar is within the visible viewport", async ({ page }) => {
+    await openJoinedSpace(page);
+
+    const leaveButton = leaveButtonLocator(page);
+    await expect(leaveButton).toBeVisible();
+
+    const vp = page.viewportSize()!;
+    const box = (await leaveButton.boundingBox())!;
+    expect(box, "Leave Quietly control must be measurable").not.toBeNull();
+    expect(
+      box.y + box.height,
+      `the bottom control bar (bottom edge at ${box.y + box.height}) must be within the ${vp.height}px viewport, not cut off below it`,
+    ).toBeLessThanOrEqual(vp.height);
+    expect(box.y, "the control bar must be on-screen, not above the viewport").toBeGreaterThanOrEqual(0);
+
+    // The control bar must also be the topmost hit target at its own
+    // location — i.e. not rendered but covered/clipped by another fixed
+    // element (the mobile tab bar sits at z-[70] above the page's own
+    // z-index-less in-flow control bar, but occupies a distinct, shorter
+    // strip at the very bottom; the Leave button sits above it once the
+    // safe-area padding is applied).
+    const isHitTestable = await leaveButton.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        r.x + r.width / 2,
+        r.y + r.height / 2,
+      );
+      return Boolean(hit && (el === hit || el.contains(hit) || hit.contains(el)));
+    });
+    expect(isHitTestable, "Leave Quietly must be tappable, not covered by another element").toBe(true);
+  });
+});

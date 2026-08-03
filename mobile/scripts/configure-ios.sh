@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Register the OAuth callback URL scheme in the generated iOS project.
+# Configure the generated iOS project: OAuth callback URL scheme + the media
+# capture usage descriptions WKWebView requires before it will expose
+# navigator.mediaDevices.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -28,6 +30,18 @@ INFO_PLIST="${MELORI_IOS_INFO_PLIST:-$MOBILE_DIR/ios/App/App/Info.plist}"
 # Must match NATIVE_URL_SCHEME in src/lib/nativeAuth.ts and the appId in
 # capacitor.config.json.
 AUTH_SCHEME="org.melorimusic.app"
+
+# WKWebView gates getUserMedia on these Info.plist keys. If they are absent,
+# WebKit does not merely deny the permission — it removes `navigator.mediaDevices`
+# from the page entirely, so MM Faces / MM Spaces fail with
+#   "undefined is not an object (evaluating 'navigator.mediaDevices.getUserMedia')"
+# even though the exact same page works in mobile Safari, where Safari supplies
+# its own descriptions. Purely a native-container gate: no web change can fix it.
+# The strings are shown verbatim in the iOS permission alert and are reviewed by
+# App Review, so they must name a concrete user-facing feature.
+CAMERA_USAGE="Melori uses your camera so you can go live and appear on video in MM Faces and MM Spaces."
+MIC_USAGE="Melori uses your microphone so you can talk and perform live in MM Faces and MM Spaces."
+PHOTO_ADD_USAGE="Melori saves recordings and photos you capture in the app to your photo library."
 
 if [ ! -f "$INFO_PLIST" ]; then
   echo "error: $INFO_PLIST not found. Run 'npx cap add ios && npx cap sync ios' first." >&2
@@ -82,4 +96,56 @@ if scheme not in registered:
 print(f"    verified URL schemes: {', '.join(registered)}")
 PY
 
-echo "iOS project configured: OAuth callback scheme registered."
+echo "==> Registering camera/microphone usage descriptions in $INFO_PLIST"
+
+python3 - "$INFO_PLIST" "$CAMERA_USAGE" "$MIC_USAGE" "$PHOTO_ADD_USAGE" <<'PY'
+import plistlib
+import sys
+
+path, camera, mic, photo_add = sys.argv[1:5]
+
+with open(path, "rb") as fh:
+    plist = plistlib.load(fh)
+
+wanted = {
+    "NSCameraUsageDescription": camera,
+    "NSMicrophoneUsageDescription": mic,
+    "NSPhotoLibraryAddUsageDescription": photo_add,
+}
+
+# Overwrite rather than setdefault: a stale or placeholder string is an App
+# Review rejection, and the copy above is the reviewed wording.
+changed = [key for key, value in wanted.items() if plist.get(key) != value]
+plist.update(wanted)
+
+with open(path, "wb") as fh:
+    plistlib.dump(plist, fh)
+
+print(f"    {len(changed)} key(s) written, {len(wanted)} total")
+PY
+
+python3 - "$INFO_PLIST" <<'PY'
+import plistlib
+import sys
+
+required = (
+    "NSCameraUsageDescription",
+    "NSMicrophoneUsageDescription",
+    "NSPhotoLibraryAddUsageDescription",
+)
+
+with open(sys.argv[1], "rb") as fh:
+    plist = plistlib.load(fh)
+
+missing = [k for k in required if not str(plist.get(k, "")).strip()]
+if missing:
+    raise SystemExit(
+        "error: Info.plist is missing " + ", ".join(missing) + ".\n"
+        "       WKWebView hides navigator.mediaDevices without these, so live\n"
+        "       streaming in MM Faces / MM Spaces would ship broken."
+    )
+for key in required:
+    print(f"    verified {key}")
+PY
+
+echo "iOS project configured: OAuth callback scheme + media capture usage descriptions registered."

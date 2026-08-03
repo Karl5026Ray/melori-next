@@ -923,7 +923,7 @@ export default function SpaceDetailPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full animate-fade-in">
+    <div className="flex-1 flex flex-col h-[calc(100dvh-4rem)] min-h-0 animate-fade-in">
       <div className="border-b border-melori-border p-4 md:p-6 flex items-center justify-between bg-melori-void/95 backdrop-blur z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <Link
@@ -1064,7 +1064,7 @@ export default function SpaceDetailPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
         <div className="max-w-2xl mx-auto">
           {space.status === "scheduled" && (
             <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">

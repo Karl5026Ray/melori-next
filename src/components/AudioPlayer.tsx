@@ -336,6 +336,15 @@ function DesktopBar() {
 // renders views of that player and never touches an <audio> element itself.
 // Hand-rolled with pointer events + translate3d per the design consult — no
 // drag library, no animating top/left.
+//
+// Position model: a drop stores an EDGE ANCHOR (see `Dock` below) — which two
+// viewport edges the pill was parked against, and the gap to each — and nothing
+// except a drop ever writes it. The anchor is applied as CSS insets (`right` /
+// `bottom`, or `left` / `top`), so when the pill's own footprint changes the
+// BROWSER holds the anchored edges still, in the same layout pass as the resize.
+// That is the whole reason it is done this way: repositioning in JS after a size
+// change is always one commit late, which is visible as a jump. Only a live drag
+// uses a transform, as a delta on top of the anchored base. Placed is placed.
 // -------------------------------------------------------------------------
 const POS_KEY = "melori:player:pos";
 const MARGIN = 8;
@@ -350,6 +359,111 @@ const PILL_H = 56;
 // Thresholds that disambiguate tap / hold-drag / grab-drag.
 const MOVE_THRESHOLD = 10;
 const HOLD_MS = 400;
+
+// ---------------------------------------------------------------------------
+// Where the pill is parked, stored as an EDGE ANCHOR rather than an absolute
+// top-left point.
+//
+// An absolute point cannot survive the things that change under it: the pill's
+// own footprint changes when it expands or collapses, and the visual viewport
+// changes constantly on mobile (Safari's URL bar, the software keyboard,
+// rotation). Re-clamping an absolute point against each of those permanently
+// rewrote the parked position, so the pill crept away from where the listener
+// put it and the expanded panel teleported to the opposite edge.
+//
+// The anchor records which edges the pill was parked against and how far it sat
+// from them (`dx`/`dy` are gaps, not coordinates). Every render re-derives the
+// on-screen position from that gap using the CURRENT footprint and viewport, so
+// the pill keeps the same visual relationship to its edges: it grows away from
+// the edge it is parked against instead of jumping, and a transient viewport
+// shrink can no longer destroy the listener's choice — when the viewport comes
+// back, so does the pill, to the exact same place.
+//
+// Nothing but a drop writes an anchor. That is the whole contract: once placed,
+// it stays until it is picked up and moved again.
+// ---------------------------------------------------------------------------
+type EdgeX = "left" | "right";
+type EdgeY = "top" | "bottom";
+
+interface Dock {
+  ax: EdgeX;
+  ay: EdgeY;
+  // Gap in px between the anchored viewport edge and the pill's nearest edge.
+  dx: number;
+  dy: number;
+}
+
+// Expanded panel width, as CSS. Used by the panel itself AND by the horizontal
+// safety clamp below, which needs to know the widest the element can get in
+// order to keep it on screen without measuring anything.
+const PANEL_W_CSS = "min(20rem, calc(100vw - 1.25rem))";
+
+// Bottom-right, the first-run home. The gaps are the bare margins; clamping
+// adds the notch insets, so there is no duplicate inset arithmetic here.
+const DEFAULT_DOCK: Dock = {
+  ax: "right",
+  ay: "bottom",
+  dx: MARGIN,
+  dy: MARGIN + TAB_BAR,
+};
+
+// Persisted shape, versioned so an anchor is never mistaken for the legacy
+// `{x, y}` point (which is migrated on first read — see `legacyPointRef`).
+interface StoredDock extends Dock {
+  v: 2;
+}
+
+function isEdgeX(v: unknown): v is EdgeX {
+  return v === "left" || v === "right";
+}
+function isEdgeY(v: unknown): v is EdgeY {
+  return v === "top" || v === "bottom";
+}
+
+// Parse whatever is in storage into either an anchor or a legacy absolute
+// point. Anything unrecognised yields nulls and the caller falls back to
+// DEFAULT_DOCK, so corrupt storage can never strand the pill off-screen.
+function parseStoredPosition(raw: string | null): {
+  dock: Dock | null;
+  legacyPoint: { x: number; y: number } | null;
+} {
+  if (!raw) return { dock: null, legacyPoint: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { dock: null, legacyPoint: null };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { dock: null, legacyPoint: null };
+  }
+  const o = parsed as Record<string, unknown>;
+  if (
+    isEdgeX(o.ax) &&
+    isEdgeY(o.ay) &&
+    Number.isFinite(o.dx) &&
+    Number.isFinite(o.dy)
+  ) {
+    return {
+      dock: {
+        ax: o.ax,
+        ay: o.ay,
+        dx: Math.max(0, o.dx as number),
+        dy: Math.max(0, o.dy as number),
+      },
+      legacyPoint: null,
+    };
+  }
+  if (Number.isFinite(o.x) && Number.isFinite(o.y)) {
+    // Written by the pre-anchor build: an absolute top-left point. It is
+    // converted to an anchor once the pill has been measured.
+    return {
+      dock: null,
+      legacyPoint: { x: o.x as number, y: o.y as number },
+    };
+  }
+  return { dock: null, legacyPoint: null };
+}
 
 // Fire a short haptic buzz on capable devices. Silent no-op elsewhere; the
 // try/catch guards against Permissions-Policy denials that would otherwise
@@ -437,24 +551,34 @@ function FloatingPlayer() {
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  // Mirror of pos read synchronously inside pointer handlers (state lags a tick).
-  const posRef = useRef(pos);
-  posRef.current = pos;
+  // The anchor currently rendered as CSS insets. Normally identical to the
+  // parked anchor below; it only differs while a viewport is too small to honour
+  // the parked gaps, and it goes straight back when the space returns.
+  const [dock, setDock] = useState<Dock>(DEFAULT_DOCK);
+  // Live drag offset from the anchored base, applied as a transform so a drag
+  // never triggers layout. Zero whenever a drag isn't in flight.
+  const [drag, setDrag] = useState({ dx: 0, dy: 0 });
+  // Mirror of `drag`, read synchronously on pointerup (state lags a tick).
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
   // Safe-area insets, re-read whenever the viewport geometry can change.
   const insetsRef = useRef<Insets>(NO_INSETS);
-  // Where the listener parked the pill. `pos` is what's on screen and can
-  // differ while the wider expanded panel is open; the dock is what the
-  // collapsed pill always returns to, and what gets persisted.
-  const dockRef = useRef({ x: 0, y: 0 });
+  // Where the listener parked the pill. This is the intent, the thing that gets
+  // persisted, and it is written ONLY by a drop (plus the one-time migration of
+  // a legacy stored point). Expanding, collapsing, rotating and Safari's URL bar
+  // never touch it.
+  const dockRef = useRef<Dock>(DEFAULT_DOCK);
+  // A legacy `{x, y}` read out of storage, converted to an anchor on the first
+  // frame after mount — the conversion needs the pill's measured footprint.
+  const legacyPointRef = useRef<{ x: number; y: number } | null>(null);
 
   // Clamp a candidate position so the whole pill stays inside the visual
   // viewport (accurate on mobile Safari, where the URL bar changes innerHeight),
   // clear of the notch/bezel insets and of the fixed mobile tab bar.
-  const clampPos = useCallback((x: number, y: number) => {
+  const clampPos = useCallback((x: number, y: number, width?: number, height?: number) => {
     const el = ref.current;
-    const w = el?.offsetWidth || PILL_W;
-    const h = el?.offsetHeight || PILL_H;
+    const w = width || el?.offsetWidth || PILL_W;
+    const h = height || el?.offsetHeight || PILL_H;
     const vp = getViewport();
     const i = insetsRef.current;
     const minX = MARGIN + i.left;
@@ -467,50 +591,112 @@ function FloatingPlayer() {
     };
   }, []);
 
-  // Project the dock onto the screen for the current state. Expanding must
-  // never move the dock itself, otherwise collapsing again would leave the pill
-  // wherever the wider panel happened to fit.
-  const layout = useCallback(() => {
-    const dock = dockRef.current;
-    const w = ref.current?.offsetWidth || PILL_W;
-    const vp = getViewport();
-    // Expanding near the right edge: mirror to the opposite edge instead of
-    // letting the wider panel get slammed inward ("popped to the left").
-    const x = expanded && dock.x + w + MARGIN > vp.w ? MARGIN : dock.x;
-    setPos(clampPos(x, dock.y));
-  }, [clampPos, expanded]);
+  // On-screen rect -> anchor. Each axis anchors to whichever edge the pill's
+  // centre is nearer, so "parked bottom-right" survives a rotation as
+  // "bottom-right" rather than as two stale pixel offsets.
+  const dockFromRect = useCallback(
+    (x: number, y: number, w: number, h: number): Dock => {
+      const vp = getViewport();
+      const ax: EdgeX = x + w / 2 <= vp.w / 2 ? "left" : "right";
+      const ay: EdgeY = y + h / 2 <= vp.h / 2 ? "top" : "bottom";
+      return {
+        ax,
+        ay,
+        dx: ax === "left" ? Math.max(0, x) : Math.max(0, vp.w - (x + w)),
+        dy: ay === "top" ? Math.max(0, y) : Math.max(0, vp.h - (y + h)),
+      };
+    },
+    [],
+  );
 
-  // Mount: restore the saved position or default to the bottom-right dock.
+  // Safety net, not a layout pass: MEASURE where the browser actually put the
+  // pill and only intervene if part of it is off-screen or behind the tab bar.
+  // In the ordinary case — including every expand and collapse — it measures,
+  // finds nothing wrong, and writes no state at all, which is what keeps the
+  // pill perfectly still. Where it does act (a viewport too small to honour the
+  // parked gaps) it adjusts the DISPLAY anchor only; the parked anchor is
+  // untouched, so the pill returns to it when the space comes back.
+  const clampDisplay = useCallback(() => {
+    const el = ref.current;
+    if (!el || gesture.current.dragging) return;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;
+    const vp = getViewport();
+    const i = insetsRef.current;
+    const minX = MARGIN + i.left;
+    const minY = MARGIN + i.top;
+    const maxX = Math.max(minX, vp.w - r.width - MARGIN - i.right);
+    const maxY = Math.max(minY, vp.h - r.height - MARGIN - TAB_BAR - i.bottom);
+    const x = Math.min(Math.max(minX, r.x), maxX);
+    const y = Math.min(Math.max(minY, r.y), maxY);
+    if (Math.abs(x - r.x) < 0.5 && Math.abs(y - r.y) < 0.5) return;
+    const { ax, ay } = dockRef.current;
+    setDock({
+      ax,
+      ay,
+      dx: ax === "left" ? x : Math.max(0, vp.w - (x + r.width)),
+      dy: ay === "top" ? y : Math.max(0, vp.h - (y + r.height)),
+    });
+  }, []);
+
+  // Mount: restore the parked anchor and reveal the pill. The element is
+  // `visibility: hidden` until this runs, so the default anchor is never seen
+  // before the saved one replaces it.
   useEffect(() => {
     insetsRef.current = readInsets();
-    setMounted(true);
-    let saved: { x: number; y: number } | null = null;
+    let raw: string | null = null;
     try {
-      const raw = localStorage.getItem(POS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
-          saved = { x: parsed.x, y: parsed.y };
-        }
-      }
+      raw = localStorage.getItem(POS_KEY);
     } catch {
-      /* ignore malformed storage */
+      /* storage unavailable — fall back to the default dock */
     }
-    // Clamping a deliberately out-of-range fallback docks the pill bottom-right
-    // using its real measured size, with no duplicate inset arithmetic here.
-    const start = saved ?? { x: Number.MAX_SAFE_INTEGER, y: Number.MAX_SAFE_INTEGER };
-    const docked = clampPos(start.x, start.y);
-    dockRef.current = docked;
-    setPos(docked);
-  }, [clampPos]);
+    const { dock: saved, legacyPoint } = parseStoredPosition(raw);
+    if (saved) {
+      dockRef.current = saved;
+      setDock(saved);
+    }
+    legacyPointRef.current = legacyPoint;
+    setMounted(true);
+  }, []);
 
-  // Re-clamp when the viewport changes (rotation, URL-bar show/hide). Rotation
-  // also swaps which edge carries the notch, so the insets are re-read too.
+  // One-time migration of a position saved by the pre-anchor build: an absolute
+  // top-left point. Converting it needs the pill's measured size, so it happens
+  // on the first frame after mount, and the result is written back to storage in
+  // the new shape so this never runs again.
   useEffect(() => {
+    if (!mounted) return;
+    const legacy = legacyPointRef.current;
+    if (!legacy) return;
+    const id = requestAnimationFrame(() => {
+      legacyPointRef.current = null;
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const migrated = dockFromRect(legacy.x, legacy.y, r.width, r.height);
+      dockRef.current = migrated;
+      setDock(migrated);
+      try {
+        const stored: StoredDock = { v: 2, ...migrated };
+        localStorage.setItem(POS_KEY, JSON.stringify(stored));
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [mounted, dockFromRect]);
+
+  // Viewport changes (rotation, URL-bar show/hide, software keyboard) are the
+  // one place the pill is allowed to move on its own, and only because the space
+  // it was parked in may no longer exist. Restore the parked anchor first, then
+  // clamp what is actually on screen — so a shrink nudges it into view and the
+  // matching grow puts it back exactly where the listener left it. Rotation also
+  // swaps which edge carries the notch, so the insets are re-read.
+  useEffect(() => {
+    if (!mounted) return;
     const onResize = () => {
       insetsRef.current = readInsets();
-      dockRef.current = clampPos(dockRef.current.x, dockRef.current.y);
-      layout();
+      setDock(dockRef.current);
+      requestAnimationFrame(clampDisplay);
     };
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
@@ -520,16 +706,16 @@ function FloatingPlayer() {
       window.removeEventListener("orientationchange", onResize);
       window.visualViewport?.removeEventListener("resize", onResize);
     };
-  }, [clampPos, layout]);
+  }, [mounted, clampDisplay]);
 
-  // Re-project after expand/collapse: the footprint changes, so the panel may
-  // need mirroring and the collapsed pill must land back on its dock.
+  // Expanding grows the panel away from its anchored edges, which the CSS
+  // handles on its own. This only catches the pathological case where the panel
+  // is taller than the room it has, and does nothing otherwise.
   useEffect(() => {
     if (!mounted) return;
-    // Wait a frame so ref.current reflects the new (expanded/collapsed) size.
-    const id = requestAnimationFrame(layout);
+    const id = requestAnimationFrame(clampDisplay);
     return () => cancelAnimationFrame(id);
-  }, [mounted, layout]);
+  }, [mounted, expanded, clampDisplay]);
 
   // Gesture state for the drag surface — the ONLY place a drag can start.
   // Keeping it off the container is what lets every other control (play/pause,
@@ -540,8 +726,13 @@ function FloatingPlayer() {
   const gesture = useRef({
     startX: 0,
     startY: 0,
+    // The pill's measured rect at the moment the pointer went down. The drag is
+    // expressed as an offset from this, so the anchored CSS base is never
+    // recomputed mid-gesture.
     originX: 0,
     originY: 0,
+    originW: PILL_W,
+    originH: PILL_H,
     active: false, // a pointer is down on the handle
     armed: false, // hold timer fired → this gesture is a drag, never a tap
     dragging: false, // actively moving
@@ -571,14 +762,26 @@ function FloatingPlayer() {
     setDragging(false);
   };
 
+  // Pointer delta -> transform offset, clamped so the pill can't be dragged
+  // off-screen. Measured against the rect captured on pointerdown, which is
+  // exactly what the transform is relative to.
+  const dragOffset = (dx: number, dy: number) => {
+    const g = gesture.current;
+    const target = clampPos(g.originX + dx, g.originY + dy, g.originW, g.originH);
+    return { dx: target.x - g.originX, dy: target.y - g.originY };
+  };
+
   const onHandlePointerDown = (e: React.PointerEvent) => {
     // Secondary mouse buttons open context menus; they must not grab the pill.
     if (e.button > 0) return;
     const g = gesture.current;
     g.startX = e.clientX;
     g.startY = e.clientY;
-    g.originX = posRef.current.x;
-    g.originY = posRef.current.y;
+    const r = ref.current?.getBoundingClientRect();
+    g.originX = r?.x ?? 0;
+    g.originY = r?.y ?? 0;
+    g.originW = r?.width || PILL_W;
+    g.originH = r?.height || PILL_H;
     g.active = true;
     g.armed = false;
     g.dragging = false;
@@ -603,7 +806,7 @@ function FloatingPlayer() {
     if (Math.hypot(dx, dy) > MOVE_THRESHOLD) g.moved = true;
 
     if (g.dragging) {
-      setPos(clampPos(g.originX + dx, g.originY + dy));
+      setDrag(dragOffset(dx, dy));
       return;
     }
     // Drag begins on either signal: the hold timer armed us, or the finger
@@ -622,7 +825,7 @@ function FloatingPlayer() {
         /* ignore */
       }
       setDragging(true);
-      setPos(clampPos(g.originX + dx, g.originY + dy));
+      setDrag(dragOffset(dx, dy));
     }
   };
 
@@ -640,12 +843,26 @@ function FloatingPlayer() {
     releaseCapture(e.pointerId);
     if (g.dragging) {
       // Drop wherever the finger let go — the pill lives anywhere the listener
-      // parks it — then persist the clamped result.
-      const final = clampPos(posRef.current.x, posRef.current.y);
-      dockRef.current = final;
-      setPos(final);
+      // parks it. This is the ONLY place an anchor is written: the drop point is
+      // clamped on screen, converted to edge gaps, and persisted. Everything
+      // afterwards re-derives from it, so the pill stays put until it is picked
+      // up again.
+      const d = dragRef.current;
+      const dropped = dockFromRect(
+        g.originX + d.dx,
+        g.originY + d.dy,
+        g.originW,
+        g.originH,
+      );
+      dockRef.current = dropped;
+      // Both writes land in one commit, so the transform is dropped and the new
+      // anchored insets take over in the same frame — no flicker back to the
+      // old spot on the way to the new one.
+      setDock(dropped);
+      setDrag({ dx: 0, dy: 0 });
       try {
-        localStorage.setItem(POS_KEY, JSON.stringify(final));
+        const stored: StoredDock = { v: 2, ...dropped };
+        localStorage.setItem(POS_KEY, JSON.stringify(stored));
       } catch {
         /* ignore */
       }
@@ -734,6 +951,26 @@ function FloatingPlayer() {
     </button>
   );
 
+  // Anchored insets. The horizontal gap is additionally capped in CSS while
+  // expanded: the panel is the widest this element ever gets, and its width is
+  // known to CSS (PANEL_W_CSS), so the browser can keep the far edge on screen
+  // by itself — no measure-then-move, therefore no visible correction.
+  const inset = `${dock.dx}px`;
+  const insetCapped = expanded
+    ? `min(${inset}, calc(100vw - ${PANEL_W_CSS} - ${MARGIN}px))`
+    : inset;
+  const anchorStyle: React.CSSProperties =
+    dock.ax === "left"
+      ? { left: insetCapped, right: "auto" }
+      : { right: insetCapped, left: "auto" };
+  if (dock.ay === "top") {
+    anchorStyle.top = `${dock.dy}px`;
+    anchorStyle.bottom = "auto";
+  } else {
+    anchorStyle.bottom = `${dock.dy}px`;
+    anchorStyle.top = "auto";
+  }
+
   return (
     <div
       ref={ref}
@@ -742,20 +979,30 @@ function FloatingPlayer() {
       // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
       // and its launcher sheet — otherwise the drag bar and transport row sit
       // BEHIND the nav and can't be tapped ("stuck, can't stop").
-      className={`md:hidden fixed left-0 top-0 ${
+      className={`md:hidden fixed ${
         expanded ? "z-[80]" : "z-40"
       } select-none`}
       style={{
-        transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+        // The anchored edges, as CSS. Because the position is expressed as a
+        // distance from these edges rather than as a top-left point, the browser
+        // keeps them fixed when the panel expands or collapses — the pill grows
+        // and shrinks in place instead of being re-placed a frame later.
+        ...anchorStyle,
+        // Only a live drag transforms; the rest of the time the element sits on
+        // its anchor with no transform at all.
+        transform: dragging
+          ? `translate3d(${drag.dx}px, ${drag.dy}px, 0)`
+          : undefined,
+        willChange: dragging ? "transform" : undefined,
         WebkitUserSelect: "none",
-        willChange: "transform",
         visibility: mounted ? "visible" : "hidden",
       }}
     >
       {expanded ? (
         <div
           data-testid="player-panel"
-          className="w-[min(20rem,calc(100vw-1.25rem))] rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur"
+          style={{ width: PANEL_W_CSS }}
+          className="rounded-2xl border border-brand-border bg-brand-surface/95 p-3 shadow-2xl backdrop-blur"
         >
           {/* Header: the full-width drag bar. Tap anywhere on it to close. */}
           {expandedDragBar}

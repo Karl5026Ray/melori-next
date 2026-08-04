@@ -73,7 +73,8 @@ export async function resolveMusicItem(
       .select("id", { count: "exact", head: true })
       .eq("profile_id", (album as any).profile_id)
       .eq("album", (album as any).title)
-      .eq("status", "published");
+      .eq("status", "published")
+      .eq("moderation_status", "clean");
     if (!count) return { error: "This album is not available." };
 
     return {
@@ -91,10 +92,17 @@ export async function resolveMusicItem(
     if (!isUuid(req.studioTrackId)) return { error: "This track is not available." };
     const { data: track } = await supabase
       .from("studio_tracks")
-      .select("id, title, price_cents, currency, status, profile_id")
+      .select("id, title, price_cents, currency, status, moderation_status, profile_id")
       .eq("id", req.studioTrackId)
       .maybeSingle();
-    if (!track || (track as any).status !== "published") {
+    if (
+      !track ||
+      (track as any).status !== "published" ||
+      (track as any).moderation_status !== "clean"
+    ) {
+      // A removed track must not be sellable. Deliberately the same generic
+      // message as "not published" so the endpoint does not disclose that a
+      // takedown happened.
       return { error: "This track is not available." };
     }
     return {

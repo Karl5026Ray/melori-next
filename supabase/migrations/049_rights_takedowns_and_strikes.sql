@@ -37,7 +37,8 @@
 --   * guarded ALTER ... ADD CONSTRAINT (pg_constraint probe)
 --   * CREATE INDEX IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY
 --   * no drops, no rewrites, no data loss; re-running is a no-op
---   * NOT applied to production yet — see docs/legal-ops-runbook.md
+--   * APPLIED TO PRODUCTION 2026-08-03 (project ouvovhwizsuhjxxmccex) as
+--     migration version 049_rights_takedowns_and_strikes.
 --
 -- Sections:
 --   1. Rights/AI disclosure columns on tracks + studio_tracks
@@ -199,9 +200,12 @@ CREATE INDEX IF NOT EXISTS rights_attestations_profile_idx
 ALTER TABLE public.rights_attestations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Owner reads own attestations" ON public.rights_attestations;
+-- auth.uid() is wrapped in a scalar subquery so the planner evaluates it once
+-- as an InitPlan instead of per row, matching the wrap_auth_calls_in_rls_initplan
+-- hardening already applied to this database.
 CREATE POLICY "Owner reads own attestations"
     ON public.rights_attestations FOR SELECT
-    USING (profile_id = auth.uid());
+    USING (profile_id = (SELECT auth.uid()));
 
 COMMENT ON TABLE public.rights_attestations IS
     'Append-only record of what an uploader represented about rights/AI at upload time. Intentionally has no FK to the item: the evidence must outlive a takedown.';
@@ -385,7 +389,7 @@ ALTER TABLE public.copyright_strikes ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Owner reads own strikes" ON public.copyright_strikes;
 CREATE POLICY "Owner reads own strikes"
     ON public.copyright_strikes FOR SELECT
-    USING (profile_id = auth.uid());
+    USING (profile_id = (SELECT auth.uid()));
 
 COMMENT ON TABLE public.copyright_strikes IS
     'Repeat-infringer ledger backing the §512(i) policy. Strikes expire after 12 months and are voided on reinstatement so the count stays honest.';
@@ -407,6 +411,10 @@ AS $fn$
       AND s.voided_at IS NULL
       AND s.expires_at > now();
 $fn$;
+
+-- Strike counts are internal: not something an anonymous visitor should be able
+-- to probe for an arbitrary profile id.
+REVOKE EXECUTE ON FUNCTION public.active_strike_count(UUID) FROM PUBLIC, anon;
 
 COMMENT ON FUNCTION public.active_strike_count(UUID) IS
     'Unexpired, unvoided strikes for a profile. Three is the documented termination threshold (see /legal/copyright).';

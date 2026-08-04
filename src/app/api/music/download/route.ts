@@ -57,9 +57,14 @@ export async function GET(req: NextRequest) {
   if (purchase.studio_track_id) {
     const { data: track } = await supabase
       .from("studio_tracks")
-      .select("title, file_path")
+      .select("title, file_path, moderation_status")
       .eq("id", purchase.studio_track_id)
+      .eq("moderation_status", "clean")
       .maybeSingle();
+    // No row here means the track was taken down: a DMCA removal has to
+    // disable access for everyone, buyers included. The purchase record is
+    // untouched, so the sale can still be refunded or re-delivered on
+    // reinstatement.
     if (track?.file_path) {
       files.push({ title: track.title ?? "track", audio_url: track.file_path });
     }
@@ -76,6 +81,7 @@ export async function GET(req: NextRequest) {
         .eq("profile_id", (album as { profile_id: string }).profile_id)
         .eq("album", (album as { title: string }).title)
         .eq("status", "published")
+        .eq("moderation_status", "clean")
         .order("sort_order", { ascending: true, nullsFirst: false });
       for (const t of (tracks ?? []) as Array<{
         title: string | null;

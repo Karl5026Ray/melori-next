@@ -24,6 +24,7 @@ import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomChat from "@/components/social/rooms/RoomChat";
+import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import {
   ArrowLeft,
   Share2,
@@ -425,6 +426,9 @@ export default function SpaceDetailPage() {
   }, [user, spaceId, hasRaisedHand, canRequestStage, router]);
 
   const isHost = user?.id === space?.host_id;
+  // Cinema rooms are ordinary spaces with a different room_format — see
+  // migration 050. Everything below is shared with the other formats.
+  const isCinema = space?.room_format === "cinema";
 
   // Copy the room URL to the clipboard, with a Web Share fallback on mobile.
   const handleShare = useCallback(async () => {
@@ -1146,6 +1150,17 @@ export default function SpaceDetailPage() {
             </div>
           ) : (
             <>
+              {/* MM Cinema: the shared screen sits above the stage, so the
+                  room reads screen -> who's on mic -> audience -> chat.
+
+                  Rendered here rather than in a forked Cinema room page on
+                  purpose. This page already owns joining, LiveKit audio, roles,
+                  the raise-hand queue, moderation, bans, and teardown; a
+                  separate page would have to duplicate all of it and would
+                  drift out of sync with every future room fix. Cinema is a
+                  format, so it is an additive layer, not a second room. */}
+              {isCinema && <CinemaScreen spaceId={spaceId} isHost={isHost} />}
+
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider">

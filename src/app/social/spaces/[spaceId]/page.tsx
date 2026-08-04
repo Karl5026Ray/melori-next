@@ -19,6 +19,7 @@ import {
   leavePresence as pubnubLeave,
   publishSignal as pubnubPublishSignal,
 } from "@/lib/pubnubClient";
+import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
@@ -73,6 +74,11 @@ export default function SpaceDetailPage() {
   // closed).
   const [reactTarget, setReactTarget] = useState<SpaceParticipant | null>(null);
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
+  // Set when the room ended out from under us (host ended it, or the lazy
+  // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
+  // disconnect reason or the PubNub "space-ended" system signal. Shows a calm
+  // banner briefly before navigating away, instead of silently bouncing.
+  const [roomEnded, setRoomEnded] = useState(false);
   // Real-time set of user_ids currently speaking (LiveKit identity == user id).
   // Primary driver for the speaking ring so EVERY speaker shows it, not just us.
   const [speakingIds, setSpeakingIds] = useState<Set<string>>(new Set());
@@ -671,7 +677,13 @@ export default function SpaceDetailPage() {
           role,
           spaceId,
           onActiveSpeakersChange: (identities: string[]) => setSpeakingIds(new Set(identities)),
-          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),         onError: (err) => {
+          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),
+          onRoomEnded: () => {
+            if (cancelled) return;
+            setRoomEnded(true);
+            setTimeout(() => router.push("/social/spaces"), 1800);
+          },
+          onError: (err) => {
             if (
               /NotAllowedError|Permission|permission denied/i.test(
                 err.message ?? "",
@@ -745,9 +757,13 @@ export default function SpaceDetailPage() {
           },
           onSystemSignal: (payload) => {
             // Server told us the room ended (e.g. it emptied, or the host left
-            // with no eligible successor). Bounce out.
+            // with no eligible successor). Show the same calm banner as the
+            // LiveKit-side ROOM_DELETED path (onRoomEnded above) before
+            // bouncing out — important for pure-audience listeners who never
+            // connected to LiveKit at all and so would never see that path.
             if (payload?.event === "space-ended") {
-              router.push("/social/spaces");
+              setRoomEnded(true);
+              setTimeout(() => router.push("/social/spaces"), 1800);
               return;
             }
             // Host was transferred server-side (the previous host left). Refresh
@@ -915,6 +931,23 @@ export default function SpaceDetailPage() {
     return (
       <div className="flex-1 flex items-center justify-center flex-col gap-4">
         <p className="text-melori-muted">{error || "Space not found"}</p>
+        <Link href="/social/spaces" className="text-melori-purple hover:underline">
+          Back to Spaces
+        </Link>
+      </div>
+    );
+  }
+
+  // Deliberate room end (host ended it, or the abandonment reaper closed it) —
+  // a calm, non-alarming state, distinct from the `error` branch above which
+  // is reserved for genuine failures (space not found / load error).
+  if (roomEnded) {
+    return (
+      <div
+        className="flex-1 flex items-center justify-center flex-col gap-4"
+        data-testid="space-room-ended"
+      >
+        <p className="text-melori-text font-medium">{ROOM_ENDED_MESSAGE}</p>
         <Link href="/social/spaces" className="text-melori-purple hover:underline">
           Back to Spaces
         </Link>

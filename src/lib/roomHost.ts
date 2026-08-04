@@ -1,11 +1,8 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import {
-  applyStagePermissions,
-  endLiveKitRoom,
-  livekitConfigured,
-} from "@/lib/livekitServer";
+import { applyStagePermissions, livekitConfigured } from "@/lib/livekitServer";
 import { publishSystemSignal } from "@/lib/pubnubServer";
+import { deriveRoomName, endRoomAndTeardown, teardownRoomOnly } from "@/lib/endRoom";
 
 // Server-authoritative HOST auto-promotion.
 //
@@ -75,7 +72,7 @@ async function onPromoted(
     .maybeSingle();
 
   if (space && livekitConfigured()) {
-    const roomName: string = space.livekit_room ?? `space_${space.id}`;
+    const roomName = deriveRoomName(space);
     const withVideo = String(space.room_format ?? "").startsWith("live_");
 
     const { data: avatarRow } = await supabase
@@ -104,29 +101,16 @@ async function onPromoted(
   });
 }
 
-// No eligible successor: the RPC already flipped the room to 'ended' and marked
-// participants left. Disconnect any LiveKit stragglers and surface the clean
-// "room ended" state to clients.
+// No eligible successor: the promote_next_host RPC already flipped the room
+// to 'ended' and marked participants left as part of its own transaction, so
+// there is no DB transition left for us to (idempotently) win here — we only
+// need the teardown half: disconnect any LiveKit stragglers and publish the
+// "room ended" signal.
 async function onGracefulEnd(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  _supabase: ReturnType<typeof getSupabaseAdmin>,
   spaceId: string,
 ): Promise<void> {
-  if (livekitConfigured()) {
-    const { data: space } = await supabase
-      .from("spaces")
-      .select("id, livekit_room")
-      .eq("id", spaceId)
-      .maybeSingle();
-    if (space) {
-      const roomName: string = space.livekit_room ?? `space_${space.id}`;
-      await endLiveKitRoom(roomName);
-    }
-  }
-
-  await publishSystemSignal(spaceId, {
-    event: "space-ended",
-    reason: "host-left-no-successor",
-  });
+  await teardownRoomOnly(spaceId, "host-left-no-successor");
 }
 
 // Forcefully end a Space regardless of occupancy. Used by the admin "Shut down"
@@ -147,54 +131,6 @@ export async function endSpaceAsAdmin(spaceId: string): Promise<{
   found: boolean;
   ended: boolean;
 }> {
-  const supabase = getSupabaseAdmin();
-
-  const { data: space } = await supabase
-    .from("spaces")
-    .select("id, status, livekit_room")
-    .eq("id", spaceId)
-    .maybeSingle();
-
-  if (!space) return { found: false, ended: false };
-
-  // Idempotent DB end. Returns the id only when this call flipped live->ended.
-  let ended = false;
-  const { data: endedId, error: rpcErr } = await supabase.rpc("end_space_now", {
-    p_space_id: spaceId,
-  });
-  if (rpcErr) {
-    // Fallback if the RPC isn't deployed: guarded direct update.
-    const { data: updated } = await supabase
-      .from("spaces")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
-      .eq("id", spaceId)
-      .eq("status", "live")
-      .select("id")
-      .maybeSingle();
-    ended = !!updated;
-    if (ended) {
-      await supabase
-        .from("space_participants")
-        .update({ left_at: new Date().toISOString() })
-        .eq("space_id", spaceId)
-        .is("left_at", null);
-    }
-  } else {
-    ended = !!endedId;
-  }
-
-  // Tear down the live room even if the DB row was already 'ended' — a stale
-  // LiveKit room can outlive the DB state, and this is exactly what an admin is
-  // trying to kill. deleteRoom is a no-op on a missing/empty room.
-  if (livekitConfigured()) {
-    const roomName: string = space.livekit_room ?? `space_${space.id}`;
-    await endLiveKitRoom(roomName);
-  }
-
-  await publishSystemSignal(spaceId, {
-    event: "space-ended",
-    reason: "admin-shutdown",
-  });
-
-  return { found: true, ended };
+  const result = await endRoomAndTeardown(spaceId, "admin-shutdown");
+  return { found: result.found, ended: result.ended };
 }

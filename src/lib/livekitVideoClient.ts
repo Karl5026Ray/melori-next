@@ -36,6 +36,7 @@ import {
   type AudioProfile,
 } from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
+import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 import type { FacingMode } from "@/lib/videoMirror";
 
 type AnyRoom = any;
@@ -113,6 +114,12 @@ export interface JoinVideoOptions {
   // a transient network disconnect: the client will NOT auto-reconnect, so the
   // UI should show a clear "you were removed" message rather than a retry.
   onRemoved?: () => void;
+  // Fired when the ROOM ITSELF was deliberately ended server-side
+  // (endLiveKitRoom -> LiveKit deleteRoom, DisconnectReason.ROOM_DELETED),
+  // as opposed to a kick (onRemoved) or a network failure (onError). Local
+  // camera/mic are already stopped by the time this fires. Lets the UI show a
+  // calm "This room has ended" state instead of the generic error overlay.
+  onRoomEnded?: () => void;
   // Called whenever the browser's autoplay policy changes whether remote audio
   // can play. `canPlay === false` means the UI must show a tap-to-unmute
   // affordance and call ensureVideoAudio() from that user gesture.
@@ -543,6 +550,19 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
         reason === DisconnectReason.PARTICIPANT_REMOVED
       ) {
         opts.onRemoved?.();
+        return;
+      }
+      const classification = classifyDisconnectReason(
+        reason as string | number | undefined,
+      );
+      if (classification === "room-ended") {
+        // Deliberate server-side teardown (the host ended the room, or the
+        // lazy abandonment reaper closed it): stop local camera/mic
+        // immediately rather than leaving hardware indicators on, then hand
+        // off to the calm "room ended" path instead of onError.
+        void room.localParticipant?.setCameraEnabled?.(false).catch(() => undefined);
+        void room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => undefined);
+        opts.onRoomEnded?.();
         return;
       }
       opts.onError?.(new Error("Disconnected from live room"));

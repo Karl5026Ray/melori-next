@@ -35,6 +35,7 @@ import {
 } from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { supabase } from "@/lib/supabase";
+import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 
 type AnyRoom = any;
 type AnyTrack = any;
@@ -67,6 +68,12 @@ export interface JoinOptions {
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Fired when the ROOM ITSELF was deliberately ended server-side
+  // (endLiveKitRoom -> LiveKit deleteRoom), as opposed to a network drop.
+  // Distinct from onError so the UI can show a calm "This room has ended"
+  // state instead of a scary generic error. Local mic/tracks are already
+  // stopped by the time this fires.
+  onRoomEnded?: () => void;
   onError?: (err: Error) => void;
 }
 
@@ -214,7 +221,22 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     session.cleanups.push(() => room.off(RoomEvent.Reconnecting, onReconnecting));
     session.cleanups.push(() => room.off(RoomEvent.Reconnected, onReconnected));
 
-    const onDisconnected = () => {
+    const onDisconnected = (reason?: unknown) => {
+      const classification = classifyDisconnectReason(
+        reason as string | number | undefined,
+      );
+      if (classification === "room-ended") {
+        // Deliberate server-side teardown, not a failure: stop local media so
+        // the mic indicator/hardware light turns off immediately, then hand
+        // off to the calm "room ended" path instead of onError.
+        void room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => undefined);
+        opts.onRoomEnded?.();
+        return;
+      }
+      // "removed" (kicked) has no dedicated Spaces UI state today (unlike
+      // Faces' `removed` overlay) — out of scope to add one here per the
+      // brief's constraint against changing moderation/ban UX, so it still
+      // reports through onError, matching current behaviour.
       opts.onError?.(new Error("Disconnected from space"));
     };
     room.on(RoomEvent.Disconnected, onDisconnected);

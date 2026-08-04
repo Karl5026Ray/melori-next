@@ -1,59 +1,85 @@
-// Shared types + formatting for MM Cinema.
+// Shared constants + helpers for MM Cinema.
 //
-// Cinema is the "sit down and watch" surface: scheduled premieres, concert
-// films, documentaries, and synced watch parties. It deliberately does not
-// overlap Mirror (short-form vertical, 24h rotation) or MM Faces (live camera
-// rooms) — those are lean-forward, this is lean-back.
+// Cinema is a room FORMAT on the existing Spaces engine, not a separate
+// product: a Cinema room is a `spaces` row with room_format = 'cinema'. It
+// therefore inherits host/speaker/audience roles, the ordered raise-hand queue,
+// moderation, room bans, and unified end-room teardown for free. What makes it
+// Cinema is the shared, host-synced video surface on the stage.
 
-export type CinemaStatus =
-  | "draft"
-  | "scheduled"
-  | "live"
-  | "available"
-  | "ended";
+import type { Space } from "@/types/social";
 
-export type CinemaAccessTier = "free" | "superfan" | "ticketed";
+export const CINEMA_ROOM_FORMAT = "cinema" as const;
 
-export type CinemaScreening = {
-  id: string;
-  title: string;
-  synopsis: string | null;
-  poster_url: string | null;
-  runtime_seconds: number | null;
-  status: CinemaStatus;
-  starts_at: string | null;
-  is_watch_party: boolean;
-  access_tier: CinemaAccessTier;
-  artist: { id: string; display_name: string | null; avatar_url: string | null } | null;
-};
+/**
+ * Discover-screen filter tabs, in mockup order. "live now" is the default and
+ * is NOT a genre — it means "don't filter", so it carries a null slug.
+ */
+export const CINEMA_GENRE_TABS: ReadonlyArray<{
+  label: string;
+  slug: string | null;
+}> = [
+  { label: "live now", slug: null },
+  { label: "hip hop", slug: "hip-hop" },
+  { label: "r&b", slug: "rnb" },
+  { label: "afrobeats", slug: "afrobeats" },
+  { label: "pop", slug: "pop" },
+];
 
-/** "1h 42m" / "48m" / "Runtime TBA" */
-export function formatRuntime(seconds: number | null): string {
-  if (!seconds || seconds <= 0) return "Runtime TBA";
-  const totalMinutes = Math.round(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h ${minutes}m`;
+/** Narrows an arbitrary `?genre=` search param to a tab we actually render. */
+export function resolveGenreParam(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const match = CINEMA_GENRE_TABS.find((tab) => tab.slug === raw);
+  return match?.slug ?? null;
 }
 
 /**
- * Short, member-facing start time. Uses the viewer's locale/zone via
- * `toLocaleString`, so this must only run where that's acceptable — the shelf
- * renders server-side, so times show in the server zone until the screening
- * detail view (client) re-renders them. Kept intentionally coarse for that
- * reason: no seconds, no zone abbreviation to be wrong about.
+ * "starts in 12 min" / "starts in 2 hr" / "starting now".
+ *
+ * The mockup's STARTING SOON rows are relative, not absolute — a countdown is
+ * what makes someone set a reminder. Deliberately coarse: rounding to whole
+ * minutes avoids a server-rendered value that's visibly stale by the time it
+ * paints, and avoids implying second-level precision we don't have.
  */
-export function formatStartsAt(startsAt: string | null): string {
-  if (!startsAt) return "Date TBA";
-  const date = new Date(startsAt);
-  if (Number.isNaN(date.getTime())) return "Date TBA";
-  return date.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+export function formatStartsIn(scheduledAt: string | null | undefined): string {
+  if (!scheduledAt) return "starting soon";
+  const date = new Date(scheduledAt);
+  if (Number.isNaN(date.getTime())) return "starting soon";
+
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return "starting now";
+
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) return "starting now";
+  if (minutes < 60) return `starts in ${minutes} min`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `starts in ${hours} hr`;
+
+  const days = Math.round(hours / 24);
+  return `starts in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** "214 watching" — the audience number the mockup leads with. */
+export function formatWatching(count: number | null | undefined): string {
+  const n = Math.max(0, count ?? 0);
+  return `${n.toLocaleString()} watching`;
+}
+
+/**
+ * Picks the room to feature at the top of discover: the live Cinema room with
+ * the biggest audience. Returns the featured room and the remainder, so the
+ * "LIVE NOW" grid below never repeats the featured card.
+ */
+export function pickFeatured(live: Space[]): {
+  featured: Space | null;
+  rest: Space[];
+} {
+  if (live.length === 0) return { featured: null, rest: [] };
+  let featured = live[0];
+  for (const room of live) {
+    if ((room.participant_count ?? 0) > (featured.participant_count ?? 0)) {
+      featured = room;
+    }
+  }
+  return { featured, rest: live.filter((room) => room.id !== featured.id) };
 }

@@ -37,19 +37,24 @@ export type RoomFormat =
   | "release_party"
   | "discussion"
   | "versus_battle"
-  | "dj_set";
+  | "dj_set"
+  // MM Cinema — a shared-screen watch party. Same room engine as the formats
+  // above (roles, raise-hand queue, moderation, bans, end-room teardown); what
+  // makes it Cinema is the synced video surface, not a separate rooms table.
+  | "cinema";
 
 // Shared format → badge presentation. Used by SpaceCard and the room detail
 // header so labels/variants stay consistent. Legacy rows with a null
 // room_format fall back to `discussion` (see ROOM_FORMAT_FALLBACK).
 export const ROOM_FORMAT_CONFIG: Record<
   RoomFormat,
-  { variant: "green" | "purple" | "pink" | "orange"; label: string }
+  { variant: "green" | "purple" | "pink" | "orange" | "gold"; label: string }
 > = {
   release_party: { variant: "green", label: "Release Party" },
   discussion: { variant: "purple", label: "Discussion" },
   versus_battle: { variant: "pink", label: "Versus Battle" },
   dj_set: { variant: "orange", label: "DJ Set" },
+  cinema: { variant: "gold", label: "Cinema" },
 };
 
 export const ROOM_FORMAT_FALLBACK: RoomFormat = "discussion";
@@ -91,6 +96,8 @@ export interface Space {
   scheduled_at?: string | null;
   last_activity_at?: string | null;
   hand_raise_mode?: HandRaiseMode;
+  /** Optional genre slug, used by the MM Cinema discover filter tabs. */
+  genre?: string | null;
 }
 
 export type ParticipantRole = "host" | "speaker" | "audience";

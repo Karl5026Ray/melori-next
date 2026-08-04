@@ -26,6 +26,7 @@ import {
   Users,
   ShoppingBag,
   Swords,
+  Clapperboard,
 } from "lucide-react";
 
 /**
@@ -211,7 +212,7 @@ export default function MobileTabBar() {
         { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
-        { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
+        { label: "MM Cinema", href: "/social/cinema", icon: <Clapperboard className="h-5 w-5" />, desc: "Premieres & screenings" },
       ],
     },
     {

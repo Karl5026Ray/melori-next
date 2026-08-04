@@ -10,6 +10,7 @@ import {
 import { authFetch } from "@/lib/authClient";
 import {
   ArrowLeft,
+  Clapperboard,
   Headphones,
   MessageCircle,
   Mic,
@@ -17,15 +18,24 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// `id` drives the UI selection AND is posted as the room's `type`. Those are
+// two different vocabularies: `spaces.type` has its own CHECK constraint
+// (listening | discussion | creation | dj_set) that predates room_format and
+// does NOT include 'cinema'. So Cinema carries an explicit `spaceType` of
+// 'listening' — a watch party is a listening room with a screen — while its
+// room_format is what actually distinguishes it. Without this split, creating
+// a Cinema room fails the spaces_type_check constraint.
 const spaceTypes: {
   id: string;
-  format: "release_party" | "discussion" | "versus_battle" | "dj_set";
+  spaceType: "listening" | "discussion" | "creation" | "dj_set";
+  format: "release_party" | "discussion" | "versus_battle" | "dj_set" | "cinema";
   label: string;
   icon: typeof Headphones;
   desc: string;
 }[] = [
   {
     id: "listening",
+    spaceType: "listening",
     format: "release_party",
     label: "Release Party",
     icon: Headphones,
@@ -33,6 +43,7 @@ const spaceTypes: {
   },
   {
     id: "discussion",
+    spaceType: "discussion",
     format: "discussion",
     label: "Discussion",
     icon: MessageCircle,
@@ -40,6 +51,7 @@ const spaceTypes: {
   },
   {
     id: "creation",
+    spaceType: "creation",
     format: "versus_battle",
     label: "Versus Battle",
     icon: Mic,
@@ -47,10 +59,19 @@ const spaceTypes: {
   },
   {
     id: "dj_set",
+    spaceType: "dj_set",
     format: "dj_set",
     label: "DJ Set",
     icon: Radio,
     desc: "Continuous mix with track requests",
+  },
+  {
+    id: "cinema",
+    spaceType: "listening",
+    format: "cinema",
+    label: "Cinema",
+    icon: Clapperboard,
+    desc: "Watch together on a shared screen",
   },
 ];
 
@@ -60,7 +81,17 @@ export default function CreateSpacePage() {
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  const [type, setType] = useState("listening");
+  // Honour ?format=cinema so the "+" on the Cinema discover screen lands here
+  // with Cinema already selected instead of dropping the host on Release Party.
+  //
+  // Read straight off window.location rather than useSearchParams(): this page
+  // is currently statically prerendered, and useSearchParams() would force it
+  // behind a Suspense boundary. The typeof guard keeps the prerender pass safe.
+  const [type, setType] = useState(() => {
+    if (typeof window === "undefined") return "listening";
+    const requested = new URLSearchParams(window.location.search).get("format");
+    return spaceTypes.find((s) => s.format === requested)?.id ?? "listening";
+  });
   const [scheduleFor, setScheduleFor] = useState<"now" | "later">("now");
   // Default schedule = 30 minutes from now, formatted for <input type=datetime-local>.
   const [scheduledAt, setScheduledAt] = useState(() => {
@@ -104,7 +135,14 @@ export default function CreateSpacePage() {
     const res = await authFetch("/api/social/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, topic, type, room_format: spaceTypes.find((s) => s.id === type)?.format, scheduled_at }),
+      body: JSON.stringify({
+        title,
+        topic,
+        // Post the constraint-safe `type`, not the UI id — see spaceTypes above.
+        type: spaceTypes.find((s) => s.id === type)?.spaceType ?? "listening",
+        room_format: spaceTypes.find((s) => s.id === type)?.format,
+        scheduled_at,
+      }),
     });
 
     if (res.ok) {

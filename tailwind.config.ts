@@ -38,6 +38,16 @@ const config: Config = {
           warning: "#f59e0b",
           danger: "#ef4444",
         },
+        // MM Cinema palette. Cinema deliberately breaks from the purple MM
+        // Social accent and uses marquee gold on near-black — the mockups treat
+        // it as a theatre, so the room should feel like the lights went down.
+        cinema: {
+          void: "#0b0b0b",
+          surface: "#141414",
+          border: "#2a2a2a",
+          gold: "#e8c66a",
+          "gold-dim": "#8a7440",
+        },
       },
       animation: {
         "slide-up": "slideUp 0.4s ease-out",

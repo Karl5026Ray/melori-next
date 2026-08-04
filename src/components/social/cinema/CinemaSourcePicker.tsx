@@ -5,12 +5,22 @@ import {
   Film,
   Link2,
   Loader2,
+  Pause,
+  Play,
   Upload,
   X,
 } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
 import { classifySource } from "@/lib/cinemaPlayback";
+import {
+  MAX_UPLOAD_BYTES,
+  RESUMABLE_THRESHOLD_BYTES,
+  buildObjectPath,
+  formatBytes,
+  startResumableUpload,
+  type ResumableHandle,
+} from "@/lib/cinemaResumableUpload";
 import type { SocialVideo } from "@/types/social";
 
 /**
@@ -28,23 +38,22 @@ import type { SocialVideo } from "@/types/social";
 type Tab = "upload" | "library" | "link";
 
 /**
- * Cinema screenings are feature-length, not 60-second reels, so the 200 MB reel
- * cap would be absurd here. This is still bounded: an unbounded browser PUT of
- * a multi-gigabyte file will die on a phone connection long before it lands,
- * and failing fast with a readable message beats a twenty-minute upload that
- * silently drops.
+ * Two upload paths, chosen by size.
+ *
+ * Small file: one signed PUT, same as every other upload in the app. Simple,
+ * one round trip, and a failure is cheap to retry.
+ *
+ * Large file: Supabase's resumable TUS endpoint, which survives a dropped
+ * connection, a backgrounded tab, or a closed browser by continuing from the
+ * last committed byte instead of restarting. A feature-length screening over a
+ * phone connection is exactly the case a single PUT cannot survive.
+ *
+ * See src/lib/cinemaResumableUpload.ts for the threshold and the auth model.
  */
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  return `${Math.round(bytes / 1024 ** 2)} MB`;
-}
 
 /**
- * Uploads via XHR rather than fetch purely for `upload.onprogress`. A host
- * watching a 1.4 GB file go up needs a progress bar; fetch still can't give one
- * for request bodies.
+ * Small-file path. XHR rather than fetch purely for `upload.onprogress` —
+ * fetch still cannot report request-body progress.
  */
 function putWithProgress(
   signedUrl: string,
@@ -89,6 +98,10 @@ export function CinemaSourcePicker({
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadName, setUploadName] = useState<string | null>(null);
+  const [resumable, setResumable] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [resumedNote, setResumedNote] = useState<string | null>(null);
+  const handleRef = useRef<ResumableHandle | null>(null);
 
   // Library
   const [library, setLibrary] = useState<SocialVideo[] | null>(null);
@@ -113,6 +126,16 @@ export function CinemaSourcePicker({
   );
 
   // --- Upload ---------------------------------------------------------------
+  const resetUploadUi = useCallback(() => {
+    setUploading(false);
+    setUploadName(null);
+    setProgress(0);
+    setResumable(false);
+    setPaused(false);
+    handleRef.current = null;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
   const handleFile = useCallback(
     async (file: File) => {
       if (file.size > MAX_UPLOAD_BYTES) {
@@ -125,10 +148,52 @@ export function CinemaSourcePicker({
       }
 
       setError(null);
+      setResumedNote(null);
       setUploading(true);
       setProgress(0);
       setUploadName(file.name);
+      setPaused(false);
 
+      // ---- Large file: resumable -------------------------------------------
+      if (file.size > RESUMABLE_THRESHOLD_BYTES) {
+        if (!user?.id) {
+          setError("Sign in again to upload.");
+          resetUploadUi();
+          return;
+        }
+        setResumable(true);
+        try {
+          handleRef.current = await startResumableUpload(
+            file,
+            buildObjectPath(user.id, file.name),
+            {
+              onProgress: (percent) => setProgress(percent),
+              onResumeDetected: (already) =>
+                setResumedNote(
+                  `Picked up where you left off — ${Math.round(already)}% was already uploaded.`,
+                ),
+              onSuccess: (publicUrl) => {
+                resetUploadUi();
+                commit(publicUrl);
+              },
+              onError: (message) => {
+                // Deliberately do NOT clear the upload UI: the bytes already on
+                // the server are still valid, and re-picking the same file
+                // resumes rather than restarts.
+                setError(`${message} Pick the same file again to resume.`);
+                setUploading(false);
+                handleRef.current = null;
+              },
+            },
+          );
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Upload failed.");
+          resetUploadUi();
+        }
+        return;
+      }
+
+      // ---- Small file: one signed PUT ---------------------------------------
       try {
         // Reuses the same signed-URL endpoint as social video posts, which
         // namespaces every file under social/{userId}/ — a Cinema upload can't
@@ -149,14 +214,38 @@ export function CinemaSourcePicker({
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed.");
       } finally {
-        setUploading(false);
-        setUploadName(null);
-        setProgress(0);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        resetUploadUi();
       }
     },
-    [commit],
+    [commit, resetUploadUi, user?.id],
   );
+
+  const togglePause = useCallback(() => {
+    const handle = handleRef.current;
+    if (!handle) return;
+    if (paused) {
+      handle.resume();
+      setPaused(false);
+    } else {
+      handle.pause();
+      setPaused(true);
+    }
+  }, [paused]);
+
+  const cancelUpload = useCallback(async () => {
+    const handle = handleRef.current;
+    if (handle) await handle.abort().catch(() => {});
+    resetUploadUi();
+  }, [resetUploadUi]);
+
+  // Abandoning the room mid-upload shouldn't leave a zombie XHR running. The
+  // partial object survives on the server either way, so this only stops the
+  // client — the upload can still be resumed later.
+  useEffect(() => {
+    return () => {
+      handleRef.current?.pause();
+    };
+  }, []);
 
   // --- Library --------------------------------------------------------------
   useEffect(() => {
@@ -242,7 +331,11 @@ export function CinemaSourcePicker({
           {uploading ? (
             <div className="rounded-lg border border-cinema-border bg-black/40 px-3 py-3">
               <div className="mb-2 flex items-center gap-2 text-xs text-white/70">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-cinema-gold" aria-hidden />
+                {paused ? (
+                  <Pause className="h-3.5 w-3.5 text-white/40" aria-hidden />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-cinema-gold" aria-hidden />
+                )}
                 <span className="truncate">{uploadName}</span>
                 <span className="ml-auto font-mono tabular-nums text-cinema-gold">
                   {Math.round(progress)}%
@@ -250,10 +343,44 @@ export function CinemaSourcePicker({
               </div>
               <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full bg-cinema-gold transition-[width]"
+                  className={`h-full transition-[width] ${paused ? "bg-white/30" : "bg-cinema-gold"}`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
+
+              {/* Pause / cancel only exist for the resumable path — there is no
+                  safe way to pause a single PUT. */}
+              {resumable && (
+                <div className="mt-2.5 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={togglePause}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/60 transition hover:text-cinema-gold"
+                  >
+                    {paused ? (
+                      <>
+                        <Play className="h-3 w-3" aria-hidden />
+                        Resume
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="h-3 w-3" aria-hidden />
+                        Pause
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void cancelUpload()}
+                    className="text-[11px] font-medium text-white/40 transition hover:text-red-400"
+                  >
+                    Cancel
+                  </button>
+                  <span className="ml-auto text-[11px] text-white/30">
+                    {paused ? "Paused — nothing is lost" : "Resumable"}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <button
@@ -267,9 +394,16 @@ export function CinemaSourcePicker({
           )}
           {!uploading && (
             <p className="mt-2 text-[11px] text-white/35">
-              Up to {formatBytes(MAX_UPLOAD_BYTES)}. It uploads to your Melori
+              Up to {formatBytes(MAX_UPLOAD_BYTES)}. Anything over{" "}
+              {formatBytes(RESUMABLE_THRESHOLD_BYTES)} uploads resumably — if
+              the connection drops or you close the tab, picking the same file
+              again continues from where it stopped. It stays in your Melori
               library, so you can screen it again without re-uploading.
             </p>
+          )}
+
+          {resumedNote && (
+            <p className="mt-2 text-[11px] text-cinema-gold">{resumedNote}</p>
           )}
         </div>
       )}

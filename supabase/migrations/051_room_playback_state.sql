@@ -64,9 +64,13 @@ create table if not exists public.room_playback_state (
 -- if a host's machine had a skewed clock and supplied this value, every guest
 -- in the room would be offset by that skew. Stamping it server-side means all
 -- readers share one authoritative epoch.
+-- `set search_path = ''` pins resolution so a role with a hostile search_path
+-- cannot shadow anything this function calls. Safe here because the body only
+-- uses now(), which lives in pg_catalog and is always resolvable.
 create or replace function public.touch_room_playback_state()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at := now();
@@ -98,7 +102,19 @@ comment on table public.room_playback_state is
 
 -- Realtime delivery. Guests subscribe to postgres_changes on this table
 -- filtered by space_id, so a host action reaches the room in one hop.
-alter publication supabase_realtime add table public.room_playback_state;
+-- Guarded: `alter publication ... add table` throws if the table is already a
+-- member, which would abort an otherwise idempotent re-run of this migration.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'room_playback_state'
+  ) then
+    alter publication supabase_realtime add table public.room_playback_state;
+  end if;
+end $$;
 
 -- REPLICA IDENTITY FULL so the realtime payload carries the whole row. Without
 -- it Postgres only ships the primary key for updates, and every guest would

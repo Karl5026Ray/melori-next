@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { getSocialLinks, type SocialPlatform } from "@/lib/socialLinks";
 
 const footerLinks = [
   { label: "Music", href: "/music" },
@@ -13,57 +14,35 @@ const footerLinks = [
   { label: "Support", href: "/support" },
 ];
 
-// Basic social destinations for now (platform home pages). These can be
-// swapped for real Melori handles anytime by editing the href values.
-const socialLinks: { label: string; href: string; icon: ReactElement }[] = [
-  {
-    label: "Facebook",
-    href: "https://facebook.com",
-    icon: (
-      <path d="M13.5 9H15V6.5h-1.5c-1.66 0-3 1.34-3 3V11H9v2.5h1.5V20H13v-6.5h1.7l.3-2.5H13V9.75c0-.41.34-.75.75-.75z" />
-    ),
-  },
-  {
-    label: "Instagram",
-    href: "https://instagram.com",
-    icon: (
-      <>
-        <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
-        <circle cx="12" cy="12" r="3.5" />
-        <circle cx="17" cy="7" r="1" fill="currentColor" stroke="none" />
-      </>
-    ),
-  },
-  {
-    label: "TikTok",
-    href: "https://tiktok.com",
-    icon: (
-      <path d="M14 4c.5 2 1.8 3.3 3.8 3.6V10c-1.4 0-2.7-.4-3.8-1.1V15a4.5 4.5 0 1 1-4.5-4.5c.3 0 .6 0 .9.1v2.5a2 2 0 1 0 1.4 1.9V4H14z" />
-    ),
-  },
-  {
-    label: "YouTube",
-    href: "https://youtube.com",
-    icon: (
-      <>
-        <rect x="3" y="6" width="18" height="12" rx="3" />
-        <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
-      </>
-    ),
-  },
-  {
-    label: "X",
-    href: "https://x.com",
-    icon: (
-      <path
-        d="M4 4l16 16M20 4L4 20"
-        strokeLinecap="round"
-      />
-    ),
-  },
-];
+// Social icons. The destinations themselves live in src/lib/socialLinks.ts and
+// render only when a real profile exists — bare platform home pages ("https://
+// facebook.com") are never linked, because they read as an unfinished demo.
+const SOCIAL_ICONS: Record<SocialPlatform, ReactElement> = {
+  facebook: (
+    <path d="M13.5 9H15V6.5h-1.5c-1.66 0-3 1.34-3 3V11H9v2.5h1.5V20H13v-6.5h1.7l.3-2.5H13V9.75c0-.41.34-.75.75-.75z" />
+  ),
+  instagram: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
+      <circle cx="12" cy="12" r="3.5" />
+      <circle cx="17" cy="7" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  tiktok: (
+    <path d="M14 4c.5 2 1.8 3.3 3.8 3.6V10c-1.4 0-2.7-.4-3.8-1.1V15a4.5 4.5 0 1 1-4.5-4.5c.3 0 .6 0 .9.1v2.5a2 2 0 1 0 1.4 1.9V4H14z" />
+  ),
+  youtube: (
+    <>
+      <rect x="3" y="6" width="18" height="12" rx="3" />
+      <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  x: <path d="M4 4l16 16M20 4L4 20" strokeLinecap="round" />,
+};
 
 export default function Footer() {
+  const socialLinks = getSocialLinks();
+
   return (
     <footer className="border-t border-brand-border bg-brand-background">
       <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
@@ -90,15 +69,17 @@ className="text-text-secondary transition-colors hover:text-brand-primary"
 ))}
         </nav>
 
-        {/* Social */}
+        {/* Social — rendered only for profiles that actually exist. */}
+        {socialLinks.length > 0 && (
         <div className="flex items-center gap-3">
           {socialLinks.map((s) => (
             <a
-              key={s.label}
+              key={s.platform}
               href={s.href}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`MELORI Music on ${s.label}`}
+              aria-label={`MELORI Music on ${s.label} (${s.handle})`}
+              title={`${s.label} — ${s.handle}`}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-brand-border text-text-secondary transition-colors hover:border-brand-primary hover:text-brand-primary"
             >
               <svg
@@ -111,16 +92,24 @@ className="text-text-secondary transition-colors hover:text-brand-primary"
                 strokeLinejoin="round"
                 aria-hidden
               >
-                {s.icon}
+                {SOCIAL_ICONS[s.platform]}
               </svg>
             </a>
           ))}
         </div>
+        )}
       </div>
 
       <div className="border-t border-brand-border">
         <div className="max-w-6xl mx-auto px-6 py-4 text-xs text-text-secondary">
-          © 2026 MELORI MUSIC. All rights reserved.
+          <span className="block sm:inline">
+            <span className="text-text-primary/80">Melori</span> — <em className="not-italic">mel</em> from{" "}
+            melody, <em className="not-italic">lori</em> from lullaby.{" "}
+            <Link href="/mission#the-name" className="underline decoration-dotted hover:text-brand-primary">
+              The story behind the name
+            </Link>
+          </span>
+          <span className="mt-1 block">© 2026 MELORI MUSIC. All rights reserved.</span>
         </div>
       </div>
     </footer>

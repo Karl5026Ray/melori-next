@@ -181,7 +181,7 @@ export default function SplitsEditor({
 
       {rows.length === 0 && (
         <p className="text-xs text-[#666]">
-          No collaborators — you keep 100% of every sale.
+          No collaborators — the full artist share goes to you.
         </p>
       )}
 

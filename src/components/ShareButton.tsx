@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
 const DEFAULT_URL = "https://melorimusic.org";
 const DEFAULT_TITLE = "MELORI MUSIC";
 const DEFAULT_TEXT =
-  "Stream the full catalog free and support independent artists directly on MELORI MUSIC.";
+  "Preview any song free, then own the ones you love. Independent artists, no platform cut, on MELORI MUSIC.";
 
 interface ShareButtonProps {
   // What to share. Defaults to the Melori site. Pass these to share a specific

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import { SOCIAL_NAV_ITEMS } from "@/lib/socialNav";
 import {
   Radio,
   Video,
@@ -13,21 +14,38 @@ import {
   Plus,
   Swords,
   Sparkles,
-  Heart,
+  Clapperboard,
+  type LucideIcon,
 } from "lucide-react";
+
+// Icon per Social destination. Keyed by href so it stays correct even if the
+// canonical list is reordered or relabelled in socialNav.ts.
+const SOCIAL_ICONS: Record<string, LucideIcon> = {
+  "/social/mirror": Sparkles,
+  "/social/live": Video,
+  "/social/spaces": Radio,
+  "/social/cinema": Clapperboard,
+};
 
 // Slimmed, orange-branded social nav. We keep only the destinations people
 // actually use day to day; the standalone Video page is reachable from within
 // Community/Faces and the mobile launcher, so it no longer clutters this
 // rail. Brand orange (#ff5500) replaces the old purple accents.
+//
+// The middle of the rail is DERIVED from SOCIAL_NAV_ITEMS rather than
+// hand-listed. This rail previously hardcoded its own copy and drifted: it
+// kept Melori Connect and never picked up MM Cinema when Cinema took Connect's
+// slot, so desktop showed one set of Social destinations in the rail and a
+// different set in the top-bar dropdown. Deriving keeps every surface honest.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
-  { href: "/social/mirror", label: "Melori Mirror", icon: Sparkles },
-  { href: "/social/connect", label: "Melori Connect", icon: Heart },
-  { href: "/social/spaces", label: "MM Spaces", icon: Radio },
-  { href: "/social/live", label: "MM Faces", icon: Video },
+  ...SOCIAL_NAV_ITEMS.map((item) => ({
+    href: item.href,
+    label: item.label,
+    icon: SOCIAL_ICONS[item.href] ?? Sparkles,
+  })),
   // Community moved INTO Melori Mirror (floating pill) — no longer a top-level
-  // rail item.
+  // rail item. Messages is deliberately outside SOCIAL_NAV_ITEMS.
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
 ];
 

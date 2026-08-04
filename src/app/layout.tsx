@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "MELORI MUSIC",
     title: "MELORI MUSIC",
-    description: "Stream freely. Support directly. Create endlessly.",
+    description: "Preview freely. Support directly. Create endlessly.",
     images: [
       {
         url: "/images/og-image.png",
@@ -63,7 +63,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "MELORI MUSIC",
-    description: "Stream freely. Support directly. Create endlessly.",
+    description: "Preview freely. Support directly. Create endlessly.",
     images: ["/images/og-image.png"],
   },
 };

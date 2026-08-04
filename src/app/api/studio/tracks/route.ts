@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // The artist sets their own price. Omitting it takes the $0.99 default;
+    // The artist sets their own price. Omitting it takes the $1.99 default;
     // an explicitly bad value is rejected rather than silently coerced, so a
     // typo can't publish a track at the wrong price.
     const priceCents =

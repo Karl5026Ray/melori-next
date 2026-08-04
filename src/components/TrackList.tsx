@@ -6,7 +6,7 @@ import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider"
 import { formatCount, formatDuration } from "@/lib/format";
 import type { Track } from "@/types";
 
-const DEFAULT_TRACK_PRICE = 0.99;
+const DEFAULT_TRACK_PRICE = 1.99;
 
 interface TrackListProps {
   tracks: Track[];

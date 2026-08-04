@@ -3,7 +3,10 @@
 // agree on what a legal price is — the server still re-validates, because the
 // client copy is only a convenience.
 
-export const DEFAULT_SINGLE_PRICE_CENTS = 99;
+// Singles sit at $1.99, not $0.99: Stripe's flat $0.30 per transaction eats
+// roughly a third of a $0.99 sale, which is incompatible with promising the
+// artist everything after processing. At $1.99 the artist nets ~82%.
+export const DEFAULT_SINGLE_PRICE_CENTS = 199;
 export const DEFAULT_ALBUM_PRICE_CENTS = 999;
 
 // Matches the CHECK constraint in migration 045. Zero is legal and means

@@ -181,7 +181,7 @@ export default function TrackEditModal({
               inputMode="decimal"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              placeholder="0.99"
+              placeholder="1.99"
               className="mt-1 w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:border-[#c9a96e]/40 focus:outline-none"
               disabled={saving}
             />

@@ -25,6 +25,7 @@ import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomChat from "@/components/social/rooms/RoomChat";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
+import { roomExitHref, roomExitLabel } from "@/lib/cinema";
 import {
   ArrowLeft,
   Share2,
@@ -56,6 +57,18 @@ export default function SpaceDetailPage() {
   const spaceId = params.spaceId as string;
 
   const [space, setSpace] = useState<Space | null>(null);
+
+  // Where every exit from this room leads. Cinema rooms are `spaces` rows and
+  // render at this same route, so without this they'd dump the viewer into
+  // Spaces — a screen they may never have been on.
+  //
+  // Mirrored into a ref because the leave/end callbacks and the Agora + PubNub
+  // effects need it too, and adding it to their dependency arrays would tear
+  // down and rebuild live audio connections every time `space` refreshes.
+  const exitHref = roomExitHref(space?.room_format);
+  const exitHrefRef = useRef(exitHref);
+  exitHrefRef.current = exitHref;
+
   const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
   const [isJoined, setIsJoined] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
@@ -258,7 +271,7 @@ export default function SpaceDetailPage() {
 
     setIsJoined(false);
     await supabase.rpc("decrement_space_participants", { space_id: spaceId });
-    router.push("/social/spaces");
+    router.push(exitHrefRef.current);
   }, [user, spaceId, router]); 
 
   // My own current on-stage role, mirrored from the participants table
@@ -589,7 +602,7 @@ export default function SpaceDetailPage() {
       /* noop */
     }
     await authFetch(`/api/social/spaces/${spaceId}/end`, { method: "POST", headers: { "Content-Type": "application/json" } });
-    router.push("/social/spaces");
+    router.push(exitHrefRef.current);
   }, [isHost, spaceId, router]);
 
   // Spawn a floating emoji burst locally. Used both for the local user's own
@@ -685,7 +698,7 @@ export default function SpaceDetailPage() {
           onRoomEnded: () => {
             if (cancelled) return;
             setRoomEnded(true);
-            setTimeout(() => router.push("/social/spaces"), 1800);
+            setTimeout(() => router.push(exitHrefRef.current), 1800);
           },
           onError: (err) => {
             if (
@@ -767,7 +780,7 @@ export default function SpaceDetailPage() {
             // connected to LiveKit at all and so would never see that path.
             if (payload?.event === "space-ended") {
               setRoomEnded(true);
-              setTimeout(() => router.push("/social/spaces"), 1800);
+              setTimeout(() => router.push(exitHrefRef.current), 1800);
               return;
             }
             // Host was transferred server-side (the previous host left). Refresh
@@ -935,8 +948,8 @@ export default function SpaceDetailPage() {
     return (
       <div className="flex-1 flex items-center justify-center flex-col gap-4">
         <p className="text-melori-muted">{error || "Space not found"}</p>
-        <Link href="/social/spaces" className="text-melori-purple hover:underline">
-          Back to Spaces
+        <Link href={exitHref} className="text-melori-purple hover:underline">
+          {roomExitLabel(space?.room_format)}
         </Link>
       </div>
     );
@@ -952,8 +965,8 @@ export default function SpaceDetailPage() {
         data-testid="space-room-ended"
       >
         <p className="text-melori-text font-medium">{ROOM_ENDED_MESSAGE}</p>
-        <Link href="/social/spaces" className="text-melori-purple hover:underline">
-          Back to Spaces
+        <Link href={exitHref} className="text-melori-purple hover:underline">
+          {roomExitLabel(space?.room_format)}
         </Link>
       </div>
     );
@@ -964,7 +977,8 @@ export default function SpaceDetailPage() {
       <div className="border-b border-melori-border p-4 md:p-6 flex items-center justify-between bg-melori-void/95 backdrop-blur z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <Link
-            href="/social/spaces"
+            href={exitHref}
+            aria-label={roomExitLabel(space?.room_format)}
             className="p-2 hover:bg-melori-elevated rounded-lg transition shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />

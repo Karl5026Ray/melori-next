@@ -17,6 +17,7 @@ import {
   Radio,
 } from "lucide-react";
 import Link from "next/link";
+import { roomExitHref, roomScheduledHref } from "@/lib/cinema";
 
 // `id` drives the UI selection AND is posted as the room's `type`. Those are
 // two different vocabularies: `spaces.type` has its own CHECK constraint
@@ -92,6 +93,11 @@ export default function CreateSpacePage() {
     const requested = new URLSearchParams(window.location.search).get("format");
     return spaceTypes.find((s) => s.format === requested)?.id ?? "listening";
   });
+  // The room_format the picker is currently on. Drives where "back" and a
+  // scheduled create return to, so a host who came from Cinema goes back to
+  // Cinema rather than being handed off to Spaces.
+  const selectedFormat = spaceTypes.find((s) => s.id === type)?.format;
+
   const [scheduleFor, setScheduleFor] = useState<"now" | "later">("now");
   // Default schedule = 30 minutes from now, formatted for <input type=datetime-local>.
   const [scheduledAt, setScheduledAt] = useState(() => {
@@ -148,7 +154,10 @@ export default function CreateSpacePage() {
     if (res.ok) {
       const { space } = await res.json();
       router.push(
-        scheduled_at ? "/social/spaces?tab=scheduled" : `/social/spaces/${space.id}`,
+        // A scheduled room has nothing to enter yet, so land back on the
+        // discover screen the host started from — Cinema's STARTING SOON list
+        // for a Cinema room, the scheduled tab for everything else.
+        scheduled_at ? roomScheduledHref(selectedFormat) : `/social/spaces/${space.id}`,
       );
       return;
     }
@@ -168,7 +177,7 @@ export default function CreateSpacePage() {
       <div className="max-w-lg mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Link
-            href="/social/spaces"
+            href={roomExitHref(selectedFormat)}
             className="p-2 hover:bg-melori-elevated rounded-lg transition"
           >
             <ArrowLeft className="w-5 h-5" />

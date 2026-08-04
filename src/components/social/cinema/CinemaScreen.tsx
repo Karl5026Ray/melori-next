@@ -8,13 +8,12 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
-  Link2,
   Loader2,
   Clapperboard,
 } from "lucide-react";
 import { useCinemaPlayback } from "./useCinemaPlayback";
+import { CinemaSourcePicker } from "./CinemaSourcePicker";
 import {
-  classifySource,
   formatTimecode,
   planCorrection,
   targetPosition,
@@ -43,8 +42,6 @@ export function CinemaScreen({
   const [muted, setMuted] = useState(true);
   const [needsGesture, setNeedsGesture] = useState(false);
   const [buffering, setBuffering] = useState(false);
-  const [urlDraft, setUrlDraft] = useState("");
-  const [urlError, setUrlError] = useState<string | null>(null);
 
   const sourceUrl = state?.source_url ?? null;
   const isPlaying = state?.is_playing ?? false;
@@ -132,23 +129,22 @@ export function CinemaScreen({
     [duration, push],
   );
 
-  const hostSetSource = useCallback(() => {
-    const verdict = classifySource(urlDraft);
-    if (!verdict.ok) {
-      setUrlError(verdict.reason);
-      return;
-    }
-    setUrlError(null);
-    setUrlDraft("");
-    // Reset position and pause on a new source. Carrying the old position over
-    // would drop the room 40 minutes into a video that just started.
-    void push({
-      source_url: verdict.url,
-      position_seconds: 0,
-      duration_seconds: null,
-      is_playing: false,
-    });
-  }, [urlDraft, push]);
+  // Validation now lives in CinemaSourcePicker, which is the single funnel for
+  // all three ways in (device upload, Melori library, pasted link) and hands us
+  // an already-checked playable https URL.
+  const hostSetSource = useCallback(
+    (url: string) => {
+      // Reset position and pause on a new source. Carrying the old position
+      // over would drop the room 40 minutes into a video that just started.
+      void push({
+        source_url: url,
+        position_seconds: 0,
+        duration_seconds: null,
+        is_playing: false,
+      });
+    },
+    [push],
+  );
 
   const handleLoadedMetadata = useCallback(() => {
     const el = videoRef.current;
@@ -189,34 +185,7 @@ export function CinemaScreen({
               : "The host hasn't started the screening yet. Sit tight."}
           </p>
         </div>
-        {isHost && (
-          <div className="border-t border-cinema-border p-3">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Link2
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30"
-                  aria-hidden
-                />
-                <input
-                  value={urlDraft}
-                  onChange={(e) => setUrlDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && hostSetSource()}
-                  placeholder="https://… .mp4"
-                  aria-label="Video link"
-                  className="w-full rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={hostSetSource}
-                className="shrink-0 rounded-lg bg-cinema-gold px-4 text-sm font-semibold text-black transition hover:brightness-110"
-              >
-                Load
-              </button>
-            </div>
-            {urlError && <p className="mt-2 text-xs text-red-400">{urlError}</p>}
-          </div>
-        )}
+        {isHost && <CinemaSourcePicker onPick={hostSetSource} />}
       </div>
     );
   }
@@ -343,26 +312,17 @@ export function CinemaScreen({
       </div>
 
       {isHost && (
-        <div className="border-t border-cinema-border bg-cinema-surface px-3 pb-3">
-          <div className="flex gap-2">
-            <input
-              value={urlDraft}
-              onChange={(e) => setUrlDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && hostSetSource()}
-              placeholder="Change what's playing…"
-              aria-label="Change video link"
-              className="flex-1 rounded-lg border border-cinema-border bg-black/40 px-3 py-2 text-xs text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={hostSetSource}
-              className="shrink-0 rounded-lg border border-cinema-gold/40 px-3 text-xs font-semibold text-cinema-gold transition hover:bg-cinema-gold/10"
-            >
-              Swap
-            </button>
+        <details className="border-t border-cinema-border bg-cinema-surface">
+          {/* Collapsed by default: once something is playing, the picker is a
+              rare action and a permanently open upload panel under the screen
+              would crowd the room. */}
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-white/50 transition hover:text-cinema-gold">
+            Change what&rsquo;s playing
+          </summary>
+          <div className="px-3 pb-3">
+            <CinemaSourcePicker onPick={hostSetSource} compact />
           </div>
-          {urlError && <p className="mt-2 text-xs text-red-400">{urlError}</p>}
-        </div>
+        </details>
       )}
 
       {error && (

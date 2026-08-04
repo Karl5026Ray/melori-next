@@ -25,6 +25,40 @@ export const CINEMA_GENRE_TABS: ReadonlyArray<{
   { label: "pop", slug: "pop" },
 ];
 
+/**
+ * Where a room's "back" / "leave" / "ended" exits should land.
+ *
+ * A Cinema room is a `spaces` row rendered by /social/spaces/[spaceId], so
+ * every exit on that page used to be hardcoded to /social/spaces — which meant
+ * entering from Cinema and being ejected into Spaces. Route the exit by format
+ * instead, so people come back out where they went in.
+ */
+export function roomExitHref(
+  roomFormat: string | null | undefined,
+): string {
+  return roomFormat === CINEMA_ROOM_FORMAT ? "/social/cinema" : "/social/spaces";
+}
+
+/** Matching link text for {@link roomExitHref}. */
+export function roomExitLabel(
+  roomFormat: string | null | undefined,
+): string {
+  return roomFormat === CINEMA_ROOM_FORMAT ? "Back to Cinema" : "Back to Spaces";
+}
+
+/**
+ * Where to land after SCHEDULING a room for later. Spaces has a dedicated
+ * scheduled tab; Cinema surfaces scheduled rooms in its STARTING SOON list on
+ * the discover screen, so there's no tab to select.
+ */
+export function roomScheduledHref(
+  roomFormat: string | null | undefined,
+): string {
+  return roomFormat === CINEMA_ROOM_FORMAT
+    ? "/social/cinema"
+    : "/social/spaces?tab=scheduled";
+}
+
 /** Narrows an arbitrary `?genre=` search param to a tab we actually render. */
 export function resolveGenreParam(raw: string | undefined): string | null {
   if (!raw) return null;

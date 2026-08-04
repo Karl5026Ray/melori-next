@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
 
   // When the artist is onboarded and there are no splits, make them the
   // settlement account so Stripe's processing fee comes out of their balance
-  // and they keep 100% of the remainder (Melori applies no platform fee).
+  // and they keep the remainder in full (Melori applies no platform fee).
   const paymentIntentData:
     | Stripe.Checkout.SessionCreateParams.PaymentIntentData
     | undefined = connectedAccountId

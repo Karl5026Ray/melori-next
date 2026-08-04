@@ -214,7 +214,7 @@ export default function StudioPage() {
                 </p>
               )}
               <p className="text-[#888] text-sm mt-1">
-                Upload, edit, and release your music — keep 100% of every sale.
+                Upload, edit, and release your music — no platform cut on sales.
               </p>
             </div>
             <Link

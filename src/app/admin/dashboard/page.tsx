@@ -424,13 +424,19 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
           >
             SMS Blast
           </Link>
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="px-4 py-2 bg-purple-500/15 text-purple-300 rounded-lg text-sm font-medium hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
-          >
-            {seeding ? "Seeding…" : "🌱 Seed MM Social Demo"}
-          </button>
+          {/* Demo seeding is a pre-launch tool. Melori is live, so the control
+              is hidden unless NEXT_PUBLIC_ALLOW_DEMO_SEED is explicitly set —
+              nobody should be able to drop placeholder spaces and posts into a
+              production catalog with one stray click. */}
+          {process.env.NEXT_PUBLIC_ALLOW_DEMO_SEED === "true" && (
+            <button
+              onClick={handleSeed}
+              disabled={seeding}
+              className="px-4 py-2 bg-purple-500/15 text-purple-300 rounded-lg text-sm font-medium hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {seeding ? "Seeding…" : "🌱 Seed MM Social Demo (non-production)"}
+            </button>
+          )}
         </div>
         {seedMsg && (
           <p className="mt-3 text-xs text-[#888]">{seedMsg}</p>

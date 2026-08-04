@@ -19,9 +19,9 @@ const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
 type Tier = "free" | "superfan" | "artist" | "snappd";
 
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
-  { id: "free", name: "Free Fan", price: "$0", blurb: "Stream music, join the community." },
-  { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Early access, exclusives, HD audio." },
-  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 100%." },
+  { id: "free", name: "Free Fan", price: "$0", blurb: "Free 30-second previews, playlists, community." },
+  { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Full-length playback, early access, exclusives, HD audio." },
+  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, no platform cut on sales." },
   { id: "snappd", name: "Snappd", price: "$14.99/mo", blurb: "Photographer membership: profile, galleries, tethering, $1.99 instant prints (keep 80%)." },
 ];
 
@@ -272,7 +272,7 @@ function RegisterInner() {
     <p className="mt-1 text-xs text-[#888]">
       {tier === "snappd"
         ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"
-        : "Artists keep 100% of every sale (only Stripe's processing fee is deducted). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"}
+        : "No platform cut on music sales — you keep every dollar after Stripe's payment processing fee. Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"}
     </p>
     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
       <li>A government-issued photo ID to verify your identity.</li>

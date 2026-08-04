@@ -454,6 +454,84 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     ).toBe(true);
   });
 
+  // -------------------------------------------------------------------------
+  // Placed is placed: the pill re-derives its position from the edge anchor it
+  // was dropped against, so nothing except another drag may move it.
+  // -------------------------------------------------------------------------
+
+  test("expanding keeps the parked corner instead of snapping to a new area", async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    const vp = page.viewportSize()!;
+
+    // Park it in the bottom-right quadrant but clear of both edges, so the gaps
+    // it is anchored against are larger than the clamp minimums and a snap-back
+    // would be unmistakable.
+    await firePointerDrag(handleOf(page), -40, -120, 450);
+    const parked = (await player.boundingBox())!;
+    const rightGap = vp.width - (parked.x + parked.width);
+    const bottomGap = vp.height - (parked.y + parked.height);
+
+    await firePointerTap(handleOf(page));
+    await expect(page.getByTestId("player-panel")).toBeVisible();
+
+    // The panel is wider and taller than the pill. It must grow AWAY from the
+    // anchored edges — same right gap, same bottom gap — rather than jump to
+    // the opposite side or to a fixed dock.
+    // Tolerance is 1.5px: element boxes are fractional and the component skips
+    // sub-pixel re-projections on purpose. A real snap moves it by tens or
+    // hundreds of pixels, so this is nowhere near loose enough to hide one.
+    const open = (await player.boundingBox())!;
+    expect(
+      Math.abs(vp.width - (open.x + open.width) - rightGap),
+      `expanding preserves the right-hand gap (was ${rightGap})`,
+    ).toBeLessThanOrEqual(1.5);
+    expect(
+      Math.abs(vp.height - (open.y + open.height) - bottomGap),
+      `expanding preserves the bottom gap (was ${bottomGap})`,
+    ).toBeLessThanOrEqual(1.5);
+    expect(open.width, "the panel really is wider than the pill").toBeGreaterThan(
+      parked.width,
+    );
+
+    // Collapsing returns to the exact same pill, not to a default dock.
+    await firePointerTap(handleOf(page));
+    await expect(page.getByTestId("player-panel")).toBeHidden();
+    const closed = (await player.boundingBox())!;
+    expect(Math.abs(closed.x - parked.x)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(closed.y - parked.y)).toBeLessThanOrEqual(1.5);
+  });
+
+  test("a transient viewport shrink does not steal the parked position", async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    const vp = page.viewportSize()!;
+
+    // Park it high up, then simulate what Safari's URL bar and the software
+    // keyboard do: shrink the viewport, then give the space back. The old
+    // absolute-point model re-clamped the stored position on every one of these
+    // and the pill crept away permanently.
+    await firePointerDrag(handleOf(page), -100, -400, 450);
+    const parked = (await player.boundingBox())!;
+
+    await page.setViewportSize({ width: vp.width, height: 320 });
+    await page.waitForTimeout(400);
+    await page.setViewportSize(vp);
+    await page.waitForTimeout(400);
+
+    const after = (await player.boundingBox())!;
+    expect(
+      Math.abs(after.x - parked.x),
+      "same x after the viewport returns",
+    ).toBeLessThanOrEqual(1.5);
+    expect(
+      Math.abs(after.y - parked.y),
+      "same y after the viewport returns",
+    ).toBeLessThanOrEqual(1.5);
+  });
+
   test("expanded panel sits above the mobile tab bar", async ({ page }) => {
     const player = await openPlayer(page);
     await firePointerTap(handleOf(page));

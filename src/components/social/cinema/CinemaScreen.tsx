@@ -51,6 +51,7 @@ export function CinemaScreen({
   const [muted, setMuted] = useState(true);
   const [needsGesture, setNeedsGesture] = useState(false);
   const [buffering, setBuffering] = useState(false);
+  const [playerError, setPlayerError] = useState<string | null>(null);
 
   const sourceUrl = state?.source_url ?? null;
   const isPlaying = state?.is_playing ?? false;
@@ -70,6 +71,12 @@ export function CinemaScreen({
    * goes through this. It is the only place in the room that knows a YouTube
    * iframe is not an HTMLVideoElement.
    */
+  // A new source deserves a clean slate; the last video's failure is not this
+  // video's problem.
+  useEffect(() => {
+    setPlayerError(null);
+  }, [sourceUrl]);
+
   const getPlayer = useCallback((): CinemaPlayerHandle | null => {
     if (isYouTube) return youTubeRef.current;
     const el = videoRef.current;
@@ -314,6 +321,7 @@ export function CinemaScreen({
             videoId={youTubeId}
             onBufferingChange={setBuffering}
             onDuration={handleYouTubeDuration}
+            onError={setPlayerError}
           />
         )}
 
@@ -332,6 +340,12 @@ export function CinemaScreen({
             onPlaying={() => setBuffering(false)}
             onCanPlay={() => setBuffering(false)}
           />
+        )}
+
+        {playerError && (
+          <div className="absolute inset-0 z-20 grid place-items-center bg-black/85 p-6 text-center">
+            <p className="max-w-sm text-sm text-white/80">{playerError}</p>
+          </div>
         )}
 
         {loading && (

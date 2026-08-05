@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_rethrow } from "next/navigation";
 import MusicPageClient from "@/components/MusicPageClient";
 import { getReleases } from "@/lib/data";
 import { getCatalogItems } from "@/lib/catalog";
@@ -38,7 +39,12 @@ export default async function MusicPage() {
   // One catalog: admin-curated releases and artist self-uploads together.
   // getCatalogItems swallows a studio-side failure so a partial outage
   // degrades the list rather than blanking the page.
-  const releases = await getReleases().catch(() => []);
+  // Rethrow Next.js control-flow errors before degrading — a bare catch here
+  // swallows the static-generation bailout and prerenders an empty catalog.
+  const releases = await getReleases().catch((err) => {
+    unstable_rethrow(err);
+    return [];
+  });
   const items = await getCatalogItems(releases);
 
   return (

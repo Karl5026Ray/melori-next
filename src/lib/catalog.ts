@@ -18,7 +18,11 @@
 // Server-only (pulls in the service-role client). Types are safe to import
 // into client components with `import type`.
 
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { unstable_rethrow } from "next/navigation";
+import {
+  getSupabaseAdmin,
+  getSupabaseCatalogReader,
+} from "@/lib/supabase/admin";
 import type { ArtistRef, ReleaseListItem } from "@/lib/data";
 
 export type CatalogItemKind = "release" | "studio_album" | "studio_track";
@@ -85,7 +89,7 @@ export async function getArtistRefsByProfileId(
   const unique = Array.from(new Set(profileIds.filter(Boolean)));
   if (unique.length === 0) return refs;
 
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
   const { data, error } = await supabase
     .from("artists")
     .select("name, slug, profile_id, is_published")
@@ -147,7 +151,7 @@ async function loadStudioCatalog(limit: number): Promise<{
   albums: StudioAlbumRow[];
   tracks: StudioTrackRow[];
 }> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
 
   const [tracksRes, albumsRes] = await Promise.all([
     supabase
@@ -297,6 +301,9 @@ export async function getCatalogItems(
   releases: ReleaseListItem[],
 ): Promise<CatalogItem[]> {
   const studio = await getStudioCatalogItems().catch((err) => {
+    // Rethrow Next.js internal control-flow errors (e.g. the static-generation
+    // bailout) so this catch cannot silently prerender an empty catalog.
+    unstable_rethrow(err);
     console.error("getCatalogItems studio error", err);
     return [] as CatalogItem[];
   });

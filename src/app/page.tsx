@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import CatalogCard from "@/components/CatalogCard";
 import SuccessBanner from "@/components/SuccessBanner";
@@ -32,8 +33,20 @@ import { sortMeloriFavorites } from "@/lib/releaseSort";
 // boundary. Nothing user-specific is rendered on the server, so a shared cache
 // entry cannot leak between accounts.
 //
-// 60s keeps new releases appearing promptly while letting the response carry a
-// cacheable header instead of `no-store`.
+// THIS EXPORT ALONE IS NOT ENOUGH — that was the mistake in PR #282. A
+// route-level `revalidate` cannot outrank an individual `fetch` marked
+// `cache: "no-store"`, and every Supabase read went through a client that set
+// exactly that. The route stayed dynamic and the header never changed. The
+// actual fix is in src/lib/supabase/admin.ts: the public catalog reads now use
+// `getSupabaseCatalogReader()`, which asks for `next: { revalidate: 60 }`
+// instead of `no-store`, so no dynamic signal is emitted and this export takes
+// effect.
+//
+// Verified in an isolated Next 16.2.10 build: a page whose fetch uses
+// `cache: "no-store"` builds as ƒ (Dynamic) and emits
+// `private, no-cache, no-store, max-age=0, must-revalidate`; the same page using
+// the reader's fetch shape builds as ○ with a 60s revalidate and emits
+// `s-maxage=60, stale-while-revalidate=...`.
 export const revalidate = 60;
 
 const description =
@@ -57,9 +70,23 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const [releases, storeProducts, featuredTrack] = await Promise.all([
-    getReleases().catch(() => []),
-    getStoreProducts(8).catch(() => []),
-    getFeaturedTrack().catch(() => null),
+    // `unstable_rethrow` is required, not decorative. Next.js aborts static
+    // generation by throwing internal control-flow values, so a bare
+    // `.catch(() => [])` swallows that signal and the route silently prerenders
+    // an EMPTY page instead of failing the build. Always rethrow framework
+    // errors first, then degrade real data errors to an empty list.
+    getReleases().catch((err) => {
+      unstable_rethrow(err);
+      return [];
+    }),
+    getStoreProducts(8).catch((err) => {
+      unstable_rethrow(err);
+      return [];
+    }),
+    getFeaturedTrack().catch((err) => {
+      unstable_rethrow(err);
+      return null;
+    }),
   ]);
   // Favorites is drawn from the WHOLE catalog — an artist's self-uploaded
   // single is eligible for the homepage on the same terms as a curated

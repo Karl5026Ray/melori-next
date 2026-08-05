@@ -21,13 +21,15 @@ import {
   CalendarClock,
   UserPlus,
   Camera,
-  Info,
   Target,
   Users,
   ShoppingBag,
   Swords,
   Clapperboard,
+  HeartHandshake,
+  MoreHorizontal,
 } from "lucide-react";
+import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -37,10 +39,13 @@ import {
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Profile, Radio (direct), then expandable categories:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, Connect
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
  *                          (Messages is a quick press)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
+ *         • More         — Melori Connect, Mission, Artists
+ *                          (was "About"; renamed when Connect landed here,
+ *                          since the group is no longer brand pages only)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -236,9 +241,19 @@ export default function MobileTabBar() {
       ],
     },
     {
-      label: "About",
-      icon: <Info className="h-5 w-5" />,
+      // Was "About". Renamed to "More" because Melori Connect now lives here:
+      // the Social group is capped at four items on a 390px phone, this group
+      // isn't, and "About" no longer described its contents. Mirrors the More
+      // context in src/components/nav/navContexts.ts.
+      label: "More",
+      icon: <MoreHorizontal className="h-5 w-5" />,
       items: [
+        {
+          label: CONNECT_NAV_ITEM.label,
+          href: CONNECT_NAV_ITEM.href,
+          icon: <HeartHandshake className="h-5 w-5" />,
+          desc: "Match on music",
+        },
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
         // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },

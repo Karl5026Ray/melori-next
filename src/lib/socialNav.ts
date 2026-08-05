@@ -9,10 +9,11 @@ export type SocialNavItem = { label: string; href: string };
 // fifth without wrapping or shrinking the touch targets. So Connect gave up
 // its slot to MM Cinema.
 //
-// Connect is parked, NOT deleted: /social/connect still works and can still be
-// linked directly, it just has no nav entry for now. Its permanent front door
-// (a persistent pill on the member's own profile) is a deliberate follow-up,
-// so keep CONNECT_NAV_ITEM below as the single place that href is defined.
+// Connect is not in this group, but it is no longer parked: it now has a
+// permanent home in the MORE group (the local nav bar's More context and the
+// mobile M-menu's More category), which has no four-item cap. CONNECT_NAV_ITEM
+// below stays the single place that label + href are defined, so every surface
+// that links to Connect reads it from here.
 export const SOCIAL_NAV_ITEMS: SocialNavItem[] = [
   { label: "Melori Mirror", href: "/social/mirror" },
   { label: "MM Faces", href: "/social/live" },
@@ -21,13 +22,15 @@ export const SOCIAL_NAV_ITEMS: SocialNavItem[] = [
 ];
 
 /**
- * Melori Connect's entry point. Currently rendered by NOTHING — Connect is
- * parked to the side while Cinema takes the Social slot, and the route stays
- * reachable by direct link only.
+ * Melori Connect's entry point. Rendered in the MORE group on both the local
+ * nav bar (src/components/nav/navContexts.ts) and the mobile M menu
+ * (src/components/MobileTabBar.tsx). Ungated in the nav — the entry is visible
+ * to everyone and /social/connect enforces its own access rules.
  *
- * When the profile pill lands: own-profile only, 18+ / Superfan+ gated. Do not
- * render it on another member's profile — a "Connect" pill there reads as
- * "like this person" and leaks that they're in the dating pool.
+ * The separate own-profile pill idea still stands as a follow-up, and that one
+ * IS gated: own-profile only, 18+ / Superfan+. Do not render a pill on another
+ * member's profile — a "Connect" pill there reads as "like this person" and
+ * leaks that they're in the dating pool.
  */
 export const CONNECT_NAV_ITEM: SocialNavItem = {
   label: "Melori Connect",

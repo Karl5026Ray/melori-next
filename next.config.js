@@ -34,7 +34,15 @@ const CSP_ENFORCED = [
   "default-src 'self'",
   // Next.js requires 'unsafe-inline'/'unsafe-eval' for its runtime; Stripe.js
   // and Google OAuth load from their own hosts; Cloudflare Web Analytics beacon.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com",
+  //
+  // youtube.com + s.ytimg.com are the IFrame Player API. Cinema rooms load
+  // https://www.youtube.com/iframe_api, which then pulls www-widgetapi.js from
+  // one of those two hosts depending on the rollout. frame-src already allowed
+  // the resulting iframe, so the first ship of YouTube Cinema playback failed
+  // silently: the script was blocked, onYouTubeIframeAPIReady never fired, and
+  // the room showed a black rectangle with no console error (CSP violations
+  // report to /api/csp-report, not the console API).
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",

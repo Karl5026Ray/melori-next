@@ -48,6 +48,7 @@ export async function GET(
 
 interface PlaybackPatch {
   source_url?: unknown;
+  source_type?: unknown;
   position_seconds?: unknown;
   duration_seconds?: unknown;
   is_playing?: unknown;
@@ -126,6 +127,20 @@ export async function PUT(
       return NextResponse.json({ error: "source_url must be https" }, { status: 400 });
     }
     patch.source_url = url || null;
+  }
+
+  if ("source_type" in body) {
+    const type = body.source_type;
+    // Mirrors the room_playback_state CHECK constraint from migration 051. A
+    // value the database would reject should fail here with a readable message
+    // rather than as a 500 from Postgres.
+    if (type !== "url" && type !== "youtube") {
+      return NextResponse.json(
+        { error: "source_type must be 'url' or 'youtube'" },
+        { status: 400 },
+      );
+    }
+    patch.source_type = type;
   }
 
   if ("position_seconds" in body) {

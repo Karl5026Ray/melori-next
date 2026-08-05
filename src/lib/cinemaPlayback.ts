@@ -134,12 +134,24 @@ export type Correction =
  * take minutes to recover from a real gap, or never recover at all if the
  * guest joined late.
  */
-export function planCorrection(local: number, target: number): Correction {
+export function planCorrection(
+  local: number,
+  target: number,
+  opts: { allowRate?: boolean } = {},
+): Correction {
   const drift = target - local; // positive: we are BEHIND and must speed up.
   const magnitude = Math.abs(drift);
 
   if (magnitude <= DRIFT_IGNORE_SECONDS) return { kind: "none" };
   if (magnitude > DRIFT_SEEK_SECONDS) return { kind: "seek", to: target };
+
+  // YouTube can only play at the rates it advertises in
+  // getAvailablePlaybackRates() -- 0.25/0.5/0.75/1/1.25/1.5/1.75/2. Asking for
+  // 1.05 is silently ignored, and 1.25 is loudly audible on music. So for that
+  // player the middle tier collapses: tolerate sub-2s drift and hard-seek past
+  // it. Two tiers on YouTube is a real downgrade from three, but a downgrade
+  // that works beats a correction the player throws away.
+  if (opts.allowRate === false) return { kind: "none" };
 
   return {
     kind: "rate",
@@ -148,9 +160,102 @@ export function planCorrection(local: number, target: number): Correction {
 }
 
 /**
- * Accepts a bare URL, or a YouTube link, and reports what we can actually
- * play. v1 only implements direct files; YouTube is detected so the host gets
- * a straight answer instead of a silently black screen.
+ * What the shared screen needs from whatever is actually playing.
+ *
+ * Two players now render a Cinema room -- a plain <video> for files, and the
+ * YouTube IFrame API for YouTube -- and the sync loop must not care which. It
+ * talks to this instead of to an HTMLVideoElement.
+ */
+export interface CinemaPlayerHandle {
+  getCurrentTime(): number;
+  getDuration(): number | null;
+  isPaused(): boolean;
+  play(): void;
+  pause(): void;
+  seek(to: number): void;
+  setRate(rate: number): void;
+  setMuted(muted: boolean): void;
+  /** False for YouTube, whose rate list is too coarse for fine correction. */
+  supportsRateCorrection: boolean;
+}
+
+/**
+ * Hosts that serve YouTube video pages. `youtube-nocookie.com` is included
+ * because a host who copied an embed snippet from a privacy-conscious site
+ * should not be told their link is invalid.
+ */
+const YOUTUBE_HOSTS = new Set([
+  "youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtube-nocookie.com",
+  "youtu.be",
+]);
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * Pull the 11-character video id out of any shape of YouTube link:
+ * /watch?v=, youtu.be/, /embed/, /shorts/, /live/, /v/.
+ *
+ * Returns null for a YouTube URL that does not name a single video -- a
+ * channel, a playlist with no `v`, a search. Those cannot be screened, and the
+ * host deserves to be told so rather than watching a black rectangle.
+ */
+export function parseYouTubeId(raw: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.replace(/^www\./, "");
+  if (!YOUTUBE_HOSTS.has(host)) return null;
+
+  if (host === "youtu.be") {
+    const id = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
+    return YOUTUBE_ID.test(id) ? id : null;
+  }
+
+  const v = parsed.searchParams.get("v");
+  if (v && YOUTUBE_ID.test(v)) return v;
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (
+    segments.length >= 2 &&
+    ["embed", "shorts", "live", "v"].includes(segments[0]) &&
+    YOUTUBE_ID.test(segments[1])
+  ) {
+    return segments[1];
+  }
+
+  return null;
+}
+
+/** True when the URL points at YouTube at all, playable or not. */
+export function isYouTubeHost(raw: string): boolean {
+  try {
+    return YOUTUBE_HOSTS.has(new URL(raw.trim()).hostname.replace(/^www\./, ""));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Canonical form stored in `room_playback_state.source_url`.
+ *
+ * Every accepted YouTube link is normalised to this before it is written, so
+ * the row holds one shape regardless of whether the host pasted a Short, a
+ * youtu.be link, or a watch URL trailing a playlist and a timestamp. The
+ * timestamp is deliberately dropped: position belongs to the room, not the URL.
+ */
+export function youTubeWatchUrl(id: string): string {
+  return `https://www.youtube.com/watch?v=${id}`;
+}
+
+/**
+ * Accepts a bare URL or a YouTube link and reports what we can actually play.
  */
 export function classifySource(
   raw: string,
@@ -171,12 +276,18 @@ export function classifySource(
     return { ok: false, reason: "The link needs to be https." };
   }
 
-  const host = parsed.hostname.replace(/^www\./, "");
-  if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") {
+  const youTubeId = parseYouTubeId(url);
+  if (youTubeId) {
+    return { ok: true, type: "youtube", url: youTubeWatchUrl(youTubeId) };
+  }
+  if (isYouTubeHost(url)) {
+    // A YouTube host we could not resolve to one video: a channel, a search, a
+    // playlist with no `v`. Say that plainly instead of failing the file-suffix
+    // check below and blaming the extension.
     return {
       ok: false,
       reason:
-        "YouTube isn't supported yet — it needs its own player. Use a direct video link (.mp4 or .m3u8) for now.",
+        "That YouTube link doesn't point at a single video. Use a normal watch link, a youtu.be link, or a Short.",
     };
   }
 

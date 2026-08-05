@@ -15,8 +15,12 @@ import {
 } from "lucide-react";
 import { useCinemaPlayback } from "./useCinemaPlayback";
 import { CinemaSourcePicker } from "./CinemaSourcePicker";
+import { CinemaYouTubePlayer } from "./CinemaYouTubePlayer";
 import {
+  type CinemaPlayerHandle,
+  type CinemaSourceType,
   formatTimecode,
+  parseYouTubeId,
   planCorrection,
   targetPosition,
 } from "@/lib/cinemaPlayback";
@@ -40,6 +44,7 @@ export function CinemaScreen({
     useCinemaPlayback(spaceId, isHost);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const youTubeRef = useRef<CinemaPlayerHandle | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localPosition, setLocalPosition] = useState(0);
@@ -51,6 +56,46 @@ export function CinemaScreen({
   const isPlaying = state?.is_playing ?? false;
   const duration = state?.duration_seconds ? Number(state.duration_seconds) : null;
 
+  // Trust the stored type, but only after the URL actually resolves to a video
+  // id. A row mislabelled 'youtube' would otherwise mount a player with nothing
+  // to play; falling back to <video> at least surfaces a real error.
+  const youTubeId =
+    state?.source_type === "youtube" && sourceUrl ? parseYouTubeId(sourceUrl) : null;
+  const isYouTube = Boolean(youTubeId);
+
+  /**
+   * One player, two implementations.
+   *
+   * Everything below -- drift correction, host controls, the mute button --
+   * goes through this. It is the only place in the room that knows a YouTube
+   * iframe is not an HTMLVideoElement.
+   */
+  const getPlayer = useCallback((): CinemaPlayerHandle | null => {
+    if (isYouTube) return youTubeRef.current;
+    const el = videoRef.current;
+    if (!el) return null;
+    return {
+      supportsRateCorrection: true,
+      getCurrentTime: () => el.currentTime,
+      getDuration: () =>
+        Number.isFinite(el.duration) && el.duration > 0 ? el.duration : null,
+      isPaused: () => el.paused,
+      play: () => {
+        void el.play().catch(() => setNeedsGesture(true));
+      },
+      pause: () => el.pause(),
+      seek: (to: number) => {
+        el.currentTime = to;
+      },
+      setRate: (rate: number) => {
+        el.playbackRate = rate;
+      },
+      setMuted: (next: boolean) => {
+        el.muted = next;
+      },
+    };
+  }, [isYouTube]);
+
   // --- Guest drift correction ----------------------------------------------
   //
   // Runs on a timer rather than on `timeupdate`: timeupdate fires at the
@@ -58,51 +103,51 @@ export function CinemaScreen({
   // is exactly when a stuck guest most needs to be pulled back into line.
   useEffect(() => {
     if (isHost || !state || !sourceUrl) return;
-    const video = videoRef.current;
-    if (!video) return;
 
     const id = setInterval(() => {
-      const el = videoRef.current;
-      if (!el) return;
+      const player = getPlayer();
+      if (!player) return;
 
       // Match play/pause intent first. A guest whose video is paused while the
       // room plays would otherwise fall further behind every second, and each
       // pass would compute a bigger drift and hard-seek again.
-      if (state.is_playing && el.paused) {
-        void el.play().catch(() => setNeedsGesture(true));
-      } else if (!state.is_playing && !el.paused) {
-        el.pause();
+      if (state.is_playing && player.isPaused()) {
+        player.play();
+      } else if (!state.is_playing && !player.isPaused()) {
+        player.pause();
       }
 
       const target = targetPosition(state, clockOffsetMs);
-      const plan = planCorrection(el.currentTime, target);
+      const plan = planCorrection(player.getCurrentTime(), target, {
+        allowRate: player.supportsRateCorrection,
+      });
 
       if (plan.kind === "seek") {
-        el.currentTime = plan.to;
-        el.playbackRate = 1;
+        player.seek(plan.to);
+        player.setRate(1);
       } else if (plan.kind === "rate") {
-        el.playbackRate = plan.rate;
+        player.setRate(plan.rate);
       } else {
         // Always restore normal speed once caught up, or a guest that once ran
         // 5% fast keeps running fast forever and oscillates around the target.
-        if (el.playbackRate !== 1) el.playbackRate = 1;
+        player.setRate(1);
       }
     }, 1000);
 
     return () => clearInterval(id);
-  }, [isHost, state, sourceUrl, clockOffsetMs]);
+  }, [isHost, state, sourceUrl, clockOffsetMs, getPlayer]);
 
   // --- Host: land on the right frame when the source or intent changes ------
   useEffect(() => {
     if (!isHost || !state || !sourceUrl) return;
-    const video = videoRef.current;
-    if (!video) return;
-    if (state.is_playing && video.paused) {
-      void video.play().catch(() => setNeedsGesture(true));
-    } else if (!state.is_playing && !video.paused) {
-      video.pause();
+    const player = getPlayer();
+    if (!player) return;
+    if (state.is_playing && player.isPaused()) {
+      player.play();
+    } else if (!state.is_playing && !player.isPaused()) {
+      player.pause();
     }
-  }, [isHost, state, sourceUrl]);
+  }, [isHost, state, sourceUrl, getPlayer]);
 
   // --- Position readout -----------------------------------------------------
   const handleTimeUpdate = useCallback(() => {
@@ -112,36 +157,53 @@ export function CinemaScreen({
     reportLocalPosition(el.currentTime);
   }, [reportLocalPosition]);
 
+  // The IFrame API has no timeupdate event, so the YouTube path polls for the
+  // same readout. 500ms keeps the timecode honest without burning a frame
+  // budget; the host heartbeat reads the value this writes.
+  useEffect(() => {
+    if (!isYouTube || !sourceUrl) return;
+    const id = setInterval(() => {
+      const player = youTubeRef.current;
+      if (!player) return;
+      const seconds = player.getCurrentTime();
+      setLocalPosition(seconds);
+      reportLocalPosition(seconds);
+    }, 500);
+    return () => clearInterval(id);
+  }, [isYouTube, sourceUrl, reportLocalPosition]);
+
   // --- Host controls --------------------------------------------------------
   const hostTogglePlay = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
+    const player = getPlayer();
+    if (!player) return;
     // Send our exact current position alongside the intent. Sending only
     // is_playing would make guests resume from the last heartbeat, up to ten
     // seconds stale.
-    void push({ is_playing: !isPlaying, position_seconds: el.currentTime });
-  }, [isPlaying, push]);
+    void push({ is_playing: !isPlaying, position_seconds: player.getCurrentTime() });
+  }, [isPlaying, push, getPlayer]);
 
   const hostSeek = useCallback(
     (to: number) => {
-      const el = videoRef.current;
-      if (!el) return;
+      const player = getPlayer();
+      if (!player) return;
       const clamped = Math.max(0, duration ? Math.min(to, duration) : to);
-      el.currentTime = clamped;
+      player.seek(clamped);
       void push({ position_seconds: clamped });
     },
-    [duration, push],
+    [duration, push, getPlayer],
   );
 
   // Validation now lives in CinemaSourcePicker, which is the single funnel for
   // all three ways in (device upload, Melori library, pasted link) and hands us
   // an already-checked playable https URL.
   const hostSetSource = useCallback(
-    (url: string) => {
+    (url: string, type: CinemaSourceType = "url") => {
       // Reset position and pause on a new source. Carrying the old position
       // over would drop the room 40 minutes into a video that just started.
+      // duration_seconds is cleared too: it belongs to the old file.
       void push({
         source_url: url,
+        source_type: type,
         position_seconds: 0,
         duration_seconds: null,
         is_playing: false,
@@ -160,16 +222,28 @@ export function CinemaScreen({
     }
   }, [isHost, push]);
 
+  const handleYouTubeDuration = useCallback(
+    (seconds: number) => {
+      if (!isHost) return;
+      // Only write once. YouTube reports duration on ready and again on every
+      // transition into PLAYING, and re-pushing an unchanged number on each
+      // resume would be a wasted round trip per play.
+      if (duration && Math.abs(duration - seconds) < 1) return;
+      void push({ duration_seconds: seconds });
+    },
+    [isHost, duration, push],
+  );
+
   // Autoplay is blocked until the viewer interacts. Starting muted gets us
   // picture immediately; this button trades that for sound on one tap.
   const acceptGesture = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    el.muted = false;
+    const player = getPlayer();
+    if (!player) return;
+    player.setMuted(false);
     setMuted(false);
     setNeedsGesture(false);
-    void el.play().catch(() => setNeedsGesture(true));
-  }, []);
+    player.play();
+  }, [getPlayer]);
 
   // Requested on the frame rather than the <video> so the synced-to-host badge
   // and buffering chip stay visible in fullscreen. iOS Safari doesn't implement
@@ -230,7 +304,20 @@ export function CinemaScreen({
   return (
     <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black">
       <div ref={frameRef} className="relative aspect-video w-full bg-black">
-        {sourceUrl && (
+        {youTubeId && (
+          <CinemaYouTubePlayer
+            // Remount on a new video rather than reusing the player: a stale
+            // iframe that has already buffered the previous video keeps
+            // reporting its old duration for a beat after loadVideoById.
+            key={youTubeId}
+            ref={youTubeRef}
+            videoId={youTubeId}
+            onBufferingChange={setBuffering}
+            onDuration={handleYouTubeDuration}
+          />
+        )}
+
+        {sourceUrl && !isYouTube && (
           <video
             ref={videoRef}
             src={sourceUrl}
@@ -351,10 +438,11 @@ export function CinemaScreen({
         <button
           type="button"
           onClick={() => {
-            const el = videoRef.current;
-            if (!el) return;
-            el.muted = !el.muted;
-            setMuted(el.muted);
+            const player = getPlayer();
+            if (!player) return;
+            const next = !muted;
+            player.setMuted(next);
+            setMuted(next);
           }}
           aria-label={muted ? "Unmute" : "Mute"}
           className="text-white/50 transition hover:text-cinema-gold"

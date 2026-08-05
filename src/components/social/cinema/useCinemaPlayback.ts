@@ -101,7 +101,7 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
   // --- Host writes ---------------------------------------------------------
   const push = useCallback(
     async (patch: Partial<Pick<PlaybackState,
-      "source_url" | "position_seconds" | "duration_seconds" | "is_playing">>) => {
+      "source_url" | "source_type" | "position_seconds" | "duration_seconds" | "is_playing">>) => {
       if (!isHostRef.current) return;
       try {
         const res = await authFetch(`/api/social/spaces/${spaceId}/playback`, {

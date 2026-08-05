@@ -234,8 +234,12 @@ as the same decision.
 2. **Rewrite `/terms`.** It's currently **91 lines** with no licence grant, no UGC
    representations or warranties, no indemnity, no AI clause, no covers clause, no DMCA
    reference, no payout/tax terms, no termination or strike policy, and no governing law.
-   It also still says "You retain 100% ownership of your music" — reword, since we removed
-   every "100%" claim in PR #255.
+   (The "You retain 100% ownership of your music" line is now reworded — it was the last
+   "100%" claim in the code after PR #255. The Artist tier's "keep 100% of every sale" /
+   "Keep 100% of sales" copy also survived that sweep because it is stored in the
+   `membership_tiers` TABLE, not in the repo; it now reads "keep every dollar after payment
+   processing" / "No platform cut on sales". Any future copy audit has to cover the DB, not
+   just `src/`.)
 3. **Attestation UI + server enforcement** on both upload paths — `/upload` →
    `POST /api/artist/tracks`, and studio `TrackUploader` → `POST /api/studio/tracks`.
    Enforce server-side, not just in the form.

@@ -153,6 +153,19 @@ export const CinemaYouTubePlayer = forwardRef<
         },
         events: {
           onReady: (event: any) => {
+            // A cross-origin iframe cannot autoplay unless it is granted the
+            // permission explicitly. The IFrame API's own allow list has
+            // varied across rollouts, so set it ourselves rather than hope.
+            try {
+              const iframe: HTMLIFrameElement | undefined =
+                event.target.getIframe?.();
+              iframe?.setAttribute(
+                "allow",
+                "autoplay; encrypted-media; picture-in-picture",
+              );
+            } catch {
+              // Not fatal: playback still works from a direct tap.
+            }
             // Muted start mirrors the <video> path: picture immediately,
             // sound on the first tap.
             event.target.mute();

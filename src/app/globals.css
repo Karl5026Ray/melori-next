@@ -180,13 +180,39 @@ a {
 .video-snap { scroll-snap-type: y mandatory; scroll-snap-stop: always; }
 .video-snap > * { scroll-snap-align: start; }
 
-/* Melori Mirror viewport height. Fills the area between the fixed 4rem header
-   and the fixed bottom bars. Mobile: audio player + tab bar (root layout uses
-   pb-44 = 11rem). Desktop (md+, >=768px): only the player (pb-24 = 6rem). Using
-   dvh so mobile URL-bar collapse doesn't over/under-size the cards. */
-.mirror-viewport { height: calc(100dvh - 4rem - 11rem); }
+/* Melori Mirror sizing. A card must fit ENTIRELY on screen — the video plus its
+   controls and overlay UI — so the space it may occupy is the visible viewport
+   minus the site chrome that floats over the feed:
+     --mirror-top    the sticky site header (Header is h-16 plus a 1px
+                     bottom border, so 4rem alone leaves the card 1px long).
+     --mirror-bottom the fixed bar overlapping the feed. Mobile: only the tab
+                     bar (MobileTabBar is h-14 = 3.5rem) plus the iOS home
+                     indicator — the mobile transport floats and is draggable,
+                     so it no longer reserves a row. Desktop (md+): the
+                     full-width audio bar (6rem, matching the root layout).
+   The `vh` line is a fallback: an unsupported unit invalidates the whole
+   declaration, and a dropped height would leave the container at `height: auto`
+   and let a card grow past the screen. `dvh` wins where supported and tracks
+   the mobile URL-bar collapse. */
+:root {
+  --mirror-top: calc(4rem + 1px);
+  --mirror-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+}
 @media (min-width: 768px) {
-  .mirror-viewport { height: calc(100dvh - 4rem - 6rem); }
+  :root { --mirror-bottom: 6rem; }
+}
+.mirror-viewport {
+  height: calc(100vh - var(--mirror-top) - var(--mirror-bottom));
+  height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom));
+}
+/* One snap page = one scroller viewport. The `max-height` restates the cap in
+   viewport units so a card can never exceed the screen even if the percentage
+   height fails to resolve against the flexed scroller (an indefinite parent
+   height makes `height: 100%` fall back to `auto`). */
+.mirror-video-item {
+  height: 100%;
+  max-height: calc(100vh - var(--mirror-top) - var(--mirror-bottom));
+  max-height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom));
 }
 .msg-bubble-sent {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);

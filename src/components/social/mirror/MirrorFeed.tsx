@@ -121,14 +121,9 @@ export default function MirrorFeed({
     // full-height snap page, so the feed opened on an near-empty screen and you
     // had to scroll a whole viewport to see any content.
     <div
-      // Fill the space BETWEEN the fixed header (top, 4rem) and the fixed
-      // bottom bars. On mobile those are the audio player stacked above the
-      // tab bar (matches the root layout's mobile `pb-44` = 11rem); on desktop
-      // only the player is fixed (`md:pb-24` = 6rem). We subtract both so a
-      // card is exactly the visible area and its bottom isn't hidden behind the
-      // bars — that hidden strip is what still looked "a bit too big". `dvh`
-      // tracks the mobile URL-bar collapse. Height is set via the
-      // `--mirror-bottom` custom property so it can differ by breakpoint.
+      // Fills the space between the sticky header and the fixed bottom bar, so
+      // a card is exactly the visible area. See `.mirror-viewport` in
+      // globals.css for the `--mirror-top` / `--mirror-bottom` budget.
       className="mirror-viewport absolute inset-x-0 top-0 flex w-full flex-col bg-melori-void"
     >
       {/* Compact live strip. Fixed, shrink-0, scrolls only horizontally. */}
@@ -181,7 +176,7 @@ export default function MirrorFeed({
             <div
               key={video.id}
               data-index={index}
-              className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
+              className="mirror-video-item video-snap-item relative w-full flex-shrink-0 overflow-hidden"
             >
               <VideoCard
                 video={video}

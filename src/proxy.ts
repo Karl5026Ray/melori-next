@@ -6,16 +6,50 @@ import { getAdminSecretKey } from "@/lib/admin-secret";
 // Do NOT fall back to a hard-coded secret — the previous fallback string was
 // public in this repo, so a misconfigured production env would let anyone
 // forge an admin_session JWT. Route through getAdminSecretKey() so the
-// middleware and the API routes agree on what counts as a configured secret
+// proxy and the API routes agree on what counts as a configured secret
 // (must be set AND at least 16 chars). If it's not configured, refuse to
 // admit anyone and force them back to the login page.
 const ADMIN_SECRET_KEY = getAdminSecretKey();
 
+// ---------------------------------------------------------------------------
+// Cache-Control override for HTML document navigations.
+//
+// WHY: Pages using `export const dynamic = 'force-dynamic'` cause Next.js to
+// auto-emit
+//   Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+// on the HTML response. The `no-store` directive reliably causes iOS wrapper
+// browsers built on WKWebView (Comet, Chrome iOS, in-app WebViews) to discard
+// the response after receiving it — the user sees "This page couldn't load"
+// even though the origin returned HTTP 200 with a full HTML body. Safari
+// native is unaffected because it doesn't wrap WKWebView.
+//
+// We initially tried overriding via next.config.js headers() (PR #224), but
+// the framework runtime sets Cache-Control AFTER the config-level headers
+// are applied for force-dynamic pages, so the config value was silently
+// overridden. Proxy (fka middleware) runs on the response path and CAN
+// override runtime-set headers.
+//
+// SEMANTICS: `no-cache` still forces revalidation on every navigation, so
+// users always see fresh HTML and cookies/auth state is never stale.
+// Dropping `no-store` lets the browser hold the response in its memory
+// pipeline long enough to render it, which is what WKWebView wrappers need.
+//
+// SCOPE: Only HTML document navigations. `/api/*`, `/_next/*`, static
+// assets, and anything with a file extension are excluded via the matcher
+// so they keep their existing (correct) cache headers.
+const FRIENDLY_HTML_CACHE_CONTROL = "private, no-cache, must-revalidate";
+
+function applyHtmlCacheControl(res: NextResponse): NextResponse {
+  res.headers.set("Cache-Control", FRIENDLY_HTML_CACHE_CONTROL);
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+// Admin dashboard gate.
+//
 // Protects the admin dashboard page routes only. The `/admin` login page is
-// public, and `/api/admin/*` routes verify the session themselves. The matcher
-// below scopes this middleware to `/admin/*` exclusively, so every other route
-// on the site (home, music, store, studio, social, existing APIs) is untouched.
-export async function proxy(request: NextRequest) {
+// public, and `/api/admin/*` routes verify the session themselves.
+async function guardAdmin(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   // The login page itself is always accessible.
@@ -43,6 +77,28 @@ export async function proxy(request: NextRequest) {
   }
 }
 
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
+
+  // Admin dashboard gate runs first — its redirects should not carry the
+  // HTML cache-control override (they're 307/308 redirects, not documents).
+  if (pathname.startsWith("/admin")) {
+    return guardAdmin(request);
+  }
+
+  // Everything else that matches the config below is an HTML document
+  // navigation. Apply the Cache-Control override and pass through.
+  return applyHtmlCacheControl(NextResponse.next());
+}
+
 export const config = {
-  matcher: ["/admin/:path*"],
+  // Match:
+  //   - /admin/*   — admin gate (redirects on failure, override on pass)
+  //   - all HTML document navigations except /_next/*, /api/*, favicon,
+  //     and anything with a file extension (images, fonts, static assets
+  //     keep their existing long-lived cache headers).
+  matcher: [
+    "/admin/:path*",
+    "/((?!api/|_next/|favicon.ico|.*\\..*).*)",
+  ],
 };

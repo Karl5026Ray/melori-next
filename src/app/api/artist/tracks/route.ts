@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -158,6 +159,9 @@ export async function POST(req: Request) {
   // Instant UI: bust caches so the track appears immediately on public pages.
   // (Client feeds using useRealtime<'tracks'> will also receive the INSERT event.)
   revalidateTag(`artist-${artist.id}`, "max");
+  // Public catalog reads on / and /music are cached for 60s; drop that entry now
+  // so a newly published track shows up immediately.
+  revalidateTag(PUBLIC_CATALOG_TAG, "max");
   revalidatePath("/browse");
   revalidatePath("/");
 

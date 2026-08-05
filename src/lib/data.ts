@@ -1,4 +1,7 @@
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import {
+  getSupabaseAdmin,
+  getSupabaseCatalogReader,
+} from "@/lib/supabase/admin";
 import type { Artist, Release, StoreProduct, Track } from "@/types";
 
 // Server-side data access. These reuse the same Supabase admin client as the
@@ -75,7 +78,7 @@ async function getPlayCountsByRelease(
 }
 
 export async function getReleases(): Promise<ReleaseListItem[]> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
   const [{ data, error }, playCountsByRelease] = await Promise.all([
     supabase
       .from("releases")
@@ -112,7 +115,7 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
 // Karl has chosen to promote. Failures degrade to an empty list so a store
 // outage never takes down the homepage.
 export async function getStoreProducts(limit = 8): Promise<StoreProduct[]> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
   const { data, error } = await supabase
     .from("store_products")
     .select("*")
@@ -609,7 +612,7 @@ export interface FeaturedTrack {
 }
 
 export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
   const { data, error } = await supabase
     .from("tracks")
     .select(

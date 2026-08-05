@@ -76,7 +76,22 @@ export default function SpaceDetailPage() {
   exitHrefRef.current = exitHref;
 
   const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
+  // `participants` starts empty for two very different reasons: the roster has
+  // not come back yet, or the roster came back empty. Everything that decides
+  // whether we are in the room has to tell those apart, otherwise a member who
+  // IS in the room gets treated as a stranger for the first few hundred ms.
+  // That was the flash of "Join Space" on every entry.
+  const [rosterLoaded, setRosterLoaded] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
+  // Set when a join attempt actually failed, so the auto-join effect stops
+  // retrying into the same error and the room can offer a manual retry rather
+  // than looping silently.
+  const [joinFailed, setJoinFailed] = useState(false);
+  // True only while an upsert is in flight, so the roster-mirror effect above
+  // doesn't read the not-yet-written row as "you were removed".
+  const joiningRef = useRef(false);
+  // Where to come back to after a sign-in detour.
+  const roomPath = `/social/spaces/${spaceId}`;
   const [isMuted, setIsMuted] = useState(true);
   const [hasRaisedHand, setHasRaisedHand] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -176,6 +191,7 @@ export default function SpaceDetailPage() {
         .order("joined_at", { ascending: true });
 
       if (data) setParticipants(data as SpaceParticipant[]);
+      setRosterLoaded(true);
     };
 
     fetchSpace();
@@ -202,75 +218,142 @@ export default function SpaceDetailPage() {
     };
   }, [spaceId]);
 
+  // Mirror the roster into local join state. This used to be a one-way latch
+  // (it only ever set isJoined true), so a host removing someone left that
+  // person looking joined to themselves: composer live, controls live, writes
+  // silently failing. Now the roster is the single source of truth in both
+  // directions, and we only trust it once it has actually loaded.
   useEffect(() => {
-    if (user && participants.length > 0) {
-      const myParticipation = participants.find(
-        (p) => p.user_id === user.id && !p.left_at
-      );
-      if (myParticipation) {
-        setIsJoined(true);
-        setIsMuted(myParticipation.is_muted);
-        setHasRaisedHand(myParticipation.has_raised_hand);
-      }
+    if (!user || !rosterLoaded) return;
+    const myParticipation = participants.find(
+      (p) => p.user_id === user.id && !p.left_at
+    );
+    if (myParticipation) {
+      setIsJoined(true);
+      setIsMuted(myParticipation.is_muted);
+      setHasRaisedHand(myParticipation.has_raised_hand);
+    } else if (!joiningRef.current) {
+      // Not on the roster and we aren't mid-join — we're genuinely out.
+      setIsJoined(false);
+      setHasRaisedHand(false);
     }
-  }, [user, participants]);
+  }, [user, participants, rosterLoaded]);
   
   const handleJoin = useCallback(async () => {
     if (!user) {
-      router.push("/social/auth");
+      // Come back to THIS room after signing in. AuthForm already honours
+      // ?next= (with an open-redirect guard) and threads it through the Google
+      // and Apple OAuth round-trips, so the room survives the whole detour.
+      // Without this a shared room link was a dead end: tap in, sign in, land
+      // on the social home with no idea where the room went.
+      router.push(`/social/auth?next=${encodeURIComponent(roomPath)}`);
       return;
     }
+    // Re-entrancy guard. This is called from an effect whose dependencies
+    // include `participants`, which changes on every realtime tick, so without
+    // a ref the first roster update after entry could fire a second join
+    // before setIsJoined had landed — resetting joined_at and racing the role
+    // calculation below against itself.
+    if (joiningRef.current) return;
+    joiningRef.current = true;
 
-    // Stage placement is gated on membership: the host and any paid/elevated
-    // member (admin, artist, superfan) start on stage; free members join as
-    // listeners in the audience and can raise a hand to be promoted. Preserve an
-    // existing on-stage role on re-join so we never demote someone who was
-    // already speaking (or a free member the host promoted to speaker).
-    const isHostJoining = user.id === space?.host_id;
-    const stageRoles = ["admin", "artist", "superfan"];
-    const isElevated = stageRoles.includes((((user as any).role as string) || "").toLowerCase());
-    const existing = participants.find((p) => p.user_id === user.id);
-    const keepsStage =
-      existing?.role === "speaker" || existing?.role === "host";
-    const joinRole = isHostJoining
-      ? "host"
-      : keepsStage
-        ? existing!.role
-        : isElevated
-          ? "speaker"
-          : "audience";
-    // On stage but start muted (except the host) so people opt in to talking.
-    const joinMuted = joinRole === "host" ? false : true;
+    try {
+      // Stage placement is gated on membership: the host and any paid/elevated
+      // member (admin, artist, superfan) start on stage; free members join as
+      // listeners in the audience and can raise a hand to be promoted. Preserve an
+      // existing on-stage role on re-join so we never demote someone who was
+      // already speaking (or a free member the host promoted to speaker).
+      const isHostJoining = user.id === space?.host_id;
+      const stageRoles = ["admin", "artist", "superfan"];
+      const isElevated = stageRoles.includes((((user as any).role as string) || "").toLowerCase());
+      // Read through the ref, not the closed-over array. The closure can be a
+      // tick behind the roster, and "I can't see your row" used to be
+      // indistinguishable from "you don't have one" — which quietly demoted a
+      // reconnecting speaker to audience mid-sentence.
+      const existing = participantsRef.current.find((p) => p.user_id === user.id);
+      const keepsStage =
+        existing?.role === "speaker" || existing?.role === "host";
+      const joinRole = isHostJoining
+        ? "host"
+        : keepsStage
+          ? existing!.role
+          : isElevated
+            ? "speaker"
+            : "audience";
+      // On stage but start muted (except the host) so people opt in to talking.
+      const joinMuted = joinRole === "host" ? false : true;
 
-    const { error } = await supabase.from("space_participants").upsert(
-      {
-        space_id: spaceId,
-        user_id: user.id,
-        role: joinRole,
-        is_muted: joinMuted,
-        joined_at: new Date().toISOString(),
-        left_at: null,
-      },
-      { onConflict: "space_id,user_id" }
-    );
+      // Only claim a role when we are actually creating the row. On a rejoin we
+      // clear left_at and leave role/is_muted alone, so a host's promotion or
+      // mute made while we were away is not overwritten by a stale client.
+      const payload: Record<string, unknown> = existing
+        ? {
+            space_id: spaceId,
+            user_id: user.id,
+            left_at: null,
+          }
+        : {
+            space_id: spaceId,
+            user_id: user.id,
+            role: joinRole,
+            is_muted: joinMuted,
+            joined_at: new Date().toISOString(),
+            left_at: null,
+          };
 
-    if (error) {
-      // Show the real reason (RLS, network, etc.) instead of pretending we joined.
-      setShareToast(error.message || "Could not join this space");
-      setTimeout(() => setShareToast(null), 2500);
-      return;
+      const { error } = await supabase
+        .from("space_participants")
+        .upsert(payload, { onConflict: "space_id,user_id" });
+
+      if (error) {
+        // Show the real reason (RLS, network, etc.) instead of pretending we joined.
+        setShareToast(error.message || "Could not join this space");
+        setTimeout(() => setShareToast(null), 2500);
+        setJoinFailed(true);
+        return;
+      }
+      setJoinFailed(false);
+      setIsJoined(true);
+      // Unlock remote audio playback so listeners can hear the speakers.
+      // Browsers only honour this inside a user gesture; entering the room from
+      // a tap counts, and the mic button covers the case where it doesn't.
+      void agoraEnsureAudio();
+      // Best-effort participant count bump. Doesn't gate the UX.
+      void supabase
+        .rpc("increment_space_participants", { space_id: spaceId })
+        .then(({ error: rpcErr }) => {
+          if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
+        });
+    } finally {
+      joiningRef.current = false;
     }
-    setIsJoined(true);
-    // Joining is a user gesture. Listeners/audience never press the mic button,
-    // so unlock remote audio playback here so they can hear speakers.
-    void agoraEnsureAudio();
-    // Best-effort participant count bump. Doesn't gate the UX.
-    void supabase
-      .rpc("increment_space_participants", { space_id: spaceId })
-      .then(({ error: rpcErr }) => {
-        if (rpcErr) console.warn("increment_space_participants failed", rpcErr);
-      });
-  }, [user, spaceId, router, space, participants]);    useEffect(() => { if (isJoined) return; if (!user || !space) return; const elevated = ["admin", "artist", "superfan"].includes(((user as any).role || "").toLowerCase()); if (user.id === space.host_id || elevated) void handleJoin(); }, [isJoined, user, space, handleJoin]);
+  }, [user, spaceId, router, space, roomPath]);
+
+  // Enter the room on arrival, for EVERY signed-in user.
+  //
+  // This used to fire only for the host and paid tiers (admin/artist/superfan);
+  // everyone else got a "Join Space" interstitial. That split is why the
+  // problem stayed invisible for so long — the people testing the room were
+  // exactly the people the gate skipped.
+  //
+  // No competing product gates LISTENING behind a confirmation screen: X
+  // Spaces, Clubhouse, Fanbase and Discord Stage Channels all drop you
+  // straight into the audience, muted. Gating belongs on SPEAKING, which is
+  // still enforced server-side by the livekit-token route. So: arrive, you're
+  // in, silent; ask to speak when you want the floor.
+  //
+  // Waits on rosterLoaded so the join decision is made against a real roster —
+  // otherwise a member already in the room would be re-joined from scratch on
+  // every entry.
+  const autoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (autoJoinedRef.current) return;
+    if (isJoined || joinFailed) return;
+    if (!user || !space || !rosterLoaded) return;
+    if (space.status === "ended" || space.ended_at) return;
+    autoJoinedRef.current = true;
+    void handleJoin();
+  }, [isJoined, joinFailed, user, space, rosterLoaded, handleJoin]);
 
   const handleLeave = useCallback(async () => {
     if (!user) return;
@@ -1144,18 +1227,33 @@ export default function SpaceDetailPage() {
             </button>
             {/* Leave moves out of the control bar and into the header as the
                 reference's peace-sign pill. handleLeave is unchanged — this is
-                the same "leave quietly" action, just relocated. */}
-            <button
-              type="button"
-              data-testid="spaces-leave"
-              onClick={handleLeave}
-              className="h-11 pl-3.5 pr-4 flex items-center gap-1.5 rounded-full bg-melori-elevated hover:bg-red-500/15 transition"
-            >
-              <span aria-hidden="true" className="text-base leading-none">
-                ✌️
-              </span>
-              <span className="text-[17px] font-medium">leave</span>
-            </button>
+                the same "leave quietly" action, just relocated.
+
+                Only for people actually in the room. A signed-out visitor was
+                previously offered "leave" for a room they had never entered,
+                which is where the flow started reading as broken. They get a
+                plain back link to the same destination instead. */}
+            {isJoined ? (
+              <button
+                type="button"
+                data-testid="spaces-leave"
+                onClick={handleLeave}
+                className="h-11 pl-3.5 pr-4 flex items-center gap-1.5 rounded-full bg-melori-elevated hover:bg-red-500/15 transition"
+              >
+                <span aria-hidden="true" className="text-base leading-none">
+                  ✌️
+                </span>
+                <span className="text-[17px] font-medium">leave</span>
+              </button>
+            ) : (
+              <Link
+                href={exitHref}
+                data-testid="spaces-back"
+                className="h-11 px-4 flex items-center rounded-full bg-melori-elevated hover:bg-white/10 transition text-[17px] font-medium"
+              >
+                back
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1353,23 +1451,38 @@ export default function SpaceDetailPage() {
               )}
             </div>
           )}
-          {!isJoined ? (
-            <div className="text-center py-12">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-melori-purple/20 to-melori-pink/20 flex items-center justify-center mx-auto mb-4">
-                <Volume2 className="w-10 h-10 text-melori-purple" />
-              </div>
-              <h3 className="text-xl font-bold mb-2 break-words">{space.title}</h3>
-              <p className="text-melori-muted mb-6">
-                {space.participant_count} people listening
-              </p>
+          {/* The room renders for everyone who opens it — signed in or not,
+              on the roster or not. What used to sit here was a full-screen
+              interstitial: a speaker icon, the title repeated a second time
+              (the header already shows it), "N people listening", and a Join
+              Space button. It asked for a commitment while hiding the only
+              thing that would inform it — who is actually in the room — and it
+              did that on top of a header already offering Share and Leave for
+              a room you had not entered.
+
+              Now: you see the faces, you hear the room, and the only thing
+              still gated is speaking. See the auto-join effect above. */}
+
+          {/* Join genuinely failed (RLS, offline, banned). Say so and offer a
+              retry rather than looping the auto-join effect into the same
+              error, and rather than showing a room the user is not in as
+              though they were. */}
+          {user && joinFailed && (
+            <div className="max-w-2xl mx-auto px-4 md:px-6 pb-3">
               <button
-                onClick={handleJoin}
-                className="btn-primary px-8 py-4 rounded-full font-bold text-lg shadow-lg"
+                onClick={() => {
+                  autoJoinedRef.current = false;
+                  setJoinFailed(false);
+                  void handleJoin();
+                }}
+                data-testid="spaces-join-retry"
+                className="w-full rounded-full border border-melori-border bg-melori-elevated py-3 text-[15px] font-bold text-melori-text active:opacity-80"
               >
-                Join Space
+                Couldn&apos;t join — tap to retry
               </button>
             </div>
-          ) : (
+          )}
+
             <>
               {/* MM Cinema: the shared screen sits above the stage, so the
                   room reads screen -> who's on mic -> audience -> chat.
@@ -1528,7 +1641,6 @@ export default function SpaceDetailPage() {
                 </div>
               )}
             </>
-          )}
 
           {/* Shared room chat (auto-scroll, new-message pill, grouping, sticky
               composer). Bounded height so its internal scroll + composer behave
@@ -1733,6 +1845,28 @@ export default function SpaceDetailPage() {
           "cut off". Same pattern as ConnectProfileEditor and the MobileTabBar
           sheet. md:pb-6 restores normal desktop padding, where the bar is
           hidden. */}
+      {/* Signed out: the room above renders read-only — faces, title, live
+          comments. The dock slot carries the single call to action instead of
+          a composer nobody can use, so the sign-in ask sits exactly where the
+          thing it unlocks will appear, and the participant grid is never
+          pushed down the screen to make room for it. */}
+      {!user && (
+        <div className="shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6">
+          <div className="flex justify-center" aria-hidden="true">
+            <span className="h-1 w-9 rounded-full bg-white/25" />
+          </div>
+          <div className="max-w-2xl mx-auto px-4 md:px-6 pt-3">
+            <button
+              onClick={handleJoin}
+              data-testid="spaces-signin-cta"
+              className="w-full rounded-full bg-[#1d9bf0] py-3.5 text-[16px] font-bold text-white active:opacity-80"
+            >
+              Sign in to join the conversation
+            </button>
+          </div>
+        </div>
+      )}
+
       {isJoined && (
         <div className="shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6">
           <div className="flex justify-center" aria-hidden="true">

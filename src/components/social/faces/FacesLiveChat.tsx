@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { authReturnPath } from "@/lib/authReturn";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
@@ -154,7 +155,7 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (!user) {
-        router.push("/social/auth");
+        router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         return;
       }
       const text = body.trim();
@@ -173,7 +174,7 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
         } else if (res.status === 403) {
           router.push("/membership");
         } else if (res.status === 401) {
-          router.push("/social/auth");
+          router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         }
       } catch {
         /* best-effort — realtime will still surface it if it landed */

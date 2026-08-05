@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { authReturnPath } from "@/lib/authReturn";
 import { Hand, Send, SmilePlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -136,7 +137,7 @@ export function CinemaChat({
     async (e?: React.FormEvent) => {
       e?.preventDefault();
       if (!user) {
-        router.push("/social/auth");
+        router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         return;
       }
       const text = body.trim();
@@ -161,7 +162,7 @@ export function CinemaChat({
         }
         // Same gating contract as RoomChat.
         if (res.status === 403) return router.push("/membership");
-        if (res.status === 401) return router.push("/social/auth");
+        if (res.status === 401) return router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         const data = await res.json().catch(() => ({}));
         setError(data?.error ?? "Could not post. Try again.");
       } catch {

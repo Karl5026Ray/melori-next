@@ -10,6 +10,8 @@ import {
   VolumeX,
   Loader2,
   Clapperboard,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { useCinemaPlayback } from "./useCinemaPlayback";
 import { CinemaSourcePicker } from "./CinemaSourcePicker";
@@ -38,6 +40,8 @@ export function CinemaScreen({
     useCinemaPlayback(spaceId, isHost);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [localPosition, setLocalPosition] = useState(0);
   const [muted, setMuted] = useState(true);
   const [needsGesture, setNeedsGesture] = useState(false);
@@ -167,23 +171,56 @@ export function CinemaScreen({
     void el.play().catch(() => setNeedsGesture(true));
   }, []);
 
+  // Requested on the frame rather than the <video> so the synced-to-host badge
+  // and buffering chip stay visible in fullscreen. iOS Safari doesn't implement
+  // the element API, so fall back to the video's own presentation mode.
+  const toggleFullscreen = useCallback(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (frame.requestFullscreen) {
+      void frame.requestFullscreen().catch(() => {});
+      return;
+    }
+    const video = videoRef.current as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+      | null;
+    video?.webkitEnterFullscreen?.();
+  }, []);
+
+  // Track from the document so the icon stays correct when the viewer leaves
+  // via Escape or a system gesture rather than our button.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
   const displayPosition = state && !isHost ? targetPosition(state, clockOffsetMs) : localPosition;
   const progress = duration && duration > 0 ? Math.min(100, (displayPosition / duration) * 100) : 0;
 
   // --- Empty state ----------------------------------------------------------
   if (!loading && !sourceUrl) {
     return (
-      <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-border bg-cinema-void">
-        <div className="flex aspect-video w-full flex-col items-center justify-center px-6 text-center">
-          <Clapperboard className="mb-3 h-9 w-9 text-cinema-gold-dim" aria-hidden />
-          <p className="text-sm font-medium text-white">
-            {isHost ? "Pick something to watch" : "Waiting for the host"}
-          </p>
-          <p className="mt-1 max-w-sm text-xs text-white/45">
+      <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void">
+        {/* Idle marquee. The mockup treats the dark screen as the brand moment,
+            so the wordmark carries it and the helper copy sits underneath. */}
+        <div className="relative flex aspect-video w-full flex-col items-center justify-center px-6 text-center">
+          <span className="text-xl font-light uppercase tracking-[0.34em] text-cinema-gold">
+            Cinema
+          </span>
+          <p className="mt-3 max-w-sm text-xs text-white/40">
             {isHost
-              ? "Paste a direct video link and everyone in the room watches it together, in sync."
+              ? "Pick a source below and everyone in the room watches it together, in sync."
               : "The host hasn't started the screening yet. Sit tight."}
           </p>
+          <Clapperboard
+            className="absolute bottom-3 right-3 h-4 w-4 text-white/20"
+            aria-hidden
+          />
         </div>
         {isHost && <CinemaSourcePicker onPick={hostSetSource} />}
       </div>
@@ -191,8 +228,8 @@ export function CinemaScreen({
   }
 
   return (
-    <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-border bg-black">
-      <div className="relative aspect-video w-full bg-black">
+    <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black">
+      <div ref={frameRef} className="relative aspect-video w-full bg-black">
         {sourceUrl && (
           <video
             ref={videoRef}
@@ -241,6 +278,21 @@ export function CinemaScreen({
             Synced to host
           </span>
         )}
+
+        {/* Fullscreen is viewer-local: it writes no shared state, so guests
+            get it too without touching the host's timeline. */}
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          className="absolute bottom-3 right-3 rounded-md p-1.5 text-white/45 transition hover:bg-black/50 hover:text-white"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="h-4 w-4" aria-hidden />
+          ) : (
+            <Maximize2 className="h-4 w-4" aria-hidden />
+          )}
+        </button>
       </div>
 
       {/* Progress. Read-only for guests; the host's is clickable. */}

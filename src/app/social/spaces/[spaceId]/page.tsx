@@ -25,6 +25,9 @@ import { sortStageQueue } from "@/lib/stageQueue";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomChat from "@/components/social/rooms/RoomChat";
+import CinemaStage from "@/components/social/cinema/CinemaStage";
+import CinemaAudience from "@/components/social/cinema/CinemaAudience";
+import CinemaChat from "@/components/social/cinema/CinemaChat";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { roomExitHref, roomExitLabel } from "@/lib/cinema";
 import {
@@ -1179,17 +1182,26 @@ export default function SpaceDetailPage() {
               {isCinema && <CinemaScreen spaceId={spaceId} isHost={isHost} />}
 
               <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider">
-                    On Stage
-                  </h3>
-                  {isHost && (
-                    <span className="text-xs text-melori-purple bg-melori-purple/10 px-2 py-1 rounded-lg">
-                      Host
-                    </span>
-                  )}
-                </div>
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                {!isCinema && (
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider">
+                      On Stage
+                    </h3>
+                    {isHost && (
+                      <span className="text-xs text-melori-purple bg-melori-purple/10 px-2 py-1 rounded-lg">
+                        Host
+                      </span>
+                    )}
+                  </div>
+                )}
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
+                {/* Cinema seats carry their own HOST/GUEST labels, so the
+                    heading above them is redundant in that format. */}
+                {isCinema ? (
+                  <CinemaStage speakers={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                ) : (
+                  <StageGrid participants={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                )}
 
                 {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
                   <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
@@ -1308,10 +1320,18 @@ export default function SpaceDetailPage() {
               )}
 
               <div>
-                <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
-                  Audience ({audience.length})
-                </h3>
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}<StageGrid participants={audience} size="sm" onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                {/* CinemaAudience prints its own WATCHING count. */}
+                {!isCinema && (
+                  <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
+                    Audience ({audience.length})
+                  </h3>
+                )}
+                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
+                {isCinema ? (
+                  <CinemaAudience audience={audience} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                ) : (
+                  <StageGrid participants={audience} size="sm" onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                )}
               </div>
             </>
           )}
@@ -1319,9 +1339,23 @@ export default function SpaceDetailPage() {
           {/* Shared room chat (auto-scroll, new-message pill, grouping, sticky
               composer). Bounded height so its internal scroll + composer behave
               inside the page's vertical flow. Public reads, Superfan+ posts. */}
-          <div className="mt-6 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-melori-border bg-melori-elevated/40">
-            <RoomChat spaceId={spaceId} accent="purple" className="flex-1" />
-          </div>
+          {isCinema ? (
+            /* Presentation variant only — same route, same space_comments
+               realtime filter and the same Superfan gating as RoomChat, so
+               messages are shared between the two formats. Deliberately NOT
+               wrapped in the bordered 70vh panel: the Cinema comment feed is
+               an unboxed overlay that sits under the room, not a scroll box. */
+            <CinemaChat
+              spaceId={spaceId}
+              onReact={sendReaction}
+              onToggleHand={toggleHand}
+              handRaised={hasRaisedHand}
+            />
+          ) : (
+            <div className="mt-6 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-melori-border bg-melori-elevated/40">
+              <RoomChat spaceId={spaceId} accent="purple" className="flex-1" />
+            </div>
+          )}
         </div>
       </div>
 

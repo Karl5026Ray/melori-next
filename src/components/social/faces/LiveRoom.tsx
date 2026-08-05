@@ -35,6 +35,7 @@ import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoM
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
 import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
@@ -222,7 +223,14 @@ export default function LiveRoom({
   // Full in-room roster (everyone present, on camera or not) for the "who's
   // here" sheet — sourced from the space_participants presence rows + profiles.
   const [roster, setRoster] = useState<
-    { user_id: string; name: string; avatar: string | null; role: string; has_raised_hand: boolean }[]
+    {
+      user_id: string;
+      name: string;
+      avatar: string | null;
+      role: string;
+      has_raised_hand: boolean;
+      stage_requested_at?: string | null;
+    }[]
   >([]);
 
 
@@ -481,10 +489,12 @@ export default function LiveRoom({
         const guests = (participants ?? []).filter(
           (p: any) => p.role === "audience" && isPresent(p.user_id),
         );
+        // Oldest request first (src/lib/stageQueue.ts) — the roster comes back
+        // in join order, which is not the order hands went up.
         setRequests(
-          guests
-            .filter((p: any) => p.has_raised_hand)
-            .map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
+          sortStageQueue(guests.filter((p: any) => p.has_raised_hand)).map(
+            (p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar }),
+          ),
         );
         setAudience(
           guests.map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),

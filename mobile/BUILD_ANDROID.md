@@ -111,8 +111,8 @@ keyAlias=melori-upload
 keyPassword=…
 ```
 
-Or set `MELORI_KEYSTORE_PATH`, `MELORI_KEYSTORE_PASSWORD`, `MELORI_KEY_ALIAS`
-and `MELORI_KEY_PASSWORD` in the environment. The Gradle config prefers
+Or set `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
+and `ANDROID_KEY_PASSWORD` in the environment. The Gradle config prefers
 `key.properties` and falls back to the env vars.
 
 If neither is present, `bundleRelease` still succeeds but produces an
@@ -143,18 +143,57 @@ npm run open:android
 ## Step 3 — CI build
 
 `.github/workflows/android-build.yml` does all of the above on an Ubuntu
-runner. Run it from **Actions → Android Build & Upload (Play) → Run workflow**
-and supply `version_name` and `version_code`. It uploads the signed `.aab` as a
-build artifact.
+runner. Run it from **Actions → Android Build & Upload (Play) → Run workflow**.
+It uploads the `.aab` as a build artifact named `melori-android-aab`. The
+workflow also runs automatically on any pull request that touches `mobile/`, as
+a build check.
 
-### Required GitHub secrets
+Both inputs are optional:
+
+| Input | Blank means |
+|---|---|
+| `version_name` | `1.0.<run number>` |
+| `version_code` | the run number |
+
+Play rejects an `.aab` whose `versionCode` has been uploaded before, so the
+fallback is the workflow run number — it always increases and is never reused.
+Supply the inputs explicitly when you want a specific released version.
+
+### Signing secrets
 
 | Secret | Value |
 |---|---|
-| `MELORI_KEYSTORE_BASE64` | `base64 -w0 melori-upload.jks` (macOS: `base64 -i melori-upload.jks`) |
-| `MELORI_KEYSTORE_PASSWORD` | keystore password from Step 1 |
-| `MELORI_KEY_ALIAS` | `melori-upload` |
-| `MELORI_KEY_PASSWORD` | key password from Step 1 |
+| `ANDROID_KEYSTORE_BASE64` | base64 of the `.jks` — see below |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password from Step 1 |
+| `ANDROID_KEY_ALIAS` | `melori-upload` |
+| `ANDROID_KEY_PASSWORD` | key password from Step 1 |
+
+**Signing is gated, not required.** If any of the four is missing the workflow
+logs a warning and produces an *unsigned* bundle rather than failing, so the
+pipeline can be verified before the keystore exists. An unsigned `.aab` cannot
+be uploaded to Play.
+
+The keystore is decoded into the runner's temp directory — never the workspace —
+so it cannot be swept into an uploaded artifact, and it is deleted at the end of
+the job.
+
+To produce the base64 value:
+
+```bash
+# Linux
+base64 -w0 melori-upload.jks
+# macOS
+base64 -i melori-upload.jks
+```
+
+```powershell
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\melori-upload.jks")) | Set-Clipboard
+```
+
+Do **not** use `certutil -encode` on Windows: it wraps the output in
+`-----BEGIN CERTIFICATE-----` headers and hard line breaks, which do not decode
+back to a valid keystore.
 
 ### Optional secret
 

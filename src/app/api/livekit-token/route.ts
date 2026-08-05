@@ -3,6 +3,7 @@ import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isSuperfanOrBetter } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { deriveRoomName, reapIfHostAbandoned, recordHostSeen } from "@/lib/endRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,15 +61,33 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: space } = await supabase
       .from("spaces")
-      .select("id, host_id, status, livekit_room, room_format")
+      .select("id, host_id, status, livekit_room, room_format, host_last_seen_at")
       .eq("id", spaceId)
       .maybeSingle();
 
     if (!space) {
       return NextResponse.json({ error: "Space not found" }, { status: 404 });
     }
+
+    // Second lazy-reap trigger point: every join/reconnect (host or
+    // participant) hits this route to mint a LiveKit token, so it costs
+    // nothing extra to also check whether the room's host has been silent
+    // past the grace window and reap it here — this is what stops a token
+    // being handed out for a room whose host vanished and never explicitly
+    // ended it. Idempotent/best-effort, see endRoom.ts.
+    const reap = await reapIfHostAbandoned(space);
+    if (reap.reaped) {
+      space.status = "ended";
+    }
+
     if (space.status !== "live" && space.status !== "scheduled") {
       return NextResponse.json({ error: "Space is not active" }, { status: 409 });
+    }
+
+    // The requester is the room's current host and successfully reached this
+    // point (room is still live) — that is itself proof of presence.
+    if (space.host_id === userId) {
+      await recordHostSeen(space.id, userId);
     }
 
     // ROOM BAN GUARD: a host can ban a disruptive guest from THIS room (see the
@@ -91,7 +110,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const roomName: string = space.livekit_room ?? `space_${space.id}`;
+    const roomName = deriveRoomName(space);
     // Faces rooms (live_* room_format) are video; everything else is audio-only.
     const withVideo = String(space.room_format ?? "").startsWith("live_");
 

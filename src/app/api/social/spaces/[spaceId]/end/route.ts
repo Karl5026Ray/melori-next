@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { endRoomAndTeardown } from "@/lib/endRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/social/spaces/[spaceId]/end - Host ends an active space.
-// Only the host may end the room. Marks status='ended' and stamps ended_at.
+// Only the host may end the room. Marks status='ended', stamps ended_at, AND
+// tears down the matching LiveKit room so everyone still connected is
+// actually disconnected (previously this route only updated the DB row,
+// leaving connected clients stranded in a dead LiveKit room with no way out).
+//
+// This same route also serves MM Faces video rooms — Faces rooms are just
+// `spaces` rows with a live_* room_format, and LiveRoom.tsx's finishLeave()
+// posts here exactly like MM Spaces' handleEndSpace does. There is no
+// separate Faces-specific end route; endRoomAndTeardown()'s room-name
+// derivation already prefers space.livekit_room, which is how Faces rooms are
+// tracked, so this single fix covers both.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ spaceId: string }> }
@@ -45,17 +56,15 @@ export async function POST(
     return NextResponse.json({ ok: true, alreadyEnded: true });
   }
 
-  const endedAt = new Date().toISOString();
-  const { data: updated, error: updateErr } = await supabase
-    .from("spaces")
-    .update({ status: "ended", ended_at: endedAt })
-    .eq("id", spaceId)
-    .select("id, status, ended_at")
-    .single();
-
-  if (updateErr) {
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  const result = await endRoomAndTeardown(spaceId, "host-ended");
+  if (!result.found) {
+    return NextResponse.json({ error: "Space not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, space: updated });
+  // result.ended can be false here only if another request (e.g. a duplicate
+  // double-click, or the abandonment reaper) won the race and ended it first
+  // in the moment between our read above and the call below — that's still a
+  // success from the caller's point of view (the room IS ended), so we don't
+  // surface it as an error, matching the pre-existing "alreadyEnded" shape.
+  return NextResponse.json({ ok: true, alreadyEnded: !result.ended });
 }

@@ -198,26 +198,32 @@ async function seedSignedInSession(page: Page) {
   );
 }
 
-// The "Leave Quietly" label is `hidden sm:inline` — icon-only below the
-// `sm` breakpoint, which is exactly our 390px mobile viewport — so it is
-// NOT part of the button's accessible name there and getByRole("button",
-// { name: /Leave Quietly/i }) cannot find it on mobile. A page-wide
-// `svg.lucide-log-out` selector is also ambiguous: the account menu's
-// "Sign Out" button uses the same icon. Scope to the in-flow bottom control
-// bar via its data-testid, which is a stable hook that does not break when
-// the container's utility classes change (an earlier class-based locator did).
+// Leave moved out of the bottom control bar and into the sheet header as the
+// reference design's "✌️ leave" pill, so the old
+// `[data-testid='spaces-control-bar'] button:has(svg.lucide-log-out)` locator
+// no longer resolves. Text is not a reliable hook either: the label is
+// lowercase "leave" and a page-wide match would also hit the account menu's
+// "Sign Out". Use the button's own stable testid.
 function leaveButtonLocator(page: Page) {
-  return page.locator("[data-testid='spaces-control-bar'] button:has(svg.lucide-log-out)");
+  return page.locator("[data-testid='spaces-leave']");
+}
+
+// The primary action inside the bottom control bar — the mic pill for anyone
+// on stage, otherwise "ask to speak". Used as the joined-room readiness signal
+// now that Leave lives in the header and renders before isJoined flips.
+function controlBarLocator(page: Page) {
+  return page.locator("[data-testid='spaces-control-bar']");
 }
 
 async function openJoinedSpace(page: Page) {
   await seedSignedInSession(page);
   await mockSupabase(page);
   await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
-  // The control bar only renders once isJoined flips true (participants
-  // fetch resolves and finds our seeded row) — wait for the Leave control
-  // rather than a fixed timeout.
-  await expect(leaveButtonLocator(page)).toBeVisible({
+  // The control bar only renders once isJoined flips true (participants fetch
+  // resolves and finds our seeded row). The header's Leave pill renders even
+  // before that, so it can no longer serve as the readiness signal — wait on
+  // the control bar itself rather than a fixed timeout.
+  await expect(controlBarLocator(page)).toBeVisible({
     timeout: 20_000,
   });
 }
@@ -235,6 +241,33 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
       overflowInfo.scrollWidth,
       `document.documentElement.scrollWidth (${overflowInfo.scrollWidth}) must not exceed clientWidth (${overflowInfo.clientWidth}) — the page must not scroll sideways`,
     ).toBeLessThanOrEqual(overflowInfo.clientWidth);
+  });
+
+  // Leave used to sit in the bottom control bar, where it was at risk of being
+  // covered by the fixed MobileTabBar. It now lives in the sheet header, which
+  // removes that specific hazard — but the affordance still has to be present
+  // and tappable, so the guarantee moves with it rather than disappearing.
+  test("the leave control is reachable in the sheet header", async ({ page }) => {
+    await openJoinedSpace(page);
+
+    const leaveButton = leaveButtonLocator(page);
+    await expect(leaveButton).toBeVisible();
+
+    const vp = page.viewportSize()!;
+    const box = (await leaveButton.boundingBox())!;
+    expect(box, "the leave control must be measurable").not.toBeNull();
+    expect(box.y, "leave must not sit above the viewport").toBeGreaterThanOrEqual(0);
+    expect(
+      box.y + box.height,
+      `leave (bottom edge at ${box.y + box.height}) must be inside the ${vp.height}px viewport`,
+    ).toBeLessThanOrEqual(vp.height);
+
+    const isHitTestable = await leaveButton.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return Boolean(hit && (el === hit || el.contains(hit) || hit.contains(el)));
+    });
+    expect(isHitTestable, "leave must be tappable, not covered by another element").toBe(true);
   });
 
   test("the long space title wraps instead of overflowing", async ({ page }) => {
@@ -257,7 +290,7 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
 
     await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
 
-    // The page header ALSO renders an <h2> with the same title (truncated,
+    // The sheet header ALSO renders an <h1> with the same title (wrapping,
     // already safe), so a plain getByRole("heading", { name }) match is
     // ambiguous (strict-mode violation). Scope to the pre-join card's <h3>
     // specifically — the one this fix actually touches.
@@ -274,30 +307,34 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
     ).toBeLessThanOrEqual(overflowInfo.clientWidth);
   });
 
-  // KNOWN ISSUE — deliberately not passing yet, kept as executable documentation.
+  // FIXED — this was `test.fixme` for two rounds of attempted fixes. The
+  // earlier note guessed that some *other* component was rendering a second
+  // control bar. It wasn't; the page-level footer was the right element all
+  // along, and the cause was one line of CSS on the room container:
   //
-  // The reported defect is real: on iPhone the joined-room controls are cut off
-  // at the bottom. This test measures the Leave control's bottom edge at ~1002px
-  // inside a 664px viewport. Two fixes have already landed and neither moved that
-  // number by a single pixel: the safe-area inset utilities, and bounding the page
-  // container to 100dvh-4rem with min-h-0 on the scrolling child. The in-flow
-  // control bar at page.tsx ~line 1340 is a correct shrink-0 flex footer outside
-  // the scroll area and cannot physically render at 1002px inside a bounded
-  // container — so the element this locator resolves to is a *different* control
-  // bar rendered by the joined-room view, which has not been identified yet.
+  //   flex-1 flex flex-col h-[calc(100dvh-4rem)] min-h-0
   //
-  // Next step for whoever picks this up: screenshot the openJoinedSpace state and
-  // walk the DOM ancestors of the matched button to find which component actually
-  // renders it, rather than assuming it is the page-level footer.
-  test.fixme("the bottom control bar is within the visible viewport", async ({ page }) => {
+  // `flex-1` is `flex: 1 1 0%`. The container's parent has no definite height,
+  // so flex-basis:0 + grow makes the item size to its CONTENT and the
+  // `h-[calc(...)]` is discarded — which is exactly why bounding the container
+  // to 100dvh-4rem "didn't move the number by a single pixel" the first time.
+  // The room rendered ~55px taller than the viewport and the footer landed
+  // under the fixed MobileTabBar (z-[70]). Adding `max-h-[calc(100dvh-4rem)]`
+  // clamps the flex item (max-height is honoured where height is not), the
+  // scroll region's `flex-1 min-h-0` absorbs the difference, and the shrink-0
+  // footer stays on screen and hit-testable.
+  test("the bottom control bar is within the visible viewport", async ({ page }) => {
     await openJoinedSpace(page);
 
-    const leaveButton = leaveButtonLocator(page);
-    await expect(leaveButton).toBeVisible();
+    // Retargeted from the Leave button, which now lives in the sheet header
+    // and is trivially on-screen. The defect this test documents is about the
+    // BOTTOM bar, so measure the bar itself.
+    const controlBar = controlBarLocator(page);
+    await expect(controlBar).toBeVisible();
 
     const vp = page.viewportSize()!;
-    const box = (await leaveButton.boundingBox())!;
-    expect(box, "Leave Quietly control must be measurable").not.toBeNull();
+    const box = (await controlBar.boundingBox())!;
+    expect(box, "the control bar must be measurable").not.toBeNull();
     expect(
       box.y + box.height,
       `the bottom control bar (bottom edge at ${box.y + box.height}) must be within the ${vp.height}px viewport, not cut off below it`,
@@ -308,9 +345,9 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
     // location — i.e. not rendered but covered/clipped by another fixed
     // element (the mobile tab bar sits at z-[70] above the page's own
     // z-index-less in-flow control bar, but occupies a distinct, shorter
-    // strip at the very bottom; the Leave button sits above it once the
+    // strip at the very bottom; the controls sit above it once the
     // safe-area padding is applied).
-    const isHitTestable = await leaveButton.evaluate((el) => {
+    const isHitTestable = await controlBar.evaluate((el) => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(
         r.x + r.width / 2,
@@ -318,6 +355,6 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
       );
       return Boolean(hit && (el === hit || el.contains(hit) || hit.contains(el)));
     });
-    expect(isHitTestable, "Leave Quietly must be tappable, not covered by another element").toBe(true);
+    expect(isHitTestable, "the control bar must be tappable, not covered by another element").toBe(true);
   });
 });

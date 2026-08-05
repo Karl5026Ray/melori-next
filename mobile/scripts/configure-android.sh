@@ -115,10 +115,16 @@ melori_assert_icon_source "$SOURCE_ICON" || exit 1
 [ -d "$ANDROID_DIR" ] || die "$ANDROID_DIR not found. Run 'npx cap add android && npx cap sync android' first."
 
 # --- Image backend ------------------------------------------------------------
+# ImageMagick 7 dispatches everything through `magick`; ImageMagick 6 -- which is
+# what Debian/Ubuntu still ship -- has no such multiplexer, so `convert identify`
+# there is read as "convert a file called identify" and fails. The two entry
+# points therefore have to be resolved separately.
 if command -v magick >/dev/null 2>&1; then
-  IM=magick        # ImageMagick 7
+  IM=magick                     # ImageMagick 7
+  IDENTIFY=(magick identify)
 elif command -v convert >/dev/null 2>&1; then
-  IM=convert       # ImageMagick 6
+  IM=convert                    # ImageMagick 6
+  IDENTIFY=(identify)
 else
   die "ImageMagick not found. Install it (macOS: 'brew install imagemagick', Debian/Ubuntu: 'apt-get install imagemagick')."
 fi
@@ -217,7 +223,7 @@ verify_icons() {
         bad=1
         continue
       fi
-      got="$("$IM" identify -format '%wx%h' "$dir/$f")"
+      got="$("${IDENTIFY[@]}" -format '%wx%h' "$dir/$f")"
       if [ "$got" != "${want}x${want}" ]; then
         echo "error: $dir/$f is $got, expected ${want}x${want}" >&2
         bad=1
@@ -253,9 +259,9 @@ verify_icons() {
     echo "error: missing Play store icon $PLAY_ICON" >&2
     bad=1
   else
-    play_dims="$("$IM" identify -format '%wx%h' "$PLAY_ICON")"
-    play_channels="$("$IM" identify -format '%[channels]' "$PLAY_ICON")"
-    play_depth="$("$IM" identify -format '%z' "$PLAY_ICON")"
+    play_dims="$("${IDENTIFY[@]}" -format '%wx%h' "$PLAY_ICON")"
+    play_channels="$("${IDENTIFY[@]}" -format '%[channels]' "$PLAY_ICON")"
+    play_depth="$("${IDENTIFY[@]}" -format '%z' "$PLAY_ICON")"
     if [ "$play_dims" != "512x512" ]; then
       echo "error: $PLAY_ICON is $play_dims, expected 512x512" >&2
       bad=1
@@ -344,7 +350,7 @@ done
 # the artwork is fully opaque, hence PNG32: rather than the plain resize().
 # Regenerated only when absent or wrong-sized, so a normal configure run leaves
 # the working tree clean.
-if [ ! -f "$PLAY_ICON" ] || [ "$("$IM" identify -format '%wx%h' "$PLAY_ICON" 2>/dev/null)" != "512x512" ]; then
+if [ ! -f "$PLAY_ICON" ] || [ "$("${IDENTIFY[@]}" -format '%wx%h' "$PLAY_ICON" 2>/dev/null)" != "512x512" ]; then
   echo "    generating $PLAY_ICON"
   "$IM" "$SOURCE_ICON" -resize 512x512 -alpha set -background none \
     -strip "PNG32:$PLAY_ICON"
@@ -446,7 +452,7 @@ PY
 # --- 4. Release signing config ------------------------------------------------
 # android/app/build.gradle is generated, so the signing config is injected here
 # rather than committed. Credentials come from android/key.properties (local,
-# git-ignored) or from MELORI_* env vars (CI). No secret is ever written by
+# git-ignored) or from ANDROID_* env vars (CI). No secret is ever written by
 # this script -- it only wires up the lookup.
 echo "==> Wiring release signing config"
 [ -f "$APP_GRADLE" ] || die "$APP_GRADLE not found"
@@ -463,7 +469,7 @@ text = open(path).read()
 signing = '''
     // melori-signing-config (injected by scripts/configure-android.sh)
     // Credentials come from android/key.properties (local, git-ignored) or
-    // MELORI_* env vars (CI). Release builds are unsigned when absent, so a
+    // ANDROID_* env vars (CI). Release builds are unsigned when absent, so a
     // debug/verification build still works without the keystore.
     signingConfigs {
         release {
@@ -472,12 +478,14 @@ signing = '''
             if (keystorePropertiesFile.exists()) {
                 keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
             }
-            def resolvedStoreFile = keystoreProperties.getProperty("storeFile") ?: System.getenv("MELORI_KEYSTORE_PATH")
+            // An empty ANDROID_KEYSTORE_PATH is how CI signals "no keystore
+            // this run"; Groovy truthiness treats it the same as unset.
+            def resolvedStoreFile = keystoreProperties.getProperty("storeFile") ?: System.getenv("ANDROID_KEYSTORE_PATH")
             if (resolvedStoreFile) {
                 storeFile file(resolvedStoreFile)
-                storePassword keystoreProperties.getProperty("storePassword") ?: System.getenv("MELORI_KEYSTORE_PASSWORD")
-                keyAlias keystoreProperties.getProperty("keyAlias") ?: System.getenv("MELORI_KEY_ALIAS")
-                keyPassword keystoreProperties.getProperty("keyPassword") ?: System.getenv("MELORI_KEY_PASSWORD")
+                storePassword keystoreProperties.getProperty("storePassword") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias keystoreProperties.getProperty("keyAlias") ?: System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword keystoreProperties.getProperty("keyPassword") ?: System.getenv("ANDROID_KEY_PASSWORD")
             }
         }
     }
@@ -499,16 +507,26 @@ text = text.replace(marker, replacement, 1)
 
 # Version name/code are release inputs, not repo constants -- the workflow
 # passes them as Gradle properties so nothing is hardcoded here.
-text = re.sub(
-    r'^(\s*)versionCode 1$',
+#
+# A silent no-match here is the dangerous case: the build would keep the
+# template's `versionCode 1` and every Play upload after the first would be
+# rejected as a duplicate, with nothing in the log to say why. So this fails
+# loudly instead if the template's wording changes.
+text, n = re.subn(
+    r'^(\s*)versionCode\s+\d+$',
     r'\1versionCode Integer.parseInt(project.findProperty("meloriVersionCode")?.toString() ?: "1")',
     text, count=1, flags=re.M,
 )
-text = re.sub(
-    r'^(\s*)versionName "1.0"$',
+if n != 1:
+    raise SystemExit("error: no 'versionCode <n>' line in app/build.gradle; script needs updating")
+
+text, n = re.subn(
+    r'^(\s*)versionName\s+"[^"]*"$',
     r'\1versionName project.findProperty("meloriVersionName") ?: "1.0"',
     text, count=1, flags=re.M,
 )
+if n != 1:
+    raise SystemExit("error: no 'versionName \"...\"' line in app/build.gradle; script needs updating")
 
 open(path, "w").write(text)
 PY
@@ -533,6 +551,8 @@ grep -q 'android:autoVerify="true"' "$MANIFEST" || { echo "error: App Links inte
 grep -q "android:scheme=\"$AUTH_SCHEME\"" "$MANIFEST" || { echo "error: OAuth callback scheme $AUTH_SCHEME missing from manifest" >&2; failures=1; }
 grep -q "$APP_HOST" "$MANIFEST" || { echo "error: manifest missing host $APP_HOST" >&2; failures=1; }
 grep -q "melori-signing-config" "$APP_GRADLE" || { echo "error: signing config missing" >&2; failures=1; }
+grep -q "meloriVersionCode" "$APP_GRADLE" || { echo "error: versionCode is not driven by -PmeloriVersionCode; Play would reject the second upload as a duplicate" >&2; failures=1; }
+grep -q "meloriVersionName" "$APP_GRADLE" || { echo "error: versionName is not driven by -PmeloriVersionName" >&2; failures=1; }
 
 [ "$failures" -eq 0 ] || die "configure-android.sh verification failed"
 

@@ -36,6 +36,11 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
 import { authFetch } from "@/lib/authClient";
 import { ArrowDown, Send, SmilePlus } from "lucide-react";
+import {
+  useRoomComments,
+  authorName,
+  type ChatComment,
+} from "@/components/social/rooms/useRoomComments";
 
 export interface RoomSystemMessage {
   id: string;
@@ -53,16 +58,9 @@ interface Reaction {
 // The curated picker set — MUST match ALLOWED_EMOJI in the reactions API route.
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "🔥", "😮"];
 
-interface ChatComment {
-  id: string;
-  user_id: string | null;
-  author_name?: string | null;
-  author_display?: string | null;
-  avatar_url?: string | null;
-  username?: string | null;
-  body: string;
-  created_at: string;
-}
+// ChatComment / authorName / the load+realtime+post logic now live in
+// useRoomComments so the audio room's floating comment overlay reads the same
+// stream instead of opening a second `room_chat:${spaceId}` channel.
 
 type FeedItem =
   | { kind: "message"; data: ChatComment; grouped: boolean }
@@ -71,9 +69,6 @@ type FeedItem =
 const GROUP_WINDOW_MS = 3 * 60 * 1000;
 const NEAR_BOTTOM_PX = 100;
 
-function authorName(c: ChatComment): string {
-  return c.author_display || c.author_name || "Superfan";
-}
 
 function timeLabel(iso: string): string {
   const t = new Date(iso).getTime();
@@ -99,10 +94,9 @@ export default function RoomChat({
   const { user } = useAuth();
   const canParticipate = useCanParticipate();
 
-  const [comments, setComments] = useState<ChatComment[]>([]);
+  const { comments, sendComment, sending, error, setError } =
+    useRoomComments(spaceId);
   const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
   const [newCount, setNewCount] = useState(0);
   // commentId -> its reaction rows; and which message's emoji picker is open.
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
@@ -135,76 +129,6 @@ export default function RoomChat({
     autoScrollRef.current = atBottom;
     if (atBottom) setNewCount(0);
   }, []);
-
-  // Initial load (newest-first from the API → reverse to chronological).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/social/spaces/${spaceId}/comments`, {
-          cache: "no-store",
-        });
-        const data = await res.json();
-        if (!cancelled) {
-          const rows: ChatComment[] = Array.isArray(data.comments)
-            ? [...data.comments].reverse()
-            : [];
-          setComments(rows);
-        }
-      } catch {
-        /* ignore — empty feed is fine */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [spaceId]);
-
-  // Realtime: append INSERTs, resolving author profile for others' messages.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`room_chat:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "space_comments",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        async (payload) => {
-          const row = payload.new as ChatComment;
-          if (user && row.user_id === user.id) return; // already added optimistically
-          let enriched: ChatComment = row;
-          if (row.user_id) {
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("display_name, full_name, username, avatar_url")
-              .eq("id", row.user_id)
-              .maybeSingle();
-            if (profile) {
-              enriched = {
-                ...row,
-                author_display:
-                  profile.display_name ||
-                  profile.full_name ||
-                  profile.username ||
-                  row.author_name,
-                avatar_url: profile.avatar_url ?? null,
-                username: profile.username ?? null,
-              };
-            }
-          }
-          setComments((prev) =>
-            prev.some((x) => x.id === enriched.id) ? prev : [...prev, enriched],
-          );
-        },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [spaceId, user]);
 
   // Initial reactions load for the room (grouped per message client-side).
   useEffect(() => {
@@ -476,38 +400,17 @@ export default function RoomChat({
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!user) {
-        router.push("/social/auth");
-        return;
-      }
-      const text = body.trim();
-      if (!text || sending) return;
-      setSending(true);
-      setError("");
+      const text = body;
+      if (!text.trim() || sending) return;
       // Sending is an explicit user action → always follow to the bottom.
       autoScrollRef.current = true;
-      const res = await authFetch(`/api/social/spaces/${spaceId}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
-      });
-      if (res.ok) {
-        const { comment } = await res.json();
-        setComments((prev) =>
-          prev.some((x) => x.id === comment.id) ? prev : [...prev, comment],
-        );
+      const result = await sendComment(text);
+      if (result.ok) {
         setBody("");
-        setSending(false);
         requestAnimationFrame(() => scrollToBottom("smooth"));
-        return;
       }
-      if (res.status === 403) return router.push("/membership");
-      if (res.status === 401) return router.push("/social/auth");
-      const data = await res.json().catch(() => ({}));
-      setError(data?.error ?? "Could not post. Try again.");
-      setSending(false);
     },
-    [user, body, sending, spaceId, router, scrollToBottom],
+    [body, sending, sendComment, scrollToBottom],
   );
 
   return (

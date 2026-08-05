@@ -39,11 +39,16 @@ export async function POST(req: NextRequest) {
         ? body.type
         : "listening";
 
-        const ALLOWED_FORMATS = new Set([
+    // Must stay in sync with the spaces_room_format_check constraint. Note the
+    // MM Faces live_* formats are absent here on purpose: Faces rooms are
+    // created through their own route, not this one.
+    const ALLOWED_FORMATS = new Set([
       "release_party",
       "discussion",
       "versus_battle",
       "dj_set",
+      // MM Cinema watch party (migration 050).
+      "cinema",
     ]);
     const room_format =
       typeof body.room_format === "string" && ALLOWED_FORMATS.has(body.room_format)

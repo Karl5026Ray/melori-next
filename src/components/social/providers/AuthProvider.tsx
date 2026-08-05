@@ -180,6 +180,13 @@ export function SocialAuthProvider({
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {
+    // Ending any hosted live room happens INSIDE signOutThisDevice() itself
+    // (src/lib/authSession.ts), not here — Header.tsx and settings/page.tsx
+    // call signOutThisDevice()/signOutAllDevices() directly and never go
+    // through this AuthProvider.signOut() wrapper, so putting the room-ending
+    // call only here would silently miss the app's two actual sign-out
+    // buttons. Keeping every sign-out path routed through one shared choke
+    // point.
     await signOutThisDevice();
     userIdRef.current = null;
     setUser(null);

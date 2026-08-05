@@ -7,6 +7,7 @@ import {
   liveParticipantCounts,
   withLiveParticipantCounts,
 } from "@/lib/spacePresence";
+import { reapIfHostAbandoned } from "@/lib/endRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function GET() {
       .from("spaces")
       .select(
         `id, title, topic, room_format, status, host_id, participant_count,
-         max_capacity, duration_minutes, created_at,
+         max_capacity, duration_minutes, created_at, host_last_seen_at,
          host:profiles(id, display_name, avatar_url, role, verified)`,
       )
       .in("room_format", ["live_solo", "live_duo", "live_group"])
@@ -61,7 +62,18 @@ export async function GET() {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    const rooms = data ?? [];
+
+    // Third lazy-reap trigger point, Faces-specific: this route is what
+    // renders the "who's live" list, so it is the natural place to make sure a
+    // room whose host has gone quiet past the grace window doesn't keep
+    // showing up as joinable. Idempotent/best-effort, see endRoom.ts.
+    const rows = data ?? [];
+    const stillLive: typeof rows = [];
+    for (const row of rows) {
+      const reap = await reapIfHostAbandoned(row);
+      if (!reap.reaped) stillLive.push(row);
+    }
+    const rooms = stillLive;
     // spaces.participant_count is never written, so derive the live headcount
     // (host + everyone who has joined) from the active roster instead.
     const counts = await liveParticipantCounts(

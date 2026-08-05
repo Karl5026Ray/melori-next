@@ -12,6 +12,8 @@
 //
 // Every route below points at a route that actually exists in src/app.
 
+import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
+
 export type NavItem = { label: string; href: string };
 
 export type NavContextId =
@@ -19,7 +21,7 @@ export type NavContextId =
   | "community"
   | "artist"
   | "account"
-  | "about"
+  | "more"
   | "home";
 
 export type NavContext = {
@@ -91,17 +93,26 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       p.startsWith("/admin"),
   },
   {
-    // ABOUT / BRAND — mission + informational + support pages.
+    // MORE — was "About" (mission + informational + support). Renamed because
+    // the group now also carries destinations that aren't brand pages: Melori
+    // Connect lives here. Unlike the Social group, this one has no four-item
+    // cap, which is exactly why Connect fits.
     ctx: {
-      id: "about",
-      label: "About",
+      id: "more",
+      label: "More",
       items: [
+        // Connect first: it's a destination, not a brand page, and it's the
+        // reason someone opens More rather than the footer.
+        CONNECT_NAV_ITEM,
         { label: "Mission", href: "/mission" },
         { label: "Membership", href: "/membership" },
         { label: "Support", href: "/support" },
         { label: "Become an Artist", href: "/register" },
       ],
     },
+    // NOTE: /social/connect is NOT tested here — the community context above
+    // matches every /social/* path first, so a member browsing Connect keeps
+    // the Community rail (Mirror / Faces / Spaces / Cinema) they arrived with.
     test: (p) =>
       p.startsWith("/mission") ||
       p.startsWith("/support") ||

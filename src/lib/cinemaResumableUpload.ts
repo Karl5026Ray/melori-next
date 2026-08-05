@@ -28,8 +28,23 @@ const CHUNK_SIZE = 6 * 1024 * 1024;
  */
 export const RESUMABLE_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
 
-/** Ceiling for a Cinema source. The `social-videos` bucket itself is unlimited. */
-export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
+/**
+ * Ceiling for a Cinema source.
+ *
+ * This is NOT an arbitrary product choice — it mirrors the project's GLOBAL
+ * storage upload limit, measured directly against the resumable endpoint:
+ * 2147483648 bytes is accepted, 2147483649 is rejected with 413 "Maximum size
+ * exceeded". The `social-videos` bucket sets no limit of its own, but a bucket
+ * limit can never exceed the global one, so this is the real ceiling.
+ *
+ * Enforcing it client-side means an oversized pick fails instantly with a
+ * readable message instead of dying at upload creation with a raw 413.
+ *
+ * The account is on Pro, where the global limit is configurable up to 500 GB
+ * in the dashboard (Storage settings). If that is ever raised, raise this to
+ * match — nothing else here is size-bound.
+ */
+export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
 
 export const SOCIAL_VIDEOS_BUCKET = "social-videos";
 

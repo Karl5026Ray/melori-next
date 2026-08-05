@@ -31,6 +31,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { authReturnPath } from "@/lib/authReturn";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate } from "@/components/social/UpgradePrompt";
@@ -234,7 +235,7 @@ export default function RoomChat({
   const toggleReaction = useCallback(
     async (commentId: string, emoji: string) => {
       if (!user) {
-        router.push("/social/auth");
+        router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         return;
       }
       const uid = user.id;
@@ -258,7 +259,7 @@ export default function RoomChat({
             body: JSON.stringify({ comment_id: commentId, emoji }),
           },
         );
-        if (res.status === 401) router.push("/social/auth");
+        if (res.status === 401) router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
       } catch {
         /* best-effort — realtime will reconcile if the write landed */
       }

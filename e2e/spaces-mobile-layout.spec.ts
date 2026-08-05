@@ -228,6 +228,91 @@ async function openJoinedSpace(page: Page) {
   });
 }
 
+/** Same fixtures, but the signed-in user is deliberately absent from the
+ *  roster — the shape of a first-time visitor opening a shared room link. */
+async function mockSupabaseWithoutMyRow(page: Page) {
+  const othersOnly = FAKE_PARTICIPANTS.filter((p) => p.user_id !== USER_ID);
+  await page.route("**/rest/v1/profiles*", (r) => r.fulfill(jsonResponse(FAKE_PROFILE)));
+  await page.route("**/rest/v1/spaces*", (r) => r.fulfill(jsonResponse(FAKE_SPACE)));
+  await page.route("**/rest/v1/space_participants*", (r) =>
+    r.fulfill(jsonResponse(othersOnly)),
+  );
+  await page.route("**/rest/v1/rpc/**", (r) => r.fulfill(jsonResponse({})));
+}
+
+test.describe("MM Spaces join flow", () => {
+  // The room used to open on a full-screen interstitial: a speaker icon, the
+  // title a second time (the header already shows it), "N people listening",
+  // and a Join Space button. Nothing in the category gates listening that way
+  // — X Spaces, Clubhouse, Fanbase and Discord Stage Channels all drop you
+  // into the audience muted — and it hid the roster behind the very decision
+  // the roster informs. It also only applied to free members, because the
+  // host and paid tiers were auto-joined, which is why it survived so long.
+  test("a signed-in visitor lands in the room with no interstitial", async ({
+    page,
+  }) => {
+    await seedSignedInSession(page);
+    await mockSupabaseWithoutMyRow(page);
+    await page.goto(`/social/spaces/${SPACE_ID}`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    // Straight to the room: the composer is the proof we're inside it.
+    await expect(page.getByTestId("spaces-composer")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByRole("button", { name: "Join Space" })).toHaveCount(0);
+  });
+
+  // A signed-out visitor from a shared link sees the room read-only rather
+  // than a wall, and gets exactly one thing to tap.
+  test("a signed-out visitor sees the room plus a single sign-in call to action", async ({
+    page,
+  }) => {
+    await mockSupabaseWithoutMyRow(page);
+    await page.goto(`/social/spaces/${SPACE_ID}`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    const cta = page.getByTestId("spaces-signin-cta");
+    await expect(cta).toBeVisible({ timeout: 20_000 });
+
+    // No composer to type into and no mic controls that can't respond.
+    await expect(page.getByTestId("spaces-composer")).toHaveCount(0);
+
+    // "leave" is meaningless for a room you were never in — it becomes "back".
+    await expect(page.getByTestId("spaces-leave")).toHaveCount(0);
+    await expect(page.getByTestId("spaces-back")).toBeVisible();
+
+    // The CTA has to be reachable above the fixed MobileTabBar, same standard
+    // as the control bar it replaces.
+    const box = await cta.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
+  });
+
+  // Regression for the dead-end sign-in bounce: AuthForm has honoured ?next=
+  // (with an open-redirect guard) all along, but the room passed nothing, so
+  // signing in from a shared room link dropped you on the social home with no
+  // way back to the room you were trying to enter.
+  test("signing in returns you to the room you were trying to enter", async ({
+    page,
+  }) => {
+    await mockSupabaseWithoutMyRow(page);
+    await page.goto(`/social/spaces/${SPACE_ID}`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    await page.getByTestId("spaces-signin-cta").click({ timeout: 20_000 });
+    await page.waitForURL(/\/social\/auth\?next=/, { timeout: 20_000 });
+
+    const next = new URL(page.url()).searchParams.get("next");
+    expect(next).toBe(`/social/spaces/${SPACE_ID}`);
+  });
+});
+
 test.describe("MM Spaces mobile layout (390x844)", () => {
   test("the page never scrolls horizontally", async ({ page }) => {
     await openJoinedSpace(page);
@@ -271,9 +356,15 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
   });
 
   test("the long space title wraps instead of overflowing", async ({ page }) => {
-    // Exercise the pre-join screen directly: sign in but don't seed a
-    // participant row, so the page renders the "Join Space" card with the
-    // unguarded title from the original bug.
+    // This originally exercised the pre-join card's <h3>, which was the
+    // element missing `break-words` in the reported bug. That card is gone —
+    // the join interstitial was removed (see the "MM Spaces join flow" block
+    // above) and with it the second copy of the title. The guarantee it
+    // protected is unchanged and now belongs entirely to the sheet header's
+    // <h1>: a long, space-free title must not widen the page.
+    //
+    // The title is deliberately checked while the roster is EMPTY, the state
+    // where the room has nothing else in it to hold the layout together.
     await seedSignedInSession(page);
     await page.route("**/rest/v1/profiles*", async (route) => {
       await route.fulfill(jsonResponse(FAKE_PROFILE));
@@ -290,11 +381,7 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
 
     await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
 
-    // The sheet header ALSO renders an <h1> with the same title (wrapping,
-    // already safe), so a plain getByRole("heading", { name }) match is
-    // ambiguous (strict-mode violation). Scope to the pre-join card's <h3>
-    // specifically — the one this fix actually touches.
-    const title = page.locator("h3", { hasText: LONG_UNBROKEN_TITLE });
+    const title = page.locator("h1", { hasText: LONG_UNBROKEN_TITLE });
     await expect(title).toBeVisible({ timeout: 20_000 });
 
     const overflowInfo = await page.evaluate(() => ({

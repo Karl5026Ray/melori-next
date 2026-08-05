@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
+import { authReturnPath } from "@/lib/authReturn";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 
 export interface ChatComment {
@@ -127,7 +128,10 @@ export function useRoomComments(spaceId: string, enabled = true) {
   const sendComment = useCallback(
     async (raw: string): Promise<SendResult> => {
       if (!user) {
-        router.push("/social/auth");
+        // Return to the room after signing in. AuthForm honours ?next= (and
+        // threads it through the OAuth round-trip), so without this the user
+        // loses the room the moment they try to say something in it.
+        router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         return { ok: false, error: "Sign in to comment." };
       }
       const text = raw.trim();
@@ -154,7 +158,7 @@ export function useRoomComments(spaceId: string, enabled = true) {
           return { ok: false, error: "" };
         }
         if (res.status === 401) {
-          router.push("/social/auth");
+          router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
           return { ok: false, error: "" };
         }
         const data = await res.json().catch(() => ({}));

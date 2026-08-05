@@ -404,3 +404,22 @@ select {
     padding-bottom: 1.25rem;
   }
 }
+
+/* Bottom offset for a STICKY bar that must sit just above MobileTabBar
+   (`md:hidden fixed bottom-0 z-[70]`, h-14 = 3.5rem + home-indicator inset).
+   Same reasoning as .safe-bottom-offset-32 above, but sized to the tab bar
+   itself and self-clearing at md, where the tab bar is hidden. Used by the
+   Cinema comment composer. */
+.safe-bottom-offset-tabbar {
+  bottom: 3.5rem; /* Tailwind bottom-14 fallback */
+}
+@supports (bottom: max(0px)) {
+  .safe-bottom-offset-tabbar {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 768px) {
+  .safe-bottom-offset-tabbar {
+    bottom: 0;
+  }
+}

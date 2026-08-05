@@ -176,7 +176,10 @@ export function CinemaChat({
   const visible = comments.slice(-VISIBLE_LINES);
 
   return (
-    <div className="mt-6">
+    // pb-14 gives the sticky bar somewhere to come to rest above MobileTabBar
+    // once the feed is scrolled fully to the bottom; without it the bar's
+    // natural resting position lands underneath that bar.
+    <div className="mt-6 pb-14 md:pb-0">
       {/* Feed — unboxed lines, oldest of the visible window at the top. */}
       <div className="mb-3 space-y-1.5" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room comments">
         {visible.map((c) => (
@@ -191,6 +194,15 @@ export function CinemaChat({
 
       {error && <p className="mb-2 text-[11px] text-red-400">{error}</p>}
 
+      {/* Only the CONTROLS stick, never the feed. Sticky rather than fixed:
+         the room already owns a bounded `overflow-y-auto` scrollport, so the
+         bar attaches to that instead of the visual viewport — which keeps it
+         inside max-w-2xl and, more importantly, keeps it correctly placed when
+         iOS opens the software keyboard, where a fixed bottom bar detaches and
+         floats over the content. The bottom offset clears MobileTabBar and
+         collapses to 0 at md, where that bar is hidden. Negative margins let
+         the backdrop span the scroll container's padding. */}
+      <div className="safe-bottom-offset-tabbar sticky z-20 -mx-4 border-t border-white/[0.06] bg-cinema-void/90 px-4 pb-3 pt-3 backdrop-blur md:-mx-8 md:px-8">
       {showEmojis && (
         <div className="mb-2 flex gap-1.5">
           {QUICK_EMOJIS.map((emoji) => (
@@ -261,6 +273,7 @@ export function CinemaChat({
           )}
         </button>
       </form>
+      </div>
     </div>
   );
 }

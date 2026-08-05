@@ -32,22 +32,54 @@ declare global {
 // time would leave a pile of duplicate script tags behind.
 let apiPromise: Promise<void> | null = null;
 
+/** How long to wait for the API before calling it dead. */
+const API_TIMEOUT_MS = 10_000;
+
+/**
+ * Rejects rather than hanging.
+ *
+ * The first ship of this feature was blocked by our own Content-Security-Policy
+ * -- script-src did not list youtube.com -- and because a blocked script fires
+ * no console error and no onerror in every browser, the room just sat black
+ * forever. A timeout and a rejection path mean the next infrastructure problem
+ * announces itself instead of looking like a broken video.
+ */
 function loadYouTubeApi(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.YT?.Player) return Promise.resolve();
   if (apiPromise) return apiPromise;
 
-  apiPromise = new Promise<void>((resolve) => {
+  apiPromise = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // Let a later mount retry: the failure may have been transient.
+      apiPromise = null;
+      reject(new Error("YouTube player API did not load"));
+    }, API_TIMEOUT_MS);
+
     // Chain rather than overwrite: another integration may already own this
     // global, and stomping it would silently break them.
     const previous = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       previous?.();
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
       resolve();
     };
+
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
     script.async = true;
+    script.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      apiPromise = null;
+      reject(new Error("YouTube player API failed to load"));
+    };
     document.head.appendChild(script);
   });
 
@@ -70,13 +102,15 @@ export interface CinemaYouTubePlayerProps {
   onBufferingChange?: (buffering: boolean) => void;
   /** Duration in seconds, once YouTube knows it. */
   onDuration?: (seconds: number) => void;
+  /** The player could not be created or the video refused to play. */
+  onError?: (message: string) => void;
 }
 
 export const CinemaYouTubePlayer = forwardRef<
   CinemaPlayerHandle,
   CinemaYouTubePlayerProps
 >(function CinemaYouTubePlayer(
-  { videoId, onReady, onBufferingChange, onDuration },
+  { videoId, onReady, onBufferingChange, onDuration, onError },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -90,12 +124,15 @@ export const CinemaYouTubePlayer = forwardRef<
   onBufferingRef.current = onBufferingChange;
   const onDurationRef = useRef(onDuration);
   onDurationRef.current = onDuration;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     let cancelled = false;
 
-    void loadYouTubeApi().then(() => {
-      if (cancelled || !hostRef.current || !window.YT?.Player) return;
+    void loadYouTubeApi().then(
+      () => {
+        if (cancelled || !hostRef.current || !window.YT?.Player) return;
 
       playerRef.current = new window.YT.Player(hostRef.current, {
         videoId,
@@ -135,14 +172,31 @@ export const CinemaYouTubePlayer = forwardRef<
               }
             }
           },
-          onError: () => {
-            // Age-restricted, private, or embedding-disabled. Stop the spinner
-            // so the room isn't left pretending it is still loading.
+          onError: (event: any) => {
+            // 101/150: the uploader disabled embedding. 100: gone or private.
+            // 2/5: a bad id or a player fault. All of them leave a black
+            // rectangle, so say which one it is.
+            const code = event?.data;
             onBufferingRef.current?.(false);
+            onErrorRef.current?.(
+              code === 101 || code === 150
+                ? "This video's owner doesn't allow it to be played on other sites. Try a different video."
+                : code === 100
+                  ? "That video is private or no longer available."
+                  : "YouTube couldn't play this video.",
+            );
           },
         },
-      });
-    });
+        });
+      },
+      () => {
+        if (cancelled) return;
+        onBufferingRef.current?.(false);
+        onErrorRef.current?.(
+          "Couldn't load the YouTube player. Check your connection or an ad blocker.",
+        );
+      },
+    );
 
     return () => {
       cancelled = true;

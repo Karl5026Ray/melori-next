@@ -69,6 +69,8 @@ export function CinemaAudience({
                     <img
                       src={user.avatar_url}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="h-14 w-14 rounded-full border border-white/15 object-cover transition group-hover:border-cinema-gold/50"
                     />
                   ) : (

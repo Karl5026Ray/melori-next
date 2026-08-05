@@ -176,9 +176,9 @@ export function CinemaChat({
   const visible = comments.slice(-VISIBLE_LINES);
 
   return (
-    <div className="mt-auto pt-4">
+    <div className="mt-6">
       {/* Feed — unboxed lines, oldest of the visible window at the top. */}
-      <div className="mb-3 space-y-1.5">
+      <div className="mb-3 space-y-1.5" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room comments">
         {visible.map((c) => (
           <p key={c.id} className="text-[13px] leading-snug">
             <span className="font-medium text-cinema-gold">

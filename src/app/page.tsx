@@ -11,7 +11,30 @@ import { getReleases, getStoreProducts, getFeaturedTrack } from "@/lib/data";
 import { getCatalogItems } from "@/lib/catalog";
 import { sortMeloriFavorites } from "@/lib/releaseSort";
 
-export const dynamic = "force-dynamic";
+// ISR instead of `dynamic = 'force-dynamic'` — see issue #280.
+//
+// WHY NOT force-dynamic: Next.js stamps every dynamically rendered response
+// with `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate`,
+// and on Vercel that function-set header is the LAST writer. Neither the
+// `headers()` block in next.config.js nor the override in src/proxy.ts can
+// remove it, because both are applied by the routing layer around the function
+// rather than after it. (Self-hosted `next start` behaves differently: there the
+// config header does win, which is why this bug was invisible locally.)
+//
+// `no-store` is the specific directive that makes iOS WKWebView wrapper
+// browsers (Comet, Chrome iOS, in-app WebViews) discard an otherwise healthy
+// 200 response and show "This page couldn't load".
+//
+// WHY ISR IS SAFE HERE: this page renders identically for every visitor. All of
+// its data comes from `getSupabaseAdmin()` (a service-role client — no cookies,
+// no per-user session), and the only request-specific piece is <SuccessBanner>,
+// a client component reading useSearchParams inside its own <Suspense>
+// boundary. Nothing user-specific is rendered on the server, so a shared cache
+// entry cannot leak between accounts.
+//
+// 60s keeps new releases appearing promptly while letting the response carry a
+// cacheable header instead of `no-store`.
+export const revalidate = 60;
 
 const description =
   "Preview any song free, go Superfan for full playback, or buy the track to own it. Independent music with no platform cut — artists keep every dollar after payment processing.";

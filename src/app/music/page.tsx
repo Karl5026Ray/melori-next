@@ -3,7 +3,17 @@ import MusicPageClient from "@/components/MusicPageClient";
 import { getReleases } from "@/lib/data";
 import { getCatalogItems } from "@/lib/catalog";
 
-export const dynamic = "force-dynamic";
+// ISR instead of `dynamic = 'force-dynamic'` — see issue #280 and the longer
+// note in src/app/page.tsx.
+//
+// force-dynamic made Next.js stamp `no-store` on the HTML response, which iOS
+// WKWebView wrapper browsers refuse to render. On Vercel that function-set
+// header cannot be overridden by next.config.js or src/proxy.ts.
+//
+// Safe here for the same reason as the homepage: the catalog is read through
+// `getSupabaseAdmin()` and is identical for every visitor, with auth state
+// resolved client-side.
+export const revalidate = 60;
 
 const description =
   "Browse every release on MELORI Music — singles, EPs, and albums from independent artists.";

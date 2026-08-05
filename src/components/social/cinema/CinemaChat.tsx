@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Hand, Send, SmilePlus, Sparkles } from "lucide-react";
+import { Hand, Send, SmilePlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
@@ -257,20 +257,18 @@ export function CinemaChat({
           </button>
         )}
 
-        {/* Gold action: sends the message when there's text, otherwise fires
-            the default celebratory reaction. */}
+        {/* Send only. This used to broadcast a reaction to the whole room when
+            the input was empty, which meant a mistimed tap on the most
+            prominent button in the UI fired something irreversible at everyone
+            watching. Reactions belong behind the emoji button, where picking
+            one is a deliberate act. */}
         <button
-          type={body.trim() ? "submit" : "button"}
-          onClick={body.trim() ? undefined : () => onReact?.("🔥")}
-          disabled={sending}
-          aria-label={body.trim() ? "Send comment" : "Send a reaction"}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cinema-gold text-black transition hover:brightness-110 disabled:opacity-50"
+          type="submit"
+          disabled={!body.trim() || sending}
+          aria-label="Send comment"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cinema-gold text-black transition hover:brightness-110 disabled:opacity-40"
         >
-          {body.trim() ? (
-            <Send className="h-[18px] w-[18px]" aria-hidden />
-          ) : (
-            <Sparkles className="h-[18px] w-[18px]" aria-hidden />
-          )}
+          <Send className="h-[18px] w-[18px]" aria-hidden />
         </button>
       </form>
       </div>

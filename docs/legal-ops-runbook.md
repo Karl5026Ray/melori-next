@@ -212,8 +212,9 @@ as the same decision.
 ## 4. What's landed vs. what's left
 
 ### Landed in this branch
-- `supabase/migrations/049_rights_takedowns_and_strikes.sql` — **not yet applied to
-  production.** Additive and idempotent, same conventions as 015/046/048. It adds:
+- `supabase/migrations/049_rights_takedowns_and_strikes.sql` — **applied to production
+  2026-08-03** (project `ouvovhwizsuhjxxmccex`), together with 048. Additive and
+  idempotent, same conventions as 015/046/048. It adds:
   - `rights_basis` + `ai_disclosure` on `tracks` and `studio_tracks` (nullable on purpose
     — NULL means "never asked"; back-filling would fabricate a representation the artist
     never made)
@@ -250,9 +251,21 @@ as the same decision.
 5. **A `src/lib/legalContacts.ts`** env-driven DMCA agent block. Follow the
    `src/lib/socialLinks.ts` precedent from PR #255: render real details or render nothing —
    never a placeholder. A fake DMCA address is worse than no page.
-6. **Public read filters**: every public query against `studio_tracks` must start
-   filtering `moderation_status = 'clean'` once 049 is applied, or the new takedown lever
-   won't actually hide anything.
+6. ~~**Public read filters**~~ — **done.** All 11 public `studio_tracks` reads now filter
+   `moderation_status = 'clean'`, including the purchase gate and post-purchase download
+   delivery. `scripts/studio-tracks-moderation.test.ts` scans the source on every CI run
+   and fails the build if a new public read forgets the filter.
+
+### Migration state, 2026-08-03
+
+048 and 049 are both applied to production. Effects of 048: **12** studio tracks moved
+99¢ → $1.99 and **57** releases moved $0.99 → $1.99. Albums, free items and custom prices
+were untouched, as intended.
+
+One piece of drift to be aware of: **048's file still lives only on the unmerged PR #255
+branch**, while its effect is already in production. The Supabase migration history has it
+recorded as `048_single_price_floor_199`, so merging #255 will reconcile the two. Until
+then, a fresh database built from `main` alone would be missing it.
 
 ### Your non-code to-do list
 - [ ] File the DMCA agent designation ($6) and put a 3-year renewal reminder in the calendar
@@ -260,6 +273,7 @@ as the same decision.
 - [ ] Decide **Express vs Standard** (§0.1 / §0.2) — free to change today, costly after the first artist onboards
 - [ ] If staying on Express: turn on Stripe 1099 tax reporting and collect W-9s at onboarding
 - [ ] Decide whether covers are allowed at all, and if so budget PRO licences
-- [ ] Run migration 048 (still pending from PR #255) and then 049 against production Supabase
+- [x] ~~Run migration 048 and then 049 against production Supabase~~ — done 2026-08-03
+- [ ] Merge PR #255 so 048's file is on `main` and matches what production already ran
 - [ ] Send real Facebook / Instagram / X profile URLs for `NEXT_PUBLIC_SOCIAL_*` (still outstanding from PR #255)
 - [ ] Have a lawyer review the terms and the DMCA policy before launch-scale promotion

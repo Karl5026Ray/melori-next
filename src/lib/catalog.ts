@@ -156,6 +156,7 @@ async function loadStudioCatalog(limit: number): Promise<{
         "id, profile_id, title, artist, album, genre, cover_url, price_cents, created_at",
       )
       .eq("status", "published")
+      .eq("moderation_status", "clean")
       .order("created_at", { ascending: false })
       .limit(limit),
     supabase
@@ -344,6 +345,7 @@ export async function getStudioAlbumBySlug(
     .eq("profile_id", row.profile_id)
     .eq("album", row.title)
     .eq("status", "published")
+    .eq("moderation_status", "clean")
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
 
@@ -393,6 +395,7 @@ export async function getStudioCatalogForProfile(
       )
       .eq("profile_id", profileId)
       .eq("status", "published")
+      .eq("moderation_status", "clean")
       .order("created_at", { ascending: false }),
     supabase
       .from("studio_albums")

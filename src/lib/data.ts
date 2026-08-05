@@ -229,6 +229,7 @@ export async function getPublishedStudioTracks(
       "id, title, artist, album, genre, cover_url, preview_url, duration, created_at, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
     )
     .eq("status", "published")
+    .eq("moderation_status", "clean")
     // Alphabetical by title (A→Z, case-insensitive). Every self-upload lands
     // in the collection in alphabetical order so the public grid reads like a
     // sorted library rather than a reverse-chronological feed.
@@ -246,6 +247,7 @@ export async function getPublishedStudioTracks(
         "id, title, artist, album, genre, cover_url, preview_url, duration, created_at",
       )
       .eq("status", "published")
+      .eq("moderation_status", "clean")
       .order("title", { ascending: true })
       .limit(limit);
     if (bareErr) throw bareErr;
@@ -331,7 +333,8 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
     .select(
       "id, title, artist, album, genre, cover_url, duration, status, profile_id",
     )
-    .eq("status", "published");
+    .eq("status", "published")
+    .eq("moderation_status", "clean");
 
   const [legacyRes, studioRes] = await Promise.all([
     legacyPromise,
@@ -423,6 +426,7 @@ export async function getRadioTracksByIds(refs: {
         )
         .in("id", studioIds)
         .eq("status", "published")
+        .eq("moderation_status", "clean")
     : null;
 
   const [legacyRes, studioRes] = await Promise.all([

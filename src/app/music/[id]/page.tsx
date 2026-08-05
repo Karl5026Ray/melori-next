@@ -52,6 +52,7 @@ async function getPublishedStudioTrack(
     )
     .eq("id", id)
     .eq("status", "published")
+    .eq("moderation_status", "clean")
     .maybeSingle();
 
   if (error || !data) return null;

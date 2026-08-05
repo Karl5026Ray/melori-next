@@ -35,6 +35,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       .select("id, file_url, file_path, preview_url, preview_start, preview_end, status, profile_id")
       .eq("id", params.id)
       .eq("status", "published")
+      .eq("moderation_status", "clean")
       .maybeSingle();
 
     if (error) throw error;

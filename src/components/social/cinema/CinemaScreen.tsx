@@ -52,6 +52,10 @@ export function CinemaScreen({
   const [needsGesture, setNeedsGesture] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  // Consecutive drift ticks where the room is playing but we are not. YouTube
+  // reports no error when it refuses to autoplay, so the only way to notice is
+  // that our instruction keeps not taking.
+  const refusedTicksRef = useRef(0);
 
   const sourceUrl = state?.source_url ?? null;
   const isPlaying = state?.is_playing ?? false;
@@ -120,7 +124,17 @@ export function CinemaScreen({
       // pass would compute a bigger drift and hard-seek again.
       if (state.is_playing && player.isPaused()) {
         player.play();
-      } else if (!state.is_playing && !player.isPaused()) {
+        refusedTicksRef.current += 1;
+        // Three seconds of asking and still paused: the browser is blocking
+        // autoplay. Ask for the tap instead of leaving a frozen screen.
+        if (refusedTicksRef.current >= 3) setNeedsGesture(true);
+        // No point correcting drift against a player that is not moving.
+        return;
+      }
+
+      refusedTicksRef.current = 0;
+
+      if (!state.is_playing && !player.isPaused()) {
         player.pause();
       }
 
@@ -183,10 +197,23 @@ export function CinemaScreen({
   const hostTogglePlay = useCallback(() => {
     const player = getPlayer();
     if (!player) return;
+    const next = !isPlaying;
+
+    // Drive our own player synchronously, still inside the click.
+    //
+    // This used to only push and let the state effect start playback once the
+    // row came back. That works for <video>, but a cross-origin YouTube iframe
+    // will not start from a callback that runs after an await -- the user
+    // activation is gone by then, playVideo() is dropped on the floor, and the
+    // room sits at 0:00 with the button showing "Pause". (The tell was that
+    // scrubbing fixed it: hostSeek always ran inside the gesture.)
+    if (next) player.play();
+    else player.pause();
+
     // Send our exact current position alongside the intent. Sending only
     // is_playing would make guests resume from the last heartbeat, up to ten
     // seconds stale.
-    void push({ is_playing: !isPlaying, position_seconds: player.getCurrentTime() });
+    void push({ is_playing: next, position_seconds: player.getCurrentTime() });
   }, [isPlaying, push, getPlayer]);
 
   const hostSeek = useCallback(
@@ -249,6 +276,7 @@ export function CinemaScreen({
     player.setMuted(false);
     setMuted(false);
     setNeedsGesture(false);
+    refusedTicksRef.current = 0;
     player.play();
   }, [getPlayer]);
 

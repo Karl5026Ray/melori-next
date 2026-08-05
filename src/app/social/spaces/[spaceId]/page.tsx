@@ -91,6 +91,15 @@ export default function SpaceDetailPage() {
   // The participant whose per-person reaction picker is currently open (null =
   // closed).
   const [reactTarget, setReactTarget] = useState<SpaceParticipant | null>(null);
+  // Members the viewer has followed from inside this room, so their tile flips
+  // from "+" to a check without a refetch.
+  //
+  // Seeded empty on purpose: /api/social/follow only answers for a single
+  // target, so hydrating true follow state for a 40-person room would be 40
+  // requests. Until that route accepts a batch `targets=` list, someone you
+  // already follow shows a "+" until you tap it — the POST is a no-op upsert
+  // in that case, so the only cost is a redundant tap.
+  const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
@@ -669,6 +678,38 @@ export default function SpaceDetailPage() {
     [spaceId, spawnTargetedReaction],
   );
 
+  // Follow a member straight from their tile in the stage grid. Optimistic so
+  // the "+" flips to a check on tap; rolled back with a toast if the request
+  // fails, since a silently-stuck check would misreport the follow graph.
+  const handleFollowFromTile = useCallback(
+    (targetId: string) => {
+      if (!user || !targetId || targetId === user.id) return;
+      setFollowedIds((prev) => new Set(prev).add(targetId));
+      void (async () => {
+        try {
+          const res = await authFetch("/api/social/follow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: targetId }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data?.error ?? "Could not follow");
+          }
+        } catch (e) {
+          setFollowedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setShareToast(e instanceof Error ? e.message : "Could not follow");
+          setTimeout(() => setShareToast(null), 2500);
+        }
+      })();
+    },
+    [user],
+  );
+
   // ---- Agora audio lifecycle -----------------------------------------------
   // We (re)join whenever role changes. Audience → subscriber, speaker/host →
   // publisher. Any signed-in user joins as a SUBSCRIBER to LISTEN for free.
@@ -1200,7 +1241,14 @@ export default function SpaceDetailPage() {
                 {isCinema ? (
                   <CinemaStage speakers={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
                 ) : (
-                  <StageGrid participants={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                  <StageGrid
+                    participants={speakers}
+                    onReactToParticipant={setReactTarget}
+                    reactionBursts={targetedReactions}
+                    viewerId={user?.id}
+                    followingIds={followedIds}
+                    onFollow={handleFollowFromTile}
+                  />
                 )}
 
                 {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
@@ -1330,7 +1378,15 @@ export default function SpaceDetailPage() {
                 {isCinema ? (
                   <CinemaAudience audience={audience} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
                 ) : (
-                  <StageGrid participants={audience} size="sm" onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
+                  <StageGrid
+                    participants={audience}
+                    size="sm"
+                    onReactToParticipant={setReactTarget}
+                    reactionBursts={targetedReactions}
+                    viewerId={user?.id}
+                    followingIds={followedIds}
+                    onFollow={handleFollowFromTile}
+                  />
                 )}
               </div>
             </>

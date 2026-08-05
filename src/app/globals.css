@@ -148,6 +148,26 @@ a {
   70% { box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
+/* Active-speaker ring for the squircle AUDIO tiles in MM Spaces. The reference
+   room design marks the speaker with a soft neutral outline rather than the
+   green used on Faces video tiles, and the ring has to follow the 30% squircle
+   radius instead of forcing a circle like .speaking-ring does. outline follows
+   border-radius in all current browsers, so the tile's own radius is inherited.
+   Swap the colour to #22c55e here if you'd rather keep Spaces and Faces on one
+   green speaking language. */
+.speaking-ring-squircle {
+  outline: 3px solid rgba(248, 250, 252, 0.85);
+  outline-offset: 2px;
+  animation: pulseRingSquircle 1.4s ease-out infinite;
+}
+@keyframes pulseRingSquircle {
+  0% { box-shadow: 0 0 0 0 rgba(248, 250, 252, 0.45); }
+  70% { box-shadow: 0 0 0 14px rgba(248, 250, 252, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 250, 252, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .speaking-ring-squircle { animation: none; }
+}
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .mobile-nav-gradient { background: linear-gradient(to top, #0a0a0f 60%, transparent); }

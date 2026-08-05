@@ -20,8 +20,14 @@
 // both the known-following set and the mutation handler so this file never
 // needs an auth client.
 
+import { useCallback, useEffect, useRef } from "react";
 import { SpaceParticipant } from "@/types/social";
 import { Check, MicOff, Plus } from "lucide-react";
+
+// Press-and-hold threshold, and how far the finger may drift before we treat
+// the gesture as a scroll instead of a hold.
+const HOLD_MS = 450;
+const HOLD_SLOP_PX = 8;
 
 interface StageGridProps {
   participants: SpaceParticipant[];
@@ -29,6 +35,11 @@ interface StageGridProps {
   // Tapping an avatar invokes this so the parent can open a per-person
   // reaction picker aimed at that participant.
   onReactToParticipant?: (participant: SpaceParticipant) => void;
+  /**
+   * Plain tap. When omitted, a tap falls back to onReactToParticipant so the
+   * Cinema grids keep their original tap-to-react behaviour unchanged.
+   */
+  onSelectParticipant?: (participant: SpaceParticipant) => void;
   // Active floating reaction bursts keyed by the target participant's user id.
   // Each value is a list of unique burst keys of the form "<ts>-<seq>:<emoji>".
   reactionBursts?: Record<string, string[]>;
@@ -124,8 +135,69 @@ export function StageGrid({
   followingIds,
   onFollow,
   tippableIds,
+  onSelectParticipant,
 }: StageGridProps) {
   const config = sizeMap[size];
+
+  // Press-and-hold on a tile sends a reaction to that person; a plain tap runs
+  // onSelectParticipant (host controls / profile). Implemented on pointer
+  // events rather than a library so it works for mouse and touch with one code
+  // path.
+  //
+  // Two details that matter on a scrolling grid:
+  //  • The hold is cancelled if the finger moves more than a few pixels, so
+  //    flicking the grid past a face does not fire a reaction at them.
+  //  • Once the hold fires we set a suppress flag, because the browser still
+  //    emits a click on release; without it every long-press would also run
+  //    the tap action.
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdOrigin = useRef<{ x: number; y: number } | null>(null);
+  const holdFired = useRef(false);
+
+  const clearHold = useCallback(() => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    holdOrigin.current = null;
+  }, []);
+
+  useEffect(() => clearHold, [clearHold]);
+
+  const longPressHandlers = useCallback(
+    (participant: SpaceParticipant) => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        holdFired.current = false;
+        holdOrigin.current = { x: e.clientX, y: e.clientY };
+        holdTimer.current = setTimeout(() => {
+          holdFired.current = true;
+          clearHold();
+          onReactToParticipant?.(participant);
+        }, HOLD_MS);
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        const origin = holdOrigin.current;
+        if (!origin) return;
+        if (
+          Math.abs(e.clientX - origin.x) > HOLD_SLOP_PX ||
+          Math.abs(e.clientY - origin.y) > HOLD_SLOP_PX
+        ) {
+          clearHold();
+        }
+      },
+      onPointerUp: clearHold,
+      onPointerCancel: clearHold,
+      onPointerLeave: clearHold,
+      // Suppress the browser's long-press context menu on touch.
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+      onClick: () => {
+        if (holdFired.current) {
+          holdFired.current = false;
+          return;
+        }
+        (onSelectParticipant ?? onReactToParticipant)?.(participant);
+      },
+    }),
+    [clearHold, onReactToParticipant, onSelectParticipant],
+  );
 
   return (
     <div className={`grid ${config.grid} ${config.gap}`}>
@@ -169,8 +241,12 @@ export function StageGrid({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => onReactToParticipant?.(participant)}
-                aria-label={`React to ${user?.display_name ?? "participant"}`}
+                {...longPressHandlers(participant)}
+                aria-label={
+                  onSelectParticipant
+                    ? `${user?.display_name ?? "Participant"} — tap for options, press and hold to react`
+                    : `React to ${user?.display_name ?? "participant"}`
+                }
                 className={`stage-avatar block cursor-pointer ${config.tile} ${
                   config.radius
                 } overflow-hidden bg-melori-elevated ${

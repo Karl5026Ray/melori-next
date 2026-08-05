@@ -10,7 +10,14 @@
 // The count in the header is the audience length passed in by the room page,
 // which already excludes people who have left (left_at is set).
 
+import { useState } from "react";
 import { SpaceParticipant } from "@/types/social";
+
+// Cinema is the format built to hold a big room, so the grid is capped and
+// revealed on demand rather than rendering an avatar per viewer. At three
+// columns this is ten rows -- already more scrolling than anyone wants between
+// the screen and the comment bar.
+const COLLAPSED_COUNT = 30;
 
 interface CinemaAudienceProps {
   audience: SpaceParticipant[];
@@ -23,6 +30,13 @@ export function CinemaAudience({
   onReactToParticipant,
   reactionBursts,
 }: CinemaAudienceProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const hidden = Math.max(0, audience.length - COLLAPSED_COUNT);
+  // The header count always reports the true total, so collapsing never
+  // misrepresents how many people are in the room.
+  const shown = expanded ? audience : audience.slice(0, COLLAPSED_COUNT);
+
   return (
     <div className="mb-6">
       <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-white/35">
@@ -35,7 +49,7 @@ export function CinemaAudience({
         </p>
       ) : (
         <div className="grid grid-cols-3 gap-x-4 gap-y-5">
-          {audience.map((participant) => {
+          {shown.map((participant) => {
             const user = participant.user;
             const muted = participant.is_muted || participant.host_muted;
             const isLive = participant.is_speaking && !muted;
@@ -102,6 +116,16 @@ export function CinemaAudience({
             );
           })}
         </div>
+      )}
+
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-4 w-full rounded-xl border border-cinema-border py-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40 transition hover:border-cinema-gold/50 hover:text-cinema-gold"
+        >
+          {expanded ? "Show fewer" : `Show all ${audience.length}`}
+        </button>
       )}
     </div>
   );

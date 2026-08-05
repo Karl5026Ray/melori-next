@@ -25,20 +25,22 @@ import { sortStageQueue } from "@/lib/stageQueue";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomChat from "@/components/social/rooms/RoomChat";
+import RoomCommentOverlay from "@/components/social/spaces/RoomCommentOverlay";
+import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
 import CinemaAudience from "@/components/social/cinema/CinemaAudience";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { roomExitHref, roomExitLabel } from "@/lib/cinema";
 import {
-  ArrowLeft,
+  ChevronDown,
   Share2,
   MoreHorizontal,
-  LogOut,
   Mic,
   MicOff,
   Hand,
-  Plus,
+  Send,
+  Smile,
   Volume2,
   Copy,
   Flag,
@@ -100,6 +102,21 @@ export default function SpaceDetailPage() {
   // already follow shows a "+" until you tap it — the POST is a no-op upsert
   // in that case, so the only cost is a redundant tap.
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
+  // Room chat is now a pull-up sheet behind the control bar's chat button
+  // rather than a 70vh box wedged into the page's scroll flow, so the
+  // participant grid gets the full sheet the way the reference room does.
+  const [draft, setDraft] = useState("");
+  // Tapping a tile as the host opens per-person controls; long-press always
+  // reacts. See StageGrid for the gesture handling.
+  const [modTarget, setModTarget] = useState<SpaceParticipant | null>(null);
+  // Newest room event, rendered as the one-line ticker docked above the
+  // controls. Reactions only for now — hand raises keep their own toast.
+  const [activity, setActivity] = useState<{
+    key: string;
+    actor: string;
+    emoji: string;
+    target: string;
+  } | null>(null);
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
@@ -456,6 +473,27 @@ export default function SpaceDetailPage() {
   // migration 050. Everything below is shared with the other formats.
   const isCinema = space?.room_format === "cinema";
 
+  // Audio rooms own the comment stream here (floating overlay + always-on
+  // composer); Cinema leaves it to RoomChat, which is the only path that still
+  // renders a panel. `enabled` keeps exactly one of them subscribed — see the
+  // note on useRoomComments.
+  const {
+    comments: roomComments,
+    sendComment,
+    sending: sendingComment,
+  } = useRoomComments(spaceId, !isCinema);
+
+  const submitComment = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      const text = draft;
+      if (!text.trim() || sendingComment) return;
+      const result = await sendComment(text);
+      if (result.ok) setDraft("");
+    },
+    [draft, sendingComment, sendComment],
+  );
+
   // Copy the room URL to the clipboard, with a Web Share fallback on mobile.
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -669,14 +707,50 @@ export default function SpaceDetailPage() {
   const sendReactionTo = useCallback(
     (targetId: string, emoji: string) => {
       spawnTargetedReaction(targetId, emoji);
+      pushActivityRef.current?.(user?.id, emoji, targetId);
       void pubnubPublishSignal(spaceId, {
         type: "reaction",
         emoji,
         target: targetId,
       });
     },
-    [spaceId, spawnTargetedReaction],
+    [spaceId, spawnTargetedReaction, user?.id],
   );
+
+  // Push a line into the activity ticker. Names are resolved from the live
+  // participant list, so someone who reacts and then leaves still reads by
+  // name rather than as a raw uuid.
+  const pushActivity = useCallback(
+    (actorId: string | undefined, emoji: string, targetId: string) => {
+      const nameFor = (id?: string) =>
+        participantsRef.current.find((p) => p.user_id === id)?.user
+          ?.display_name ?? "Someone";
+      setActivity({
+        key: `${Date.now()}-${reactionSeqRef.current++}`,
+        actor: actorId && actorId === user?.id ? "You" : nameFor(actorId),
+        emoji,
+        target:
+          targetId === user?.id ? "you" : nameFor(targetId),
+      });
+    },
+    [user?.id],
+  );
+
+  // The PubNub subscription effect is deliberately not re-run when the ticker
+  // helper changes identity — resubscribing on every render would drop and
+  // rejoin presence. Read it through a ref instead.
+  const pushActivityRef = useRef<typeof pushActivity | null>(null);
+  useEffect(() => {
+    pushActivityRef.current = pushActivity;
+  }, [pushActivity]);
+
+  // Clear the ticker a few seconds after the last event so a quiet room
+  // doesn't keep showing a stale reaction indefinitely.
+  useEffect(() => {
+    if (!activity) return;
+    const t = setTimeout(() => setActivity(null), 6000);
+    return () => clearTimeout(t);
+  }, [activity]);
 
   // Follow a member straight from their tile in the stage grid. Optimistic so
   // the "+" flips to a check on tap; rolled back with a toast if the request
@@ -852,6 +926,11 @@ export default function SpaceDetailPage() {
             if (signal.type === "reaction" && signal.emoji) {
               if (signal.target) {
                 spawnTargetedReaction(signal.target, signal.emoji);
+                pushActivityRef.current?.(
+                  signal.uuid,
+                  signal.emoji,
+                  signal.target,
+                );
               } else {
                 spawnReaction(signal.emoji);
               }
@@ -1019,62 +1098,108 @@ export default function SpaceDetailPage() {
     );
   }
 
+  const format = getRoomFormatConfig(space.room_format);
+  const hostProfile = space.host;
+  const hostId = hostProfile?.id ?? space.host_id;
+  const followsHost = followedIds.has(hostId);
+
   return (
-    <div className="flex-1 flex flex-col h-[calc(100dvh-4rem)] min-h-0 animate-fade-in">
-      <div className="border-b border-melori-border p-4 md:p-6 flex items-center justify-between bg-melori-void/95 backdrop-blur z-10 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+    // The room is presented as a sheet lifted off a black backdrop, per the
+    // reference design: black gutter at the top, rounded shoulders, drag pill.
+    // It is still a routed page — there is no minimise-to-background-audio
+    // infrastructure yet — so the chevron navigates back exactly like the old
+    // ArrowLeft did. When a persistent room player lands, that chevron is the
+    // hook to change.
+    // max-h is doing the real work here, not h-. `flex-1` resolves to
+    // `flex: 1 1 0%`, and because this element's parent has no definite
+    // height, flex-basis:0 + grow makes the item size to its CONTENT and the
+    // `h-[calc(...)]` is ignored entirely — the room grew ~55px past the
+    // viewport and pushed the control bar underneath the fixed MobileTabBar
+    // (z-[70]). max-height still clamps a flex item, so it pins the column to
+    // the real available height; the scroll region's `flex-1 min-h-0` then
+    // absorbs the difference and the shrink-0 control bar stays on screen.
+    <div className="flex-1 flex flex-col h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 bg-black pt-2 animate-fade-in">
+      <div className="flex-1 flex flex-col min-h-0 rounded-t-3xl bg-melori-void overflow-hidden">
+        <div className="shrink-0 pt-2.5 flex justify-center" aria-hidden="true">
+          <span className="h-1 w-9 rounded-full bg-white/25" />
+        </div>
+
+        <div className="px-4 md:px-6 pt-3 pb-1 flex items-center justify-between shrink-0">
           <Link
             href={exitHref}
             aria-label={roomExitLabel(space?.room_format)}
-            className="p-2 hover:bg-melori-elevated rounded-lg transition shrink-0"
+            className="-ml-1 p-2 rounded-full hover:bg-white/5 transition shrink-0"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ChevronDown className="w-7 h-7" strokeWidth={2.5} />
           </Link>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <h2 className="font-bold text-lg truncate min-w-0">{space.title}</h2>
-              {(() => {
-                const format = getRoomFormatConfig(space.room_format);
-                return (
-                  <Badge variant={format.variant} className="shrink-0">
-                    {format.label}
-                  </Badge>
-                );
-              })()}
-              {liveHere !== null && (
-                <span
-                  className="shrink-0 inline-flex items-center gap-1 rounded-full bg-melori-purple/15 px-2 py-0.5 text-[11px] font-medium text-melori-purple"
-                  title="Live presence (PubNub)"
-                  data-testid="badge-here-now"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-melori-purple animate-pulse" />
-                  {liveHere} here
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-melori-muted truncate">{space.topic}</p>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-melori-elevated hover:bg-white/10 transition"
+              title="Share"
+              aria-label="Share this space"
+            >
+              <Share2 className="w-[18px] h-[18px]" />
+            </button>
+            {/* Leave moves out of the control bar and into the header as the
+                reference's peace-sign pill. handleLeave is unchanged — this is
+                the same "leave quietly" action, just relocated. */}
+            <button
+              type="button"
+              data-testid="spaces-leave"
+              onClick={handleLeave}
+              className="h-11 pl-3.5 pr-4 flex items-center gap-1.5 rounded-full bg-melori-elevated hover:bg-red-500/15 transition"
+            >
+              <span aria-hidden="true" className="text-base leading-none">
+                ✌️
+              </span>
+              <span className="text-[17px] font-medium">leave</span>
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 relative shrink-0">
-          <button
-            type="button"
-            onClick={handleShare}
-            className="p-2.5 hover:bg-melori-elevated rounded-full transition"
-            title="Share"
-            aria-label="Share this space"
-          >
-            <Share2 className="w-4 h-4 text-melori-muted" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setMoreOpen((v) => !v)}
-            aria-expanded={moreOpen}
-            className="p-2.5 hover:bg-melori-elevated rounded-full transition"
-            title="More"
-          >
-            <MoreHorizontal className="w-4 h-4 text-melori-muted" />
-          </button>
-          {moreOpen && (
+
+        {/* Room meta: host chip, title, topic. The reference puts a community
+            chip here with a join link; MM Spaces has no club/community model,
+            so the closest true equivalent is the host — same shape, same
+            inline follow affordance, backed by the follow API we already use
+            on the tiles. */}
+        <div className="px-4 md:px-6 pt-2 pb-4 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <img
+              src={hostProfile?.avatar_url || "/favicon.png"}
+              alt=""
+              className="w-5 h-5 rounded object-cover shrink-0"
+            />
+            <span className="text-[15px] font-semibold uppercase tracking-wide truncate min-w-0">
+              {hostProfile?.display_name ?? "Host"}
+            </span>
+            {!isHost && hostId && (
+              <button
+                type="button"
+                onClick={() => handleFollowFromTile(hostId)}
+                disabled={followsHost}
+                className={`shrink-0 text-[15px] font-semibold ${
+                  followsHost
+                    ? "text-melori-muted"
+                    : "text-[#1d9bf0] underline hover:brightness-110"
+                }`}
+              >
+                {followsHost ? "following" : "follow"}
+              </button>
+            )}
+            <div className="ml-auto relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-expanded={moreOpen}
+                className="p-1.5 -mr-1.5 rounded-full hover:bg-white/5 transition"
+                title="More"
+                aria-label="More room options"
+              >
+                <MoreHorizontal className="w-6 h-6" />
+              </button>
+              {moreOpen && (
             <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-melori-border bg-melori-void shadow-xl overflow-hidden z-20">
               <button
                 type="button"
@@ -1154,15 +1279,50 @@ export default function SpaceDetailPage() {
               )}
             </div>
           )}
-          {shareToast && (
-            <span className="absolute right-0 -bottom-9 rounded-full bg-melori-purple/90 text-white text-xs font-medium px-3 py-1.5 shadow-lg">
-              {shareToast}
-            </span>
-          )}
-        </div>
-      </div>
+              {shareToast && (
+                <span className="absolute right-0 -bottom-9 whitespace-nowrap rounded-full bg-melori-purple/90 text-white text-xs font-medium px-3 py-1.5 shadow-lg z-20">
+                  {shareToast}
+                </span>
+              )}
+            </div>
+          </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+          {/* Title gets room to wrap to two lines instead of being truncated
+              next to a row of badges. break-words guards the long unbroken
+              title the mobile-layout spec exercises. */}
+          <h1 className="mt-1.5 text-[26px] leading-[1.15] font-bold break-words">
+            {space.title}
+          </h1>
+
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            {space.topic && (
+              <p className="text-[15px] text-melori-muted break-words min-w-0">
+                {space.topic}
+              </p>
+            )}
+            <Badge variant={format.variant} className="shrink-0">
+              {format.label}
+            </Badge>
+            {liveHere !== null && (
+              <span
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-melori-purple/15 px-2 py-0.5 text-[11px] font-medium text-melori-purple"
+                title="Live presence (PubNub)"
+                data-testid="badge-here-now"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-melori-purple animate-pulse" />
+                {liveHere} here
+              </span>
+            )}
+          </div>
+        </div>
+
+      {/* relative anchors the floating comment overlay to the grid area, so
+          comments drift up over the tiles instead of over the header. */}
+      <div className="relative flex-1 min-h-0 flex flex-col">
+      {isJoined && !isCinema && (
+        <RoomCommentOverlay comments={roomComments} />
+      )}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-4">
         <div className="max-w-2xl mx-auto">
           {space.status === "scheduled" && (
             <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">
@@ -1223,27 +1383,20 @@ export default function SpaceDetailPage() {
               {isCinema && <CinemaScreen spaceId={spaceId} isHost={isHost} />}
 
               <div className="mb-8">
-                {!isCinema && (
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider">
-                      On Stage
-                    </h3>
-                    {isHost && (
-                      <span className="text-xs text-melori-purple bg-melori-purple/10 px-2 py-1 rounded-lg">
-                        Host
-                      </span>
-                    )}
-                  </div>
-                )}
                 {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
-                {/* Cinema seats carry their own HOST/GUEST labels, so the
-                    heading above them is redundant in that format. */}
+                {/* Audio rooms render everyone in ONE continuous grid, speakers
+                    first, the way the reference room does — role is read off
+                    the tile's own badges rather than from a section heading.
+                    Cinema keeps its split stage/audience layout: its seats are
+                    a fixed-capacity front row with their own HOST/GUEST labels,
+                    so merging them into the crowd would lose that meaning. */}
                 {isCinema ? (
                   <CinemaStage speakers={speakers} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
                 ) : (
                   <StageGrid
-                    participants={speakers}
+                    participants={[...speakers, ...audience]}
                     onReactToParticipant={setReactTarget}
+                    onSelectParticipant={isHost ? setModTarget : setReactTarget}
                     reactionBursts={targetedReactions}
                     viewerId={user?.id}
                     followingIds={followedIds}
@@ -1367,28 +1520,13 @@ export default function SpaceDetailPage() {
                 </div>
               )}
 
-              <div>
-                {/* CinemaAudience prints its own WATCHING count. */}
-                {!isCinema && (
-                  <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
-                    Audience ({audience.length})
-                  </h3>
-                )}
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
-                {isCinema ? (
+              {/* Audio audience is already folded into the single grid above;
+                  only Cinema still renders a separate watching row. */}
+              {isCinema && (
+                <div>
                   <CinemaAudience audience={audience} onReactToParticipant={setReactTarget} reactionBursts={targetedReactions} />
-                ) : (
-                  <StageGrid
-                    participants={audience}
-                    size="sm"
-                    onReactToParticipant={setReactTarget}
-                    reactionBursts={targetedReactions}
-                    viewerId={user?.id}
-                    followingIds={followedIds}
-                    onFollow={handleFollowFromTile}
-                  />
-                )}
-              </div>
+                </div>
+              )}
             </>
           )}
 
@@ -1407,12 +1545,10 @@ export default function SpaceDetailPage() {
               onToggleHand={toggleHand}
               handRaised={hasRaisedHand}
             />
-          ) : (
-            <div className="mt-6 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-melori-border bg-melori-elevated/40">
-              <RoomChat spaceId={spaceId} accent="purple" className="flex-1" />
-            </div>
-          )}
+          ) : null}
         </div>
+      </div>
+      </div>
       </div>
 
       {/* Floating reaction bursts */}
@@ -1447,6 +1583,106 @@ export default function SpaceDetailPage() {
       )}
 
       {/* Per-person reaction picker: tap an avatar to react to that person. */}
+      {/* Host controls for one participant. Reached by TAPPING their tile;
+          long-press reacts instead. These are the same runHostAction calls the
+          host list below the grid uses — this is a second entry point, not a
+          second implementation, so behaviour cannot drift between them. */}
+      {modTarget && isHost && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setModTarget(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Manage ${modTarget.user?.display_name ?? "participant"}`}
+        >
+          <div
+            className="w-full max-w-md rounded-t-3xl bg-melori-elevated p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-center pb-3" aria-hidden="true">
+              <span className="h-1 w-9 rounded-full bg-white/25" />
+            </div>
+            <div className="flex items-center gap-3 pb-4">
+              <img
+                src={modTarget.user?.avatar_url || "/favicon.png"}
+                alt=""
+                className="w-11 h-11 rounded-full object-cover"
+              />
+              <p className="font-semibold truncate">
+                {modTarget.user?.display_name ?? "Participant"}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1">
+              {(() => {
+                const targetId = modTarget.user?.id ?? modTarget.user_id;
+                const onStage =
+                  modTarget.role === "host" || modTarget.role === "speaker";
+                const close = () => setModTarget(null);
+                const Item = ({
+                  label,
+                  onClick,
+                  danger,
+                }: {
+                  label: string;
+                  onClick: () => void;
+                  danger?: boolean;
+                }) => (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClick();
+                      close();
+                    }}
+                    className={`w-full text-left px-3 py-3 rounded-xl text-[15px] font-medium transition hover:bg-white/5 ${
+                      danger ? "text-red-400" : ""
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+                return (
+                  <>
+                    <Item
+                      label="Send a reaction"
+                      onClick={() => setReactTarget(modTarget)}
+                    />
+                    {modTarget.role !== "host" &&
+                      (onStage ? (
+                        <>
+                          <Item
+                            label={
+                              modTarget.host_muted ? "Unmute speaker" : "Mute speaker"
+                            }
+                            onClick={() =>
+                              void hostMute(targetId, !modTarget.host_muted)
+                            }
+                          />
+                          <Item
+                            label="Move to audience"
+                            onClick={() => void hostDemote(targetId)}
+                          />
+                        </>
+                      ) : (
+                        <Item
+                          label="Invite to speak"
+                          onClick={() => void invitePromote(targetId)}
+                        />
+                      ))}
+                    {modTarget.role !== "host" && (
+                      <Item
+                        danger
+                        label="Remove from space"
+                        onClick={() => void hostRemove(targetId)}
+                      />
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {reactTarget && (
         <div
           className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
@@ -1498,25 +1734,41 @@ export default function SpaceDetailPage() {
           sheet. md:pb-6 restores normal desktop padding, where the bar is
           hidden. */}
       {isJoined && (
-        <div
-          data-testid="spaces-control-bar"
-          className="border-t border-melori-border p-4 md:p-6 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6 bg-melori-void/95 backdrop-blur shrink-0"
-        >
-          {/* Control bar: the mic sits ALONE, centered and prominent. The Leave
-             button is pinned to the bottom-left and the secondary controls
-             (raise-hand / End Space + reactions) to the bottom-right, so
-             nothing flanks the mic. */}
-          <div className="max-w-2xl mx-auto relative flex items-center justify-center min-h-[64px]">
-            {/* Leave — bottom-left corner. */}
-            <button
-              onClick={handleLeave}
-              className="absolute left-0 top-1/2 -translate-y-1/2 px-4 py-3 min-h-[44px] rounded-full bg-melori-elevated border border-melori-border text-sm font-medium hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition flex items-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Leave Quietly</span>
-            </button>
+        <div className="shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6">
+          <div className="flex justify-center" aria-hidden="true">
+            <span className="h-1 w-9 rounded-full bg-white/25" />
+          </div>
 
-            {/* Mic button — centered focal control. Only participants the
+          {/* Activity ticker — the newest targeted reaction, as one line. */}
+          {activity && (
+            <div
+              key={activity.key}
+              data-testid="spaces-activity"
+              className="max-w-2xl mx-auto px-4 md:px-6 pt-2.5 flex items-center gap-2 text-[15px] animate-fade-in"
+            >
+              <span className="font-semibold truncate max-w-[35%]">
+                {activity.actor}
+              </span>
+              <span className="text-melori-muted shrink-0">reacted</span>
+              <span className="text-lg leading-none shrink-0">
+                {activity.emoji}
+              </span>
+              <span className="text-melori-muted shrink-0">to</span>
+              <span className="font-semibold truncate">{activity.target}</span>
+            </div>
+          )}
+
+          {/* Control bar: a solid composer row. The comment field is the
+             widest element because commenting is the thing everyone in the
+             room can do; speaking is gated on the host. Mic / ask-to-speak
+             therefore sit as a compact icon to the LEFT of the field rather
+             than taking the primary slot. "End space" is not duplicated here
+             — it lives in the header's overflow menu. */}
+          <div
+            data-testid="spaces-control-bar"
+            className="max-w-2xl mx-auto px-4 md:px-6 pt-3 flex items-center gap-2 min-h-[64px]"
+          >
+            {/* Mic button — primary control once you're on stage. Only participants the
                host has put on stage (canSpeakNow: role 'host'/'speaker') see
                it; listeners get the reactions control only. Clubhouse parity:
                this is no longer gated on Superfan membership, only on the
@@ -1557,55 +1809,91 @@ export default function SpaceDetailPage() {
                     : "Mute (tap) or hold to talk"
                 }
                 title="Tap to toggle mute · Press and hold to talk"
-                className={`p-5 rounded-full border shadow-lg transition select-none touch-none ${
+                className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition select-none touch-none ${
                   isMuted
-                    ? "bg-red-500/20 text-red-400 border-red-500/30"
-                    : "bg-melori-purple text-white border-melori-purple"
+                    ? "bg-red-500/20 text-red-400"
+                    : "bg-melori-purple text-white"
                 }`}
               >
                 {isMuted ? (
-                  <MicOff className="w-7 h-7" />
+                  <MicOff className="w-6 h-6" />
                 ) : (
-                  <Mic className="w-7 h-7" />
+                  <Mic className="w-6 h-6" />
                 )}
               </button>
             )}
 
-            {/* Right corner: raise-hand / End Space + quick reactions. */}
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              {/* Raise-hand: hidden for the host, for anyone already on stage
-                 (they don't need to ask), and whenever the host has set
-                 hand_raise_mode to "off" (or the not-yet-enforced
-                 "followed" -- see spacesStage.ts). */}
-              {!isHost && !canSpeakNow && canRaiseHandNow && (
-                <button
-                  onClick={toggleHand}
-                  aria-label="Raise hand"
-                  className={`p-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full border transition ${
-                    hasRaisedHand
-                      ? "bg-melori-warning/20 text-melori-warning border-melori-warning/30"
-                      : "bg-melori-elevated text-melori-muted border-melori-border"
-                  }`}
-                >
-                  <Hand className="w-5 h-5" />
-                </button>
-              )}
+            {/* Ask to speak. Hidden for the host, for anyone already on stage
+               (they don't need to ask), and whenever the host has set
+               hand_raise_mode to "off" (or the not-yet-enforced "followed" --
+               see spacesStage.ts). The label is carried by aria + title rather
+               than visible text so the comment field keeps the width. */}
+            {!isHost && !canSpeakNow && canRaiseHandNow && (
+              <button
+                type="button"
+                onClick={toggleHand}
+                data-testid="spaces-ask-to-speak"
+                title={hasRaisedHand ? "Lower hand" : "Ask to speak"}
+                aria-label={hasRaisedHand ? "Lower hand" : "Ask to speak"}
+                aria-pressed={hasRaisedHand}
+                className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition ${
+                  hasRaisedHand
+                    ? "bg-melori-warning/20 text-melori-warning"
+                    : "bg-[#1d9bf0] text-white hover:brightness-110"
+                }`}
+              >
+                <Hand className="w-6 h-6" />
+              </button>
+            )}
 
-              {isHost && (
+            {/* Listeners in a hands-off room get an honest disabled state
+               rather than a missing control, so the bar keeps its shape. */}
+            {!isHost && !canSpeakNow && !canRaiseHandNow && (
+              <span
+                title="The host has turned off requests to speak"
+                className="w-12 h-12 shrink-0 flex items-center justify-center rounded-full bg-white/5 text-melori-muted"
+              >
+                <Volume2 className="w-6 h-6" />
+              </span>
+            )}
+
+            {/* The comment composer — always present, never behind a button.
+               Audio rooms only: Cinema keeps RoomChat's own sticky composer
+               below the screen, and two composers would fight. */}
+            {!isCinema && (
+              <form
+                onSubmit={submitComment}
+                data-testid="spaces-composer"
+                className="flex-1 min-w-0 flex items-center gap-1.5 h-12 pl-4 pr-1.5 rounded-full bg-melori-void/70 focus-within:bg-melori-void transition"
+              >
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="say something"
+                  aria-label="Write a comment"
+                  enterKeyHint="send"
+                  className="flex-1 min-w-0 bg-transparent text-[15px] placeholder:text-melori-muted focus:outline-none"
+                />
                 <button
-                  type="button"
-                  onClick={handleEndSpace}
-                  className="px-4 py-3 min-h-[44px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium hover:bg-red-500/30 transition"
+                  type="submit"
+                  disabled={!draft.trim() || sendingComment}
+                  aria-label="Send comment"
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full bg-[#1d9bf0] text-white transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
                 >
-                  End Space
+                  <Send className="w-[18px] h-[18px]" />
                 </button>
-              )}
+              </form>
+            )}
+
+            {/* Right cluster: room-wide reactions. Reactions aimed at ONE
+               person are a long-press on their tile — see StageGrid. */}
+            <div className="ml-auto flex items-center gap-2">
 
               {/* Quick reactions (global, center-screen burst). Emoji picker on click. */}
               <div className="relative">
                 <details className="group">
-                  <summary className="list-none cursor-pointer p-3 min-w-[44px] min-h-[44px] rounded-full bg-melori-elevated border border-melori-border text-melori-muted hover:text-melori-text transition flex items-center justify-center">
-                    <Plus className="w-5 h-5" />
+                  <summary className="list-none cursor-pointer w-12 h-12 rounded-full bg-melori-void/60 text-melori-text hover:bg-melori-void transition flex items-center justify-center">
+                    <Smile className="w-6 h-6" />
                   </summary>
                   <div className="absolute right-0 bottom-full mb-2 flex gap-1 rounded-full border border-melori-border bg-melori-void px-2 py-2 shadow-xl">
                     {["❤️", "🔥", "👏", "🎵", "😂", "🙌"].map((emoji) => (

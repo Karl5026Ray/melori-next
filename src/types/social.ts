@@ -113,6 +113,12 @@ export interface SpaceParticipant {
   is_speaking: boolean;
   is_muted: boolean;
   has_raised_hand: boolean;
+  // When the CURRENT hand went up (trigger-maintained, migration 028). The
+  // raise-hand queue is ordered by this, never by joined_at.
+  stage_requested_at?: string | null;
+  // Trusted-helper badge (migration 017): 'cohost' | 'mod' | 'vip'.
+  // badge in ('mod','cohost') = moderator.
+  badge?: string | null;
   // Set by the host via force-mute; clients respect this even if the speaker
   // toggles their own is_muted back off.
   host_muted?: boolean;

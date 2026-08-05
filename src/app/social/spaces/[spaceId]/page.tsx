@@ -21,6 +21,7 @@ import {
 } from "@/lib/pubnubClient";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
+import { sortStageQueue } from "@/lib/stageQueue";
 import { Badge } from "@/components/social/ui/Badge";
 import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomChat from "@/components/social/rooms/RoomChat";
@@ -932,8 +933,10 @@ export default function SpaceDetailPage() {
     (p) => p.role === "host" || p.role === "speaker"
   );
   const audience = withSpeaking.filter((p) => p.role === "audience");
-  const raisedHands = participants.filter(
-    (p) => p.has_raised_hand && p.role === "audience"
+  // Oldest request first — see src/lib/stageQueue.ts. The roster arrives in
+  // join order, which is NOT request order.
+  const raisedHands = sortStageQueue(
+    participants.filter((p) => p.has_raised_hand && p.role === "audience")
   );
 
   if (isLoading) {

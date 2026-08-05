@@ -20,6 +20,7 @@ import {
   classifySource,
   computeClockOffsetMs,
   formatTimecode,
+  parseYouTubeId,
   planCorrection,
   targetPosition,
   type PlaybackState,
@@ -177,17 +178,78 @@ console.log("\nclassifySource");
   assertEq("webm is accepted", classifySource("https://cdn.example.com/a.webm").ok, true);
   assertEq("query string does not break detection", classifySource("https://cdn.example.com/a.mp4?token=xyz").ok, true);
   assertEq("uppercase extension is accepted", classifySource("https://cdn.example.com/A.MP4").ok, true);
-  // YouTube must fail LOUDLY with its own message, not fall through to the
-  // generic "use a direct file" error — the host needs to know why.
-  const yt = classifySource("https://www.youtube.com/watch?v=abc123");
-  assertEq("youtube is rejected", yt.ok, false);
+  // YouTube is playable now. A YouTube host we cannot resolve to one video
+  // must still fail LOUDLY with its own message rather than falling through to
+  // the generic "use a direct file" error.
   assertEq(
-    "youtube gets its own explanation",
-    !yt.ok && yt.reason.includes("YouTube"),
+    "youtube watch link is accepted and canonicalised",
+    classifySource("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1&t=42s"),
+    { ok: true, type: "youtube", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
+  );
+  assertEq(
+    "youtu.be is accepted",
+    classifySource("https://youtu.be/dQw4w9WgXcQ?si=abc"),
+    { ok: true, type: "youtube", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
+  );
+  assertEq(
+    "short is accepted",
+    classifySource("https://www.youtube.com/shorts/dQw4w9WgXcQ").ok,
     true,
   );
-  assertEq("youtu.be short link too", classifySource("https://youtu.be/abc123").ok, false);
+  const channel = classifySource("https://www.youtube.com/@someartist");
+  assertEq("youtube channel is rejected", channel.ok, false);
+  assertEq(
+    "channel rejection names YouTube",
+    !channel.ok && channel.reason.includes("YouTube"),
+    true,
+  );
+  assertEq(
+    "malformed video id is rejected",
+    classifySource("https://www.youtube.com/watch?v=abc123").ok,
+    false,
+  );
   assertEq("bare page url is rejected", classifySource("https://example.com/watch").ok, false);
+}
+
+console.log("\nparseYouTubeId");
+{
+  assertEq("watch", parseYouTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("mobile host", parseYouTubeId("https://m.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("music host", parseYouTubeId("https://music.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("nocookie embed", parseYouTubeId("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("live", parseYouTubeId("https://www.youtube.com/live/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("shorts", parseYouTubeId("https://youtube.com/shorts/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("youtu.be", parseYouTubeId("https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assertEq("surrounding whitespace", parseYouTubeId("  https://youtu.be/dQw4w9WgXcQ  "), "dQw4w9WgXcQ");
+  assertEq("hyphen and underscore ids", parseYouTubeId("https://youtu.be/a-b_c1D2e3F"), "a-b_c1D2e3F");
+  assertEq("playlist with no v", parseYouTubeId("https://www.youtube.com/playlist?list=PL123"), null);
+  assertEq("search page", parseYouTubeId("https://www.youtube.com/results?search_query=x"), null);
+  assertEq("id too short", parseYouTubeId("https://youtu.be/short"), null);
+  assertEq("not youtube", parseYouTubeId("https://vimeo.com/watch?v=dQw4w9WgXcQ"), null);
+  assertEq("garbage", parseYouTubeId("not a url"), null);
+  // A lookalike hostname must not be trusted just because it ends in the name.
+  assertEq("lookalike host", parseYouTubeId("https://notyoutube.com/watch?v=dQw4w9WgXcQ"), null);
+}
+
+console.log("\nplanCorrection on a player without fine rate control");
+{
+  // YouTube ignores 1.05, so mid-band drift is tolerated instead of nudged.
+  assertEq(
+    "mid-band drift -> none when rate is unavailable",
+    planCorrection(50, 51, { allowRate: false }),
+    { kind: "none" },
+  );
+  // Past the seek threshold the behaviour is unchanged: still a hard seek.
+  assertEq(
+    "large drift -> seek even without rate control",
+    planCorrection(0, 600, { allowRate: false }),
+    { kind: "seek", to: 600 },
+  );
+  assertEq(
+    "allowRate defaults to true",
+    planCorrection(50, 51).kind,
+    "rate",
+  );
 }
 
 console.log("\nformatTimecode");

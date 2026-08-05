@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
-import { classifySource } from "@/lib/cinemaPlayback";
+import { type CinemaSourceType, classifySource } from "@/lib/cinemaPlayback";
 import {
   MAX_UPLOAD_BYTES,
   RESUMABLE_THRESHOLD_BYTES,
@@ -85,7 +85,7 @@ export function CinemaSourcePicker({
   compact = false,
 }: {
   /** Called with a validated, directly playable https URL. */
-  onPick: (url: string) => void;
+  onPick: (url: string, type: CinemaSourceType) => void;
   /** Dense variant for the bar under a screen that's already playing. */
   compact?: boolean;
 }) {
@@ -120,7 +120,10 @@ export function CinemaSourcePicker({
       }
       setError(null);
       setUrlDraft("");
-      onPick(verdict.url);
+      // The type travels with the URL. Without it the room would store a
+      // YouTube watch link under source_type 'url' and mount a <video> that
+      // can never play it.
+      onPick(verdict.url, verdict.type);
     },
     [onPick],
   );
@@ -255,14 +258,11 @@ export function CinemaSourcePicker({
       try {
         const res = await fetch("/api/social/videos");
         const json = (await res.json()) as { videos?: SocialVideo[] };
-        // Only things this player can actually play: real uploads (not YouTube
-        // rows, which need an embed the shared screen doesn't have yet) whose
-        // URL passes the same check as a pasted link.
+        // Only things this player can actually play. YouTube rows are now
+        // included -- the shared screen has an IFrame player for them -- so the
+        // one gate left is classifySource, the same check a pasted link faces.
         const playable = (json.videos ?? []).filter(
-          (v) =>
-            v.media_type === "video" &&
-            v.source !== "youtube" &&
-            classifySource(v.video_url).ok,
+          (v) => v.media_type === "video" && classifySource(v.video_url).ok,
         );
         setLibrary(playable);
       } catch {
@@ -447,7 +447,7 @@ export function CinemaSourcePicker({
               value={urlDraft}
               onChange={(e) => setUrlDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && commit(urlDraft)}
-              placeholder="https://… .mp4"
+              placeholder="YouTube link, or https://… .mp4"
               aria-label="Video link"
               className="w-full rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none"
             />
@@ -479,7 +479,7 @@ function VideoGroup({
 }: {
   label: string;
   videos: SocialVideo[];
-  onPick: (url: string) => void;
+  onPick: (url: string, type: CinemaSourceType) => void;
 }) {
   return (
     <div>
@@ -491,7 +491,10 @@ function VideoGroup({
           <button
             key={video.id}
             type="button"
-            onClick={() => onPick(video.video_url)}
+            onClick={() => {
+              const verdict = classifySource(video.video_url);
+              onPick(video.video_url, verdict.ok ? verdict.type : "url");
+            }}
             className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-white/5"
           >
             <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded bg-black/60">

@@ -74,7 +74,9 @@ export function useRoomComments(spaceId: string, enabled = true) {
     };
   }, [spaceId, enabled]);
 
-  // Realtime: append INSERTs, resolving author profile for others' messages.
+  // Realtime rows already persist `author_name`; use it directly rather than
+  // issuing a profile query per comment. The initial history remains enriched
+  // through space_comments_with_author, while fast Cinema overlays stay cheap.
   useEffect(() => {
     if (!enabled) return;
     const channel = supabase
@@ -87,31 +89,11 @@ export function useRoomComments(spaceId: string, enabled = true) {
           table: "space_comments",
           filter: `space_id=eq.${spaceId}`,
         },
-        async (payload) => {
+        (payload) => {
           const row = payload.new as ChatComment;
           if (user && row.user_id === user.id) return; // already added optimistically
-          let enriched: ChatComment = row;
-          if (row.user_id) {
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("display_name, full_name, username, avatar_url")
-              .eq("id", row.user_id)
-              .maybeSingle();
-            if (profile) {
-              enriched = {
-                ...row,
-                author_display:
-                  profile.display_name ||
-                  profile.full_name ||
-                  profile.username ||
-                  row.author_name,
-                avatar_url: profile.avatar_url ?? null,
-                username: profile.username ?? null,
-              };
-            }
-          }
           setComments((prev) =>
-            prev.some((x) => x.id === enriched.id) ? prev : [...prev, enriched],
+            prev.some((x) => x.id === row.id) ? prev : [...prev, row],
           );
         },
       )

@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WebhookReceiver } from "livekit-server-sdk";
+import { TrackSource, WebhookReceiver } from "livekit-server-sdk";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { promoteHostOnLeave } from "@/lib/roomHost";
+import { deriveRoomName } from "@/lib/endRoom";
+import {
+  decidePublishedCameraEnforcement,
+  type CinemaReservation,
+  type RoomMediaRole,
+} from "@/lib/roomMediaPolicy";
+import {
+  applyStagePermissions,
+  revokePublishedSources,
+  livekitConfigured,
+  type SocialRole,
+} from "@/lib/livekitServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,11 +71,13 @@ export async function POST(req: NextRequest) {
     id: string;
     host_id: string;
     status: string;
+    room_format: string | null;
+    livekit_room: string | null;
   }
   let space: SpaceRow | null = null;
   const { data: byRoom } = await supabase
     .from("spaces")
-    .select("id, host_id, status")
+    .select("id, host_id, status, room_format, livekit_room")
     .eq("livekit_room", roomName)
     .maybeSingle<SpaceRow>();
   if (byRoom) {
@@ -71,7 +85,7 @@ export async function POST(req: NextRequest) {
   } else if (roomName.startsWith("space_")) {
     const { data: byId } = await supabase
       .from("spaces")
-      .select("id, host_id, status")
+      .select("id, host_id, status, room_format, livekit_room")
       .eq("id", roomName.slice("space_".length))
       .maybeSingle<SpaceRow>();
     space = byId ?? null;
@@ -82,6 +96,68 @@ export async function POST(req: NextRequest) {
   }
 
   const nowIso = new Date().toISOString();
+
+  // A token is only an initial permission snapshot. This webhook is the
+  // fail-closed backstop for a stale/replayed Cinema token or a runtime update
+  // that raced a local publish: an unreserved identity loses camera immediately.
+  if (event.event === "track_published" && space.room_format === "cinema") {
+    const identity = event.participant?.identity ?? "";
+    const source = (event as any).track?.source;
+    const isCamera =
+      source === TrackSource.CAMERA ||
+      String(source).toLowerCase() === "camera" ||
+      String(source).toLowerCase().endsWith("_camera");
+    if (!identity || !isCamera) {
+      return NextResponse.json({ ok: true, event: event.event, ignored: "not-camera" });
+    }
+
+    const [{ data: participant }, { data: slotRows }] = await Promise.all([
+      supabase
+        .from("space_participants")
+        .select("role, badge, host_muted, left_at")
+        .eq("space_id", space.id)
+        .eq("user_id", identity)
+        .is("left_at", null)
+        .maybeSingle(),
+      supabase
+        .from("cinema_camera_slots")
+        .select("slot, user_id")
+        .eq("space_id", space.id),
+    ]);
+    const role: RoomMediaRole =
+      identity === space.host_id
+        ? "host"
+        : participant?.badge === "mod" || participant?.badge === "cohost"
+          ? "moderator"
+          : participant?.role === "speaker"
+            ? "speaker"
+            : "audience";
+    const reservations: CinemaReservation[] = (slotRows ?? []).map((row) => ({
+      slot: Number(row.slot),
+      userId: String(row.user_id),
+    }));
+    const enforcement = decidePublishedCameraEnforcement({
+      roomFormat: "cinema",
+      hostId: space.host_id,
+      userId: identity,
+      role,
+      hostMuted: Boolean(participant?.host_muted),
+      reservations,
+      requested: ["camera", "microphone"],
+    });
+
+    if (enforcement.action === "mute-camera" && livekitConfigured()) {
+      await applyStagePermissions({
+        roomName: deriveRoomName(space),
+        identity,
+        sources: enforcement.allowedSources,
+        socialRole: role as SocialRole,
+      });
+      await revokePublishedSources(deriveRoomName(space), identity, ["camera"]);
+      return NextResponse.json({ ok: true, event: event.event, enforced: "camera-revoked" });
+    }
+    return NextResponse.json({ ok: true, event: event.event, enforced: "camera-valid" });
+  }
 
   if (event.event === "room_finished") {
     await supabase
@@ -119,6 +195,16 @@ export async function POST(req: NextRequest) {
       .eq("space_id", space.id)
       .eq("user_id", identity)
       .is("left_at", null);
+
+    if (space.room_format === "cinema") {
+      // Guest slots are connection-scoped. Slot zero is intentionally retained
+      // for the current host so a transient reconnect cannot give its visual
+      // seat to a guest.
+      await supabase.rpc("release_cinema_camera_slot", {
+        p_space_id: space.id,
+        p_user_id: identity,
+      });
+    }
 
     return NextResponse.json({ ok: true, event: event.event });
   }

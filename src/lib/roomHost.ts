@@ -1,8 +1,13 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { applyStagePermissions, livekitConfigured } from "@/lib/livekitServer";
+import {
+  applyStagePermissions,
+  livekitConfigured,
+  revokePublishedSources,
+} from "@/lib/livekitServer";
 import { publishSystemSignal } from "@/lib/pubnubServer";
 import { deriveRoomName, endRoomAndTeardown, teardownRoomOnly } from "@/lib/endRoom";
+import { decideRoomPublish, type CinemaReservation } from "@/lib/roomMediaPolicy";
 
 // Server-authoritative HOST auto-promotion.
 //
@@ -34,6 +39,23 @@ export async function promoteHostOnLeave(
 ): Promise<PromoteResult> {
   const supabase = getSupabaseAdmin();
 
+  const { data: currentSpace } = await supabase
+    .from("spaces")
+    .select("id, livekit_room, room_format")
+    .eq("id", spaceId)
+    .maybeSingle();
+  if (currentSpace?.room_format === "cinema" && livekitConfigured()) {
+    // Do not transfer slot zero while the departing host could still have a
+    // camera track. Webhook-driven calls see an already-absent participant and
+    // return safely; beacon-driven calls disconnect first.
+    await revokePublishedSources(
+      deriveRoomName(currentSpace),
+      departingHostId,
+      ["camera", "microphone"],
+      { disconnectOnCamera: true },
+    );
+  }
+
   const { data, error } = await supabase.rpc("promote_next_host", {
     p_space_id: spaceId,
     p_departing_host: departingHostId,
@@ -49,6 +71,8 @@ export async function promoteHostOnLeave(
   const newHostId = (row?.new_host_id ?? null) as string | null;
 
   if (outcome === "promoted" && newHostId) {
+    // Migration 054's spaces trigger transfers Cinema slot zero in the same
+    // transaction as promote_next_host. Ordinary Spaces never touch Cinema data.
     await onPromoted(supabase, spaceId, newHostId);
   } else if (outcome === "ended-no-successor") {
     await onGracefulEnd(supabase, spaceId);
@@ -73,7 +97,7 @@ async function onPromoted(
 
   if (space && livekitConfigured()) {
     const roomName = deriveRoomName(space);
-    const withVideo = String(space.room_format ?? "").startsWith("live_");
+    const isCinema = space.room_format === "cinema";
 
     const { data: avatarRow } = await supabase
       .from("profiles")
@@ -83,11 +107,31 @@ async function onPromoted(
     const avatarUrl =
       (avatarRow as { avatar_url?: string | null } | null)?.avatar_url ?? null;
 
+    let reservations: CinemaReservation[] = [];
+    if (isCinema) {
+      const { data: slotRows } = await supabase
+        .from("cinema_camera_slots")
+        .select("slot, user_id")
+        .eq("space_id", spaceId);
+      reservations = (slotRows ?? []).map((row) => ({
+        slot: Number(row.slot),
+        userId: String(row.user_id),
+      }));
+    }
+    const media = decideRoomPublish({
+      roomFormat: space.room_format,
+      hostId: newHostId,
+      userId: newHostId,
+      role: "host",
+      hostMuted: false,
+      reservations,
+      requested: ["camera", "microphone"],
+    });
+
     await applyStagePermissions({
       roomName,
       identity: newHostId,
-      onStage: true,
-      withVideo,
+      sources: media.allowedSources,
       socialRole: "host",
       avatarUrl,
     });

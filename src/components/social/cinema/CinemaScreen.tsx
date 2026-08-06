@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   Play,
   Pause,
@@ -36,9 +36,11 @@ import {
 export function CinemaScreen({
   spaceId,
   isHost,
+  overlay,
 }: {
   spaceId: string;
   isHost: boolean;
+  overlay?: ReactNode;
 }) {
   const { state, loading, error, clockOffsetMs, push, reportLocalPosition } =
     useCinemaPlayback(spaceId, isHost);
@@ -314,10 +316,16 @@ export function CinemaScreen({
   // --- Empty state ----------------------------------------------------------
   if (!loading && !sourceUrl) {
     return (
-      <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void">
+      <div
+        className="mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void md:mb-4"
+        data-testid="cinema-screen"
+      >
         {/* Idle marquee. The mockup treats the dark screen as the brand moment,
             so the wordmark carries it and the helper copy sits underneath. */}
-        <div className="relative flex aspect-video w-full flex-col items-center justify-center px-6 text-center">
+        <div
+          className="relative flex aspect-[8/3] w-full flex-col items-center justify-center px-6 text-center md:aspect-video"
+          data-testid="cinema-media-area"
+        >
           <span className="text-xl font-light uppercase tracking-[0.34em] text-cinema-gold">
             Cinema
           </span>
@@ -330,6 +338,7 @@ export function CinemaScreen({
             className="absolute bottom-3 right-3 h-4 w-4 text-white/20"
             aria-hidden
           />
+          {overlay}
         </div>
         {isHost && <CinemaSourcePicker onPick={hostSetSource} />}
       </div>
@@ -337,8 +346,15 @@ export function CinemaScreen({
   }
 
   return (
-    <div className="mb-6 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black">
-      <div ref={frameRef} className="relative aspect-video w-full bg-black">
+    <div
+      className="mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black md:mb-4"
+      data-testid="cinema-screen"
+    >
+      <div
+        ref={frameRef}
+        className="relative aspect-[8/3] w-full bg-black md:aspect-video"
+        data-testid="cinema-media-area"
+      >
         {youTubeId && (
           <CinemaYouTubePlayer
             // Remount on a new video rather than reusing the player: a stale
@@ -422,6 +438,7 @@ export function CinemaScreen({
             <Maximize2 className="h-4 w-4" aria-hidden />
           )}
         </button>
+        {overlay}
       </div>
 
       {/* Progress. Read-only for guests; the host's is clickable. */}

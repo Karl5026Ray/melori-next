@@ -4,6 +4,11 @@ import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isSuperfanOrBetter } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { deriveRoomName, reapIfHostAbandoned, recordHostSeen } from "@/lib/endRoom";
+import {
+  decideRoomPublish,
+  type CinemaReservation,
+  type RoomMediaRole,
+} from "@/lib/roomMediaPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +16,9 @@ export const dynamic = "force-dynamic";
 const LIVEKIT_URL = process.env.LIVEKIT_URL ?? "";
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY ?? "";
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
+const DEFAULT_TOKEN_TTL_SECONDS = 60 * 60 * 2;
+const MIN_TOKEN_TTL_SECONDS = 60;
+const MAX_TOKEN_TTL_SECONDS = 60 * 60 * 4;
 
 // POST /api/livekit-token
 // Body: { space_id, role: "publisher" | "subscriber", expireTime? }
@@ -51,8 +59,17 @@ export async function POST(req: NextRequest) {
     const spaceId: string | undefined = body?.space_id;
     const requestedRole: "publisher" | "subscriber" =
       body?.role === "publisher" ? "publisher" : "subscriber";
-    const expireTime: number =
-      typeof body?.expireTime === "number" ? body.expireTime : 60 * 60 * 2; // 2h
+    const requestedTtl =
+      typeof body?.expireTime === "number" && Number.isFinite(body.expireTime)
+        ? Math.floor(body.expireTime)
+        : DEFAULT_TOKEN_TTL_SECONDS;
+    // The token is a snapshot of permission. A bounded lifetime limits the
+    // stale-token window while runtime updateParticipant/webhook enforcement
+    // handles immediate revocation.
+    const expireTime = Math.min(
+      MAX_TOKEN_TTL_SECONDS,
+      Math.max(MIN_TOKEN_TTL_SECONDS, requestedTtl),
+    );
 
     if (!spaceId) {
       return NextResponse.json({ error: "space_id is required" }, { status: 400 });
@@ -111,8 +128,8 @@ export async function POST(req: NextRequest) {
     }
 
     const roomName = deriveRoomName(space);
-    // Faces rooms (live_* room_format) are video; everything else is audio-only.
-    const withVideo = String(space.room_format ?? "").startsWith("live_");
+    const isFacesRoom = String(space.room_format ?? "").startsWith("live_");
+    const isCinema = space.room_format === "cinema";
 
     // ---- Server-authoritative role model ---------------------------------
     // The SERVER decides who may publish, not the client's requested role.
@@ -123,6 +140,7 @@ export async function POST(req: NextRequest) {
     const isHost = space.host_id === userId;
     let socialRole: "audience" | "speaker" | "moderator" | "host" = "audience";
     let onStage = false;
+    let hostMuted = false;
 
     if (isHost) {
       socialRole = "host";
@@ -137,6 +155,7 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
       const isMod = participant?.badge === "mod" || participant?.badge === "cohost";
       const isSpeaker = participant?.role === "speaker" || participant?.role === "host";
+      hostMuted = Boolean(participant?.host_muted);
 
       // AUTO-REJOIN GUARD (Faces): a non-host guest who dropped and comes back
       // must return as AUDIENCE, not be auto-placed back on camera. The Faces
@@ -150,7 +169,7 @@ export async function POST(req: NextRequest) {
       // becomePublisher() requests role:"publisher" (an in-session promotion
       // reconnect), so it is unaffected and still re-grants publish.
       const staleSpeakerRejoin =
-        withVideo &&
+        isFacesRoom &&
         requestedRole === "subscriber" &&
         !isMod &&
         participant?.role === "speaker";
@@ -169,10 +188,10 @@ export async function POST(req: NextRequest) {
         // membership tier. MM Faces (video, withVideo=true) is UNCHANGED: going
         // on camera still requires Superfan-or-better even once promoted, so
         // this narrow ungate never leaks into video rooms.
-        const eligible = withVideo
+        const eligible = isFacesRoom
           ? isSuperfanOrBetter(membershipProfile)
           : true;
-        if (eligible && !participant?.host_muted) {
+        if (eligible && !hostMuted) {
           socialRole = isMod ? "moderator" : "speaker";
           onStage = true;
         }
@@ -195,6 +214,37 @@ export async function POST(req: NextRequest) {
     if (requestedRole === "subscriber" && !isHost) {
       onStage = false;
     }
+
+    const policyRole: RoomMediaRole = onStage
+      ? (socialRole as RoomMediaRole)
+      : "audience";
+    let reservations: CinemaReservation[] = [];
+    if (isCinema) {
+      const { data: rows, error: reservationsError } = await supabase
+        .from("cinema_camera_slots")
+        .select("slot, user_id")
+        .eq("space_id", space.id);
+      if (reservationsError) {
+        // Missing/failed reservation reads must not degrade into a camera grant.
+        return NextResponse.json(
+          { error: "Cinema camera authorization is unavailable" },
+          { status: 503 },
+        );
+      }
+      reservations = (rows ?? []).map((row) => ({
+        slot: Number(row.slot),
+        userId: String(row.user_id),
+      }));
+    }
+    const media = decideRoomPublish({
+      roomFormat: space.room_format,
+      hostId: space.host_id,
+      userId,
+      role: policyRole,
+      hostMuted,
+      reservations,
+      requested: ["camera", "microphone"],
+    });
 
     // Attach display identity from profile for avatar-linked UI.
     const { data: profile } = await supabase
@@ -219,18 +269,13 @@ export async function POST(req: NextRequest) {
       roomJoin: true,
       room: roomName,
       canSubscribe: true,
-      canPublish: onStage,
+      canPublish: media.allowedSources.length > 0,
       canPublishData: true,
-      // Constrain WHAT a stage member may publish: audio-only for Spaces,
-      // audio+video for Faces. Empty for audience (belt-and-suspenders with
-      // canPublish=false).
-      canPublishSources: onStage
-        ? withVideo
-          ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
-          : [TrackSource.MICROPHONE]
-        : [],
+      canPublishSources: media.allowedSources.map((source) =>
+        source === "camera" ? TrackSource.CAMERA : TrackSource.MICROPHONE,
+      ),
     });
-    const canPublish = onStage;
+    const canPublish = media.allowedSources.length > 0;
 
     const token = await at.toJwt();
 
@@ -241,6 +286,8 @@ export async function POST(req: NextRequest) {
       identity: userId,
       role: canPublish ? "publisher" : "subscriber",
       expiresIn: expireTime,
+      allowed_sources: media.allowedSources,
+      camera_slot: media.cameraSlot,
     });
   } catch (error) {
     console.error("[livekit-token] error", error);

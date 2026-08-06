@@ -45,6 +45,7 @@ type AnyParticipant = { identity: string; name?: string };
 
 export type VideoRole = "publisher" | "subscriber";
 export type VideoTier = "free" | "artist";
+export type VideoRoomMode = "faces" | "cinema";
 
 // Tier limits — mirrors the values from the MM Faces spec (KIMI), but applied
 // through LiveKit's native video capture/publish instead of a self-hosted SFU.
@@ -68,6 +69,15 @@ export interface RemoteVideo {
 export interface JoinVideoOptions {
   spaceId: string;
   role: VideoRole;
+  // Cinema shares this one camera-capable Room connection for both audio and
+  // camera. It never joins livekitClient.ts in parallel.
+  roomMode?: VideoRoomMode;
+  // Faces keeps its historical camera-on-publish behavior. Cinema starts with
+  // microphone only; a successful slot claim is required before camera capture.
+  autoEnableCamera?: boolean;
+  // Cinema must respect the participant row's persisted mute state on join.
+  // Faces retains its historical publisher-mic-on behavior.
+  autoEnableMicrophone?: boolean;
   tier?: VideoTier;
   // Drives the audio capture + publish profile. Faces defaults to
   // "performance" (music-grade capture that keeps echo cancellation, so a host
@@ -86,6 +96,7 @@ export interface JoinVideoOptions {
   // Called when the local camera track is published so the UI can show the
   // host's own preview tile.
   onLocalVideo?: (element: HTMLVideoElement) => void;
+  onLocalVideoRemoved?: () => void;
   // Fired whenever the LOCAL camera's facing mode is known/changes (initial
   // capture, or after switchCamera() flips front/back). "user" = front-facing
   // (selfie) camera, "environment" = rear camera, null = undetermined (e.g. a
@@ -178,6 +189,8 @@ async function fetchToken(spaceId: string, role: VideoRole) {
     room: string;
     identity: string;
     role: VideoRole;
+    allowed_sources?: Array<"camera" | "microphone">;
+    camera_slot?: number | null;
   }>;
 }
 
@@ -604,10 +617,26 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     // browser is holding audio back until a gesture.
     opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
 
-    // Publisher (host) turns on camera + mic. Viewers stay receive-only. Uses a
-    // single combined request so a persisted grant is reused with no re-prompt.
+    // Faces preserves the existing camera+mic-on-publisher behavior. Cinema
+    // uses this one Room for audio + camera but starts camera-off: capture is
+    // only requested after an atomic server slot claim updates permissions.
     if (creds.role === "publisher") {
-      await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
+      if (opts.roomMode === "cinema") {
+        if (opts.autoEnableMicrophone) {
+          assertCaptureSupported();
+          await room.localParticipant.setMicrophoneEnabled(true, audioCapture, {
+            audioPreset: audioPublish.audioPreset,
+            dtx: audioPublish.dtx,
+            red: audioPublish.red,
+            forceStereo: audioPublish.forceStereo,
+          });
+        }
+        if (opts.autoEnableCamera && creds.allowed_sources?.includes("camera")) {
+          await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
+        }
+      } else {
+        await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
+      }
     }
 
     emitCount();
@@ -647,6 +676,33 @@ export async function ensureVideoAudio(): Promise<void> {
 export async function setCameraEnabled(enabled: boolean): Promise<void> {
   if (!session.room) return;
   await session.room.localParticipant.setCameraEnabled(enabled);
+  if (!enabled) {
+    try {
+      session.localVideoEl?.remove();
+    } catch {
+      /* noop */
+    }
+    session.localVideoEl = null;
+    session.lastOpts?.onLocalVideoRemoved?.();
+    return;
+  }
+
+  const lk = await import("livekit-client");
+  const source = (lk as any).Track?.Source?.Camera ?? "camera";
+  const publication =
+    session.room.localParticipant.getTrackPublication?.(source) ??
+    Array.from(session.room.localParticipant.trackPublications?.values?.() ?? []).find(
+      (entry: any) => entry?.source === source,
+    );
+  const track = (publication as any)?.track ?? (publication as any)?.videoTrack;
+  if (!track?.attach) return;
+  const element = track.attach() as HTMLVideoElement;
+  element.playsInline = true;
+  element.autoplay = true;
+  element.muted = true;
+  session.localVideoEl = element;
+  setFacingMode(readFacingMode(track), session.lastOpts?.onFacingModeChange);
+  session.lastOpts?.onLocalVideo?.(element);
 }
 
 export async function setMicEnabled(enabled: boolean): Promise<void> {

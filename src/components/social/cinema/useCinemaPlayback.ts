@@ -42,6 +42,11 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
     localPositionRef.current = seconds;
   }, []);
 
+  // Host controls, source changes, and the heartbeat all write the same single
+  // state row. Serialize them so a slow earlier request cannot arrive after a
+  // newer seek/pause and overwrite it.
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   // --- Initial load + clock calibration ------------------------------------
   useEffect(() => {
     let active = true;
@@ -88,7 +93,11 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
         (payload) => {
           const row = payload.new as PlaybackState | null;
           if (!row || !row.space_id) return;
-          setState(row);
+          setState((current) => {
+            const currentAt = current ? new Date(current.updated_at).getTime() : Number.NEGATIVE_INFINITY;
+            const rowAt = new Date(row.updated_at).getTime();
+            return Number.isFinite(rowAt) && rowAt < currentAt ? current : row;
+          });
         },
       )
       .subscribe();
@@ -103,26 +112,28 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
     async (patch: Partial<Pick<PlaybackState,
       "source_url" | "source_type" | "position_seconds" | "duration_seconds" | "is_playing">>) => {
       if (!isHostRef.current) return;
-      try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/playback`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
-        });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(body.error ?? "Could not update the screen");
-          return;
+      const write = async () => {
+        try {
+          const res = await authFetch(`/api/social/spaces/${spaceId}/playback`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          });
+          if (!res.ok) {
+            const body = (await res.json().catch(() => ({}))) as { error?: string };
+            setError(body.error ?? "Could not update the screen");
+            return;
+          }
+          const json = (await res.json()) as { state: PlaybackState; server_now: string };
+          setClockOffsetMs(computeClockOffsetMs(json.server_now));
+          setState(json.state);
+          setError(null);
+        } catch {
+          setError("Could not reach the room");
         }
-        const json = (await res.json()) as { state: PlaybackState; server_now: string };
-        // Re-calibrate opportunistically on every write. Long sessions drift,
-        // and this costs nothing since the response already carries the time.
-        setClockOffsetMs(computeClockOffsetMs(json.server_now));
-        setState(json.state);
-        setError(null);
-      } catch {
-        setError("Could not reach the room");
-      }
+      };
+      writeQueueRef.current = writeQueueRef.current.then(write, write);
+      await writeQueueRef.current;
     },
     [spaceId],
   );

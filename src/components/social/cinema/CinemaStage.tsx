@@ -1,108 +1,143 @@
 "use client";
 
-// CinemaStage — the row of seat cards directly under the shared screen.
-//
-// Cinema deliberately does NOT reuse StageGrid. StageGrid renders circular
-// avatars sized for a talk room; the Cinema mockup calls for labelled
-// rectangular seats (HOST / GUEST / GUEST) that read like theatre seating and
-// stay legible at 390px. The data is identical — the same `speakers` array the
-// rest of the room page already maintains — only the presentation differs.
-//
-// Seats are padded out to MIN_SEATS so the row keeps its shape in an empty
-// room instead of collapsing to a single lonely card.
-
-import { Mic, MicOff } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Camera, Mic, MicOff } from "lucide-react";
 import { SpaceParticipant } from "@/types/social";
+import type { CinemaSlot } from "@/lib/roomMediaPolicy";
 
-const MIN_SEATS = 3;
+export interface CinemaCameraSlot {
+  slot: CinemaSlot;
+  participant: SpaceParticipant | null;
+  videoElement: HTMLVideoElement | null;
+}
 
 interface CinemaStageProps {
-  speakers: SpaceParticipant[];
-  // Tapping an occupied seat opens the parent's per-person reaction picker,
-  // matching StageGrid's behaviour so reactions work the same in both formats.
+  slots: readonly CinemaCameraSlot[];
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   reactionBursts?: Record<string, string[]>;
 }
 
-export function CinemaStage({
-  speakers,
+function CameraSeat({
+  seat,
   onReactToParticipant,
   reactionBursts,
-}: CinemaStageProps) {
-  const emptySeats = Math.max(0, MIN_SEATS - speakers.length);
+}: {
+  seat: CinemaCameraSlot;
+  onReactToParticipant?: (participant: SpaceParticipant) => void;
+  reactionBursts?: Record<string, string[]>;
+}) {
+  const videoHostRef = useRef<HTMLDivElement>(null);
+  const participant = seat.participant;
+  const user = participant?.user;
+  const isHost = seat.slot === 0;
+  const muted = Boolean(participant?.is_muted || participant?.host_muted);
+  const isSpeaking = Boolean(participant?.is_speaking && !muted);
+  const name = user?.display_name || user?.username || (isHost ? "Host" : "Guest");
+  const targetId = user?.id ?? participant?.user_id ?? "";
+  const bursts = reactionBursts?.[targetId] ?? [];
+
+  // LiveKit hands us a real attached <video>, which React must not recreate.
+  // The host container itself remains keyed by stable slot number, so a guest
+  // departure leaves an empty tile instead of moving another camera.
+  useEffect(() => {
+    const host = videoHostRef.current;
+    if (!host) return;
+    if (!seat.videoElement) {
+      host.replaceChildren();
+      return;
+    }
+    seat.videoElement.className = "h-full w-full object-cover";
+    seat.videoElement.setAttribute("data-testid", "cinema-camera-video");
+    host.replaceChildren(seat.videoElement);
+  }, [seat.videoElement]);
+
+  const contents = (
+    <>
+      <div
+        ref={videoHostRef}
+        className={`absolute inset-0 overflow-hidden bg-white/[0.03] ${
+          seat.videoElement ? "" : "hidden"
+        }`}
+      />
+      {!seat.videoElement && (
+        <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-white/[0.05] to-transparent">
+          <Camera className="h-5 w-5 text-white/20" aria-hidden />
+        </div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 flex items-end gap-1.5 bg-gradient-to-t from-black/85 via-black/25 to-transparent px-2.5 pb-2 pt-8">
+        <span
+          className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.15em] ${
+            isHost ? "bg-cinema-gold/90 text-black" : "bg-black/65 text-white/65"
+          }`}
+        >
+          {isHost ? "Host" : "Guest"}
+        </span>
+        <span className="min-w-0 truncate text-[11px] text-white/80">{name}</span>
+      </div>
+      {participant && (muted ? (
+        <MicOff className="absolute right-2 top-2 h-3.5 w-3.5 text-white/50" aria-label="Muted" />
+      ) : isSpeaking ? (
+        <Mic className="absolute right-2 top-2 h-3.5 w-3.5 text-melori-success" aria-label="Speaking" />
+      ) : null)}
+      {bursts.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 -top-2 z-20 flex justify-center gap-1">
+          {bursts.map((reaction) => (
+            <span key={reaction} className="animate-slide-up text-base leading-none">
+              {reaction.slice(reaction.indexOf(":") + 1) || "❤️"}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const className = `relative block aspect-video w-full min-w-0 overflow-hidden rounded-xl border ${
+    isHost ? "border-cinema-gold/70" : "border-cinema-border"
+  } ${isSpeaking ? "ring-1 ring-melori-success/60" : ""}`;
+
+  if (!participant || !onReactToParticipant) {
+    return <div className={className}>{contents}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onReactToParticipant(participant)}
+      aria-label={`React to ${name}`}
+      className={`${className} text-left transition hover:border-cinema-gold/50`}
+    >
+      {contents}
+    </button>
+  );
+}
+
+export function CinemaStage({ slots, onReactToParticipant, reactionBursts }: CinemaStageProps) {
+  // Caller maps reservations through buildCinemaSlotAssignments. This defensive
+  // fill keeps the DOM shape exactly three tiles even while initial data loads.
+  const stableSlots: CinemaCameraSlot[] = [0, 1, 2].map((slot) => (
+    slots.find((seat) => seat.slot === slot) ?? {
+      slot: slot as CinemaSlot,
+      participant: null,
+      videoElement: null,
+    }
+  ));
 
   return (
-    <div className="mb-6 grid grid-cols-3 gap-2.5">
-      {speakers.map((participant) => {
-        const user = participant.user;
-        const isHost = participant.role === "host";
-        const muted = participant.is_muted || participant.host_muted;
-        const isSpeaking = participant.is_speaking && !muted;
-        const targetId = user?.id ?? participant.user_id;
-        const bursts = reactionBursts?.[targetId] ?? [];
-        const name = user?.display_name || user?.username || "Guest";
-
-        return (
-          <button
-            key={participant.id}
-            type="button"
-            onClick={() => onReactToParticipant?.(participant)}
-            aria-label={`React to ${name}`}
-            className={`relative flex h-[72px] flex-col items-center justify-center rounded-xl border px-2 transition ${
-              isHost
-                ? "border-cinema-gold/70 bg-cinema-gold/[0.06]"
-                : "border-cinema-border bg-white/[0.02]"
-            } ${isSpeaking ? "ring-1 ring-melori-success/60" : ""} ${
-              onReactToParticipant ? "hover:border-cinema-gold/50" : ""
-            }`}
-          >
-            {bursts.length > 0 && (
-              <div className="pointer-events-none absolute inset-x-0 -top-3 z-20 flex justify-center gap-1">
-                {bursts.map((r) => (
-                  <span
-                    key={r}
-                    className="animate-slide-up text-base leading-none"
-                  >
-                    {r.slice(r.indexOf(":") + 1) || "❤️"}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <span
-              className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                isHost ? "text-cinema-gold" : "text-white/55"
-              }`}
-            >
-              {isHost ? "Host" : "Guest"}
-            </span>
-            <span className="mt-1 max-w-full truncate text-[11px] text-white/45">
-              {name}
-            </span>
-
-            {muted ? (
-              <MicOff
-                className="absolute right-2 top-2 h-3 w-3 text-white/30"
-                aria-hidden
-              />
-            ) : isSpeaking ? (
-              <Mic
-                className="absolute right-2 top-2 h-3 w-3 text-melori-success"
-                aria-hidden
-              />
-            ) : null}
-          </button>
-        );
-      })}
-
-      {Array.from({ length: emptySeats }).map((_, i) => (
+    <div
+      className="mb-2 grid grid-cols-3 gap-2.5 md:mb-4"
+      data-testid="cinema-camera-stage"
+      aria-label="Cinema camera stage"
+    >
+      {stableSlots.map((seat) => (
         <div
-          key={`empty-${i}`}
-          className="flex h-[72px] items-center justify-center rounded-xl border border-dashed border-cinema-border/70"
+          key={`camera-slot-${seat.slot}`}
+          data-testid="cinema-camera-slot"
+          data-camera-slot={seat.slot}
         >
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/20">
-            Guest
-          </span>
+          <CameraSeat
+            seat={seat}
+            onReactToParticipant={onReactToParticipant}
+            reactionBursts={reactionBursts}
+          />
         </div>
       ))}
     </div>

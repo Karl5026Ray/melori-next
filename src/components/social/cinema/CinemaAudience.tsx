@@ -10,14 +10,9 @@
 // The count in the header is the audience length passed in by the room page,
 // which already excludes people who have left (left_at is set).
 
-import { useState } from "react";
 import { SpaceParticipant } from "@/types/social";
-
-// Cinema is the format built to hold a big room, so the grid is capped and
-// revealed on demand rather than rendering an avatar per viewer. At three
-// columns this is ten rows -- already more scrolling than anyone wants between
-// the screen and the comment bar.
-const COLLAPSED_COUNT = 30;
+import { useEffect, useRef, useState } from "react";
+import { ChevronUp, X } from "lucide-react";
 
 interface CinemaAudienceProps {
   audience: SpaceParticipant[];
@@ -30,26 +25,83 @@ export function CinemaAudience({
   onReactToParticipant,
   reactionBursts,
 }: CinemaAudienceProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const rosterRef = useRef<HTMLDivElement>(null);
 
-  const hidden = Math.max(0, audience.length - COLLAPSED_COUNT);
-  // The header count always reports the true total, so collapsing never
-  // misrepresents how many people are in the room.
-  const shown = expanded ? audience : audience.slice(0, COLLAPSED_COUNT);
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const frame = window.requestAnimationFrame(() => rosterRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+      triggerRef.current?.focus();
+    };
+  }, [open]);
 
   return (
-    <div className="mb-6">
-      <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-white/35">
-        Watching · {audience.length}
-      </p>
+    <section className="min-h-0" data-testid="cinema-audience-panel">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center justify-between py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40 transition hover:text-white/70"
+        data-testid="cinema-audience-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <span>Watching · {audience.length}</span>
+        <ChevronUp className="h-4 w-4" aria-hidden />
+      </button>
 
-      {audience.length === 0 ? (
-        <p className="py-6 text-center text-xs text-white/25">
-          No one in the audience yet.
-        </p>
-      ) : (
-        <div className="grid grid-cols-3 gap-x-4 gap-y-5">
-          {shown.map((participant) => {
+      {open && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 backdrop-blur-sm md:items-center md:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cinema audience"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="flex max-h-[70dvh] w-full max-w-lg flex-col rounded-t-3xl border border-cinema-border bg-cinema-void p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:rounded-3xl md:p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Audience</p>
+                <p className="mt-0.5 text-xs text-white/40">
+                  {audience.length} watching
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close audience roster"
+                data-testid="cinema-audience-close"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+
+            <div
+              ref={rosterRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+              data-testid="cinema-audience-roster"
+              tabIndex={0}
+              aria-label="Cinema audience roster"
+            >
+        {audience.length === 0 ? (
+          <p className="py-6 text-center text-xs text-white/25">
+            No one in the audience yet.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-x-4 gap-y-5 pb-3">
+            {audience.map((participant) => {
             const user = participant.user;
             const muted = participant.is_muted || participant.host_muted;
             const isLive = participant.is_speaking && !muted;
@@ -114,20 +166,14 @@ export function CinemaAudience({
                 </span>
               </button>
             );
-          })}
+            })}
+          </div>
+        )}
+            </div>
+          </div>
         </div>
       )}
-
-      {hidden > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-4 w-full rounded-xl border border-cinema-border py-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40 transition hover:border-cinema-gold/50 hover:text-cinema-gold"
-        >
-          {expanded ? "Show fewer" : `Show all ${audience.length}`}
-        </button>
-      )}
-    </div>
+    </section>
   );
 }
 

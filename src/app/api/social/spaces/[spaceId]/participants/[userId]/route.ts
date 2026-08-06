@@ -4,10 +4,16 @@ import { getRequestMembership } from "@/lib/membership-server";
 import {
   applyStagePermissions,
   serverMuteMicrophone,
+  revokePublishedSources,
   removeLiveKitParticipant,
   livekitConfigured,
   type SocialRole,
 } from "@/lib/livekitServer";
+import {
+  decideRoomPublish,
+  type CinemaReservation,
+  type RoomMediaRole,
+} from "@/lib/roomMediaPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +23,16 @@ export const dynamic = "force-dynamic";
 function isModeratorRow(row: { role?: string | null; badge?: string | null } | null): boolean {
   if (!row) return false;
   return row.role === "host" || row.badge === "mod" || row.badge === "cohost";
+}
+
+function mediaRole(
+  space: { host_id: string },
+  row: { role?: string | null; badge?: string | null } | null,
+  userId: string,
+): RoomMediaRole {
+  if (space.host_id === userId) return "host";
+  if (row?.badge === "mod" || row?.badge === "cohost") return "moderator";
+  return row?.role === "speaker" ? "speaker" : "audience";
 }
 
 // PATCH /api/social/spaces/[spaceId]/participants/[userId]
@@ -146,11 +162,21 @@ export async function PATCH(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const isCinema = space.room_format === "cinema";
+  const mustReleaseCamera =
+    isCinema &&
+    (body.ban === true ||
+      body.remove === true ||
+      body.role === "audience" ||
+      body.host_muted === true ||
+      body.badge === null);
+
   // Mirror the change onto LiveKit so publish permission actually flips at
-  // runtime. Faces (live_* room_format) allow video on stage; Spaces are audio.
+  // runtime. Source selection is made from durable role/mute/reservation state,
+  // never from a generic "withVideo" boolean.
+  let livekitSynced = true;
   if (livekitConfigured()) {
     const roomName: string = space.livekit_room ?? `space_${space.id}`;
-    const withVideo = String(space.room_format ?? "").startsWith("live_");
 
     const { data: avatarRow } = await supabase
       .from("profiles")
@@ -159,6 +185,42 @@ export async function PATCH(
       .maybeSingle();
     const avatarUrl = (avatarRow as { avatar_url?: string | null } | null)?.avatar_url ?? null;
 
+    const { data: updatedParticipant } = await supabase
+      .from("space_participants")
+      .select("role, badge, host_muted, left_at")
+      .eq("space_id", params.spaceId)
+      .eq("user_id", params.userId)
+      .maybeSingle();
+    const { data: slotRows, error: slotsError } = isCinema
+      ? await supabase
+          .from("cinema_camera_slots")
+          .select("slot, user_id")
+          .eq("space_id", params.spaceId)
+      : { data: [], error: null };
+    if (slotsError) {
+      return NextResponse.json(
+        { error: `Participant updated but Cinema camera authorization is unavailable: ${slotsError.message}` },
+        { status: 503 },
+      );
+    }
+    const reservations: CinemaReservation[] = (slotRows ?? []).map((row) => ({
+      slot: Number(row.slot),
+      userId: String(row.user_id),
+    }));
+    const policyReservations = mustReleaseCamera
+      ? reservations.filter((reservation) => reservation.userId !== params.userId)
+      : reservations;
+    const removed = body.ban === true || body.remove === true || Boolean(updatedParticipant?.left_at);
+    const decision = decideRoomPublish({
+      roomFormat: space.room_format,
+      hostId: space.host_id,
+      userId: params.userId,
+      role: removed ? "audience" : mediaRole(space, updatedParticipant, params.userId),
+      hostMuted: Boolean(updatedParticipant?.host_muted),
+      reservations: policyReservations,
+      requested: ["camera", "microphone"],
+    });
+
     if (body.ban === true) {
       // Eject the participant from the room right now. removeParticipant
       // disconnects them with reason PARTICIPANT_REMOVED and they won't
@@ -166,48 +228,61 @@ export async function PATCH(
       // manual rejoin attempt.
       await removeLiveKitParticipant(roomName, params.userId);
     } else if (body.remove === true) {
-      await applyStagePermissions({
+      livekitSynced = await applyStagePermissions({
         roomName,
         identity: params.userId,
-        onStage: false,
-        withVideo,
+        sources: [],
         socialRole: "audience",
         avatarUrl,
       });
+      await revokePublishedSources(roomName, params.userId, ["microphone", "camera"], {
+        disconnectOnCamera: isCinema,
+      });
+    } else {
+      livekitSynced = await applyStagePermissions({
+        roomName,
+        identity: params.userId,
+        sources: decision.allowedSources,
+        socialRole: mediaRole(space, updatedParticipant, params.userId) as SocialRole,
+        avatarUrl,
+      });
+      if (
+        body.role === "audience" ||
+        body.host_muted === true ||
+        body.badge === null
+      ) {
+        await revokePublishedSources(roomName, params.userId, ["microphone", "camera"]);
+      } else if (typeof body.host_muted === "boolean") {
+        await serverMuteMicrophone(roomName, params.userId, body.host_muted);
+      }
+    }
+
+    if (body.ban === true) {
+      // removeParticipant is the fail-closed runtime fallback for a ban.
+      await revokePublishedSources(roomName, params.userId, ["microphone", "camera"], {
+        disconnectOnCamera: true,
+      });
+    }
+    if (body.role === "audience") {
       await serverMuteMicrophone(roomName, params.userId, true);
-    } else if (body.role === "speaker") {
-      await applyStagePermissions({
-        roomName,
-        identity: params.userId,
-        onStage: true,
-        withVideo,
-        socialRole: "speaker",
-        avatarUrl,
-      });
-    } else if (body.role === "audience") {
-      await applyStagePermissions({
-        roomName,
-        identity: params.userId,
-        onStage: false,
-        withVideo,
-        socialRole: "audience",
-        avatarUrl,
-      });
-      await serverMuteMicrophone(roomName, params.userId, true);
-    } else if (typeof body.host_muted === "boolean") {
-      await serverMuteMicrophone(roomName, params.userId, body.host_muted);
-    } else if (body.badge === "mod") {
-      // Moderators stay on stage as speakers — make sure they can publish.
-      await applyStagePermissions({
-        roomName,
-        identity: params.userId,
-        onStage: true,
-        withVideo,
-        socialRole: "moderator" as SocialRole,
-        avatarUrl,
-      });
     }
   }
 
-  return NextResponse.json({ ok: true });
+  // Keep the durable seat occupied until runtime permission removal and track
+  // muting have succeeded. If LiveKit is unavailable, this request fails above
+  // and the seat cannot be reused by a fourth camera.
+  if (mustReleaseCamera) {
+    const { error: slotError } = await supabase.rpc("release_cinema_camera_slot", {
+      p_space_id: space.id,
+      p_user_id: params.userId,
+    });
+    if (slotError) {
+      return NextResponse.json(
+        { error: `Participant updated but Cinema camera release failed: ${slotError.message}` },
+        { status: 503 },
+      );
+    }
+  }
+
+  return NextResponse.json({ ok: true, livekit_synced: livekitSynced });
 }

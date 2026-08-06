@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { classifySource } from "@/lib/cinemaPlayback";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,24 @@ export async function GET(
     return NextResponse.json({ error: "spaceId is required" }, { status: 400 });
   }
 
-  const { data, error } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  const { data: space, error: spaceError } = await supabase
+    .from("spaces")
+    .select("id, room_format, status")
+    .eq("id", spaceId)
+    .maybeSingle();
+  if (spaceError) {
+    return NextResponse.json({ error: spaceError.message }, { status: 500 });
+  }
+  if (!space) return NextResponse.json({ error: "Room not found" }, { status: 404 });
+  if (space.room_format !== "cinema") {
+    return NextResponse.json({ error: "This room is not a Cinema room" }, { status: 409 });
+  }
+  if (space.status === "ended") {
+    return NextResponse.json({ error: "This room has ended" }, { status: 409 });
+  }
+
+  const { data, error } = await supabase
     .from("room_playback_state")
     .select("*")
     .eq("space_id", spaceId)
@@ -116,17 +134,26 @@ export async function PUT(
     updated_by: userId,
   };
 
+  // Source validation needs the final URL/type pair, so read the current row
+  // once when the patch changes either half of the pair. This stops a caller
+  // from pairing arbitrary https with "youtube" (or vice versa).
+  let existingSource: { source_url: string | null; source_type: string } | null = null;
+  if ("source_url" in body || "source_type" in body) {
+    const { data: current, error: currentError } = await supabase
+      .from("room_playback_state")
+      .select("source_url, source_type")
+      .eq("space_id", spaceId)
+      .maybeSingle();
+    if (currentError) return NextResponse.json({ error: currentError.message }, { status: 500 });
+    existingSource = current;
+  }
+
   if ("source_url" in body) {
     const url = body.source_url;
     if (url !== null && typeof url !== "string") {
       return NextResponse.json({ error: "source_url must be a string or null" }, { status: 400 });
     }
-    if (typeof url === "string" && url && !url.startsWith("https://")) {
-      // Mirrors classifySource() on the client. Enforced again here because a
-      // client check is a convenience, not a control.
-      return NextResponse.json({ error: "source_url must be https" }, { status: 400 });
-    }
-    patch.source_url = url || null;
+    patch.source_url = typeof url === "string" ? url.trim() || null : null;
   }
 
   if ("source_type" in body) {
@@ -141,6 +168,29 @@ export async function PUT(
       );
     }
     patch.source_type = type;
+  }
+
+  if ("source_url" in body || "source_type" in body) {
+    const nextUrl =
+      "source_url" in patch ? (patch.source_url as string | null) : existingSource?.source_url ?? null;
+    const nextType =
+      "source_type" in patch
+        ? (patch.source_type as string)
+        : existingSource?.source_type ?? "url";
+    if (nextUrl) {
+      const classified = classifySource(nextUrl);
+      if (!classified.ok) {
+        return NextResponse.json({ error: classified.reason }, { status: 400 });
+      }
+      if (classified.type !== nextType) {
+        return NextResponse.json(
+          { error: "source_type must match the validated source URL" },
+          { status: 400 },
+        );
+      }
+      patch.source_url = classified.url;
+      patch.source_type = classified.type;
+    }
   }
 
   if ("position_seconds" in body) {

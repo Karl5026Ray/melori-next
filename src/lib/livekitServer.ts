@@ -7,6 +7,7 @@ import {
   EncodedFileOutput,
   S3Upload,
 } from "livekit-server-sdk";
+import type { PublishSource } from "@/lib/roomMediaPolicy";
 
 // Server-only LiveKit control-plane helper.
 //
@@ -161,11 +162,10 @@ export async function stopRoomRecording(egressId: string): Promise<boolean> {
 interface ApplyOptions {
   roomName: string;
   identity: string;
-  // true → on stage (may publish); false → audience (subscribe-only).
-  onStage: boolean;
-  // Faces (video) rooms allow camera + mic when on stage; Spaces (audio) allow
-  // mic only. Ignored when onStage is false.
-  withVideo: boolean;
+  // The caller has already used roomMediaPolicy against durable role/mute/slot
+  // state. Keeping the explicit source list here prevents a boolean "video"
+  // shortcut from granting every Cinema speaker a camera.
+  sources: readonly PublishSource[];
   socialRole: SocialRole;
   avatarUrl?: string | null;
 }
@@ -175,11 +175,9 @@ interface ApplyOptions {
 // fine — their next join token will already carry the right grant because the
 // token route reads the same DB role).
 export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean> {
-  const sources = opts.onStage
-    ? opts.withVideo
-      ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
-      : [TrackSource.MICROPHONE]
-    : [];
+  const sources = opts.sources.map((source) =>
+    source === "camera" ? TrackSource.CAMERA : TrackSource.MICROPHONE,
+  );
 
   const metadata: StageMetadata = {
     social_role: opts.socialRole,
@@ -191,7 +189,7 @@ export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean
       metadata: JSON.stringify(metadata),
       permission: {
         canSubscribe: true,
-        canPublish: opts.onStage,
+        canPublish: sources.length > 0,
         canPublishData: true,
         canPublishSources: sources,
       },
@@ -206,8 +204,7 @@ export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean
     if (/not found|does not exist|no participant/i.test(msg)) {
       return false;
     }
-    console.warn("[livekitServer] updateParticipant failed", msg);
-    return false;
+    throw err;
   }
 }
 
@@ -246,6 +243,42 @@ export async function removeLiveKitParticipant(
 // so a demoted / host-muted speaker actually stops being heard even if their
 // client is slow to react. Best-effort: returns silently if they aren't
 // publishing.
+export async function revokePublishedSources(
+  roomName: string,
+  identity: string,
+  sources: readonly PublishSource[],
+  options: { disconnectOnCamera?: boolean } = {},
+): Promise<boolean> {
+  try {
+    const svc = client();
+    const participants = await svc.listParticipants(roomName);
+    const p = participants.find((x) => x.identity === identity);
+    if (!p) return false;
+    const forbidden = new Set<TrackSource>(
+      sources.map((source) =>
+        source === "camera" ? TrackSource.CAMERA : TrackSource.MICROPHONE,
+      ),
+    );
+    const tracks = p.tracks.filter((track) => forbidden.has(track.source));
+    await Promise.all(
+      tracks.map((track) => svc.mutePublishedTrack(roomName, identity, track.sid, true)),
+    );
+
+    // LiveKit permission updates stop new tracks, and muting makes the existing
+    // source inert without dropping audio participation. Hard disconnect is
+    // reserved for explicit removal, ban, leave, and host-handoff flows.
+    if (options.disconnectOnCamera) {
+      await svc.removeParticipant(roomName, identity);
+    }
+    return true;
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|no participant/i.test(msg)) return false;
+    throw err;
+  }
+}
+
+// Backward-compatible microphone-only adapter for existing non-Cinema callers.
 export async function serverMuteMicrophone(
   roomName: string,
   identity: string,
@@ -254,13 +287,13 @@ export async function serverMuteMicrophone(
   try {
     const svc = client();
     const participants = await svc.listParticipants(roomName);
-    const p = participants.find((x) => x.identity === identity);
-    if (!p) return;
-    const micTrack = p.tracks.find(
-      (t) => t.source === TrackSource.MICROPHONE,
+    const participant = participants.find((entry) => entry.identity === identity);
+    const microphone = participant?.tracks.find(
+      (track) => track.source === TrackSource.MICROPHONE,
     );
-    if (!micTrack) return;
-    await svc.mutePublishedTrack(roomName, identity, micTrack.sid, muted);
+    if (microphone) {
+      await svc.mutePublishedTrack(roomName, identity, microphone.sid, muted);
+    }
   } catch (err) {
     console.warn("[livekitServer] serverMuteMicrophone failed", (err as Error)?.message);
   }

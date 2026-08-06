@@ -35,6 +35,11 @@ import {
   publishDefaultsFor,
   type AudioProfile,
 } from "@/lib/audioProfile";
+import {
+  permissionsAllowSource,
+  waitForPublishSource,
+  type ParticipantPermissionsLike,
+} from "@/lib/cameraPublishGate";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 import type { FacingMode } from "@/lib/videoMirror";
@@ -153,6 +158,15 @@ interface ActiveVideoSession {
   // mirroring in the UI only — never touches the published track.
   facingMode: FacingMode;
   cleanups: Array<() => void>;
+  // Last known LOCAL publish permissions. A runtime grant (Cinema slot claim,
+  // host stage approval) arrives as an event AFTER the API that caused it has
+  // already returned, so callers must be able to wait for it rather than
+  // publishing into a stale local copy.
+  localPermissions: ParticipantPermissionsLike | null;
+  // Listeners woken on every local permission change. Kept separate from
+  // onLocalPermissionsChanged so an internal waiter cannot be dropped by a
+  // caller that did not pass that callback.
+  permissionListeners: Set<() => void>;
   // Remembered so a subscriber can later upgrade to publisher (becomePublisher)
   // by reconnecting with the same callbacks but a publisher token.
   lastOpts: JoinVideoOptions | null;
@@ -170,8 +184,34 @@ let session: ActiveVideoSession = {
   audioProfile: "performance",
   facingMode: null,
   cleanups: [],
+  localPermissions: null,
+  permissionListeners: new Set(),
   lastOpts: null,
 };
+
+function notifyPermissionListeners() {
+  session.permissionListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      /* one bad waiter must not starve the others */
+    }
+  });
+}
+
+// Block until the server-side grant for `source` has actually reached this
+// client. Throws (rather than publishing and failing opaquely) when it never
+// arrives, so the caller can undo whatever it did to earn the grant.
+async function awaitPublishPermission(source: "camera" | "microphone"): Promise<void> {
+  await waitForPublishSource({
+    source,
+    read: () => session.localPermissions,
+    subscribe: (listener) => {
+      session.permissionListeners.add(listener);
+      return () => session.permissionListeners.delete(listener);
+    },
+  });
+}
 
 async function fetchToken(spaceId: string, role: VideoRole) {
   const res = await authFetch("/api/livekit-token", {
@@ -534,9 +574,36 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     // token refresh / reconnect needed. Surface it so the UI can enable media.
     const onPermChanged = (
       _prev: unknown,
-      participant: { isLocal?: boolean; permissions?: { canPublish?: boolean } },
+      participant: {
+        isLocal?: boolean;
+        permissions?: ParticipantPermissionsLike & { canPublish?: boolean };
+      },
     ) => {
       if (participant?.isLocal) {
+        // Record the full permission object (canPublishSources included) before
+        // notifying: a camera grant does not change canPublish for a
+        // participant who was already publishing a microphone, so the boolean
+        // alone cannot tell a waiter that camera became available.
+        session.localPermissions = participant.permissions ?? null;
+        notifyPermissionListeners();
+        // A revoked camera source (host released this guest's Cinema seat) mutes
+        // the track server-side but leaves the local <video> attached, so the UI
+        // would keep showing a camera the participant no longer has. Drop it.
+        if (
+          session.localVideoEl &&
+          !permissionsAllowSource(session.localPermissions, "camera")
+        ) {
+          void room.localParticipant
+            ?.setCameraEnabled?.(false)
+            .catch(() => undefined);
+          try {
+            session.localVideoEl.remove();
+          } catch {
+            /* noop */
+          }
+          session.localVideoEl = null;
+          opts.onLocalVideoRemoved?.();
+        }
         opts.onLocalPermissionsChanged?.(!!participant.permissions?.canPublish);
       }
     };
@@ -608,6 +675,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     });
 
     session.room = room;
+    // Seed permissions from the connected participant so a host who joined with
+    // a slot already granted never waits on an event that will not fire.
+    session.localPermissions =
+      (room.localParticipant?.permissions as ParticipantPermissionsLike | undefined) ?? null;
     session.spaceId = opts.spaceId;
     session.identity = creds.identity;
     session.role = creds.role;
@@ -673,8 +744,43 @@ export async function ensureVideoAudio(): Promise<void> {
   }
 }
 
+/**
+ * True once this client is connected to the room. Callers gate a camera control
+ * on this so a tap cannot claim a durable slot before there is anything to
+ * publish on.
+ */
+export function isVideoRoomConnected(): boolean {
+  return !!session.room;
+}
+
+/**
+ * True when the local participant may publish camera RIGHT NOW according to the
+ * permissions this client has actually received.
+ */
+export function canPublishCameraNow(): boolean {
+  return !!session.room && permissionsAllowSource(session.localPermissions, "camera");
+}
+
 export async function setCameraEnabled(enabled: boolean): Promise<void> {
-  if (!session.room) return;
+  // Turning the camera OFF while disconnected is already the desired state.
+  // Turning it ON is not: silently returning here reported success to a caller
+  // that had just claimed a Cinema slot, stranding that reservation with no
+  // camera and no error to trigger its release.
+  if (!session.room) {
+    if (!enabled) return;
+    throw new Error("Not connected to the room yet. Wait for the room to connect, then try again.");
+  }
+  if (enabled) {
+    // The grant that authorized this call was applied server-side; wait for it
+    // to reach this client before publishing into a stale permission set.
+    await awaitPublishPermission("camera");
+    assertCaptureSupported();
+    if ((await getMediaPermission()) === "denied") {
+      throw new Error(
+        "Camera is blocked. Enable it for this site in your browser settings, then try again.",
+      );
+    }
+  }
   await session.room.localParticipant.setCameraEnabled(enabled);
   if (!enabled) {
     try {
@@ -695,7 +801,19 @@ export async function setCameraEnabled(enabled: boolean): Promise<void> {
       (entry: any) => entry?.source === source,
     );
   const track = (publication as any)?.track ?? (publication as any)?.videoTrack;
-  if (!track?.attach) return;
+  // No attachable camera track means the publish did not actually happen. This
+  // must surface as a failure: the caller's undo path (releasing a claimed
+  // Cinema slot) is the only thing that keeps a guest seat from leaking.
+  if (!track?.attach) {
+    // Release the capture device before reporting the failure so a dead attempt
+    // never leaves the hardware indicator on.
+    try {
+      await session.room.localParticipant.setCameraEnabled(false);
+    } catch {
+      /* best effort */
+    }
+    throw new Error("The camera did not start. Check that no other app is using it, then try again.");
+  }
   const element = track.attach() as HTMLVideoElement;
   element.playsInline = true;
   element.autoplay = true;
@@ -784,6 +902,8 @@ export async function leaveVideoRoom(): Promise<void> {
     remoteVideoEls: new Map(),
     remoteAudioEls: [],
     cleanups: [],
+    localPermissions: null,
+    permissionListeners: new Set(),
     lastOpts: keepOpts,
   };
 }

@@ -87,6 +87,50 @@ check(
     /autoEnableMicrophone: !myPart\.is_muted && !myPart\.host_muted/.test(cinemaPage),
 );
 
+console.log("\nCinema camera client invariants");
+check(
+  "camera publish waits for the runtime grant to reach this client",
+  /await awaitPublishPermission\("camera"\)/.test(videoClient) &&
+    /read: \(\) => session\.localPermissions/.test(videoClient),
+);
+check(
+  "the full permission object is recorded, not just canPublish",
+  /session\.localPermissions = participant\.permissions \?\? null/.test(videoClient),
+);
+check(
+  "turning the camera on while disconnected fails instead of reporting success",
+  /if \(!session\.room\) \{\s*\n\s*if \(!enabled\) return;\s*\n\s*throw new Error/.test(videoClient),
+);
+check(
+  "a publish with no attachable camera track throws so the caller can undo",
+  /if \(!track\?\.attach\) \{[\s\S]*throw new Error\("The camera did not start/.test(videoClient),
+);
+check(
+  "a revoked camera source drops the local preview",
+  /!permissionsAllowSource\(session\.localPermissions, "camera"\)[\s\S]*onLocalVideoRemoved\?\.\(\)/.test(
+    videoClient,
+  ),
+);
+check(
+  "a stranded camera claim is never left holding a seat silently",
+  // Both the success and failure paths re-read durable slot state, and the
+  // failure path still runs the existing release.
+  /catch \(err\) \{[\s\S]*setShareToast\([\s\S]*await refreshCinemaSlots\(\);\s*\n\s*\} finally \{/.test(
+    cinemaPage,
+  ) && /method: "DELETE"/.test(cinemaPage),
+);
+check(
+  "the camera control is disabled until the room is connected",
+  /disabled=\{!cinemaRoomConnected \|\| cinemaCameraBusy\}/.test(cinemaPage) &&
+    /if \(!cinemaRoomConnected\)/.test(cinemaPage),
+);
+check(
+  "camera resume is per-page-session intent, never a bare reservation",
+  /autoEnableCamera: resumeCamera/.test(cinemaPage) &&
+    /const resumeCamera = cinemaCameraIntentRef\.current/.test(cinemaPage) &&
+    !/autoEnableCamera: cinemaReservations/.test(cinemaPage),
+);
+
 console.log(
   failures === 0
     ? "\nAll Cinema server-invariant assertions passed.\n"

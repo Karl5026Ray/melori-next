@@ -11,11 +11,12 @@
 // Supabase ledger can record one of them under a name that silently drops
 // the numeric prefix, making the collision even harder to trace later.
 //
-// This has now happened twice. This test makes a third collision fail CI
-// instead of quietly shipping. 048_host_last_seen.sql was moved to
-// 055_host_last_seen.sql to resolve the collision this test was written for
-// (see supabase/migrations/055_host_last_seen.sql for why that number and
-// not a re-run of the migration).
+// This test found the problem is bigger than #279 described: it also flags
+// 021 and 054 (see KNOWN_UNRESOLVED below), which are tracked as separate
+// issues rather than folded into the #279 fix. 048_host_last_seen.sql was
+// moved to 055_host_last_seen.sql to resolve the collision this test was
+// originally written for (see supabase/migrations/055_host_last_seen.sql
+// for why that number and not a re-run of the migration).
 //
 // Pure file I/O, no DB and no network, matching the rest of scripts/*.test.ts.
 //
@@ -26,6 +27,20 @@ import { join } from "node:path";
 
 const ROOT = join(__dirname, "..");
 const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
+
+// Prefixes with a known, already-tracked collision that this test does not
+// yet enforce. Each one must map to an open issue -- this is a TODO list,
+// not a place to quietly bury a new collision. Adding a prefix here without
+// opening (or linking) an issue defeats the point of this test.
+//
+//   021 -- 021_follows.sql vs 021_social_video_like_comment_counters.sql
+//          (applied-ledger prefix-drop, same symptom as #279) -- see #295
+//   054 -- 054_cinema_camera_slots.sql vs
+//          054_move_membership_backup_out_of_public.sql, and
+//          054_cinema_camera_slots.sql does not appear in the applied
+//          ledger at all (looks like the #278 gap, not just the #279
+//          collision) -- see #296
+const KNOWN_UNRESOLVED = new Set(["021", "054"]);
 
 let checks = 0;
 let failures = 0;
@@ -49,6 +64,11 @@ const byPrefix = new Map<string, string[]>();
 const unprefixed: string[] = [];
 
 for (const file of files) {
+  // A `<n>_rollback.sql` file is a companion script for migration <n>, meant
+  // to be run manually to undo it -- it intentionally shares the number and
+  // is not part of the apply-order sequence, so it is not a real collision.
+  if (/_rollback\.sql$/.test(file)) continue;
+
   const m = /^(\d+)_/.exec(file);
   if (!m) {
     unprefixed.push(file);
@@ -70,13 +90,30 @@ if (unprefixed.length > 0) {
 }
 
 const collisions = [...byPrefix.entries()].filter(([, list]) => list.length > 1);
+const newCollisions = collisions.filter(([prefix]) => !KNOWN_UNRESOLVED.has(prefix));
+const staleAllowlist = [...KNOWN_UNRESOLVED].filter(
+  (prefix) => !collisions.some(([p]) => p === prefix),
+);
 
-if (collisions.length > 0) {
-  for (const [prefix, list] of collisions) {
+if (newCollisions.length > 0) {
+  for (const [prefix, list] of newCollisions) {
     fail(`prefix ${prefix} is shared by ${list.length} files: ${list.join(", ")}`);
   }
 } else {
-  pass(`all ${byPrefix.size} numeric prefixes in supabase/migrations/ are unique`);
+  pass(
+    `no new prefix collisions (${KNOWN_UNRESOLVED.size} pre-existing one(s) tracked in KNOWN_UNRESOLVED)`,
+  );
+}
+
+if (staleAllowlist.length > 0) {
+  for (const prefix of staleAllowlist) {
+    fail(
+      `KNOWN_UNRESOLVED still lists prefix ${prefix}, but it is no longer ` +
+        `collision -- remove it from the allowlist now that it is fixed`,
+    );
+  }
+} else if (KNOWN_UNRESOLVED.size > 0) {
+  pass("KNOWN_UNRESOLVED contains no stale (already-fixed) entries");
 }
 
 console.log(

@@ -13,7 +13,6 @@
       "hooks.stripe.com",
       "checkout.stripe.com",
       "*.livekit.cloud",
-      "*.agora.io",
       "*.pubnub.com"
     ]
   },

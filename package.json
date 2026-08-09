@@ -38,8 +38,6 @@
     "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.5.0",
     "@supabase/supabase-js": "^2.45.0",
-    "agora-rtc-sdk-ng": "^4.20.0",
-    "agora-token": "^2.0.3",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",

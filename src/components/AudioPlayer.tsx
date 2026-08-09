@@ -347,7 +347,7 @@ function DesktopBar() {
 // uses a transform, as a delta on top of the anchored base. Placed is placed.
 // -------------------------------------------------------------------------
 const POS_KEY = "melori:player:pos";
-const MARGIN = 8;
+const MARGIN = 16;
 // Height of the fixed mobile tab bar (h-14). Reserved below the pill, on top
 // of whatever the home-indicator safe-area inset reports, so the pill can
 // never park behind the nav.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { revalidateTag } from "next/cache";
+import { getSupabaseAdmin, PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
@@ -149,6 +150,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     console.error("Approve submission update failed:", updateErr);
     return NextResponse.json({ error: "Approval saved but status update failed" }, { status: 500 });
   }
+
+  // Public catalog reads on / and /music are cached for 60s; drop that entry
+  // now so an approved submission's (unpublished) release doesn't linger on a
+  // stale cache once the admin publishes it.
+  revalidateTag(PUBLIC_CATALOG_TAG, "max");
 
   return NextResponse.json({ ok: true, status: "approved", approved_track_id: approvedTrackId });
 }

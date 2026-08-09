@@ -111,7 +111,7 @@ Preview freely. Support directly.{" "}
 <span className="whitespace-nowrap">Create endlessly.</span>
 </p>
 <p className="mt-4 max-w-2xl text-base text-text-secondary">
-Preview any song free. Go Superfan for full playback, or buy the track to own it. No platform cut — artists keep every dollar after payment processing.
+Melori is where independent creators share their work, go live, and earn — you keep what you make.
 </p>
 
 {/* Instant-listening centerpiece: autoplays a real catalog track (muted, then

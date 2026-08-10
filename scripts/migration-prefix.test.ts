@@ -11,15 +11,21 @@
 // Supabase ledger can record one of them under a name that silently drops
 // the numeric prefix, making the collision even harder to trace later.
 //
-// This test found the problem is bigger than #279 described: it also flagged
-// 021 and 054 (see KNOWN_UNRESOLVED below), which are tracked as separate
-// issues rather than folded into the #279 fix. 048_host_last_seen.sql was
-// moved to 055_host_last_seen.sql to resolve the collision this test was
-// originally written for (see supabase/migrations/055_host_last_seen.sql
-// for why that number and not a re-run of the migration). The 021 collision
-// was resolved the same way: 021_social_video_like_comment_counters.sql
-// moved to 056_social_video_like_comment_counters.sql (issue #295, see that
-// file for the ledger evidence).
+// This test found the problem was bigger than #279 described: it also
+// flagged 021 and 054. Both are now resolved and KNOWN_UNRESOLVED is empty:
+//
+//   - 048_host_last_seen.sql moved to 055_host_last_seen.sql (the #279 fix
+//     this test was originally written for -- see
+//     supabase/migrations/055_host_last_seen.sql for why that number and
+//     not a re-run of the migration).
+//   - 021_social_video_like_comment_counters.sql moved to
+//     056_social_video_like_comment_counters.sql (issue #295 -- see that
+//     file for the ledger evidence; it had already been applied under the
+//     021 name, so the rename is a pure no-op against production).
+//   - 054_cinema_camera_slots.sql moved to 057_cinema_camera_slots.sql
+//     (issue #296 -- unlike the other two, this one had never been applied
+//     to production at all despite live code depending on it; see that file
+//     for details).
 //
 // Pure file I/O, no DB and no network, matching the rest of scripts/*.test.ts.
 //
@@ -36,12 +42,9 @@ const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
 // not a place to quietly bury a new collision. Adding a prefix here without
 // opening (or linking) an issue defeats the point of this test.
 //
-//   054 -- 054_cinema_camera_slots.sql vs
-//          054_move_membership_backup_out_of_public.sql, and
-//          054_cinema_camera_slots.sql does not appear in the applied
-//          ledger at all (looks like the #278 gap, not just the #279
-//          collision) -- see #296
-const KNOWN_UNRESOLVED = new Set(["054"]);
+// Empty as of issue #296 -- see the header comment above for the history of
+// what used to be here (021, 048, 054) and how each was resolved.
+const KNOWN_UNRESOLVED = new Set<string>([]);
 
 let checks = 0;
 let failures = 0;
@@ -109,7 +112,7 @@ if (newCollisions.length > 0) {
 if (staleAllowlist.length > 0) {
   for (const prefix of staleAllowlist) {
     fail(
-      `KNOWN_UNRESOLVED still lists prefix ${prefix}, but it is no longer ` +
+      `KNOWN_UNRESOLVED still lists prefix ${prefix}, but it is no longer a ` +
         `collision -- remove it from the allowlist now that it is fixed`,
     );
   }

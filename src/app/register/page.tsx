@@ -14,8 +14,6 @@ import { startOAuthSignIn } from "@/lib/nativeAuth";
 //     client-side without payment.
 // One auth system (Supabase). Google sign-in offered for the free path.
 
-const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
-
 type Tier = "free" | "superfan" | "artist" | "snappd";
 
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
@@ -54,8 +52,7 @@ function RegisterInner() {
   const [tier, setTier] = useState<Tier>(initialTier);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   // When email confirmation is required, we hold the address here so the user
@@ -124,24 +121,14 @@ function RegisterInner() {
       setError("Password must be at least 6 characters.");
       return;
     }
-    const normalizedUsername = username.trim().toLowerCase();
-    if (!USERNAME_RE.test(normalizedUsername)) {
-      setError(
-        "Username must be 3–30 chars: lowercase letters, numbers, underscore or dot.",
-      );
-      return;
-    }
-
-    setLoading(true);
+        setLoading(true);
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            username: normalizedUsername,
             role: "free",
-            display_name: normalizedUsername,
           },
         },
       });
@@ -185,7 +172,7 @@ function RegisterInner() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ username: normalizedUsername, role: "free" }),
+            body: JSON.stringify({ role: "free" }),
           });
         }
       } catch {
@@ -313,15 +300,7 @@ function RegisterInner() {
               <span className="h-px flex-1 bg-white/10" />
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username"
-                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c9a96e] transition"
-              />
-              <input
+  <input
                 type="email"
                 required
                 value={email}

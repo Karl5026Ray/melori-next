@@ -15,7 +15,7 @@ function check(name: string, condition: boolean) {
 
 const root = process.cwd();
 const migration = readFileSync(
-  join(root, "supabase/migrations/054_cinema_camera_slots.sql"),
+  join(root, "supabase/migrations/057_cinema_camera_slots.sql"),
   "utf8",
 );
 const roomHost = readFileSync(join(root, "src/lib/roomHost.ts"), "utf8");

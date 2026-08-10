@@ -1,3 +1,30 @@
+-- 057_cinema_camera_slots.sql
+--
+-- NOTE: this file was renumbered from 054_cinema_camera_slots.sql. The
+-- number 054 was used by two files at once (this one, and
+-- 054_move_membership_backup_out_of_public.sql, which is already applied to
+-- production under the ledger name "move_membership_backup_out_of_public",
+-- version 20260804212302) -- see issue #296.
+--
+-- Unlike the 021 collision (issue #295), this file itself had never been
+-- applied to production at all: public.cinema_camera_slots did not exist in
+-- information_schema.tables, and no migration ledger entry matched its
+-- contents. That is a real gap, not just a naming collision -- the Cinema
+-- camera-slot feature (src/app/social/spaces/[spaceId]/page.tsx,
+-- src/lib/roomHost.ts, src/app/api/livekit-token/route.ts,
+-- src/app/api/livekit/webhook/route.ts,
+-- src/app/api/social/spaces/[spaceId]/leave/route.ts, and
+-- src/app/api/social/spaces/[spaceId]/participants/[userId]/route.ts) reads
+-- and writes this table and calls claim_cinema_camera_slot /
+-- release_cinema_camera_slot unconditionally, so shipped code depends on it.
+--
+-- Applied to production directly via the Supabase SQL Editor (automated
+-- apply_migration is blocked for this project by the Claude Code auto mode
+-- classifier, same as issue #278/047_space_hand_raise_mode.sql). This file
+-- is kept, renumbered to the next free slot, so a fresh database built from
+-- this repo also gets the table and functions below. See
+-- scripts/migration-prefix.test.ts for the guard test.
+--
 -- Durable, capacity-constrained camera reservations for Cinema. The fixed
 -- primary key makes the three visual camera tiles a database invariant rather
 -- than a best-effort client convention.

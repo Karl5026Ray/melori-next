@@ -186,7 +186,11 @@ test.describe("Cinema stable room", () => {
   }) => {
     await seedSession(page);
     await mockCinemaRoom(page);
-    await page.goto(`/social/spaces/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
+    // Cinema rooms live at their own route now. The Spaces route still
+    // redirects here for old links, but the test enters the way the product
+    // does so a regression in the split shows up as a test failure.
+    await page.goto(`/social/cinema/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
+    expect(new URL(page.url()).pathname).toBe(`/social/cinema/${SPACE_ID}`);
 
     await expect(page.getByTestId("cinema-screen")).toBeVisible();
     await expect(page.getByTestId("cinema-camera-slot")).toHaveCount(3);

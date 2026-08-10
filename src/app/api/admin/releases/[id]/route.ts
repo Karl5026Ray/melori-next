@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { revalidateTag } from "next/cache";
+import { getSupabaseAdmin, PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
@@ -122,6 +123,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (!data) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });
     }
+
+    // Public catalog reads on / and /music are cached for 60s; drop that entry
+    // now so an edited/published release reflects immediately.
+    revalidateTag(PUBLIC_CATALOG_TAG, "max");
+
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(`PATCH /api/admin/releases/${params.id} failed:`, err);
@@ -174,6 +180,11 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     }
     const { error } = await supabase.from("releases").delete().eq("id", id);
     if (error) throw error;
+
+    // Public catalog reads on / and /music are cached for 60s; drop that entry
+    // now so a deleted release disappears immediately.
+    revalidateTag(PUBLIC_CATALOG_TAG, "max");
+
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(`DELETE /api/admin/releases/${params.id} failed:`, err);

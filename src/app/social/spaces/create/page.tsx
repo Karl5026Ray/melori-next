@@ -10,26 +10,27 @@ import {
 import { authFetch } from "@/lib/authClient";
 import {
   ArrowLeft,
-  Clapperboard,
   Headphones,
   MessageCircle,
   Mic,
   Radio,
 } from "lucide-react";
 import Link from "next/link";
-import { roomExitHref, roomScheduledHref } from "@/lib/cinema";
+import { roomExitHref, roomHref, roomScheduledHref } from "@/lib/cinema";
 
 // `id` drives the UI selection AND is posted as the room's `type`. Those are
 // two different vocabularies: `spaces.type` has its own CHECK constraint
-// (listening | discussion | creation | dj_set) that predates room_format and
-// does NOT include 'cinema'. So Cinema carries an explicit `spaceType` of
-// 'listening' — a watch party is a listening room with a screen — while its
-// room_format is what actually distinguishes it. Without this split, creating
-// a Cinema room fails the spaces_type_check constraint.
+// (listening | discussion | creation | dj_set) that predates room_format, so
+// the UI id and the posted type are kept separate here.
+//
+// Cinema is deliberately NOT in this list. It used to be a fifth tile, which
+// meant hosting a watch party started on a form titled "Start a Space" and made
+// Cinema look like a Spaces variant. Cinema is its own selection and now has
+// its own form at /social/cinema/create — see roomCreateHref() in lib/cinema.
 const spaceTypes: {
   id: string;
   spaceType: "listening" | "discussion" | "creation" | "dj_set";
-  format: "release_party" | "discussion" | "versus_battle" | "dj_set" | "cinema";
+  format: "release_party" | "discussion" | "versus_battle" | "dj_set";
   label: string;
   icon: typeof Headphones;
   desc: string;
@@ -66,14 +67,6 @@ const spaceTypes: {
     icon: Radio,
     desc: "Continuous mix with track requests",
   },
-  {
-    id: "cinema",
-    spaceType: "listening",
-    format: "cinema",
-    label: "Cinema",
-    icon: Clapperboard,
-    desc: "Watch together on a shared screen",
-  },
 ];
 
 export default function CreateSpacePage() {
@@ -82,20 +75,13 @@ export default function CreateSpacePage() {
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  // Honour ?format=cinema so the "+" on the Cinema discover screen lands here
-  // with Cinema already selected instead of dropping the host on Release Party.
-  //
-  // Read straight off window.location rather than useSearchParams(): this page
-  // is currently statically prerendered, and useSearchParams() would force it
-  // behind a Suspense boundary. The typeof guard keeps the prerender pass safe.
-  const [type, setType] = useState(() => {
-    if (typeof window === "undefined") return "listening";
-    const requested = new URLSearchParams(window.location.search).get("format");
-    return spaceTypes.find((s) => s.format === requested)?.id ?? "listening";
-  });
-  // The room_format the picker is currently on. Drives where "back" and a
-  // scheduled create return to, so a host who came from Cinema goes back to
-  // Cinema rather than being handed off to Spaces.
+  // No ?format= handling any more. This form used to read ?format=cinema and
+  // preselect the Cinema tile for hosts arriving from the Cinema discover
+  // screen; Cinema now has its own route, so every format this page can create
+  // is an audio Space and Release Party is the honest default.
+  const [type, setType] = useState("listening");
+  // The room_format the picker is currently on, driving where "back" and a
+  // scheduled create return to.
   const selectedFormat = spaceTypes.find((s) => s.id === type)?.format;
 
   const [scheduleFor, setScheduleFor] = useState<"now" | "later">("now");
@@ -154,10 +140,11 @@ export default function CreateSpacePage() {
     if (res.ok) {
       const { space } = await res.json();
       router.push(
-        // A scheduled room has nothing to enter yet, so land back on the
-        // discover screen the host started from — Cinema's STARTING SOON list
-        // for a Cinema room, the scheduled tab for everything else.
-        scheduled_at ? roomScheduledHref(selectedFormat) : `/social/spaces/${space.id}`,
+        // A scheduled room has nothing to enter yet, so land on the scheduled
+        // tab rather than an empty room.
+        scheduled_at
+          ? roomScheduledHref(selectedFormat)
+          : roomHref({ id: space.id, room_format: selectedFormat }),
       );
       return;
     }

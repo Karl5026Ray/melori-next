@@ -1,4 +1,20 @@
--- 021_social_video_like_comment_counters.sql
+-- 056_social_video_like_comment_counters.sql
+--
+-- NOTE: this file was renumbered from 021_social_video_like_comment_counters.sql.
+-- It was already applied to production BEFORE the renumbering, under the
+-- recorded migration name "social_video_like_comment_counters" (version
+-- 20260714185812) -- see issue #295. Renaming the file does not re-run it:
+-- Supabase's migration ledger keys on the recorded version string, not the
+-- filename, so this rename is safe and is a no-op against the already-applied
+-- database. This file is kept (rather than deleted) so a fresh database
+-- built from this repo still gets the triggers and backfill below.
+--
+-- The number 021 was used by two files at once (this one, applied first at
+-- 2026-07-14 18:58 UTC, and 021_follows.sql, applied second at 20:37 UTC and
+-- keeping the 021 name in the ledger). This file was moved to the next free
+-- number, 056, per issue #295. See scripts/migration-prefix.test.ts for the
+-- guard test that now prevents a third collision.
+--
 -- =============================================================================
 -- Keep social_videos.likes_count / comments_count in sync with the
 -- social_video_likes / social_video_comments tables via triggers, so the

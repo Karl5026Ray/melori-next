@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type MouseEvent } from "react";
 import { Bell, BellRing } from "lucide-react";
 import type { Space } from "@/types/social";
-import { formatStartsIn } from "@/lib/cinema";
+import { formatStartsIn, roomHref } from "@/lib/cinema";
 import { authFetch } from "@/lib/authClient";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 
@@ -58,7 +58,7 @@ export function StartingSoonRow({
 
   return (
     <Link
-      href={`/social/spaces/${room.id}`}
+      href={roomHref(room)}
       className="flex items-center gap-3 rounded-xl border border-cinema-border bg-cinema-surface p-3 transition-colors hover:border-cinema-gold/30"
     >
       <div className="min-w-0 flex-1">

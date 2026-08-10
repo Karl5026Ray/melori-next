@@ -2,7 +2,13 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import WelcomeClient from "./WelcomeClient";
 
-export const dynamic = "force-dynamic";
+// No `dynamic = "force-dynamic"` here (see issue #280 and #284) — this page
+// itself performs no server-side reads. All of the per-user work (looking up
+// the Stripe session, verifying the purchase, creating the account) happens
+// client-side inside <WelcomeClient>, which is already wrapped in <Suspense>
+// below, exactly the pattern issue #284 asked for. That keeps this route
+// statically prerenderable so it never emits the `no-store` Cache-Control
+// header that broke / and /music in iOS WebView wrapper browsers.
 
 export const metadata: Metadata = {
   title: "Welcome to Melori",

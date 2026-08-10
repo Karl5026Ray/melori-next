@@ -59,6 +59,46 @@ export function roomScheduledHref(
     : "/social/spaces?tab=scheduled";
 }
 
+/**
+ * Where a room LIVES. The counterpart to {@link roomExitHref}, which only ever
+ * handled the way out.
+ *
+ * Cinema and Spaces rooms are both `spaces` rows, and for a long time both
+ * rendered at /social/spaces/[spaceId] — so a Cinema room's URL, share link and
+ * every tile pointing at it all said "spaces". Callers hardcoded that path,
+ * which is why Cinema kept surfacing as part of Spaces even after the exits
+ * were fixed.
+ *
+ * Route by format instead. Every link to a room should come from here, so
+ * adding a future format means changing one function and not hunting six call
+ * sites again.
+ */
+export function roomHref(
+  room: { id: string; room_format?: string | null } | null | undefined,
+): string {
+  if (!room?.id) return "/social/spaces";
+  return room.room_format === CINEMA_ROOM_FORMAT
+    ? `/social/cinema/${room.id}`
+    : `/social/spaces/${room.id}`;
+}
+
+/**
+ * Where hosting STARTS for each format.
+ *
+ * Cinema had no creation route of its own: the "+" on the Cinema discover
+ * screen sent hosts to /social/spaces/create?format=cinema, i.e. the "Start a
+ * Space" form with Cinema pre-selected as a fifth Room Format tile. Cinema is
+ * its own selection, not a Spaces variant, so it now has its own form and no
+ * longer appears in the Spaces format picker.
+ */
+export function roomCreateHref(
+  roomFormat: string | null | undefined,
+): string {
+  return roomFormat === CINEMA_ROOM_FORMAT
+    ? "/social/cinema/create"
+    : "/social/spaces/create";
+}
+
 /** Narrows an arbitrary `?genre=` search param to a tab we actually render. */
 export function resolveGenreParam(raw: string | undefined): string | null {
   if (!raw) return null;

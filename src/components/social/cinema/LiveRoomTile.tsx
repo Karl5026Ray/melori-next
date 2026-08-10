@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Space } from "@/types/social";
-import { formatWatching } from "@/lib/cinema";
+import { formatWatching, roomHref } from "@/lib/cinema";
 
 // One tile in the 2x2 "LIVE NOW" grid. Compact by design — at two columns on a
 // 390px phone each tile is ~170px wide, so it carries only a LIVE tag, the
@@ -8,7 +8,7 @@ import { formatWatching } from "@/lib/cinema";
 export function LiveRoomTile({ room }: { room: Space }) {
   return (
     <Link
-      href={`/social/spaces/${room.id}`}
+      href={roomHref(room)}
       className="group flex flex-col overflow-hidden rounded-xl border border-cinema-border bg-cinema-surface transition-colors hover:border-cinema-gold/40"
     >
       <div className="relative aspect-video w-full bg-gradient-to-br from-cinema-gold/12 via-cinema-surface to-black">

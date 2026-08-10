@@ -55,6 +55,20 @@ export async function POST(req: NextRequest) {
         ? (body.room_format as string)
         : null;
 
+    // Optional genre slug, used only by the Cinema discover filter tabs
+    // (migration 050). Narrowed to the tabs we actually render, so a bad or
+    // stale value can't create a room that no tab will ever surface. Null =
+    // untagged, which still appears under the default "live now" tab.
+    //
+    // Accepted for any format rather than cinema-only: `genre` is a plain
+    // column on `spaces`, and rejecting it here would just push the same
+    // validation into a second place when another format wants tagging.
+    const ALLOWED_GENRES = new Set(["hip-hop", "rnb", "afrobeats", "pop"]);
+    const genre =
+      typeof body.genre === "string" && ALLOWED_GENRES.has(body.genre)
+        ? (body.genre as string)
+        : null;
+
     // Optional scheduled_at → room is created in `scheduled` status; the
     // host can go live later. Otherwise defaults to live-now.
     let scheduledAt: string | null = null;
@@ -96,6 +110,7 @@ export async function POST(req: NextRequest) {
         topic: topic || "Open Discussion",
         type,
                 room_format,
+        genre,
         host_id: membership.userId,
         status: scheduledAt ? "scheduled" : "live",
         scheduled_at: scheduledAt,

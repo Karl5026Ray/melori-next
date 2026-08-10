@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { SpaceCard } from "@/components/social/spaces/SpaceCard";
 import { Plus, Radio, CalendarClock } from "lucide-react";
 import Link from "next/link";
+import { CINEMA_ROOM_FORMAT } from "@/lib/cinema";
 
 // Rendered per-request: this page queries Supabase at request time, so it must
 // not be statically prerendered at build time (env vars are runtime-only).
@@ -22,6 +23,16 @@ async function getSpaces(tab: Tab) {
     `,
     )
     .eq("status", tab === "scheduled" ? "scheduled" : "live")
+    // Cinema rooms are `spaces` rows, so an unfiltered query listed watch
+    // parties here alongside audio rooms. Cinema is its own destination with
+    // its own discover screen at /social/cinema; it does not belong in the
+    // Spaces list.
+    //
+    // Deliberately .or(is.null, neq) and NOT a bare .neq(). `room_format` is
+    // nullable and has no default — rooms predating it hold NULL — and in SQL
+    // `NULL <> 'cinema'` evaluates to NULL, not true, so a bare .neq() would
+    // silently drop every legacy room from this list.
+    .or(`room_format.is.null,room_format.neq.${CINEMA_ROOM_FORMAT}`)
     .order(tab === "scheduled" ? "scheduled_at" : "created_at", {
       ascending: tab === "scheduled",
     })

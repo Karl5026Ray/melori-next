@@ -7,6 +7,7 @@ import {
   CINEMA_ROOM_FORMAT,
   resolveGenreParam,
   pickFeatured,
+  roomCreateHref,
 } from "@/lib/cinema";
 import { GenreTabs } from "@/components/social/cinema/GenreTabs";
 import { FeaturedRoom } from "@/components/social/cinema/FeaturedRoom";
@@ -107,7 +108,7 @@ export default async function CinemaDiscoverPage(props: PageProps) {
               <Search className="h-4 w-4" aria-hidden />
             </Link>
             <Link
-              href="/social/spaces/create?format=cinema"
+              href={roomCreateHref(CINEMA_ROOM_FORMAT)}
               aria-label="Start a Cinema room"
               className="grid h-9 w-9 place-items-center rounded-full bg-cinema-gold text-black transition hover:brightness-110"
             >
@@ -135,7 +136,7 @@ export default async function CinemaDiscoverPage(props: PageProps) {
                 : "No rooms are live right now. Be the one who opens the doors."}
             </p>
             <Link
-              href="/social/spaces/create?format=cinema"
+              href={roomCreateHref(CINEMA_ROOM_FORMAT)}
               className="mt-5 inline-flex items-center gap-2 rounded-full bg-cinema-gold px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110"
             >
               <Plus className="h-4 w-4" aria-hidden />

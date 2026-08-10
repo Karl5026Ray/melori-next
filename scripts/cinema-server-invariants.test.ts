@@ -33,8 +33,11 @@ const livekitWebhook = readFileSync(
   "utf8",
 );
 const videoClient = readFileSync(join(root, "src/lib/livekitVideoClient.ts"), "utf8");
+// The room screen moved out of the Spaces route when Cinema was split onto
+// /social/cinema/[roomId]: both routes are now thin wrappers that render this
+// shared component, so the client-side invariants live here.
 const cinemaPage = readFileSync(
-  join(root, "src/app/social/spaces/[spaceId]/page.tsx"),
+  join(root, "src/components/social/rooms/RoomScreen.tsx"),
   "utf8",
 );
 

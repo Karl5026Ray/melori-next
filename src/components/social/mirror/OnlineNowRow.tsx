@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import CoverImage from "@/components/CoverImage";
 import { authFetch } from "@/lib/authClient";
+import { roomHref as formatRoomHref } from "@/lib/cinema";
 
 // A live room, as returned by GET /api/mirror/live. Mirrors the select in that
 // route. Only the fields the ring row needs are typed here.
@@ -34,13 +35,15 @@ export type MirrorOnlineMember = {
   role: string | null;
 };
 
-// Video room formats deep-link into MM Faces; everything else is an audio Space.
+// Video room formats deep-link into MM Faces. Everything else is a room on the
+// Spaces engine, and which URL that means is no longer this row's business:
+// formatRoomHref() splits Cinema from audio Spaces in one place.
 const VIDEO_FORMATS = new Set(["live_solo", "live_duo", "live_group"]);
 
 function roomHref(room: MirrorLiveRoom) {
   return VIDEO_FORMATS.has(room.room_format ?? "")
     ? `/social/live/${room.id}`
-    : `/social/spaces/${room.id}`;
+    : formatRoomHref(room);
 }
 
 function memberName(m: MirrorOnlineMember) {

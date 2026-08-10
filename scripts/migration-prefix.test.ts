@@ -11,12 +11,15 @@
 // Supabase ledger can record one of them under a name that silently drops
 // the numeric prefix, making the collision even harder to trace later.
 //
-// This test found the problem is bigger than #279 described: it also flags
+// This test found the problem is bigger than #279 described: it also flagged
 // 021 and 054 (see KNOWN_UNRESOLVED below), which are tracked as separate
 // issues rather than folded into the #279 fix. 048_host_last_seen.sql was
 // moved to 055_host_last_seen.sql to resolve the collision this test was
 // originally written for (see supabase/migrations/055_host_last_seen.sql
-// for why that number and not a re-run of the migration).
+// for why that number and not a re-run of the migration). The 021 collision
+// was resolved the same way: 021_social_video_like_comment_counters.sql
+// moved to 056_social_video_like_comment_counters.sql (issue #295, see that
+// file for the ledger evidence).
 //
 // Pure file I/O, no DB and no network, matching the rest of scripts/*.test.ts.
 //
@@ -33,14 +36,12 @@ const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
 // not a place to quietly bury a new collision. Adding a prefix here without
 // opening (or linking) an issue defeats the point of this test.
 //
-//   021 -- 021_follows.sql vs 021_social_video_like_comment_counters.sql
-//          (applied-ledger prefix-drop, same symptom as #279) -- see #295
 //   054 -- 054_cinema_camera_slots.sql vs
 //          054_move_membership_backup_out_of_public.sql, and
 //          054_cinema_camera_slots.sql does not appear in the applied
 //          ledger at all (looks like the #278 gap, not just the #279
 //          collision) -- see #296
-const KNOWN_UNRESOLVED = new Set(["021", "054"]);
+const KNOWN_UNRESOLVED = new Set(["054"]);
 
 let checks = 0;
 let failures = 0;

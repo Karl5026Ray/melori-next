@@ -35,6 +35,21 @@ check(
   !nav.includes('label: "Messages"'),
 );
 check(
+  "Artists replaces Profile as the first M Menu quick tile",
+  nav.includes(
+    'label: "Artists",\n      href: "/artists",\n      icon: <Users className="h-5 w-5" />,\n      desc: "Browse artists"',
+  ) && !nav.includes('label: "Profile"'),
+);
+check(
+  "Mission replaces More as a direct top-level M Menu item",
+  nav.includes("const missionLink: LaunchItem = {") &&
+    nav.includes('label: "Mission"') &&
+    nav.includes('href: "/mission"') &&
+    nav.includes("{renderTile(missionLink)}") &&
+    !nav.includes('label: "More"') &&
+    nav.match(/label: "Artists"/g)?.length === 1,
+);
+check(
   "root content uses the shared mobile transport clearance",
   layout.includes("pb-[var(--mobile-content-clearance)] md:pb-24"),
 );

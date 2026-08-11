@@ -26,7 +26,6 @@ import {
   Swords,
   Clapperboard,
   HeartHandshake,
-  MoreHorizontal,
 } from "lucide-react";
 import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
 
@@ -37,13 +36,11 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Profile, Radio, Melori Connect (direct), then expandable categories:
+ *       Artists, Radio, Melori Connect (direct), then navigation categories:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
- *         • More         — Mission, Artists
- *                          (was "About"; renamed when Connect landed here,
- *                          since the group is no longer brand pages only)
+ *         • Mission      — Why Melori (direct)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -169,10 +166,10 @@ export default function MobileTabBar() {
   // tile is intentionally Melori Connect, moved out of More per mobile IA.
   const quickLinks: LaunchItem[] = [
     {
-      label: "Profile",
-      href: user ? "/social/profile" : "/social/auth",
-      icon: <UserIcon className="h-5 w-5" />,
-      desc: "Your page",
+      label: "Artists",
+      href: "/artists",
+      icon: <Users className="h-5 w-5" />,
+      desc: "Browse artists",
     },
     {
       label: "Radio",
@@ -227,18 +224,14 @@ export default function MobileTabBar() {
         { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer — $14.99/mo" },
       ],
     },
-    {
-      // Connect lives in the quick tile above. More stays a compact set of
-      // supporting destinations rather than duplicating a primary action.
-      label: "More",
-      icon: <MoreHorizontal className="h-5 w-5" />,
-      items: [
-        { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        // Community moved into Melori Mirror, so it's no longer listed here.
-        { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-      ],
-    },
   ];
+
+  const missionLink: LaunchItem = {
+    label: "Mission",
+    href: "/mission",
+    icon: <Target className="h-5 w-5" />,
+    desc: "Why Melori",
+  };
 
   function isActive(tab: Tab): boolean {
     if (tab.href === "/") return pathname === "/";
@@ -405,9 +398,10 @@ export default function MobileTabBar() {
                         <div className="grid grid-cols-4 gap-2">
                           {quickLinks.map(renderTile)}
                         </div>
-                        {/* Category buttons — same tile styling */}
+                        {/* Category buttons and the direct Mission link */}
                         <div className="mt-3 grid grid-cols-4 gap-2">
                           {categories.map(renderCatTile)}
+                          {renderTile(missionLink)}
                         </div>
                       </>
                     )}

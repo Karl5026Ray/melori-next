@@ -73,8 +73,18 @@ assertEq(
 
 console.log("Global music transport room suppression");
 assertEq("Cinema room suppresses transport", isMediaRoomRoute("/social/cinema/abc"), true);
+assertEq(
+  "Cinema room trailing slash suppresses transport",
+  isMediaRoomRoute("/social/cinema/abc/"),
+  true,
+);
 assertEq("Cinema discover keeps transport", isMediaRoomRoute("/social/cinema"), false);
 assertEq("Cinema create keeps transport", isMediaRoomRoute("/social/cinema/create"), false);
+assertEq(
+  "Cinema nested route keeps transport",
+  isMediaRoomRoute("/social/cinema/abc/controls"),
+  false,
+);
 assertEq("Concert room suppresses transport", isMediaRoomRoute("/social/concert/abc"), true);
 assertEq("Concert landing keeps transport", isMediaRoomRoute("/social/concert"), false);
 assertEq("Concert create keeps transport", isMediaRoomRoute("/social/concert/create"), false);

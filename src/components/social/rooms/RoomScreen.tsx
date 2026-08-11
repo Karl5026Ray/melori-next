@@ -55,6 +55,7 @@ import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
 import CinemaAudience from "@/components/social/cinema/CinemaAudience";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
+import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { buildCinemaSlotAssignments, type CinemaReservation } from "@/lib/roomMediaPolicy";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
@@ -133,6 +134,67 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const [cinemaGuestCandidateId, setCinemaGuestCandidateId] = useState("");
   const [cinemaSeatBusy, setCinemaSeatBusy] = useState<string | null>(null);
   const [cinemaSeatError, setCinemaSeatError] = useState<string | null>(null);
+  const [cinemaSeatsOpen, setCinemaSeatsOpen] = useState(false);
+  const cinemaSeatsTriggerRef = useRef<HTMLButtonElement>(null);
+  const cinemaSeatsDialogRef = useRef<HTMLElement>(null);
+  const closeCinemaSeatManager = useCallback(() => setCinemaSeatsOpen(false), []);
+  // This must live with the rest of the component hooks, before the loading,
+  // error, and ended-room returns below. A room initially loads without a
+  // space, then renders the Cinema controls after the query resolves.
+  useEffect(() => {
+    if (!cinemaSeatsOpen) return;
+    const dialog = cinemaSeatsDialogRef.current;
+    if (!dialog) return;
+
+    const focusableSelector = [
+      'button:not([disabled])',
+      'select:not([disabled])',
+      'input:not([disabled])',
+      'textarea:not([disabled])',
+      'a[href]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+    const getFocusable = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute("hidden"),
+      );
+    const focusInitialControl = () =>
+      dialog.querySelector<HTMLElement>("[data-cinema-dialog-initial-focus]")?.focus();
+    const focusFrame = window.requestAnimationFrame(focusInitialControl);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeCinemaSeatManager();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", onKeyDown);
+      cinemaSeatsTriggerRef.current?.focus();
+    };
+  }, [cinemaSeatsOpen, closeCinemaSeatManager]);
   // `participants` starts empty for two very different reasons: the roster has
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
@@ -1430,6 +1492,17 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       withSpeaking.find((participant) => participant.user_id === assignment.userId) ?? null,
     videoElement: assignment.userId ? cinemaVideoElements[assignment.userId] ?? null : null,
   }));
+  // Cinema does not inherit the generic audio-stage roster. Everyone other
+  // than the fixed host + two reserved live-video visitors stays in the
+  // voice-only audience strip, regardless of their legacy speaker role.
+  const cinemaSeatUserIds = new Set(
+    cinemaSlots
+      .map((seat) => seat.participant?.user_id)
+      .filter((participantId): participantId is string => Boolean(participantId)),
+  );
+  const cinemaAudience = withSpeaking.filter(
+    (participant) => !cinemaSeatUserIds.has(participant.user_id),
+  );
   const localCinemaCameraEnabled = Boolean(user && cinemaVideoElements[user.id]);
   const myParticipant =
     participants.find((participant) => participant.user_id === user?.id && !participant.left_at) ?? null;
@@ -1613,13 +1686,22 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     // (z-[70]). max-height still clamps a flex item, so it pins the column to
     // the real available height; the scroll region's `flex-1 min-h-0` then
     // absorbs the difference and the shrink-0 control bar stays on screen.
-    <div className="flex-1 flex flex-col h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 bg-black pt-2 animate-fade-in">
+    <div
+      className={
+        isCinema
+          ? "cinema-room-shell flex h-[100dvh] max-h-[100dvh] min-h-0 flex-1 flex-col overflow-hidden bg-black animate-fade-in"
+          : "flex-1 flex flex-col h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 bg-black pt-2 animate-fade-in"
+      }
+    >
       <div className="flex-1 flex flex-col min-h-0 rounded-t-3xl bg-melori-void overflow-hidden">
         <div className="shrink-0 pt-2.5 flex justify-center" aria-hidden="true">
           <span className="h-1 w-9 rounded-full bg-white/25" />
         </div>
 
-        <div className="px-4 md:px-6 pt-3 pb-1 flex items-center justify-between shrink-0">
+        <div
+          className="px-4 md:px-6 pt-3 pb-1 flex items-center justify-between shrink-0"
+          data-testid={isCinema ? "cinema-room-header" : undefined}
+        >
           <Link
             href={exitHref}
             aria-label={roomExitLabel(space?.room_format)}
@@ -1648,6 +1730,18 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             >
               <Share2 className="w-[18px] h-[18px]" />
             </button>
+            {isCinema && isHost && (
+              <button
+                type="button"
+                onClick={() => setCinemaSeatsOpen(true)}
+                ref={cinemaSeatsTriggerRef}
+                className="h-11 px-3 text-xs font-semibold rounded-full bg-cinema-gold text-black transition hover:brightness-110"
+                aria-label="Manage Cinema live seats"
+                data-testid="cinema-live-seat-manager"
+              >
+                Live seats
+              </button>
+            )}
             {/* Leave moves out of the control bar and into the header as the
                 reference's peace-sign pill. handleLeave is unchanged — this is
                 the same "leave quietly" action, just relocated.
@@ -1685,7 +1779,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             so the closest true equivalent is the host — same shape, same
             inline follow affordance, backed by the follow API we already use
             on the tiles. */}
-        <div className="px-4 md:px-6 pt-2 pb-4 shrink-0">
+        <div className={`px-4 md:px-6 pt-2 shrink-0 ${isCinema ? "pb-2" : "pb-4"}`}>
           <div className="flex items-center gap-2 min-w-0">
             <img
               src={hostProfile?.avatar_url || "/favicon.png"}
@@ -1746,7 +1840,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 <Flag className="w-4 h-4" />
                 Report space
               </button>
-              {isHost && (
+              {isHost && !isCinema && (
                 <div className="border-t border-melori-border">
                   <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-melori-muted">
                     Who can raise a hand
@@ -1811,7 +1905,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           {/* Title gets room to wrap to two lines instead of being truncated
               next to a row of badges. break-words guards the long unbroken
               title the mobile-layout spec exercises. */}
-          <h1 className="mt-1.5 text-[26px] leading-[1.15] font-bold break-words">
+          <h1
+            className={`mt-1.5 leading-[1.15] font-bold break-words ${
+              isCinema ? "text-[20px] sm:text-[26px]" : "text-[26px]"
+            }`}
+          >
             {space.title}
           </h1>
 
@@ -1843,8 +1941,18 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       {isJoined && !isCinema && (
         <RoomCommentOverlay comments={roomComments} />
       )}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-4">
-        <div className="max-w-2xl mx-auto">
+      <div
+        className={`flex-1 min-h-0 px-4 md:px-8 ${
+          isCinema ? "overflow-hidden pb-2" : "overflow-y-auto pb-4"
+        }`}
+      >
+        <div
+          className={
+            isCinema
+              ? "mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col"
+              : "max-w-2xl mx-auto"
+          }
+        >
           {space.status === "scheduled" && (
             <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">
               <div>
@@ -1907,28 +2015,16 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           )}
 
             <>
-              {/* MM Cinema: the fixed three-seat camera stage sits above the
-                  shared screen, so the room reads who's on mic -> screen ->
-                  audience -> chat.
-
-                  Rendered here rather than in a forked Cinema room page on
-                  purpose. This page already owns joining, LiveKit audio, roles,
-                  the raise-hand queue, moderation, bans, and teardown; a
-                  separate page would have to duplicate all of it and would
-                  drift out of sync with every future room fix. Cinema is a
-                  format, so it is an additive layer, not a second room. */}
-              {isCinema && (
-                <CinemaStage
-                  slots={cinemaSlots}
-                  onReactToParticipant={setReactTarget}
-                  reactionBursts={targetedReactions}
-                />
-              )}
-
-              {isCinema && isHost && (
+              {isCinema && isHost && cinemaSeatsOpen && (
+                <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-3 backdrop-blur-sm">
                 <section
-                  className="mb-3 rounded-xl border border-cinema-border bg-melori-elevated/45 p-3 md:mb-4"
+                  ref={cinemaSeatsDialogRef}
+                  tabIndex={-1}
+                  className="max-h-[min(34rem,calc(100dvh-2rem))] w-full max-w-lg overflow-y-auto rounded-xl border border-cinema-border bg-melori-void p-3 shadow-2xl"
+                  role="dialog"
+                  aria-modal="true"
                   aria-labelledby="cinema-live-boxes-heading"
+                  aria-describedby="cinema-live-boxes-description"
                   data-testid="cinema-live-box-controls"
                 >
                   <div className="mb-3 flex items-baseline justify-between gap-3">
@@ -1936,10 +2032,19 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                       <h2 id="cinema-live-boxes-heading" className="text-sm font-semibold text-melori-text">
                         Live boxes
                       </h2>
-                      <p className="mt-0.5 text-xs text-melori-muted">
+                      <p id="cinema-live-boxes-description" className="mt-0.5 text-xs text-melori-muted">
                         Choose up to two on-stage guests. They turn on their own camera when ready.
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={closeCinemaSeatManager}
+                      data-cinema-dialog-initial-focus
+                      className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
+                      aria-label="Close Cinema live seat manager"
+                    >
+                      Close
+                    </button>
                     <span className="shrink-0 text-xs text-melori-muted">
                       {cinemaGuestSeats.filter((seat) => seat.reservation).length}/2 occupied
                     </span>
@@ -2028,28 +2133,46 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                     </p>
                   )}
                 </section>
+                </div>
               )}
 
+              {isCinema && (
+                <CinemaRoomCanvas
+                  screen={
+                    <CinemaScreen
+                      spaceId={spaceId}
+                      isHost={isHost}
+                      viewportBound
+                      overlay={
+                        <>
+                          <CinemaChat comments={roomComments} />
+                          <CinemaStage
+                            embedded
+                            slots={cinemaSlots}
+                            onReactToParticipant={setReactTarget}
+                            reactionBursts={targetedReactions}
+                          />
+                        </>
+                      }
+                    />
+                  }
+                  audience={
+                    <CinemaAudience
+                      audience={cinemaAudience}
+                      onReactToParticipant={setReactTarget}
+                      reactionBursts={targetedReactions}
+                    />
+                  }
+                />
+              )}
               {isCinema && selectedCinemaGuestSlot !== null && !isHost && (
-                <p
-                  className="mb-3 rounded-lg border border-cinema-gold/30 bg-cinema-gold/10 px-3 py-2 text-sm text-cinema-gold md:mb-4"
-                  role="status"
-                  data-testid="cinema-selected-guest-readiness"
-                >
+                <p className="sr-only" role="status" data-testid="cinema-selected-guest-readiness">
                   You have Live box {selectedCinemaGuestSlot + 1}. Turn on your camera when ready.
                 </p>
               )}
 
-              {isCinema && (
-                <CinemaScreen
-                  spaceId={spaceId}
-                  isHost={isHost}
-                  overlay={<CinemaChat comments={roomComments} />}
-                />
-              )}
-
               <div className={isCinema ? "mb-0" : "mb-8"}>
-                {reconnecting && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
+                {reconnecting && !isCinema && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
                 {/* Audio rooms render everyone in ONE continuous grid, speakers
                     first, the way the reference room does — role is read off
                     the tile's own badges rather than from a section heading.
@@ -2068,7 +2191,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   />
                 )}
 
-                {isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
+                {!isCinema && isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
                   <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
                     {speakers
                       .filter((s) => s.user_id !== user?.id)
@@ -2136,14 +2259,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 )}
               </div>
 
-              {micDenied && (
+              {micDenied && !isCinema && (
                 <div className="mb-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
                   Microphone access was blocked. Enable it in your browser
                   settings to speak in this space.
                 </div>
               )}
 
-              {raisedHands.length > 0 && (
+              {!isCinema && raisedHands.length > 0 && (
                 <div className="mb-8">
                   <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
                     Raised Hands ({raisedHands.length})
@@ -2184,17 +2307,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 </div>
               )}
 
-              {/* Audio audience is already folded into the single grid above;
-                  only Cinema still renders a separate watching row. */}
-              {isCinema && (
-                <div className="min-h-0">
-                  <CinemaAudience
-                    audience={audience}
-                    onReactToParticipant={setReactTarget}
-                    reactionBursts={targetedReactions}
-                  />
-                </div>
-              )}
             </>
 
         </div>
@@ -2338,7 +2450,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
       {reactTarget && (
         <div
-          className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
           onClick={() => setReactTarget(null)}
           role="dialog"
           aria-modal="true"
@@ -2380,19 +2492,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         </div>
       )}
 
-      {/* pb clears MobileTabBar, which is `md:hidden fixed bottom-0 z-[70]`
-          and h-14 (3.5rem) + env(safe-area-inset-bottom). Without this the tab
-          bar renders directly on top of these controls on iPhone and they look
-          "cut off". Same pattern as ConnectProfileEditor and the MobileTabBar
-          sheet. md:pb-6 restores normal desktop padding, where the bar is
-          hidden. */}
+      {/* Cinema owns the mobile safe area and suppresses the global MobileTabBar.
+          Other room formats keep their dock clear of that fixed navigation. */}
       {/* Signed out: the room above renders read-only — faces, title, live
           comments. The dock slot carries the single call to action instead of
           a composer nobody can use, so the sign-in ask sits exactly where the
           thing it unlocks will appear, and the participant grid is never
           pushed down the screen to make room for it. */}
       {!user && (
-        <div className="shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6">
+        <div
+          className={`shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 ${
+            isCinema
+              ? "pb-[calc(1rem+env(safe-area-inset-bottom))]"
+              : "pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
+          }`}
+        >
           <div className="flex justify-center" aria-hidden="true">
             <span className="h-1 w-9 rounded-full bg-white/25" />
           </div>
@@ -2409,7 +2523,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       )}
 
       {isJoined && (
-        <div className="shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6">
+        <div
+          className={`shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 ${
+            isCinema
+              ? "pb-[calc(1rem+env(safe-area-inset-bottom))]"
+              : "pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
+          }`}
+        >
           <div className="flex justify-center" aria-hidden="true">
             <span className="h-1 w-9 rounded-full bg-white/25" />
           </div>
@@ -2452,7 +2572,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                  - Press & hold: push-to-talk. Unmutes for as long as you're
                    holding it, then restores the previous mute state on
                    release. Works with mouse and touch. */}
-            {canSpeakNow && (
+            {!isCinema && canSpeakNow && (
               <button
                 type="button"
                 onClick={() => {
@@ -2532,7 +2652,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                hand_raise_mode to "off" (or the not-yet-enforced "followed" --
                see spacesStage.ts). The label is carried by aria + title rather
                than visible text so the comment field keeps the width. */}
-            {!isHost && !canSpeakNow && canRaiseHandNow && (
+            {!isCinema && !isHost && !canSpeakNow && canRaiseHandNow && (
               <button
                 type="button"
                 onClick={toggleHand}
@@ -2552,7 +2672,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
             {/* Listeners in a hands-off room get an honest disabled state
                rather than a missing control, so the bar keeps its shape. */}
-            {!isHost && !canSpeakNow && !canRaiseHandNow && (
+            {!isCinema && !isHost && !canSpeakNow && !canRaiseHandNow && (
               <span
                 title="The host has turned off requests to speak"
                 className="w-12 h-12 shrink-0 flex items-center justify-center rounded-full bg-white/5 text-melori-muted"

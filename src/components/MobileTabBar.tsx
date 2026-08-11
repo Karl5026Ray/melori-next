@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { isCinemaLiveRoomRoute } from "@/lib/cinemaRoomRoute";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -106,6 +107,7 @@ export default function MobileTabBar() {
   // render (rules-of-hooks) — the actual early-return happens below.
   const isLiveRoomRoute =
     !!pathname && /^\/social\/live\/[^/]+/.test(pathname);
+  const isCinemaRoomRoute = isCinemaLiveRoomRoute(pathname);
 
   useEffect(() => {
     let active = true;
@@ -243,8 +245,9 @@ export default function MobileTabBar() {
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
 
-  // Suppress the tab bar entirely on MM Faces live-room routes (see above).
-  if (isLiveRoomRoute) return null;
+  // Suppress the tab bar only for opened, fullscreen room routes. Cinema's
+  // listing and creation pages keep normal navigation.
+  if (isLiveRoomRoute || isCinemaRoomRoute) return null;
 
   return (
     <>

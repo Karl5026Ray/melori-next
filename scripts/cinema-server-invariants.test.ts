@@ -40,6 +40,29 @@ const cinemaPage = readFileSync(
   join(root, "src/components/social/rooms/RoomScreen.tsx"),
   "utf8",
 );
+const cinemaCanvas = readFileSync(
+  join(root, "src/components/social/cinema/CinemaRoomCanvas.tsx"),
+  "utf8",
+);
+const cinemaStage = readFileSync(
+  join(root, "src/components/social/cinema/CinemaStage.tsx"),
+  "utf8",
+);
+const cinemaScreen = readFileSync(
+  join(root, "src/components/social/cinema/CinemaScreen.tsx"),
+  "utf8",
+);
+const cinemaAudience = readFileSync(
+  join(root, "src/components/social/cinema/CinemaAudience.tsx"),
+  "utf8",
+);
+const cinemaChat = readFileSync(
+  join(root, "src/components/social/cinema/CinemaChat.tsx"),
+  "utf8",
+);
+const globals = readFileSync(join(root, "src/app/globals.css"), "utf8");
+const mobileTabBar = readFileSync(join(root, "src/components/MobileTabBar.tsx"), "utf8");
+const cinemaRoute = readFileSync(join(root, "src/lib/cinemaRoomRoute.ts"), "utf8");
 
 console.log("\nCinema server invariants");
 check(
@@ -154,6 +177,78 @@ check(
     /data-testid=\{`cinema-live-box-\$\{boxNumber\}`\}/.test(cinemaPage) &&
     /data-testid="cinema-selected-guest-readiness"/.test(cinemaPage) &&
     /isCinema && \(isHost \|\| selectedCinemaGuest\)/.test(cinemaPage),
+);
+
+check(
+  "Cinema uses its own non-scrolling live-video canvas instead of generic stage ordering",
+  cinemaPage.includes("<CinemaRoomCanvas") &&
+    cinemaCanvas.includes('data-testid="cinema-room-canvas"') &&
+    cinemaCanvas.includes("overflow-hidden") &&
+    cinemaPage.includes("{!isCinema && (\n                  <StageGrid"),
+);
+check(
+  "three ordered live video seats are embedded at the media screen bottom with clear offline state",
+  cinemaStage.includes("embedded = false") &&
+    cinemaStage.includes("absolute bottom-2 left-2 right-12") &&
+    cinemaStage.includes("sm:right-14") &&
+    cinemaStage.includes('data-camera-seat={seat.slot === 0 ? "host"') &&
+    cinemaStage.includes('data-testid="cinema-camera-placeholder"') &&
+    cinemaStage.includes("camera is off or offline") &&
+    cinemaScreen.includes('data-testid="cinema-fullscreen-control"') &&
+    cinemaScreen.includes("right-side control gutter"),
+);
+check(
+  "Cinema audience is horizontal-only and excludes all fixed video seat identities",
+  cinemaPage.includes("const cinemaSeatUserIds = new Set(") &&
+    cinemaPage.includes("const cinemaAudience = withSpeaking.filter(") &&
+    cinemaAudience.includes('data-testid="cinema-audience-strip"') &&
+    cinemaAudience.includes("overflow-x-auto overflow-y-hidden") &&
+    !cinemaAudience.includes("overflow-y-auto"),
+);
+check(
+  "Cinema comments are a left-side five-line transient overlay",
+  cinemaChat.includes("return next.slice(-5)") &&
+    cinemaChat.includes("bottom-[5.75rem] left-2") &&
+    cinemaChat.includes('data-testid="cinema-comment-line"') &&
+    cinemaChat.includes("CINEMA_COMMENT_EXIT_MS") &&
+    cinemaChat.includes("data-cinema-comment-age") &&
+    globals.includes("@keyframes cinemaCommentEnter") &&
+    globals.includes("data-cinema-comment-exiting"),
+);
+check(
+  "Cinema preserves a safe top inset without shrinking the media stage",
+  globals.includes("body:has(.cinema-room-shell)") &&
+    globals.includes("padding-bottom: 0 !important") &&
+    globals.includes("--cinema-safe-area-top") &&
+    globals.includes(".cinema-room-shell") &&
+    cinemaPage.includes('data-testid={isCinema ? "cinema-room-header" : undefined}') &&
+    cinemaPage.includes("h-[100dvh]") &&
+    cinemaPage.includes("flex-1") &&
+    /!isCinema && !isHost && !canSpeakNow && canRaiseHandNow/.test(cinemaPage) &&
+    /!isCinema && canSpeakNow/.test(cinemaPage),
+);
+check(
+  "Cinema live-seat management is a focus-contained accessible dialog",
+  cinemaPage.includes('role="dialog"') &&
+    cinemaPage.includes('aria-modal="true"') &&
+    cinemaPage.includes('aria-describedby="cinema-live-boxes-description"') &&
+    cinemaPage.includes("cinemaSeatsDialogRef") &&
+    cinemaPage.includes('event.key === "Escape"') &&
+    cinemaPage.includes("cinemaSeatsTriggerRef.current?.focus()"),
+);
+check(
+  "Cinema suppresses document scrolling and generic raise-hand controls",
+  globals.includes("body:has(.cinema-room-shell)") &&
+    globals.includes("padding-bottom: 0 !important") &&
+    /!isCinema && !isHost && !canSpeakNow && canRaiseHandNow/.test(cinemaPage) &&
+    /!isCinema && canSpeakNow/.test(cinemaPage),
+);
+check(
+  "Cinema removes global mobile navigation only for opened room routes",
+  mobileTabBar.includes("isCinemaRoomRoute") &&
+    mobileTabBar.includes("isCinemaLiveRoomRoute(pathname)") &&
+    cinemaRoute.includes('normalizedPath !== "/social/cinema/create"') &&
+    cinemaRoute.includes('^\\/social\\/cinema\\/[^/]+$'),
 );
 
 console.log(

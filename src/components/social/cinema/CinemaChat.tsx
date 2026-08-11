@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { authorName, type ChatComment } from "@/components/social/rooms/useRoomComments";
 
 export const CINEMA_COMMENT_TTL_MS = 8_000;
+export const CINEMA_COMMENT_EXIT_MS = 600;
 
-type ExpiringComment = ChatComment & { expiresAt: number };
+type ExpiringComment = ChatComment & { expiresAt: number; exitingAt?: number };
 
 /**
  * Transient presentation over the shared Cinema media area. It never deletes
@@ -19,20 +20,41 @@ export function CinemaChat({ comments }: { comments: readonly ChatComment[] }) {
   useEffect(() => {
     const now = Date.now();
     setVisible((current) => {
-      const next = current.filter((comment) => comment.expiresAt > now);
+      // Keep a line around for its short exit transition even when a new
+      // comment arrives while it is fading. The final slice still guarantees
+      // that this presentation layer never exposes more than five lines.
+      const next = current.filter(
+        (comment) =>
+          (!comment.exitingAt && comment.expiresAt > now) ||
+          (comment.exitingAt && comment.exitingAt + CINEMA_COMMENT_EXIT_MS > now),
+      );
       for (const comment of comments) {
         if (seenRef.current.has(comment.id)) continue;
         seenRef.current.add(comment.id);
         next.push({ ...comment, expiresAt: now + CINEMA_COMMENT_TTL_MS });
       }
-      return next.slice(-6);
+      // Cinema intentionally remains a fleeting, readable overlay rather than
+      // a scrolling transcript. Five short lines leave the screen legible and
+      // older comments fade away on their own.
+      return next.slice(-5);
     });
   }, [comments]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now();
-      setVisible((current) => current.filter((comment) => comment.expiresAt > now));
+      setVisible((current) =>
+        current
+          .filter(
+            (comment) =>
+              !comment.exitingAt || comment.exitingAt + CINEMA_COMMENT_EXIT_MS > now,
+          )
+          .map((comment) =>
+            comment.expiresAt <= now && !comment.exitingAt
+              ? { ...comment, exitingAt: now }
+              : comment,
+          ),
+      );
     }, 300);
     return () => window.clearInterval(timer);
   }, []);
@@ -41,7 +63,7 @@ export function CinemaChat({ comments }: { comments: readonly ChatComment[] }) {
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 max-h-[55%] overflow-hidden bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 pb-3 pt-10"
+      className="pointer-events-none absolute bottom-[5.75rem] left-2 z-20 max-h-[42%] w-[min(66%,21rem)] overflow-hidden bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-2 pt-8 sm:bottom-[6.5rem] sm:left-3 sm:px-3"
       data-testid="cinema-comment-overlay"
       role="log"
       aria-live="polite"
@@ -49,10 +71,18 @@ export function CinemaChat({ comments }: { comments: readonly ChatComment[] }) {
       aria-label="Cinema comments"
     >
       <div className="space-y-1.5">
-        {visible.map((comment) => (
-          <p key={comment.id} data-testid="cinema-comment" className="text-[12px] leading-snug text-white/80">
-            <span className="font-semibold text-cinema-gold">{authorName(comment)}</span>{" "}
-            <span>{comment.body}</span>
+        {visible.map((comment, index) => (
+          <p
+            key={comment.id}
+            data-testid="cinema-comment-line"
+            data-cinema-comment-age={visible.length - index}
+            data-cinema-comment-exiting={comment.exitingAt ? "true" : undefined}
+            className="cinema-comment-line text-[12px] leading-snug text-white/80"
+          >
+            <span className="cinema-comment-line-content">
+              <span className="font-semibold text-cinema-gold">{authorName(comment)}</span>{" "}
+              <span>{comment.body}</span>
+            </span>
           </p>
         ))}
       </div>

@@ -11,8 +11,6 @@
 // which already excludes people who have left (left_at is set).
 
 import { SpaceParticipant } from "@/types/social";
-import { useEffect, useRef, useState } from "react";
-import { ChevronUp, X } from "lucide-react";
 
 interface CinemaAudienceProps {
   audience: SpaceParticipant[];
@@ -25,83 +23,25 @@ export function CinemaAudience({
   onReactToParticipant,
   reactionBursts,
 }: CinemaAudienceProps) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const rosterRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const frame = window.requestAnimationFrame(() => rosterRef.current?.focus());
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", onKeyDown);
-      triggerRef.current?.focus();
-    };
-  }, [open]);
-
   return (
-    <section className="min-h-0" data-testid="cinema-audience-panel">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40 transition hover:text-white/70"
-        data-testid="cinema-audience-trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-      >
-        <span>Watching · {audience.length}</span>
-        <ChevronUp className="h-4 w-4" aria-hidden />
-      </button>
-
-      {open && (
+    <section className="shrink-0" data-testid="cinema-audience-panel" aria-label="Cinema audience">
+      <div className="flex items-center justify-between px-1 pb-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
+          Audience · {audience.length}
+        </p>
+        <p className="text-[10px] text-white/35">Swipe to see everyone</p>
+      </div>
+      {audience.length === 0 ? (
+        <p className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-white/35">
+          No one in the audience yet.
+        </p>
+      ) : (
         <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 backdrop-blur-sm md:items-center md:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Cinema audience"
-          onClick={() => setOpen(false)}
+          className="hide-scrollbar flex gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 pb-1"
+          data-testid="cinema-audience-strip"
+          aria-label="Cinema audience strip"
         >
-          <div
-            className="flex max-h-[70dvh] w-full max-w-lg flex-col rounded-t-3xl border border-cinema-border bg-cinema-void p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:rounded-3xl md:p-5"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-white">Audience</p>
-                <p className="mt-0.5 text-xs text-white/40">
-                  {audience.length} watching
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
-                aria-label="Close audience roster"
-                data-testid="cinema-audience-close"
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-
-            <div
-              ref={rosterRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
-              data-testid="cinema-audience-roster"
-              tabIndex={0}
-              aria-label="Cinema audience roster"
-            >
-        {audience.length === 0 ? (
-          <p className="py-6 text-center text-xs text-white/25">
-            No one in the audience yet.
-          </p>
-        ) : (
-          <div className="grid grid-cols-3 gap-x-4 gap-y-5 pb-3">
-            {audience.map((participant) => {
+          {audience.map((participant) => {
             const user = participant.user;
             const muted = participant.is_muted || participant.host_muted;
             const isLive = participant.is_speaking && !muted;
@@ -115,7 +55,7 @@ export function CinemaAudience({
                 type="button"
                 onClick={() => onReactToParticipant?.(participant)}
                 aria-label={`React to ${name}`}
-                className="group flex flex-col items-center gap-2"
+                className="group flex w-14 shrink-0 flex-col items-center gap-1.5"
               >
                 <div className="relative">
                   {bursts.length > 0 && (
@@ -137,10 +77,10 @@ export function CinemaAudience({
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      className="h-14 w-14 rounded-full border border-white/15 object-cover transition group-hover:border-cinema-gold/50"
+                      className="h-11 w-11 rounded-full border border-white/15 object-cover transition group-hover:border-cinema-gold/50"
                     />
                   ) : (
-                    <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.03] transition group-hover:border-cinema-gold/50">
+                    <div className="grid h-11 w-11 place-items-center rounded-full border border-white/15 bg-white/[0.03] transition group-hover:border-cinema-gold/50">
                       <span className="text-sm font-medium text-white/40">
                         {name.charAt(0).toUpperCase()}
                       </span>
@@ -166,11 +106,7 @@ export function CinemaAudience({
                 </span>
               </button>
             );
-            })}
-          </div>
-        )}
-            </div>
-          </div>
+          })}
         </div>
       )}
     </section>

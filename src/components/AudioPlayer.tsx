@@ -971,6 +971,7 @@ function FloatingPlayer() {
       ref={ref}
       role="region"
       aria-label="Music player"
+      data-testid="floating-player"
       // z-[80] when expanded keeps controls above the mobile tab bar (z-[70])
       // and its launcher sheet — otherwise the drag bar and transport row sit
       // BEHIND the nav and can't be tapped ("stuck, can't stop").

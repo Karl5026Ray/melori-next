@@ -45,10 +45,17 @@ export function CinemaScreen({
   spaceId,
   isHost,
   overlay,
+  viewportBound = false,
 }: {
   spaceId: string;
   isHost: boolean;
   overlay?: ReactNode;
+  /**
+   * Cinema rooms own a fixed viewport. In that presentation the media frame
+   * grows into the available canvas instead of forcing a document-height
+   * aspect ratio below the room controls.
+   */
+  viewportBound?: boolean;
 }) {
   const {
     state,
@@ -340,13 +347,21 @@ export function CinemaScreen({
   if (!loading && !sourceUrl) {
     return (
       <div
-        className="mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void md:mb-4"
+        className={
+          viewportBound
+            ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void"
+            : "mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void md:mb-4"
+        }
         data-testid="cinema-screen"
       >
         {/* Idle marquee. The mockup treats the dark screen as the brand moment,
             so the wordmark carries it and the helper copy sits underneath. */}
         <div
-          className="relative flex aspect-[8/3] w-full flex-col items-center justify-center px-6 text-center md:aspect-video"
+          className={
+            viewportBound
+              ? "relative flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
+              : "relative flex aspect-[4/3] w-full flex-col items-center justify-center px-6 text-center sm:aspect-[16/10] md:aspect-video"
+          }
           data-testid="cinema-media-area"
         >
           <span className="text-xl font-light uppercase tracking-[0.34em] text-cinema-gold">
@@ -375,12 +390,20 @@ export function CinemaScreen({
 
   return (
     <div
-      className="mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black md:mb-4"
+      className={
+        viewportBound
+          ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black"
+          : "mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black md:mb-4"
+      }
       data-testid="cinema-screen"
     >
       <div
         ref={frameRef}
-        className="relative aspect-[8/3] w-full bg-black md:aspect-video"
+        className={
+          viewportBound
+            ? "relative min-h-0 flex-1 bg-black"
+            : "relative aspect-[4/3] w-full bg-black sm:aspect-[16/10] md:aspect-video"
+        }
         data-testid="cinema-media-area"
       >
         {youTubeId && (
@@ -463,12 +486,15 @@ export function CinemaScreen({
         )}
 
         {/* Fullscreen is viewer-local: it writes no shared state, so guests
-            get it too without touching the host's timeline. */}
+            get it too without touching the host's timeline. The fixed live
+            seats reserve the right-side control gutter, so this remains a
+            distinct hit target rather than sitting above the third seat. */}
         <button
           type="button"
           onClick={toggleFullscreen}
           aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          className="absolute bottom-3 right-3 rounded-md p-1.5 text-white/45 transition hover:bg-black/50 hover:text-white"
+          className="absolute bottom-3 right-3 z-20 rounded-md p-1.5 text-white/45 transition hover:bg-black/50 hover:text-white"
+          data-testid="cinema-fullscreen-control"
         >
           {isFullscreen ? (
             <Minimize2 className="h-4 w-4" aria-hidden />
@@ -481,7 +507,7 @@ export function CinemaScreen({
 
       {/* Progress. Read-only for guests; the host's is clickable. */}
       <div
-        className={`h-1 w-full bg-white/10 ${isHost ? "cursor-pointer" : ""}`}
+        className={`h-1 shrink-0 w-full bg-white/10 ${isHost ? "cursor-pointer" : ""}`}
         onClick={(e) => {
           if (!isHost || !duration) return;
           const rect = e.currentTarget.getBoundingClientRect();
@@ -491,7 +517,7 @@ export function CinemaScreen({
         <div className="h-full bg-cinema-gold transition-[width]" style={{ width: `${progress}%` }} />
       </div>
 
-      <div className="flex items-center gap-3 bg-cinema-surface px-3 py-1.5 md:py-2.5">
+      <div className="flex shrink-0 items-center gap-3 bg-cinema-surface px-3 py-1.5 md:py-2.5">
         {isHost ? (
           <>
             <button

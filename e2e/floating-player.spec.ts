@@ -139,8 +139,9 @@ async function firePointerDrag(
 /** Load the start page and return the (always-mounted) player region. */
 async function openPlayer(page: Page): Promise<Locator> {
   await page.goto(START_URL, { waitUntil: "domcontentloaded" });
-  const player = page.getByRole("region", { name: "Music player" });
+  const player = page.getByTestId("floating-player");
   await expect(player).toBeVisible({ timeout: 20_000 });
+  await expect(player).toHaveAttribute("aria-label", "Music player");
   // Fail here, loudly, if the build under test predates the transport pill —
   // rather than 45s later inside whichever helper first touches the handle.
   await expect(
@@ -388,7 +389,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     const dropped = (await player.boundingBox())!;
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    const restored = page.getByRole("region", { name: "Music player" });
+    const restored = page.getByTestId("floating-player");
     await expect(restored).toBeVisible();
     await expect
       .poll(async () => (await restored.boundingBox())?.x ?? 0, {

@@ -15,6 +15,8 @@ interface CinemaStageProps {
   slots: readonly CinemaCameraSlot[];
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   reactionBursts?: Record<string, string[]>;
+  /** Renders the fixed seats inside the shared Cinema media frame. */
+  embedded?: boolean;
 }
 
 function CameraSeat({
@@ -60,8 +62,13 @@ function CameraSeat({
         }`}
       />
       {!seat.videoElement && (
-        <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-white/[0.05] to-transparent">
+        <div
+          className="absolute inset-0 grid place-items-center bg-gradient-to-b from-white/[0.05] to-transparent"
+          data-testid="cinema-camera-placeholder"
+          aria-label={`${name} camera is off or offline`}
+        >
           <Camera className="h-5 w-5 text-white/20" aria-hidden />
+          <span className="sr-only">Camera off or offline</span>
         </div>
       )}
       <div className="absolute inset-x-0 bottom-0 flex items-end gap-1.5 bg-gradient-to-t from-black/85 via-black/25 to-transparent px-2.5 pb-2 pt-8">
@@ -110,7 +117,12 @@ function CameraSeat({
   );
 }
 
-export function CinemaStage({ slots, onReactToParticipant, reactionBursts }: CinemaStageProps) {
+export function CinemaStage({
+  slots,
+  onReactToParticipant,
+  reactionBursts,
+  embedded = false,
+}: CinemaStageProps) {
   // Caller maps reservations through buildCinemaSlotAssignments. This defensive
   // fill keeps the DOM shape exactly three tiles even while initial data loads.
   const stableSlots: CinemaCameraSlot[] = [0, 1, 2].map((slot) => (
@@ -123,7 +135,11 @@ export function CinemaStage({ slots, onReactToParticipant, reactionBursts }: Cin
 
   return (
     <div
-      className="mb-2 grid grid-cols-3 gap-2.5 md:mb-4"
+      className={
+        embedded
+          ? "absolute bottom-2 left-2 right-12 z-30 grid grid-cols-3 gap-1.5 sm:bottom-3 sm:left-3 sm:right-14 sm:gap-2"
+          : "mb-2 grid grid-cols-3 gap-2.5 md:mb-4"
+      }
       data-testid="cinema-camera-stage"
       aria-label="Cinema camera stage"
     >
@@ -132,6 +148,7 @@ export function CinemaStage({ slots, onReactToParticipant, reactionBursts }: Cin
           key={`camera-slot-${seat.slot}`}
           data-testid="cinema-camera-slot"
           data-camera-slot={seat.slot}
+          data-camera-seat={seat.slot === 0 ? "host" : `guest-${seat.slot}`}
         >
           <CameraSeat
             seat={seat}

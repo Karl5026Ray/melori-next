@@ -1,3 +1,5 @@
+import { isCinemaLiveRoomRoute } from "@/lib/cinemaRoomRoute";
+
 /**
  * Routes that own real-time audio/video and must suppress the global music
  * transport. Discover and create pages remain normal app surfaces.
@@ -13,6 +15,9 @@ export function isMediaRoomRoute(pathname: string | null): boolean {
   const spaces = pathname.match(/^\/social\/spaces\/([^/]+)/);
   if (spaces && spaces[1] !== "create") return true;
 
-  const cinema = pathname.match(/^\/social\/cinema\/([^/]+)/);
-  return Boolean(cinema && cinema[1] !== "create");
+  // Cinema deliberately has a stricter boundary than the legacy room routes:
+  // suppress the shared transport only while an actual single-id Cinema room
+  // is open. The discover/create pages (and unrelated nested paths) retain
+  // normal application controls.
+  return isCinemaLiveRoomRoute(pathname);
 }

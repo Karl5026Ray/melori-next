@@ -152,10 +152,27 @@ function json(body: unknown) {
 async function seedSession(page: Page, activeProfile = profile) {
   await page.addInitScript(({ userId, track }) => {
     const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
+    const encodeJwtPart = (value: Record<string, unknown>) =>
+      btoa(JSON.stringify(value))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+    const accessToken = [
+      encodeJwtPart({ alg: "HS256", typ: "JWT" }),
+      encodeJwtPart({
+        aud: "authenticated",
+        exp: expiresAt,
+        iat: Math.floor(Date.now() / 1000),
+        role: "authenticated",
+        sub: userId,
+      }),
+      "cinema-e2e-signature",
+    ].join(".");
+
     window.localStorage.setItem(
       "melori-auth",
       JSON.stringify({
-        access_token: "cinema.e2e.token",
+        access_token: accessToken,
         refresh_token: "cinema.e2e.refresh",
         expires_at: expiresAt,
         expires_in: 60 * 60 * 24,
@@ -184,6 +201,12 @@ async function mockCinemaRoom(page: Page, activeProfile = profile) {
     { slot: 0, userId: HOST_ID },
     { slot: 1, userId: GUEST_ID },
   ];
+  // The room starts presence, heartbeat, PubNub, and LiveKit work alongside
+  // its data fetches. Keep this browser suite request-mocked end to end so it
+  // proves layout without a real account, realtime service, or local secrets.
+  // Specific room handlers below are registered later and therefore take
+  // precedence over this harmless default.
+  await page.route("**/api/**", (route) => route.fulfill(json({})));
   await page.route("**/rest/v1/profiles*", (route) => route.fulfill(json(activeProfile)));
   await page.route("**/rest/v1/spaces*", (route) => route.fulfill(json(space)));
   await page.route("**/rest/v1/space_participants*", (route) => {
@@ -247,22 +270,20 @@ async function mockCinemaRoom(page: Page, activeProfile = profile) {
   await page.route(`**/api/social/spaces/${SPACE_ID}/comments`, (route) =>
     route.fulfill(
       json({
-        comments: [
-          {
-            id: "cinema-comment-1",
-            user_id: HOST_ID,
-            author_display: "Cinema Host",
-            body: "The screening starts soon.",
-            created_at: new Date().toISOString(),
-          },
-        ],
+        comments: Array.from({ length: 6 }, (_, index) => ({
+          id: `cinema-comment-${index + 1}`,
+          user_id: HOST_ID,
+          author_display: "Cinema Host",
+          body: `Screening comment ${index + 1}`,
+          created_at: new Date().toISOString(),
+        })),
       }),
     ),
   );
 }
 
 test.describe("Cinema stable room", () => {
-  test("keeps three camera seats, a fixed screen/dock, independent roster, and expiring comments", async ({
+  test("keeps Cinema inside the mobile viewport with video seats on the screen and horizontal audience", async ({
     page,
   }) => {
     await seedSession(page);
@@ -274,7 +295,17 @@ test.describe("Cinema stable room", () => {
     expect(new URL(page.url()).pathname).toBe(`/social/cinema/${SPACE_ID}`);
 
     await expect(page.getByRole("region", { name: "Music player" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
+    await expect(page.getByTestId("cinema-room-canvas")).toBeVisible();
     await expect(page.getByTestId("cinema-screen")).toBeVisible();
+    // Playwright cannot emulate a physical phone notch, so override the
+    // browser-testable safe inset token. The Cinema header must clear it while
+    // the screen and its anchored camera stage remain in the viewport.
+    await page.evaluate(() =>
+      document.documentElement.style.setProperty("--cinema-safe-area-top", "32px"),
+    );
+    const cinemaHeader = page.getByTestId("cinema-room-header");
+    await expect(cinemaHeader).toBeVisible();
     await page.getByLabel("Open playlist, 2 of 5 items").click();
     const playlistDialog = page.getByRole("dialog", { name: "Playlist" });
     await expect(playlistDialog).toBeVisible();
@@ -285,56 +316,95 @@ test.describe("Cinema stable room", () => {
     await page.getByLabel("Close playlist").click();
     await expect(page.getByText("Playlist", { exact: true })).toHaveCount(0);
     await expect(page.getByTestId("cinema-camera-slot")).toHaveCount(3);
-    await expect(page.locator("[data-camera-slot='0']")).toContainText("Cinema Host");
-    await expect(page.locator("[data-camera-slot='1']")).toContainText("Camera Guest");
-    await expect(page.locator("[data-camera-slot='2']")).toContainText("Guest");
-    const cameraBoxes = await page.getByTestId("cinema-camera-slot").evaluateAll((slots) =>
-      slots.map((slot) => {
-        const box = slot.firstElementChild?.getBoundingClientRect();
-        return { width: box?.width ?? 0, height: box?.height ?? 0 };
-      }),
-    );
-    for (const box of cameraBoxes) {
-      expect(box.width).toBeGreaterThan(70);
-      expect(box.height).toBeGreaterThan(35);
-    }
-    expect(Math.max(...cameraBoxes.map((box) => box.width))).toBeLessThanOrEqual(
-      Math.min(...cameraBoxes.map((box) => box.width)) + 1,
-    );
-
-    // The people row is the first Cinema presentation surface. Keep this
-    // contract in both DOM and visual order so a later responsive refactor
-    // cannot put the shared screen back above the host and guest cameras.
     const cameraStage = page.getByTestId("cinema-camera-stage");
     const cinemaScreen = page.getByTestId("cinema-screen");
-    expect(
-      await cameraStage.evaluate((stage, screenTestId) => {
-        const screen = document.querySelector(`[data-testid="${screenTestId}"]`);
-        return Boolean(
-          screen &&
-          (stage.compareDocumentPosition(screen) & Node.DOCUMENT_POSITION_FOLLOWING),
+    await expect(page.locator("[data-camera-seat='host']")).toContainText("Cinema Host");
+    await expect(page.locator("[data-camera-seat='guest-1']")).toContainText("Camera Guest");
+    await expect(page.locator("[data-camera-seat='guest-2']")).toContainText("Guest");
+    await expect(page.getByTestId("cinema-camera-placeholder")).toHaveCount(3);
+    const [mediaBox, stageBox, screenBox, headerBox, shellMetrics] = await Promise.all([
+      page.getByTestId("cinema-media-area").boundingBox(),
+      cameraStage.boundingBox(),
+      cinemaScreen.boundingBox(),
+      cinemaHeader.boundingBox(),
+      page.locator(".cinema-room-shell").evaluate((shell) => ({
+        paddingTop: getComputedStyle(shell).paddingTop,
+        height: shell.getBoundingClientRect().height,
+      })),
+    ]);
+    expect(mediaBox).not.toBeNull();
+    expect(stageBox).not.toBeNull();
+    expect(screenBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    expect(shellMetrics.paddingTop).toBe("32px");
+    expect(headerBox!.y).toBeGreaterThanOrEqual(32);
+    expect(screenBox!.y).toBeGreaterThanOrEqual(headerBox!.y);
+    expect(screenBox!.y + screenBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(shellMetrics.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    // Seats are part of the shared media screen, anchored to its lower edge.
+    expect(stageBox!.y).toBeGreaterThanOrEqual(mediaBox!.y);
+    expect(stageBox!.y + stageBox!.height).toBeLessThanOrEqual(mediaBox!.y + mediaBox!.height + 1);
+    // The three fixed seats reserve a right-hand control gutter. Fullscreen
+    // must be visually separate and win its own point hit-test; merely making
+    // the button a higher z-index would leave the seat target ambiguous.
+    const fullscreenControl = page.getByTestId("cinema-fullscreen-control");
+    await expect(fullscreenControl).toBeVisible();
+    const [fullscreenBox, stageAndFullscreenHitTest] = await Promise.all([
+      fullscreenControl.boundingBox(),
+      page.evaluate(() => {
+        const stage = document.querySelector<HTMLElement>("[data-testid='cinema-camera-stage']");
+        const control = document.querySelector<HTMLElement>(
+          "[data-testid='cinema-fullscreen-control']",
         );
-      }, "cinema-screen"),
-    ).toBe(true);
-    const cameraStageOrderBox = await cameraStage.boundingBox();
-    const cinemaScreenOrderBox = await cinemaScreen.boundingBox();
-    expect(cameraStageOrderBox).not.toBeNull();
-    expect(cinemaScreenOrderBox).not.toBeNull();
-    expect((cameraStageOrderBox?.y ?? 0) + (cameraStageOrderBox?.height ?? 0)).toBeLessThanOrEqual(
-      (cinemaScreenOrderBox?.y ?? 0) + 1,
-    );
+        if (!stage || !control) return { hit: false, overlaps: true };
+        const stageBox = stage.getBoundingClientRect();
+        const controlBox = control.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          controlBox.left + controlBox.width / 2,
+          controlBox.top + controlBox.height / 2,
+        );
+        return {
+          hit: Boolean(hit && control.contains(hit)),
+          overlaps: !(
+            controlBox.right <= stageBox.left ||
+            controlBox.left >= stageBox.right ||
+            controlBox.bottom <= stageBox.top ||
+            controlBox.top >= stageBox.bottom
+          ),
+        };
+      }),
+    ]);
+    expect(fullscreenBox).not.toBeNull();
+    expect(fullscreenBox!.x + fullscreenBox!.width).toBeLessThanOrEqual(mediaBox!.x + mediaBox!.width);
+    expect(stageAndFullscreenHitTest.overlaps).toBe(false);
+    expect(stageAndFullscreenHitTest.hit).toBe(true);
+    await fullscreenControl.click();
+    await expect(fullscreenControl).toHaveAttribute("aria-label", "Exit fullscreen");
+    await fullscreenControl.click();
+    await expect(fullscreenControl).toHaveAttribute("aria-label", "Enter fullscreen");
 
-    // Exactly one Cinema composer, and it is in the one stable bottom dock.
+    // The document itself never scrolls: only the audience row is allowed to
+    // overflow, and only horizontally.
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+    const audienceOverflow = await page.getByTestId("cinema-audience-strip").evaluate((strip) => ({
+      scrollWidth: strip.scrollWidth,
+      clientWidth: strip.clientWidth,
+      scrollHeight: strip.scrollHeight,
+      clientHeight: strip.clientHeight,
+      overflowX: getComputedStyle(strip).overflowX,
+      overflowY: getComputedStyle(strip).overflowY,
+    }));
+    expect(audienceOverflow.scrollWidth).toBeGreaterThan(audienceOverflow.clientWidth);
+    expect(audienceOverflow.scrollHeight).toBeLessThanOrEqual(audienceOverflow.clientHeight + 1);
+    expect(audienceOverflow.overflowX).toMatch(/auto|scroll/);
+    expect(audienceOverflow.overflowY).toBe("hidden");
+
+    // Exactly one Cinema composer is anchored in the visible, hit-testable dock.
     await expect(page.getByTestId("cinema-control-dock")).toHaveCount(1);
     await expect(page.getByTestId("cinema-composer")).toHaveCount(1);
-    await expect(page.getByLabel("Add a comment")).toHaveCount(0);
     const dockBox = await page.getByTestId("cinema-control-dock").boundingBox();
-    const cameraStageBox = await page.getByTestId("cinema-camera-stage").boundingBox();
     expect(dockBox).not.toBeNull();
-    expect(cameraStageBox).not.toBeNull();
-    expect((dockBox?.y ?? 0) + (dockBox?.height ?? 0)).toBeLessThanOrEqual(
-      page.viewportSize()!.height,
-    );
+    expect(dockBox!.y + dockBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     expect(
       await page.getByTestId("cinema-control-dock").evaluate((dock) => {
         const box = dock.getBoundingClientRect();
@@ -345,76 +415,28 @@ test.describe("Cinema stable room", () => {
         return Boolean(topmost && dock.contains(topmost));
       }),
     ).toBe(true);
-    expect((cameraStageBox?.y ?? 0) + (cameraStageBox?.height ?? 0)).toBeLessThanOrEqual(
-      (dockBox?.y ?? 0) + 1,
-    );
+    await page.getByLabel("Write a comment").click();
+    await expect(page.getByRole("button", { name: /Ask to speak|Lower hand/ })).toHaveCount(0);
+    await expect(page.getByLabel(/Unmute \(tap\)|Mute \(tap\)/)).toHaveCount(0);
 
-    await page.getByRole("button", { name: "React to Cinema Host" }).click();
-    const reactionDialog = page.getByRole("dialog", {
-      name: "React to Cinema Host",
-    });
-    await expect(reactionDialog).toBeVisible();
-    expect(
-      await reactionDialog.evaluate((dialog) =>
-        Number.parseInt(window.getComputedStyle(dialog).zIndex, 10),
-      ),
-    ).toBeGreaterThan(70);
-    const heartReaction = reactionDialog.getByRole("button", {
-      name: "React ❤️ to Cinema Host",
-    });
-    await expect(heartReaction).toBeVisible();
-    expect(
-      await heartReaction.evaluate((button) => {
-        const box = button.getBoundingClientRect();
-        const topmost = document.elementFromPoint(
-          box.left + box.width / 2,
-          box.top + box.height / 2,
-        );
-        return topmost === button || Boolean(topmost && button.contains(topmost));
-      }),
-    ).toBe(true);
-    await heartReaction.click();
-    await expect(reactionDialog).toHaveCount(0);
-
-    const screen = page.getByTestId("cinema-screen");
-    await page.getByTestId("cinema-audience-trigger").click();
-    const roster = page.getByTestId("cinema-audience-roster");
-    await expect(roster).toBeVisible();
-    const screenBeforeRosterScroll = await screen.evaluate((element) => {
-      const box = element.getBoundingClientRect();
-      return {
-        x: box.x,
-        documentY: box.y + window.scrollY,
-        width: box.width,
-        height: box.height,
-      };
-    });
-    const scrollInfo = await roster.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-      return { top: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
-    });
-    expect(scrollInfo.scrollHeight).toBeGreaterThan(scrollInfo.clientHeight);
-    expect(scrollInfo.top).toBeGreaterThan(0);
-    expect(
-      await screen.evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return {
-          x: box.x,
-          documentY: box.y + window.scrollY,
-          width: box.width,
-          height: box.height,
-        };
-      }),
-    ).toEqual(screenBeforeRosterScroll);
-    await page.keyboard.press("Escape");
-    await expect(roster).toHaveCount(0);
-    await expect(page.getByTestId("cinema-audience-trigger")).toBeFocused();
-    await page.getByTestId("cinema-audience-trigger").click();
-    await page.getByTestId("cinema-audience-close").click();
-
-    await expect(page.getByTestId("cinema-comment-overlay")).toContainText("The screening starts soon.");
-    await page.waitForTimeout(8_500);
-    await expect(page.getByTestId("cinema-comment-overlay")).toHaveCount(0);
+    const overlay = page.getByTestId("cinema-comment-overlay");
+    await expect(overlay).toBeVisible();
+    await expect(page.getByTestId("cinema-comment-line")).toHaveCount(5);
+    const overlayBox = await overlay.boundingBox();
+    expect(overlayBox).not.toBeNull();
+    expect(overlayBox!.x).toBeLessThan((mediaBox!.x + mediaBox!.width) / 2);
+    await expect
+      .poll(async () =>
+        page.getByTestId("cinema-comment-line").evaluateAll((lines) => {
+          if (lines.length !== 5) return false;
+          const opacities = lines.map((line) => Number(getComputedStyle(line).opacity));
+          const transition = getComputedStyle(lines[0]).transitionProperty;
+          return (
+            opacities[0] < opacities[opacities.length - 1] && transition.includes("opacity")
+          );
+        }),
+      )
+      .toBe(true);
   });
 
   test("shows host-only live box controls without auto-enabling the host camera", async ({ page }) => {
@@ -428,8 +450,24 @@ test.describe("Cinema stable room", () => {
     });
 
     await page.goto(`/social/cinema/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
-    const controls = page.getByTestId("cinema-live-box-controls");
+    const managerTrigger = page.getByTestId("cinema-live-seat-manager");
+    await managerTrigger.click();
+    const controls = page.getByRole("dialog", { name: "Live boxes" });
     await expect(controls).toBeVisible();
+    await expect(controls).toHaveAttribute("aria-modal", "true");
+    await expect(page.getByLabel("Close Cinema live seat manager")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect
+      .poll(() =>
+        controls.evaluate((dialog) => dialog.contains(document.activeElement)),
+      )
+      .toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(controls).toHaveCount(0);
+    await expect(managerTrigger).toBeFocused();
+    await managerTrigger.click();
+    const reopenedControls = page.getByRole("dialog", { name: "Live boxes" });
+    await expect(reopenedControls).toBeVisible();
     await expect(page.getByTestId("cinema-live-box-2")).toContainText("Camera Guest");
     await expect(page.getByTestId("cinema-live-box-3")).toContainText("Empty");
     await expect(page.getByTestId("cinema-live-box-candidate")).toContainText("Ready Guest");

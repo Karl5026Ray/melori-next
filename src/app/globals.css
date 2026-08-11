@@ -61,6 +61,72 @@ body {
   overflow-x: hidden;
 }
 
+/* Cinema is a viewport-owned live video room, not a document-sized feed.
+   The route adds .cinema-room-shell after its room format resolves. Keep the
+   application chrome out of the layout calculation so the only permitted
+   scrolling surface is Cinema's horizontal audience strip. */
+@supports selector(body:has(.cinema-room-shell)) {
+  body:has(.cinema-room-shell) {
+    overflow: hidden;
+  }
+  body:has(.cinema-room-shell) main {
+    flex: 0 1 auto;
+    min-height: 0;
+    padding-bottom: 0 !important;
+  }
+  body:has(.cinema-room-shell) > header {
+    display: none;
+  }
+  body:has(.cinema-room-shell) footer {
+    display: none;
+  }
+}
+
+/* `viewport-fit=cover` lets Cinema use the whole display, including the area
+   beneath a phone notch. The safe top padding belongs to the outer room shell,
+   not the media canvas, so its header controls clear the hardware cutout while
+   the flex canvas keeps the full remaining stage visible. The custom property
+   also lets browser coverage simulate a non-zero inset deterministically. */
+:root {
+  --cinema-safe-area-top: env(safe-area-inset-top, 0px);
+}
+.cinema-room-shell {
+  padding-top: max(0.5rem, var(--cinema-safe-area-top));
+}
+
+@keyframes cinemaCommentEnter {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.cinema-comment-line {
+  transition: opacity 600ms ease, transform 600ms ease;
+}
+.cinema-comment-line-content {
+  display: block;
+  animation: cinemaCommentEnter 220ms ease-out both;
+}
+.cinema-comment-line[data-cinema-comment-age="5"] { opacity: 0.42; }
+.cinema-comment-line[data-cinema-comment-age="4"] { opacity: 0.56; }
+.cinema-comment-line[data-cinema-comment-age="3"] { opacity: 0.7; }
+.cinema-comment-line[data-cinema-comment-age="2"] { opacity: 0.84; }
+.cinema-comment-line[data-cinema-comment-exiting="true"] {
+  opacity: 0;
+  transform: translateY(-0.25rem);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinema-comment-line,
+  .cinema-comment-line-content {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* Any element that opts into horizontal scrolling (carousels, tab strips)
    must not leak that scroll up to the page. */
 * {

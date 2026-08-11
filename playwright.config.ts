@@ -24,10 +24,28 @@ const REUSE_SERVER = process.env.PW_REUSE_SERVER === "1";
 //   npm run build && PW_SERVER_COMMAND="npm run start" npx playwright test
 const SERVER_COMMAND =
   process.env.PW_SERVER_COMMAND ||
-  (process.env.CI ? "npm run start" : "npm run dev");
+  // Webpack follows worktree symlinks while the current Turbopack sandbox
+  // intentionally rejects a node_modules link outside the worktree root.
+  // Bind to the same loopback host as BASE_URL so Next does not reject its HMR
+  // client as a cross-origin development request.
+  (process.env.CI ? "npm run start" : "npm run dev -- --webpack --hostname 127.0.0.1");
+
 // Request-mocked browser specs can run without a real Supabase project. Keep
 // this opt-in so normal local/CI e2e runs retain their configured environment.
 const MOCK_SUPABASE_ENV = process.env.PW_CONCERT_MOCKS === "1";
+
+const LOCAL_SUPABASE_ENV = {
+  // Cinema tests route every client request, so deterministic fallback values
+  // keep this request-mocked suite runnable without a local .env.local file.
+  // Use an HTTPS-shaped Supabase origin and JWT-shaped public key: the client
+  // validates those before issuing its mocked PostgREST calls, and the app CSP
+  // deliberately rejects an arbitrary localhost HTTP data origin.
+  NEXT_PUBLIC_SUPABASE_URL:
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://cinema-tests.supabase.co",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY:
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaW5lbWEtdGVzdHMiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMH0.cGxheXdyaWdodC1hbm9uLWtleQ",
+};
 
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
@@ -77,6 +95,20 @@ export default defineConfig({
         browserName: "chromium",
       },
     },
+    {
+      name: "desktop-chromium",
+      // FloatingPlayer is deliberately a mobile-only control (`md:hidden`);
+      // its regression spec exercises iPhone pointer semantics and the mobile
+      // tab-bar clearance. Running it in this desktop project cannot render
+      // the region it asserts and was the source of three false CI failures
+      // before the suite reached the Cinema coverage. The mobile project
+      // above still runs every floating-player interaction assertion.
+      testIgnore: /floating-player\.spec\.ts/,
+      use: {
+        browserName: "chromium",
+        viewport: { width: 1440, height: 900 },
+      },
+    },
   ],
   // Only start a server when we're pointing at localhost; against a deployed
   // URL we skip webServer entirely. CI builds first and serves the production
@@ -94,7 +126,10 @@ export default defineConfig({
               NEXT_PUBLIC_SUPABASE_URL: "https://e2e.supabase.co",
               NEXT_PUBLIC_SUPABASE_ANON_KEY: "e2e-anon-key",
             }
-          : undefined,
+          : {
+              ...process.env,
+              ...LOCAL_SUPABASE_ENV,
+            },
       }
     : undefined,
 });

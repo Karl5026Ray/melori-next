@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import fs from "node:fs";
 import path from "node:path";
+import { isCinemaLiveRoomRoute } from "../src/lib/cinemaRoomRoute";
 
 const root = process.cwd();
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
@@ -69,6 +70,20 @@ check(
 check(
   "YouTube Mirror cards remain 16:9 and contained",
   video.includes('className="relative aspect-video max-h-full w-full"'),
+);
+check(
+  "Cinema hides mobile navigation only for an actual room id",
+  isCinemaLiveRoomRoute("/social/cinema/room-123") &&
+    isCinemaLiveRoomRoute("/social/cinema/00000000-0000-4000-8000-000000000101") &&
+    !isCinemaLiveRoomRoute("/social/cinema") &&
+    !isCinemaLiveRoomRoute("/social/cinema/create") &&
+    !isCinemaLiveRoomRoute("/social/cinema/create/") &&
+    !isCinemaLiveRoomRoute("/social/cinema/room-123/extra"),
+);
+check(
+  "Cinema mobile navigation uses the dedicated room-route predicate",
+  nav.includes("isCinemaLiveRoomRoute(pathname)") &&
+    !nav.includes('^\\/social\\/cinema\\/[^/]+/.test(pathname)'),
 );
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nAll mobile layout contracts passed.\n");

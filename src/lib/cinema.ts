@@ -7,6 +7,7 @@
 // Cinema is the shared, host-synced video surface on the stage.
 
 import type { Space } from "@/types/social";
+import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 export const CINEMA_ROOM_FORMAT = "cinema" as const;
 
@@ -36,14 +37,18 @@ export const CINEMA_GENRE_TABS: ReadonlyArray<{
 export function roomExitHref(
   roomFormat: string | null | undefined,
 ): string {
-  return roomFormat === CINEMA_ROOM_FORMAT ? "/social/cinema" : "/social/spaces";
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
+  return "/social/spaces";
 }
 
 /** Matching link text for {@link roomExitHref}. */
 export function roomExitLabel(
   roomFormat: string | null | undefined,
 ): string {
-  return roomFormat === CINEMA_ROOM_FORMAT ? "Back to Cinema" : "Back to Spaces";
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "Back to Cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "Back to Concert";
+  return "Back to Spaces";
 }
 
 /**
@@ -54,9 +59,9 @@ export function roomExitLabel(
 export function roomScheduledHref(
   roomFormat: string | null | undefined,
 ): string {
-  return roomFormat === CINEMA_ROOM_FORMAT
-    ? "/social/cinema"
-    : "/social/spaces?tab=scheduled";
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
+  return "/social/spaces?tab=scheduled";
 }
 
 /**
@@ -77,9 +82,11 @@ export function roomHref(
   room: { id: string; room_format?: string | null } | null | undefined,
 ): string {
   if (!room?.id) return "/social/spaces";
-  return room.room_format === CINEMA_ROOM_FORMAT
-    ? `/social/cinema/${room.id}`
-    : `/social/spaces/${room.id}`;
+  if (room.room_format === CINEMA_ROOM_FORMAT) return `/social/cinema/${room.id}`;
+  if (room.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
+    return `/social/concert/${room.id}`;
+  }
+  return `/social/spaces/${room.id}`;
 }
 
 /**
@@ -94,9 +101,9 @@ export function roomHref(
 export function roomCreateHref(
   roomFormat: string | null | undefined,
 ): string {
-  return roomFormat === CINEMA_ROOM_FORMAT
-    ? "/social/cinema/create"
-    : "/social/spaces/create";
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema/create";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert/create";
+  return "/social/spaces/create";
 }
 
 /** Narrows an arbitrary `?genre=` search param to a tab we actually render. */

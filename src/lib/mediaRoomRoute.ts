@@ -7,6 +7,9 @@ export function isMediaRoomRoute(pathname: string | null): boolean {
   if (pathname.startsWith("/social/live")) return true;
   if (pathname.startsWith("/social/connect")) return true;
 
+  const concert = pathname.match(/^\/social\/concert\/([^/]+)/);
+  if (concert && concert[1] !== "create") return true;
+
   const spaces = pathname.match(/^\/social\/spaces\/([^/]+)/);
   if (spaces && spaces[1] !== "create") return true;
 

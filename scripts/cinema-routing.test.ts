@@ -14,6 +14,7 @@ import {
   roomHref,
   roomScheduledHref,
 } from "@/lib/cinema";
+import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 let failures = 0;
 
@@ -33,6 +34,11 @@ assertEq(
   "cinema room -> cinema route",
   roomHref({ id: "abc", room_format: CINEMA_ROOM_FORMAT }),
   "/social/cinema/abc",
+);
+assertEq(
+  "concert room -> concert route",
+  roomHref({ id: "abc", room_format: CONCERT_BATTLE_ROOM_FORMAT }),
+  "/social/concert/abc",
 );
 assertEq(
   "audio space -> spaces route",
@@ -71,6 +77,11 @@ assertEq(
   "/social/cinema/create",
 );
 assertEq(
+  "concert -> its own create route",
+  roomCreateHref(CONCERT_BATTLE_ROOM_FORMAT),
+  "/social/concert/create",
+);
+assertEq(
   "audio space -> Start a Space",
   roomCreateHref("dj_set"),
   "/social/spaces/create",
@@ -86,11 +97,17 @@ assertEq(
 
 console.log("exits and scheduling still route by format");
 assertEq("cinema exit", roomExitHref(CINEMA_ROOM_FORMAT), "/social/cinema");
+assertEq("concert exit", roomExitHref(CONCERT_BATTLE_ROOM_FORMAT), "/social/concert");
 assertEq("space exit", roomExitHref("discussion"), "/social/spaces");
 assertEq(
   "cinema scheduled",
   roomScheduledHref(CINEMA_ROOM_FORMAT),
   "/social/cinema",
+);
+assertEq(
+  "concert scheduled",
+  roomScheduledHref(CONCERT_BATTLE_ROOM_FORMAT),
+  "/social/concert",
 );
 assertEq(
   "space scheduled",
@@ -108,6 +125,20 @@ for (const helper of [roomExitHref, roomScheduledHref, roomCreateHref]) {
   assertEq(
     `${helper.name} never sends cinema to a /social/spaces path`,
     helper(CINEMA_ROOM_FORMAT).startsWith("/social/spaces"),
+    false,
+  );
+}
+
+console.log("round trip — every helper agrees on what Concert is");
+for (const helper of [roomExitHref, roomScheduledHref, roomCreateHref]) {
+  assertEq(
+    `${helper.name} sends Concert to a /social/concert path`,
+    helper(CONCERT_BATTLE_ROOM_FORMAT).startsWith("/social/concert"),
+    true,
+  );
+  assertEq(
+    `${helper.name} never sends Concert to a /social/spaces path`,
+    helper(CONCERT_BATTLE_ROOM_FORMAT).startsWith("/social/spaces"),
     false,
   );
 }

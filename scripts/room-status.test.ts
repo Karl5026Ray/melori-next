@@ -36,7 +36,7 @@ const concert = getLiveRoomPresentation({
 });
 assertEq("Concert uses teal", concert?.tone, "teal");
 assertEq("Concert is visibly labeled", concert?.label, "Concert");
-assertEq("Concert keeps current shared room route", concert?.href, "/social/spaces/room-2");
+assertEq("Concert routes to its dedicated screen", concert?.href, "/social/concert/room-2");
 
 for (const format of ["discussion", "release_party", "dj_set", null, "legacy"]) {
   const result = getLiveRoomPresentation({
@@ -75,6 +75,9 @@ console.log("Global music transport room suppression");
 assertEq("Cinema room suppresses transport", isMediaRoomRoute("/social/cinema/abc"), true);
 assertEq("Cinema discover keeps transport", isMediaRoomRoute("/social/cinema"), false);
 assertEq("Cinema create keeps transport", isMediaRoomRoute("/social/cinema/create"), false);
+assertEq("Concert room suppresses transport", isMediaRoomRoute("/social/concert/abc"), true);
+assertEq("Concert landing keeps transport", isMediaRoomRoute("/social/concert"), false);
+assertEq("Concert create keeps transport", isMediaRoomRoute("/social/concert/create"), false);
 assertEq("Spaces room suppresses transport", isMediaRoomRoute("/social/spaces/abc"), true);
 assertEq("Spaces create keeps transport", isMediaRoomRoute("/social/spaces/create"), false);
 

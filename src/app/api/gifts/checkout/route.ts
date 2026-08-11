@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { approvedOrigin } from "@/lib/approved-origin";
 import { COIN_PACK_SOURCE } from "@/lib/gifting";
+import { roomHref } from "@/lib/cinema";
 import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
@@ -23,7 +24,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid coin checkout request" }, { status: 400 });
   }
 
-  const { data: pack, error } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  const { data: pack, error } = await supabase
     .from("coin_packs")
     .select("id, name, coin_amount, price_usd_cents")
     .eq("id", packId)
@@ -36,6 +38,23 @@ export async function POST(req: NextRequest) {
   if (!pack) return NextResponse.json({ error: "Coin pack not found" }, { status: 404 });
 
   try {
+    // Coins are available only in Concert today, but route through the shared
+    // room resolver so a Concert checkout never returns to the legacy Spaces
+    // URL (and existing Cinema/Spaces return paths remain format-correct).
+    const { data: room, error: roomError } = await supabase
+      .from("spaces")
+      .select("id, room_format")
+      .eq("id", spaceId)
+      .maybeSingle();
+    if (roomError) {
+      console.error("coin checkout room lookup failed", roomError);
+      return NextResponse.json({ error: "Could not start checkout" }, { status: 500 });
+    }
+    if (!room) {
+      return NextResponse.json({ error: "Room not found" }, { status: 404 });
+    }
+    const returnPath = roomHref(room);
+
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -52,8 +71,8 @@ export async function POST(req: NextRequest) {
       }],
       // Return the fan to the Concert they were watching rather than dropping
       // them on discovery after hosted Checkout.
-      success_url: `${approvedOrigin(req)}/social/spaces/${spaceId}?coins=success`,
-      cancel_url: `${approvedOrigin(req)}/social/spaces/${spaceId}?coins=cancelled`,
+      success_url: `${approvedOrigin(req)}${returnPath}?coins=success`,
+      cancel_url: `${approvedOrigin(req)}${returnPath}?coins=cancelled`,
       ...(guard.membership.email ? { customer_email: guard.membership.email } : {}),
       client_reference_id: guard.membership.userId!,
       metadata: {

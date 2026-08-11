@@ -21,6 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { authFetch } from "@/lib/authClient";
+import type { GiftCatalogItem } from "@/lib/gifting";
 
 type AnyPubNub = any;
 
@@ -35,7 +36,7 @@ export interface PresenceState {
 // reactions. They carry `__signal: true` so the listener can route them
 // separately from server system messages.
 export interface SpaceSignal {
-  type: "reaction" | "hand";
+  type: "reaction" | "hand" | "gift";
   // reaction payload
   emoji?: string;
   // when present, the reaction is aimed at a specific participant (their user
@@ -48,6 +49,12 @@ export interface SpaceSignal {
   uuid?: string;
   // client timestamp (ms) — used as a de-dupe / ordering hint
   ts?: number;
+  // Concert gifting payload. The catalog object is server-read by the send
+  // route, then relayed as an ephemeral visual cue; wallet state never travels
+  // over PubNub.
+  giftSendId?: string;
+  gift?: GiftCatalogItem;
+  senderName?: string;
 }
 
 export interface JoinPresenceOptions {

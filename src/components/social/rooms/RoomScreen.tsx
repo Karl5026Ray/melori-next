@@ -3,11 +3,12 @@
 // The shared live-room screen, rendered by BOTH room routes:
 //
 //   /social/spaces/[spaceId]  — audio Spaces (release_party | discussion |
-//                               versus_battle | dj_set) and the live_* formats
+//                               dj_set) and the live_* formats
 //   /social/cinema/[roomId]   — Cinema watch parties
 //
 // It used to live at the Spaces route and be reached by Cinema too, which is
-// why a Cinema room had a /social/spaces/... URL. The two routes name their
+// why a Cinema room had a /social/spaces/... URL. Concert Battle similarly
+// redirects to its dedicated route. The product routes name their
 // dynamic segment differently ([spaceId] vs [roomId]), so this component takes
 // the id as a prop rather than reading useParams() — that is the only reason
 // the prop exists.

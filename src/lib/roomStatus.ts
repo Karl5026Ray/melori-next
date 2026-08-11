@@ -48,7 +48,7 @@ export function getLiveRoomPresentation(room: {
       ariaLabel: "Concert live",
       icon: "mic",
       tone: "teal",
-      href: `/social/spaces/${room.id}`,
+      href: `/social/concert/${room.id}`,
     };
   }
 

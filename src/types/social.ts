@@ -1,3 +1,9 @@
+import type {
+  ConcertBattleInviteStatus,
+  ConcertBattleRoundStatus,
+  ConcertBattleStatus,
+} from "@/lib/concertBattle";
+
 export type UserRole = "artist" | "superfan" | "admin" | "free";
 
 export interface SocialLink {
@@ -122,6 +128,62 @@ export interface SpaceParticipant {
   // Set by the host via force-mute; clients respect this even if the speaker
   // toggles their own is_muted back off.
   host_muted?: boolean;
+}
+
+// Concert Battle is a separate aggregate over a `spaces` room envelope.
+// These API-facing shapes intentionally contain only aggregate/view data; no
+// wallet, gift-sender, or generic-stage authorization information belongs here.
+export interface ConcertBattle {
+  space_id: string;
+  initiator_id: string;
+  opponent_id: string | null;
+  status: ConcertBattleStatus;
+  current_round: number;
+  regulation_rounds: number;
+  round_duration_seconds: number;
+  phase_started_at: string | null;
+  phase_ends_at: string | null;
+  winner_id: string | null;
+  completion_reason: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface ConcertBattleRound {
+  id: string;
+  space_id: string;
+  round_number: number;
+  state: ConcertBattleRoundStatus;
+  starts_at: string | null;
+  ends_at: string | null;
+  finalized_at: string | null;
+  winner_id: string | null;
+  initiator_gift_count: number;
+  opponent_gift_count: number;
+  initiator_coins_total: number;
+  opponent_coins_total: number;
+}
+
+export interface ConcertBattleInvite {
+  id: string;
+  space_id: string;
+  sender_id: string;
+  recipient_id: string;
+  status: ConcertBattleInviteStatus;
+  expires_at: string;
+  created_at: string;
+  responded_at: string | null;
+}
+
+export interface ConcertBattleView {
+  space: Pick<Space, "id" | "title" | "topic" | "status" | "room_format">;
+  battle: ConcertBattle;
+  initiator: Profile;
+  opponent: Profile | null;
+  viewer_slot: 1 | 2 | null;
+  server_now: string;
 }
 
 export interface Conversation {

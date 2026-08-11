@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import {
+  filterVisibleMembers,
+  safeMemberSearchTerm,
+} from "@/lib/memberVisibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,25 +34,20 @@ export async function GET(req: NextRequest) {
     .from("member_blocks")
     .select("blocker_id, blocked_id")
     .or(`blocker_id.eq.${me},blocked_id.eq.${me}`);
-  const hidden = new Set<string>([me]);
-  for (const b of blockRows ?? []) {
-    hidden.add(b.blocker_id as string);
-    hidden.add(b.blocked_id as string);
-  }
-
   let query = supabase
     .from("profiles")
-    .select("id, display_name, username, avatar_url, role, verified, bio")
+    .select("id, display_name, username, avatar_url, role, verified, bio, status, deleted_at")
     .neq("id", me)
     // Only surface active, non-deleted accounts.
     .or("status.is.null,status.eq.active")
+    .is("deleted_at", null)
     .order("verified", { ascending: false })
     .order("followers_count", { ascending: false })
-    .limit(limit + hidden.size); // over-fetch so post-filtering still fills the page
+    .limit(limit + (blockRows?.length ?? 0) + 1); // over-fetch after block filtering
 
   if (q) {
     // Case-insensitive match on display name or username.
-    const safe = q.replace(/[%,()]/g, " ");
+    const safe = safeMemberSearchTerm(q);
     query = query.or(`display_name.ilike.%${safe}%,username.ilike.%${safe}%`);
   }
 
@@ -57,9 +56,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const users = (data ?? [])
-    .filter((u) => !hidden.has(u.id as string))
-    .slice(0, limit);
+  const users = filterVisibleMembers(data ?? [], me, blockRows ?? []).slice(0, limit);
 
   return NextResponse.json({ users });
 }

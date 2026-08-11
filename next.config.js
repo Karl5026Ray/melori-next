@@ -111,6 +111,19 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig = {
+  // Playwright starts local development coverage at 127.0.0.1. Allow that
+  // same-origin dev client to reconnect to Turbopack without weakening any
+  // production origin policy.
+  allowedDevOrigins: ["127.0.0.1"],
+  // Keeps the request-mocked Concert browser test independent from a stale
+  // development bundle that may have been built without public Supabase vars.
+  // Production keeps Next's normal `.next` output directory.
+  distDir: process.env.NEXT_E2E_DIST_DIR || '.next',
+  // The request-mocked Playwright server writes generated route types to its
+  // own config, so running the focused browser suite never rewrites tsconfig.
+  typescript: {
+    tsconfigPath: process.env.NEXT_E2E_TSCONFIG || "tsconfig.json",
+  },
   reactStrictMode: true,
   // Studio photo galleries accept raw phone-camera JPEGs (iPhone/Canon
   // Camera Connect commonly produce 3-12 MB per shot). The App Router

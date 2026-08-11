@@ -3,6 +3,7 @@
 
 # next.js
 /.next/
+/.next-concert-e2e/
 /out/
 
 # production

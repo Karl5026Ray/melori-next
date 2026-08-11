@@ -1,7 +1,5 @@
-"use client";
-
-import { RoomCreatePage } from "@/app/social/spaces/create/page";
+import { ConcertCreateForm } from "@/components/social/concert/ConcertCreateForm";
 
 export default function CreateConcertPage() {
-  return <RoomCreatePage concertOnly />;
+  return <ConcertCreateForm />;
 }

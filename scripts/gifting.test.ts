@@ -88,8 +88,8 @@ const concertCreateSource = readFileSync(
   new URL("../src/app/social/concert/create/page.tsx", import.meta.url),
   "utf8",
 );
-const sharedCreateSource = readFileSync(
-  new URL("../src/app/social/spaces/create/page.tsx", import.meta.url),
+const concertFormSource = readFileSync(
+  new URL("../src/components/social/concert/ConcertCreateForm.tsx", import.meta.url),
   "utf8",
 );
 
@@ -106,13 +106,11 @@ check(
   sidebarSource.includes('href="/social/spaces/create?format=versus_battle"'),
   false,
 );
+check("dedicated Concert creator renders its atomic form", concertCreateSource.includes("<ConcertCreateForm />"));
 check(
-  "dedicated Concert creator locks the shared form to Concert mode",
-  concertCreateSource.includes("<RoomCreatePage concertOnly />"),
-);
-check(
-  "Concert back navigation does not drop into Spaces",
-  sharedCreateSource.includes('concertOnly ? "/social/profile" : roomExitHref(selectedFormat)'),
+  "Concert creation uses its battle RPC instead of generic spaces creation",
+  concertFormSource.includes('authFetch("/api/concert/battles"') &&
+    !concertFormSource.includes("/api/social/spaces"),
 );
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nAll gifting contracts passed.\n");

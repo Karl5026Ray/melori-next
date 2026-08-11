@@ -25,6 +25,9 @@ const REUSE_SERVER = process.env.PW_REUSE_SERVER === "1";
 const SERVER_COMMAND =
   process.env.PW_SERVER_COMMAND ||
   (process.env.CI ? "npm run start" : "npm run dev");
+// Request-mocked browser specs can run without a real Supabase project. Keep
+// this opt-in so normal local/CI e2e runs retain their configured environment.
+const MOCK_SUPABASE_ENV = process.env.PW_CONCERT_MOCKS === "1";
 
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
@@ -85,6 +88,13 @@ export default defineConfig({
         url: BASE_URL,
         reuseExistingServer: REUSE_SERVER,
         timeout: 120_000,
+        env: MOCK_SUPABASE_ENV
+          ? {
+              ...process.env,
+              NEXT_PUBLIC_SUPABASE_URL: "https://e2e.supabase.co",
+              NEXT_PUBLIC_SUPABASE_ANON_KEY: "e2e-anon-key",
+            }
+          : undefined,
       }
     : undefined,
 });

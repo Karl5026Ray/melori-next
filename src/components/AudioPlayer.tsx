@@ -347,7 +347,14 @@ function DesktopBar() {
 // uses a transform, as a delta on top of the anchored base. Placed is placed.
 // -------------------------------------------------------------------------
 const POS_KEY = "melori:player:pos";
-const MARGIN = 8;
+// Edge margin used ONLY by this mobile floating pill's positioning math below
+// (default dock gap, drag clamp bounds, and the expand-panel edge cap). It is
+// NOT a decorative CSS margin and it has no effect on <DesktopBar> above — the
+// two are visually unrelated despite living in the same file. If you want more
+// breathing room around the desktop transport bar, change spacing inside
+// DesktopBar directly; do not repurpose this constant, or you will silently
+// shift where the mobile pill parks, clamps, and snaps on expand (see PR #290).
+const PILL_MARGIN = 8;
 // Height of the fixed mobile tab bar (h-14). Reserved below the pill, on top
 // of whatever the home-indicator safe-area inset reports, so the pill can
 // never park behind the nav.
@@ -403,8 +410,8 @@ const PANEL_W_CSS = "min(20rem, calc(100vw - 1.25rem))";
 const DEFAULT_DOCK: Dock = {
   ax: "right",
   ay: "bottom",
-  dx: MARGIN,
-  dy: MARGIN + TAB_BAR,
+  dx: PILL_MARGIN,
+  dy: PILL_MARGIN + TAB_BAR,
 };
 
 // Persisted shape, versioned so an anchor is never mistaken for the legacy
@@ -581,10 +588,10 @@ function FloatingPlayer() {
     const h = height || el?.offsetHeight || PILL_H;
     const vp = getViewport();
     const i = insetsRef.current;
-    const minX = MARGIN + i.left;
-    const minY = MARGIN + i.top;
-    const maxX = Math.max(minX, vp.w - w - MARGIN - i.right);
-    const maxY = Math.max(minY, vp.h - h - MARGIN - TAB_BAR - i.bottom);
+    const minX = PILL_MARGIN + i.left;
+    const minY = PILL_MARGIN + i.top;
+    const maxX = Math.max(minX, vp.w - w - PILL_MARGIN - i.right);
+    const maxY = Math.max(minY, vp.h - h - PILL_MARGIN - TAB_BAR - i.bottom);
     return {
       x: Math.min(Math.max(minX, x), maxX),
       y: Math.min(Math.max(minY, y), maxY),
@@ -623,10 +630,10 @@ function FloatingPlayer() {
     if (r.width === 0 && r.height === 0) return;
     const vp = getViewport();
     const i = insetsRef.current;
-    const minX = MARGIN + i.left;
-    const minY = MARGIN + i.top;
-    const maxX = Math.max(minX, vp.w - r.width - MARGIN - i.right);
-    const maxY = Math.max(minY, vp.h - r.height - MARGIN - TAB_BAR - i.bottom);
+    const minX = PILL_MARGIN + i.left;
+    const minY = PILL_MARGIN + i.top;
+    const maxX = Math.max(minX, vp.w - r.width - PILL_MARGIN - i.right);
+    const maxY = Math.max(minY, vp.h - r.height - PILL_MARGIN - TAB_BAR - i.bottom);
     const x = Math.min(Math.max(minX, r.x), maxX);
     const y = Math.min(Math.max(minY, r.y), maxY);
     if (Math.abs(x - r.x) < 0.5 && Math.abs(y - r.y) < 0.5) return;
@@ -957,7 +964,7 @@ function FloatingPlayer() {
   // by itself — no measure-then-move, therefore no visible correction.
   const inset = `${dock.dx}px`;
   const insetCapped = expanded
-    ? `min(${inset}, calc(100vw - ${PANEL_W_CSS} - ${MARGIN}px))`
+    ? `min(${inset}, calc(100vw - ${PANEL_W_CSS} - ${PILL_MARGIN}px))`
     : inset;
   const anchorStyle: React.CSSProperties =
     dock.ax === "left"

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
+import { isMediaRoomRoute } from "@/lib/mediaRoomRoute";
 
 function PlayPauseIcon({ playing }: { playing: boolean }) {
   if (playing) {
@@ -75,24 +76,11 @@ function ChevronIcon({ down }: { down: boolean }) {
   );
 }
 
-// Room screens (MM Faces live, MM Spaces rooms, MM Connect) own their audio and
-// UI, so the floating music transport is hidden there and background music is
-// paused on entry. Route patterns confirmed against src/app/social/*.
-function isRoomRoute(pathname: string | null): boolean {
-  if (!pathname) return false;
-  if (pathname.startsWith("/social/live")) return true; // MM Faces (Duo/8-person)
-  if (pathname.startsWith("/social/connect")) return true; // MM Connect
-  // MM Spaces: only an actual room (/social/spaces/<id>), not the list or the
-  // create form.
-  const m = pathname.match(/^\/social\/spaces\/([^/]+)/);
-  return Boolean(m && m[1] !== "create");
-}
-
 export default function AudioPlayer() {
   const { pause } = usePlayer();
   const pathname = usePathname();
   const onRadio = pathname?.startsWith("/social/radio");
-  const inRoom = isRoomRoute(pathname);
+  const inRoom = isMediaRoomRoute(pathname);
 
   // Entering a live room pauses background music so it never fights the room's
   // own audio. Leaving does NOT auto-resume — the listener presses play again.

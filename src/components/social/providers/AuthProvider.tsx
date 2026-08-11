@@ -10,6 +10,7 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 import { signOutThisDevice } from "@/lib/authSession";
+import { authFetch } from "@/lib/authClient";
 import { Profile } from "@/types/social";
 
 interface AuthContextType {
@@ -178,6 +179,26 @@ export function SocialAuthProvider({
       subscription.unsubscribe();
     };
   }, [loadProfile]);
+
+  // Presence belongs to the authenticated social shell, not the Mirror page.
+  // This keeps a member visible in Mirror while they browse Faces, Spaces,
+  // Cinema, Connect, messages, or another social surface.
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    const ping = () => {
+      if (!active) return;
+      authFetch("/api/presence/heartbeat", { method: "POST" }).catch(() => {
+        /* transient: the next interval retries */
+      });
+    };
+    ping();
+    const interval = window.setInterval(ping, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [user?.id]);
 
   const signOut = useCallback(async () => {
     // Ending any hosted live room happens INSIDE signOutThisDevice() itself

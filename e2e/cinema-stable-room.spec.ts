@@ -4,6 +4,17 @@ const SPACE_ID = "00000000-0000-4000-8000-000000000101";
 const USER_ID = "00000000-0000-4000-8000-000000000102";
 const HOST_ID = "00000000-0000-4000-8000-000000000103";
 const GUEST_ID = "00000000-0000-4000-8000-000000000104";
+const SEEDED_TRACK = {
+  current: {
+    id: 990101,
+    title: "Cinema Route Regression Track",
+    artistName: "Cinema Test Artist",
+    coverUrl: null,
+    sourceType: "legacy",
+  },
+  queue: [],
+  index: 0,
+};
 
 const profile = {
   id: USER_ID,
@@ -117,7 +128,7 @@ function json(body: unknown) {
 }
 
 async function seedSession(page: Page) {
-  await page.addInitScript(({ userId }) => {
+  await page.addInitScript(({ userId, track }) => {
     const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
     window.localStorage.setItem(
       "melori-auth",
@@ -139,7 +150,11 @@ async function seedSession(page: Page) {
         },
       }),
     );
-  }, { userId: USER_ID });
+    // Reproduce the production screenshot state: a track restored before
+    // entering Cinema. The room route must suppress this transport and pause
+    // background audio rather than letting it cover Cinema controls.
+    window.localStorage.setItem("melori:lastTrack", JSON.stringify(track));
+  }, { userId: USER_ID, track: SEEDED_TRACK });
 }
 
 async function mockCinemaRoom(page: Page) {
@@ -222,6 +237,7 @@ test.describe("Cinema stable room", () => {
     await page.goto(`/social/cinema/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
     expect(new URL(page.url()).pathname).toBe(`/social/cinema/${SPACE_ID}`);
 
+    await expect(page.getByRole("region", { name: "Music player" })).toHaveCount(0);
     await expect(page.getByTestId("cinema-screen")).toBeVisible();
     await page.getByLabel("Open playlist, 2 of 5 items").click();
     const playlistDialog = page.getByRole("dialog", { name: "Playlist" });
@@ -280,9 +296,49 @@ test.describe("Cinema stable room", () => {
     const cameraStageBox = await page.getByTestId("cinema-camera-stage").boundingBox();
     expect(dockBox).not.toBeNull();
     expect(cameraStageBox).not.toBeNull();
+    expect((dockBox?.y ?? 0) + (dockBox?.height ?? 0)).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+    expect(
+      await page.getByTestId("cinema-control-dock").evaluate((dock) => {
+        const box = dock.getBoundingClientRect();
+        const topmost = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + Math.min(box.height / 2, 24),
+        );
+        return Boolean(topmost && dock.contains(topmost));
+      }),
+    ).toBe(true);
     expect((cameraStageBox?.y ?? 0) + (cameraStageBox?.height ?? 0)).toBeLessThanOrEqual(
       (dockBox?.y ?? 0) + 1,
     );
+
+    await page.getByRole("button", { name: "React to Cinema Host" }).click();
+    const reactionDialog = page.getByRole("dialog", {
+      name: "React to Cinema Host",
+    });
+    await expect(reactionDialog).toBeVisible();
+    expect(
+      await reactionDialog.evaluate((dialog) =>
+        Number.parseInt(window.getComputedStyle(dialog).zIndex, 10),
+      ),
+    ).toBeGreaterThan(70);
+    const heartReaction = reactionDialog.getByRole("button", {
+      name: "React ❤️ to Cinema Host",
+    });
+    await expect(heartReaction).toBeVisible();
+    expect(
+      await heartReaction.evaluate((button) => {
+        const box = button.getBoundingClientRect();
+        const topmost = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + box.height / 2,
+        );
+        return topmost === button || Boolean(topmost && button.contains(topmost));
+      }),
+    ).toBe(true);
+    await heartReaction.click();
+    await expect(reactionDialog).toHaveCount(0);
 
     const screen = page.getByTestId("cinema-screen");
     await page.getByTestId("cinema-audience-trigger").click();

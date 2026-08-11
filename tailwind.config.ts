@@ -30,6 +30,7 @@ const config: Config = {
           elevated: "#1e1e2e",
           border: "#2a2a3e",
           purple: "#8b5cf6",
+          teal: "#14b8a6",
           pink: "#ec4899",
           accent: "#a78bfa",
           text: "#f8fafc",

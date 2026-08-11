@@ -2132,7 +2132,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
       {reactTarget && (
         <div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
           onClick={() => setReactTarget(null)}
           role="dialog"
           aria-modal="true"

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { hasSeenMediaSetup, postSignupDestination } from "@/lib/mediaSetupMarker";
 
 type Tier = "superfan" | "artist" | null;
 
@@ -106,7 +107,14 @@ export default function WelcomeClient() {
         return;
       }
 
-      router.push(data.artist ? "/studio" : "/social/spaces");
+      // Freshly completed paid signup goes through the same one-time
+      // camera/microphone setup step as free signup, then on to its tier
+      // destination. Existing-account and "please sign in" branches return
+      // above, so returning members are never sent through it.
+      const destination = data.artist ? "/studio" : "/social/spaces";
+      router.push(
+        postSignupDestination(destination, hasSeenMediaSetup(), destination),
+      );
     } catch {
       setFormError("Something went wrong. Please try again.");
     } finally {

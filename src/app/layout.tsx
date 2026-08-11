@@ -81,10 +81,9 @@ export default function RootLayout({
               browser. Renders nothing and does nothing on the web. */}
           <NativeAuthListener />
           <Header />
-          {/* Bottom padding clears the fixed bars: on mobile the tab bar
-             (h-14) — the music transport now floats and overlays content — and
-             on desktop the full-width audio bar. */}
-          <main className="flex-1 pb-24">{children}</main>
+          {/* Shared mobile clearance includes the fixed tab bar and the default
+             floating transport; desktop retains the 6rem full-width player. */}
+          <main className="flex-1 pb-[var(--mobile-content-clearance)] md:pb-24">{children}</main>
           <Footer />
           {/* AudioPlayer stacks ABOVE the mobile tab bar (bottom-14) on
              mobile so the two fixed bars never overlap; flush bottom on md+. */}

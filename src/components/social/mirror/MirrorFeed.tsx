@@ -122,13 +122,10 @@ export default function MirrorFeed({
     // had to scroll a whole viewport to see any content.
     <div
       // Fill the space BETWEEN the fixed header (top, 4rem) and the fixed
-      // bottom bars. On mobile those are the audio player stacked above the
-      // tab bar (matches the root layout's mobile `pb-44` = 11rem); on desktop
-      // only the player is fixed (`md:pb-24` = 6rem). We subtract both so a
-      // card is exactly the visible area and its bottom isn't hidden behind the
-      // bars — that hidden strip is what still looked "a bit too big". `dvh`
-      // tracks the mobile URL-bar collapse. Height is set via the
-      // `--mirror-bottom` custom property so it can differ by breakpoint.
+      // bottom chrome. `--mirror-bottom` is the shared tab-bar + default
+      // floating-transport clearance on mobile and the full player height on
+      // desktop, so a card remains wholly visible while `dvh` tracks URL-bar
+      // collapse.
       className="mirror-viewport absolute inset-x-0 top-0 flex w-full flex-col bg-melori-void"
     >
       {/* Compact live strip. Fixed, shrink-0, scrolls only horizontally. */}

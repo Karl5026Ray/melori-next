@@ -126,6 +126,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // A camera toggle claims a durable slot, so it must not run twice at once: a
   // double tap would otherwise race a claim against its own release.
   const [cinemaCameraBusy, setCinemaCameraBusy] = useState(false);
+  // Guest-box allocation is separate from local camera capture. Keep its busy
+  // and error state visible beside the host-only controls so a failed assign
+  // cannot look like a successful stage change.
+  const [cinemaGuestCandidateId, setCinemaGuestCandidateId] = useState("");
+  const [cinemaSeatBusy, setCinemaSeatBusy] = useState<string | null>(null);
+  const [cinemaSeatError, setCinemaSeatError] = useState<string | null>(null);
   // `participants` starts empty for two very different reasons: the roster has
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
@@ -1424,6 +1430,90 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     videoElement: assignment.userId ? cinemaVideoElements[assignment.userId] ?? null : null,
   }));
   const localCinemaCameraEnabled = Boolean(user && cinemaVideoElements[user.id]);
+  const myParticipant =
+    participants.find((participant) => participant.user_id === user?.id && !participant.left_at) ?? null;
+  const selectedCinemaGuestSlot =
+    user && user.id !== hostId
+      ? cinemaReservations.find(
+          (reservation) => reservation.userId === user.id && reservation.slot !== 0,
+        )?.slot ?? null
+      : null;
+  const selectedCinemaGuest =
+    selectedCinemaGuestSlot !== null &&
+    (canSpeakNow || myParticipant?.badge === "mod" || myParticipant?.badge === "cohost");
+  // Mirror the API's candidate eligibility so the host only sees participants
+  // who can actually receive a camera source. The route re-checks this; the UI
+  // is convenience, never authorization.
+  const cinemaEligibleGuests = withSpeaking.filter(
+    (participant) =>
+      participant.user_id !== hostId &&
+      !participant.left_at &&
+      !participant.host_muted &&
+      (participant.role === "speaker" ||
+        participant.badge === "mod" ||
+        participant.badge === "cohost") &&
+      !cinemaReservations.some((reservation) => reservation.userId === participant.user_id),
+  );
+  const cinemaGuestSeats = [1, 2].map((slot) => {
+    const reservation = cinemaReservations.find((entry) => entry.slot === slot) ?? null;
+    const participant = reservation
+      ? withSpeaking.find((entry) => entry.user_id === reservation.userId) ?? null
+      : null;
+    return { slot, reservation, participant };
+  });
+  const cinemaGuestSeatsFull = cinemaGuestSeats.every((seat) => Boolean(seat.reservation));
+
+  const cinemaParticipantName = (participant: SpaceParticipant | null, fallback: string) =>
+    participant?.user?.display_name || participant?.user?.username || fallback;
+
+  const assignCinemaGuest = async () => {
+    if (!isHost || !cinemaGuestCandidateId || cinemaGuestSeatsFull || cinemaSeatBusy) return;
+    setCinemaSeatBusy("assign");
+    setCinemaSeatError(null);
+    try {
+      const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: cinemaGuestCandidateId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Could not add that guest to a live box");
+      if (Array.isArray(data?.reservations)) setCinemaReservations(data.reservations);
+      setCinemaGuestCandidateId("");
+      await refreshCinemaSlots();
+    } catch (err) {
+      setCinemaSeatError(
+        err instanceof Error ? err.message : "Could not add that guest to a live box",
+      );
+      await refreshCinemaSlots();
+    } finally {
+      setCinemaSeatBusy(null);
+    }
+  };
+
+  const removeCinemaGuest = async (participantId: string) => {
+    if (!isHost || cinemaSeatBusy) return;
+    setCinemaSeatBusy(participantId);
+    setCinemaSeatError(null);
+    try {
+      const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: participantId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Could not remove that guest from the live box");
+      if (Array.isArray(data?.reservations)) setCinemaReservations(data.reservations);
+      await refreshCinemaSlots();
+    } catch (err) {
+      setCinemaSeatError(
+        err instanceof Error ? err.message : "Could not remove that guest from the live box",
+      );
+      await refreshCinemaSlots();
+    } finally {
+      setCinemaSeatBusy(null);
+    }
+  };
 
   const toggleCinemaCamera = async () => {
     if (!user || !isCinema || cinemaCameraBusy) return;
@@ -1832,6 +1922,121 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   onReactToParticipant={setReactTarget}
                   reactionBursts={targetedReactions}
                 />
+              )}
+
+              {isCinema && isHost && (
+                <section
+                  className="mb-3 rounded-xl border border-cinema-border bg-melori-elevated/45 p-3 md:mb-4"
+                  aria-labelledby="cinema-live-boxes-heading"
+                  data-testid="cinema-live-box-controls"
+                >
+                  <div className="mb-3 flex items-baseline justify-between gap-3">
+                    <div>
+                      <h2 id="cinema-live-boxes-heading" className="text-sm font-semibold text-melori-text">
+                        Live boxes
+                      </h2>
+                      <p className="mt-0.5 text-xs text-melori-muted">
+                        Choose up to two on-stage guests. They turn on their own camera when ready.
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-melori-muted">
+                      {cinemaGuestSeats.filter((seat) => seat.reservation).length}/2 occupied
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {cinemaGuestSeats.map((seat) => {
+                      const guestName = cinemaParticipantName(
+                        seat.participant,
+                        seat.reservation ? "Participant unavailable" : "Empty",
+                      );
+                      const boxNumber = seat.slot + 1;
+                      const removing = cinemaSeatBusy === seat.reservation?.userId;
+                      return (
+                        <div
+                          key={seat.slot}
+                          className="flex min-h-11 items-center gap-3 rounded-lg border border-melori-border/70 bg-melori-void/45 px-3 py-2"
+                          data-testid={`cinema-live-box-${boxNumber}`}
+                        >
+                          <span className="w-20 shrink-0 text-xs font-medium text-melori-muted">
+                            Live box {boxNumber}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm text-melori-text">
+                            {seat.reservation ? guestName : "Empty"}
+                          </span>
+                          {seat.reservation && (
+                            <button
+                              type="button"
+                              onClick={() => void removeCinemaGuest(seat.reservation!.userId)}
+                              disabled={Boolean(cinemaSeatBusy)}
+                              aria-busy={removing}
+                              aria-label={`Remove ${guestName} from live box ${boxNumber}`}
+                              className="min-h-9 shrink-0 rounded-lg border border-melori-border px-2.5 text-xs font-medium text-melori-muted transition hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {removing ? "Removing…" : "Remove"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <label className="sr-only" htmlFor="cinema-live-box-candidate">
+                      Choose a speaker for the next available live box
+                    </label>
+                    <select
+                      id="cinema-live-box-candidate"
+                      data-testid="cinema-live-box-candidate"
+                      value={cinemaGuestCandidateId}
+                      onChange={(event) => setCinemaGuestCandidateId(event.target.value)}
+                      disabled={cinemaGuestSeatsFull || Boolean(cinemaSeatBusy)}
+                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-melori-border bg-melori-void px-3 text-sm text-melori-text disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">
+                        {cinemaGuestSeatsFull ? "Both live boxes are occupied" : "Choose an eligible guest"}
+                      </option>
+                      {cinemaEligibleGuests.map((participant) => (
+                        <option key={participant.user_id} value={participant.user_id}>
+                          {cinemaParticipantName(participant, "Speaker")}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void assignCinemaGuest()}
+                      disabled={
+                        !cinemaGuestCandidateId ||
+                        cinemaGuestSeatsFull ||
+                        Boolean(cinemaSeatBusy)
+                      }
+                      aria-busy={cinemaSeatBusy === "assign"}
+                      className="min-h-11 rounded-lg bg-cinema-gold px-4 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {cinemaSeatBusy === "assign" ? "Adding…" : "Add to live box"}
+                    </button>
+                  </div>
+                  {cinemaEligibleGuests.length === 0 && !cinemaGuestSeatsFull && (
+                    <p className="mt-2 text-xs text-melori-muted">
+                      Promote an audience member to speaker before adding them to a live box.
+                    </p>
+                  )}
+                  {cinemaSeatError && (
+                    <p className="mt-2 text-xs text-red-300" role="alert">
+                      {cinemaSeatError}
+                    </p>
+                  )}
+                </section>
+              )}
+
+              {isCinema && selectedCinemaGuestSlot !== null && !isHost && (
+                <p
+                  className="mb-3 rounded-lg border border-cinema-gold/30 bg-cinema-gold/10 px-3 py-2 text-sm text-cinema-gold md:mb-4"
+                  role="status"
+                  data-testid="cinema-selected-guest-readiness"
+                >
+                  You have Live box {selectedCinemaGuestSlot + 1}. Turn on your camera when ready.
+                </p>
               )}
 
               {isCinema && (
@@ -2292,7 +2497,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               </button>
             )}
 
-            {isCinema && canSpeakNow && (
+            {isCinema && (isHost || selectedCinemaGuest) && (
               <button
                 type="button"
                 onClick={() => void toggleCinemaCamera()}

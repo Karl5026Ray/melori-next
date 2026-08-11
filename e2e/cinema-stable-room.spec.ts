@@ -4,6 +4,7 @@ const SPACE_ID = "00000000-0000-4000-8000-000000000101";
 const USER_ID = "00000000-0000-4000-8000-000000000102";
 const HOST_ID = "00000000-0000-4000-8000-000000000103";
 const GUEST_ID = "00000000-0000-4000-8000-000000000104";
+const SECOND_GUEST_ID = "00000000-0000-4000-8000-000000000105";
 const SEEDED_TRACK = {
   current: {
     id: 990101,
@@ -30,6 +31,7 @@ const hostProfile = {
   id: HOST_ID,
   username: "cinema_host",
   display_name: "Cinema Host",
+  full_name: "Cinema Host",
   avatar_url: null,
   role: "superfan",
   verified: false,
@@ -65,6 +67,26 @@ const participants = [
     left_at: null,
     is_speaking: false,
     is_muted: false,
+    host_muted: false,
+    has_raised_hand: false,
+  },
+  {
+    id: "cinema-second-guest-row",
+    space_id: SPACE_ID,
+    user_id: SECOND_GUEST_ID,
+    user: {
+      id: SECOND_GUEST_ID,
+      username: "ready_guest",
+      display_name: "Ready Guest",
+      avatar_url: null,
+      role: "superfan",
+      verified: false,
+    },
+    role: "speaker",
+    joined_at: new Date().toISOString(),
+    left_at: null,
+    is_speaking: false,
+    is_muted: true,
     host_muted: false,
     has_raised_hand: false,
   },
@@ -127,7 +149,7 @@ function json(body: unknown) {
   return { status: 200, contentType: "application/json", body: JSON.stringify(body) };
 }
 
-async function seedSession(page: Page) {
+async function seedSession(page: Page, activeProfile = profile) {
   await page.addInitScript(({ userId, track }) => {
     const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
     window.localStorage.setItem(
@@ -154,27 +176,41 @@ async function seedSession(page: Page) {
     // entering Cinema. The room route must suppress this transport and pause
     // background audio rather than letting it cover Cinema controls.
     window.localStorage.setItem("melori:lastTrack", JSON.stringify(track));
-  }, { userId: USER_ID, track: SEEDED_TRACK });
+  }, { userId: activeProfile.id, track: SEEDED_TRACK });
 }
 
-async function mockCinemaRoom(page: Page) {
-  await page.route("**/rest/v1/profiles*", (route) => route.fulfill(json(profile)));
+async function mockCinemaRoom(page: Page, activeProfile = profile) {
+  const reservations = [
+    { slot: 0, userId: HOST_ID },
+    { slot: 1, userId: GUEST_ID },
+  ];
+  await page.route("**/rest/v1/profiles*", (route) => route.fulfill(json(activeProfile)));
   await page.route("**/rest/v1/spaces*", (route) => route.fulfill(json(space)));
   await page.route("**/rest/v1/space_participants*", (route) => {
     if (route.request().method() === "GET") return route.fulfill(json(participants));
-    return route.fulfill(json(participants[2]));
+    return route.fulfill(json(participants.find((participant) => participant.user_id === activeProfile.id)));
   });
   await page.route("**/rest/v1/rpc/**", (route) => route.fulfill(json({})));
-  await page.route(`**/api/social/spaces/${SPACE_ID}/cinema-camera-slot`, (route) =>
-    route.fulfill(
-      json({
-        reservations: [
-          { slot: 0, userId: HOST_ID },
-          { slot: 1, userId: GUEST_ID },
-        ],
-      }),
-    ),
-  );
+  await page.route(`**/api/social/spaces/${SPACE_ID}/cinema-camera-slot`, async (route) => {
+    const method = route.request().method();
+    if (method === "POST") {
+      const body = route.request().postDataJSON() as { user_id?: string };
+      const userId = body.user_id ?? activeProfile.id;
+      if (!reservations.some((entry) => entry.userId === userId)) {
+        const slot = reservations.some((entry) => entry.slot === 1) ? 2 : 1;
+        reservations.push({ slot, userId });
+      }
+      return route.fulfill(json({ reservations }));
+    }
+    if (method === "DELETE") {
+      const body = route.request().postDataJSON() as { user_id?: string };
+      const userId = body.user_id ?? activeProfile.id;
+      const index = reservations.findIndex((entry) => entry.userId === userId && entry.slot !== 0);
+      if (index >= 0) reservations.splice(index, 1);
+      return route.fulfill(json({ ok: true, reservations }));
+    }
+    return route.fulfill(json({ reservations }));
+  });
   await page.route(`**/api/social/spaces/${SPACE_ID}/playback`, (route) =>
     route.fulfill(
       json({
@@ -379,5 +415,34 @@ test.describe("Cinema stable room", () => {
     await expect(page.getByTestId("cinema-comment-overlay")).toContainText("The screening starts soon.");
     await page.waitForTimeout(8_500);
     await expect(page.getByTestId("cinema-comment-overlay")).toHaveCount(0);
+  });
+
+  test("shows host-only live box controls without auto-enabling the host camera", async ({ page }) => {
+    const cameraSlotMethods: string[] = [];
+    await seedSession(page, hostProfile);
+    await mockCinemaRoom(page, hostProfile);
+    page.on("request", (request) => {
+      if (request.url().includes(`/api/social/spaces/${SPACE_ID}/cinema-camera-slot`)) {
+        cameraSlotMethods.push(request.method());
+      }
+    });
+
+    await page.goto(`/social/cinema/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
+    const controls = page.getByTestId("cinema-live-box-controls");
+    await expect(controls).toBeVisible();
+    await expect(page.getByTestId("cinema-live-box-2")).toContainText("Camera Guest");
+    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Empty");
+    await expect(page.getByTestId("cinema-live-box-candidate")).toContainText("Ready Guest");
+    // Room entry only reads reservations; a durable host slot must not start
+    // camera capture or make a create/claim request by itself.
+    expect(cameraSlotMethods.filter((method) => method === "POST")).toEqual([]);
+
+    await page.getByTestId("cinema-live-box-candidate").selectOption(SECOND_GUEST_ID);
+    await page.getByRole("button", { name: "Add to live box" }).click();
+    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Ready Guest");
+    await expect(page.getByRole("button", { name: "Remove Ready Guest from live box 3" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Remove Ready Guest from live box 3" }).click();
+    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Empty");
   });
 });

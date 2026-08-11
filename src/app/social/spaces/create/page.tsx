@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   useCanParticipate,
@@ -71,15 +71,21 @@ const spaceTypes: {
 
 export default function CreateSpacePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, profileError } = useAuth();
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  // No ?format= handling any more. This form used to read ?format=cinema and
-  // preselect the Cinema tile for hosts arriving from the Cinema discover
-  // screen; Cinema now has its own route, so every format this page can create
-  // is an audio Space and Release Party is the honest default.
-  const [type, setType] = useState("listening");
+  // Concert uses the existing room form with ?format=versus_battle. Validate
+  // against this form's selectable formats so unknown/dead query values always
+  // land on the honest Release Party default.
+  const requestedFormat = searchParams.get("format");
+  const requestedType =
+    spaceTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
+  const [type, setType] = useState(requestedType);
+  useEffect(() => {
+    setType(requestedType);
+  }, [requestedType]);
   // The room_format the picker is currently on, driving where "back" and a
   // scheduled create return to.
   const selectedFormat = spaceTypes.find((s) => s.id === type)?.format;

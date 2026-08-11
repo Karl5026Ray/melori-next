@@ -16,6 +16,12 @@ import {
   webhookSecretCandidates,
   type StripeAccountOrigin,
 } from "@/lib/stripe";
+import {
+  COIN_PACK_SOURCE,
+  coinPackCreditReference,
+  isCoinPackCheckoutMetadata,
+} from "@/lib/gifting";
+import { isUuid } from "@/lib/validators";
 
 // ---------------------------------------------------------------------------
 // MERGED Stripe webhook — replaces the two previously-separate endpoints:
@@ -40,9 +46,10 @@ import {
 // Error-handling philosophy is preserved per path, on purpose:
 //   - Membership handler errors return 500 so Stripe retries (the handler is
 //     idempotent — see logEvent / membership_events unique constraint).
-//   - One-time fulfillment errors are logged but acknowledged with 200, so a
-//     bug in, say, gallery fulfillment doesn't put Stripe into a retry storm
-//     for an application-level failure it can't self-heal from.
+//   - Existing one-time fulfillment errors are logged but acknowledged with
+//     200 because those handlers do not yet share a durable idempotency model.
+//   - Coin-pack fulfillment returns 500 because its ledger reference makes
+//     retries idempotent and acknowledging failure would lose purchased value.
 // ---------------------------------------------------------------------------
 
 const LOCKOUT_ENABLED = process.env.SNAPPD_LOGIN_LOCKOUT !== "false";
@@ -144,11 +151,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // One-time purchases, routed by the source tag stamped at checkout time.
-    // Errors are logged but still return 200 so Stripe does not retry for a
-    // non-signature application error; failures are visible in logs.
+    // Coin purchases have an idempotent ledger reference and can safely ask
+    // Stripe to retry a failed credit.
+    const source = session.metadata?.source;
+    if (source === COIN_PACK_SOURCE) {
+      try {
+        await fulfillCoinPack(session, supabase);
+      } catch (err) {
+        console.error("stripe-webhook coin fulfillment error:", err);
+        return NextResponse.json({ error: "fulfillment_failed" }, { status: 500 });
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    // Existing one-time purchases preserve their previous acknowledgement
+    // behavior until each flow has its own durable idempotency/replay contract.
     try {
-      const source = session.metadata?.source;
       if (source === "melorimusic.org/store") {
         await fulfillStoreOrder(session);
       } else if (source === "melorimusic.org/gallery") {
@@ -207,6 +225,46 @@ export async function POST(req: NextRequest) {
 // ---------------------------------------------------------------------------
 // One-time purchase fulfillment — unchanged from /api/stripe/webhook.
 // ---------------------------------------------------------------------------
+
+async function fulfillCoinPack(
+  session: Stripe.Checkout.Session,
+  supabase: ReturnType<typeof createServiceClient>,
+) {
+  const metadata = session.metadata;
+  if (!isCoinPackCheckoutMetadata(metadata)) {
+    throw new Error("coin-pack checkout missing required metadata");
+  }
+  if (session.payment_status !== "paid") {
+    throw new Error(`coin-pack checkout is not paid (${session.payment_status})`);
+  }
+
+  const packId = metadata!.pack_id!;
+  const userId = metadata!.user_id!;
+  if (!isUuid(packId) || !isUuid(userId)) {
+    throw new Error("coin-pack checkout has invalid identifiers");
+  }
+  const { data: pack, error: packError } = await supabase
+    .from("coin_packs")
+    .select("id, coin_amount, price_usd_cents, active")
+    .eq("id", packId)
+    .maybeSingle();
+  if (packError || !pack || !pack.active) {
+    throw new Error(`coin-pack not found or inactive: ${packId}`);
+  }
+  if (session.amount_total !== pack.price_usd_cents) {
+    throw new Error(`coin-pack amount mismatch for ${packId}`);
+  }
+
+  // The unique (user_id, reference_id) ledger row makes this call idempotent
+  // for Stripe's retries and duplicate delivery. The reference is a Stripe
+  // session id, not a browser-supplied value.
+  const { error } = await supabase.rpc("credit_wallet", {
+    p_user_id: userId,
+    p_coins: pack.coin_amount,
+    p_reference_id: coinPackCreditReference(session.id),
+  });
+  if (error) throw new Error(`coin-pack wallet credit failed: ${error.message}`);
+}
 
 async function fulfillStoreOrder(session: Stripe.Checkout.Session) {
   const supabase = createServiceClient();

@@ -89,6 +89,20 @@ check(
   /if \(opts\.autoEnableMicrophone\)/.test(videoClient) &&
     /autoEnableMicrophone: !myPart\.is_muted && !myPart\.host_muted/.test(cinemaPage),
 );
+check(
+  "only the current host can assign or remove another Cinema guest",
+  /targetId !== callerId && !isCurrentHost/.test(cameraSlotRoute) &&
+    /targetId !== callerId && callerId !== space\.host_id/.test(cameraSlotRoute) &&
+    cameraSlotRoute.includes("Only the current host can assign a live box") &&
+    cameraSlotRoute.includes("Only the current host can remove another guest"),
+);
+check(
+  "an unselected guest cannot self-claim, while a selected guest can verify idempotently",
+  /const isSelfGuestClaim = targetId === callerId && !isCurrentHost;/.test(cameraSlotRoute) &&
+    /if \(isSelfGuestClaim && !selfReservation\)/.test(cameraSlotRoute) &&
+    cameraSlotRoute.includes("The host must add you to a live box") &&
+    /if \(isSelfGuestClaim && created\)/.test(cameraSlotRoute),
+);
 
 console.log("\nCinema camera client invariants");
 check(
@@ -132,6 +146,14 @@ check(
   /autoEnableCamera: resumeCamera/.test(cinemaPage) &&
     /const resumeCamera = cinemaCameraIntentRef\.current/.test(cinemaPage) &&
     !/autoEnableCamera: cinemaReservations/.test(cinemaPage),
+);
+check(
+  "Cinema exposes host-only live-box controls and selected-guest readiness",
+  /isCinema && isHost/.test(cinemaPage) &&
+    /data-testid="cinema-live-box-controls"/.test(cinemaPage) &&
+    /data-testid=\{`cinema-live-box-\$\{boxNumber\}`\}/.test(cinemaPage) &&
+    /data-testid="cinema-selected-guest-readiness"/.test(cinemaPage) &&
+    /isCinema && \(isHost \|\| selectedCinemaGuest\)/.test(cinemaPage),
 );
 
 console.log(

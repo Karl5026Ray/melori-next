@@ -35,15 +35,6 @@ function roleFor(space: SpaceRow, participant: ParticipantRow | null, userId: st
   return participant?.role === "speaker" ? "speaker" : "audience";
 }
 
-function isModerator(space: SpaceRow, participant: ParticipantRow | null, userId: string): boolean {
-  return (
-    userId === space.host_id ||
-    participant?.role === "host" ||
-    participant?.badge === "mod" ||
-    participant?.badge === "cohost"
-  );
-}
-
 async function getReservations(spaceId: string): Promise<CinemaReservation[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("cinema_camera_slots")
@@ -133,8 +124,10 @@ export async function GET(
   }
 }
 
-// POST claims a durable camera reservation. A speaker may claim their own
-// guest seat; host/moderator can assign one to another on-stage participant.
+// POST claims a durable camera reservation. The current host is the only
+// person who may create a guest seat (or assign one to another participant).
+// A guest who already has a durable reservation may call this idempotently so
+// their explicit "Camera on" action can receive the matching LiveKit grant.
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ spaceId: string }> },
@@ -154,9 +147,9 @@ export async function POST(
 
   const body = await req.json().catch(() => ({}));
   const targetId = typeof body?.user_id === "string" && body.user_id ? body.user_id : callerId;
-  const caller = await getParticipant(space.id, callerId);
-  if (targetId !== callerId && !isModerator(space, caller, callerId)) {
-    return NextResponse.json({ error: "Host or moderator only" }, { status: 403 });
+  const isCurrentHost = callerId === space.host_id;
+  if (targetId !== callerId && !isCurrentHost) {
+    return NextResponse.json({ error: "Only the current host can assign a live box" }, { status: 403 });
   }
 
   const target = targetId === space.host_id ? null : await getParticipant(space.id, targetId);
@@ -165,6 +158,22 @@ export async function POST(
     return NextResponse.json(
       { error: "Only an unmuted host, moderator, or speaker can use a Cinema camera" },
       { status: 409 },
+    );
+  }
+
+  // Guests may activate an already-host-selected seat, but may never turn a
+  // self request into a new allocation. Read before the RPC for the usual
+  // path, then also reject-and-release a newly-created result below to close a
+  // concurrent host-removal race without ever granting that camera source.
+  const isSelfGuestClaim = targetId === callerId && !isCurrentHost;
+  const reservationsBeforeClaim = isSelfGuestClaim ? await getReservations(space.id) : null;
+  const selfReservation = reservationsBeforeClaim?.find(
+    (reservation) => reservation.userId === callerId && reservation.slot !== 0,
+  );
+  if (isSelfGuestClaim && !selfReservation) {
+    return NextResponse.json(
+      { error: "The host must add you to a live box before you turn on your camera" },
+      { status: 403 },
     );
   }
 
@@ -183,6 +192,28 @@ export async function POST(
   }
 
   const created = Boolean(claimed[0].created);
+  if (isSelfGuestClaim && created) {
+    // A host can remove a guest after the preflight read but before the locked
+    // claim RPC. Do not let that timing turn a guest's Camera On click into a
+    // fresh self-service allocation. No runtime permission has been granted
+    // yet, so it is safe to release immediately.
+    const { error: releaseError } = await supabase.rpc("release_cinema_camera_slot", {
+      p_space_id: space.id,
+      p_user_id: targetId,
+    });
+    if (releaseError) {
+      return NextResponse.json(
+        {
+          error: `The host removed your live box and the stale reservation could not be released: ${releaseError.message}`,
+        },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json(
+      { error: "The host removed your live box before your camera could turn on" },
+      { status: 403 },
+    );
+  }
   try {
     // Re-read after the locked RPC. The database also prunes a reservation in
     // the same transaction as any concurrent mute/demotion/removal.
@@ -289,9 +320,8 @@ export async function DELETE(
 
   const body = await req.json().catch(() => ({}));
   const targetId = typeof body?.user_id === "string" && body.user_id ? body.user_id : callerId;
-  const caller = await getParticipant(space.id, callerId);
-  if (targetId !== callerId && !isModerator(space, caller, callerId)) {
-    return NextResponse.json({ error: "Host or moderator only" }, { status: 403 });
+  if (targetId !== callerId && callerId !== space.host_id) {
+    return NextResponse.json({ error: "Only the current host can remove another guest" }, { status: 403 });
   }
   if (targetId === space.host_id) {
     return NextResponse.json({ error: "The host's reserved camera slot cannot be released" }, { status: 409 });

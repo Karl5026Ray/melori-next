@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import { readFileSync } from "node:fs";
 import {
   COIN_PACK_SOURCE,
   canSendGiftInRoom,
@@ -73,6 +74,45 @@ check(
   "distinct Stripe sessions have distinct wallet references",
   coinPackCreditReference("cs_test_a") === coinPackCreditReference("cs_test_b"),
   false,
+);
+
+const sidebarSource = readFileSync(
+  new URL("../src/components/social/layout/Sidebar.tsx", import.meta.url),
+  "utf8",
+);
+const mobileNavSource = readFileSync(
+  new URL("../src/components/MobileTabBar.tsx", import.meta.url),
+  "utf8",
+);
+const concertCreateSource = readFileSync(
+  new URL("../src/app/social/concert/create/page.tsx", import.meta.url),
+  "utf8",
+);
+const sharedCreateSource = readFileSync(
+  new URL("../src/app/social/spaces/create/page.tsx", import.meta.url),
+  "utf8",
+);
+
+check(
+  "desktop Concert opens the dedicated Concert creator",
+  sidebarSource.includes('href="/social/concert/create"'),
+);
+check(
+  "mobile Concert opens the dedicated Concert creator",
+  mobileNavSource.includes('router.push("/social/concert/create")'),
+);
+check(
+  "desktop Concert does not fall back to the Spaces creator",
+  sidebarSource.includes('href="/social/spaces/create?format=versus_battle"'),
+  false,
+);
+check(
+  "dedicated Concert creator locks the shared form to Concert mode",
+  concertCreateSource.includes("<RoomCreatePage concertOnly />"),
+);
+check(
+  "Concert back navigation does not drop into Spaces",
+  sharedCreateSource.includes('concertOnly ? "/social/profile" : roomExitHref(selectedFormat)'),
 );
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nAll gifting contracts passed.\n");

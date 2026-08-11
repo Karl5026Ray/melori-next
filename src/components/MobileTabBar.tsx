@@ -426,11 +426,11 @@ export default function MobileTabBar() {
                         <Video className="h-4 w-4" />
                         Go Live
                       </button>
-                      {/* Concert goes straight to the existing versus-battle
-                         form: this is the gifting-first room format. */}
+                      {/* Concert has its own creation surface and then uses the
+                         shared room engine for the live battle. */}
                       <button
                         type="button"
-                        onClick={() => router.push("/social/spaces/create?format=versus_battle")}
+                        onClick={() => router.push("/social/concert/create")}
                         className="flex items-center justify-center gap-2 rounded-full bg-teal-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-teal-400"
                       >
                         <Swords className="h-4 w-4" />

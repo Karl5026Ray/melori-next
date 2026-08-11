@@ -65,10 +65,10 @@ export function Sidebar() {
           Go Live
         </Link>
 
-        {/* Concert is the gifting-first versus battle creation path. It uses
-           the existing Space form rather than maintaining a dead-end screen. */}
+        {/* Concert has a dedicated creation surface while reusing the
+           server-authoritative live-room engine underneath. */}
         <Link
-          href="/social/spaces/create?format=versus_battle"
+          href="/social/concert/create"
           title="Concert"
           className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-2 bg-teal-500 text-white transition-colors hover:bg-teal-400"
         >

@@ -1816,8 +1816,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           )}
 
             <>
-              {/* MM Cinema: the shared screen sits above the stage, so the
-                  room reads screen -> who's on mic -> audience -> chat.
+              {/* MM Cinema: the fixed three-seat camera stage sits above the
+                  shared screen, so the room reads who's on mic -> screen ->
+                  audience -> chat.
 
                   Rendered here rather than in a forked Cinema room page on
                   purpose. This page already owns joining, LiveKit audio, roles,
@@ -1825,6 +1826,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   separate page would have to duplicate all of it and would
                   drift out of sync with every future room fix. Cinema is a
                   format, so it is an additive layer, not a second room. */}
+              {isCinema && (
+                <CinemaStage
+                  slots={cinemaSlots}
+                  onReactToParticipant={setReactTarget}
+                  reactionBursts={targetedReactions}
+                />
+              )}
+
               {isCinema && (
                 <CinemaScreen
                   spaceId={spaceId}
@@ -1841,13 +1850,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                     Cinema keeps its split stage/audience layout: its seats are
                     a fixed-capacity front row with their own HOST/GUEST labels,
                     so merging them into the crowd would lose that meaning. */}
-                {isCinema ? (
-                  <CinemaStage
-                    slots={cinemaSlots}
-                    onReactToParticipant={setReactTarget}
-                    reactionBursts={targetedReactions}
-                  />
-                ) : (
+                {!isCinema && (
                   <StageGrid
                     participants={[...speakers, ...audience]}
                     onReactToParticipant={setReactTarget}

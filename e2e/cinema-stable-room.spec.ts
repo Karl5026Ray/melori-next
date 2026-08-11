@@ -250,6 +250,28 @@ test.describe("Cinema stable room", () => {
       Math.min(...cameraBoxes.map((box) => box.width)) + 1,
     );
 
+    // The people row is the first Cinema presentation surface. Keep this
+    // contract in both DOM and visual order so a later responsive refactor
+    // cannot put the shared screen back above the host and guest cameras.
+    const cameraStage = page.getByTestId("cinema-camera-stage");
+    const cinemaScreen = page.getByTestId("cinema-screen");
+    expect(
+      await cameraStage.evaluate((stage, screenTestId) => {
+        const screen = document.querySelector(`[data-testid="${screenTestId}"]`);
+        return Boolean(
+          screen &&
+          (stage.compareDocumentPosition(screen) & Node.DOCUMENT_POSITION_FOLLOWING),
+        );
+      }, "cinema-screen"),
+    ).toBe(true);
+    const cameraStageOrderBox = await cameraStage.boundingBox();
+    const cinemaScreenOrderBox = await cinemaScreen.boundingBox();
+    expect(cameraStageOrderBox).not.toBeNull();
+    expect(cinemaScreenOrderBox).not.toBeNull();
+    expect((cameraStageOrderBox?.y ?? 0) + (cameraStageOrderBox?.height ?? 0)).toBeLessThanOrEqual(
+      (cinemaScreenOrderBox?.y ?? 0) + 1,
+    );
+
     // Exactly one Cinema composer, and it is in the one stable bottom dock.
     await expect(page.getByTestId("cinema-control-dock")).toHaveCount(1);
     await expect(page.getByTestId("cinema-composer")).toHaveCount(1);

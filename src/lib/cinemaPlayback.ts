@@ -6,11 +6,40 @@
 
 export type CinemaSourceType = "url" | "youtube";
 
-/** One row of `room_playback_state` (migration 051). */
+export const MAX_CINEMA_PLAYLIST_ITEMS = 5;
+
+export interface CinemaPlaylistItem {
+  id: string;
+  source_type: CinemaSourceType;
+  source_url: string;
+  title?: string | null;
+  library_video_id?: string | null;
+}
+
+export interface CinemaSourceDraft {
+  source_type: CinemaSourceType;
+  source_url: string;
+  title?: string | null;
+  library_video_id?: string | null;
+}
+
+export type CinemaPlaylistCommand =
+  | { action: "append"; item: CinemaSourceDraft }
+  | { action: "move"; item_id: string; to_index: number }
+  | { action: "remove"; item_id: string }
+  | { action: "select"; item_id: string }
+  | { action: "advance"; ended_item_id: string }
+  | { action: "clear" };
+
+/** One row of `room_playback_state` (migrations 051 and 059). */
 export interface PlaybackState {
   space_id: string;
   source_type: CinemaSourceType;
   source_url: string | null;
+  /** Empty on legacy single-source rows until the first playlist mutation. */
+  playlist_items?: CinemaPlaylistItem[];
+  active_playlist_index?: number;
+  playlist_revision?: number;
   /** Snapshot position AT `updated_at` — not a live clock. */
   position_seconds: number;
   duration_seconds: number | null;
@@ -18,6 +47,49 @@ export interface PlaybackState {
   updated_by: string | null;
   /** ISO timestamp, stamped by the database, never by a client. */
   updated_at: string;
+}
+
+/**
+ * New clients treat a pre-playlist room as a virtual one-item queue. This lets
+ * migration 059 ship without rewriting old rows (and without waking every
+ * active Cinema room through Realtime just to backfill JSON).
+ */
+export function effectiveCinemaPlaylist(
+  state: PlaybackState | null,
+): CinemaPlaylistItem[] {
+  if (!state) return [];
+  if (Array.isArray(state.playlist_items) && state.playlist_items.length > 0) {
+    return state.playlist_items.slice(0, MAX_CINEMA_PLAYLIST_ITEMS);
+  }
+  if (!state.source_url) return [];
+  return [
+    {
+      id: `legacy:${state.space_id}`,
+      source_type: state.source_type,
+      source_url: state.source_url,
+      title: "Current screening",
+    },
+  ];
+}
+
+export function activeCinemaPlaylistItem(
+  state: PlaybackState | null,
+): CinemaPlaylistItem | null {
+  const items = effectiveCinemaPlaylist(state);
+  if (items.length === 0) return null;
+  const rawIndex =
+    Array.isArray(state?.playlist_items) && state.playlist_items.length > 0
+      ? Number(state.active_playlist_index ?? 0)
+      : 0;
+  const index = Number.isInteger(rawIndex)
+    ? Math.min(Math.max(rawIndex, 0), items.length - 1)
+    : 0;
+  return items[index] ?? null;
+}
+
+export function cinemaPlaylistRevision(state: PlaybackState | null): number {
+  const revision = Number(state?.playlist_revision ?? 0);
+  return Number.isInteger(revision) && revision >= 0 ? revision : 0;
 }
 
 // ---------------------------------------------------------------------------

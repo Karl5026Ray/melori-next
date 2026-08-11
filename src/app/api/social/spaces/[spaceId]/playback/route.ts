@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
-import { classifySource } from "@/lib/cinemaPlayback";
+import {
+  MAX_CINEMA_PLAYLIST_ITEMS,
+  classifySource,
+} from "@/lib/cinemaPlayback";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +74,169 @@ interface PlaybackPatch {
   position_seconds?: unknown;
   duration_seconds?: unknown;
   is_playing?: unknown;
+}
+
+type PlaylistBody = {
+  expected_revision?: unknown;
+  action?: unknown;
+  item?: {
+    source_url?: unknown;
+    source_type?: unknown;
+    title?: unknown;
+    library_video_id?: unknown;
+  };
+  item_id?: unknown;
+  ended_item_id?: unknown;
+  to_index?: unknown;
+};
+
+const PLAYLIST_ACTIONS = new Set([
+  "append",
+  "move",
+  "remove",
+  "select",
+  "advance",
+  "clear",
+]);
+
+function rpcStatus(code?: string): number {
+  if (code === "40001") return 409;
+  if (code === "42501") return 403;
+  if (code === "P0002") return 404;
+  if (code === "22023") return 400;
+  if (code === "55000") return 409;
+  return 500;
+}
+
+/**
+ * Host-only queue mutation. The database function repeats the host check and
+ * locks the room row; the route owns URL canonicalization and readable HTTP
+ * errors. Keeping both layers means a second host tab cannot silently clobber
+ * a newer reorder or double-advance an ended item.
+ */
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ spaceId: string }> },
+) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
+  const userId = guard.membership.userId as string;
+  const { spaceId: raw } = await params;
+  const spaceId = String(raw ?? "").trim();
+  if (!spaceId) {
+    return NextResponse.json({ error: "spaceId is required" }, { status: 400 });
+  }
+
+  let body: PlaylistBody;
+  try {
+    body = (await req.json()) as PlaylistBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const action = typeof body.action === "string" ? body.action : "";
+  if (!PLAYLIST_ACTIONS.has(action)) {
+    return NextResponse.json({ error: "Unknown playlist action" }, { status: 400 });
+  }
+  const expectedRevision = Number(body.expected_revision);
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    return NextResponse.json(
+      { error: "expected_revision must be a non-negative integer" },
+      { status: 400 },
+    );
+  }
+
+  const command: Record<string, unknown> = { action };
+  if (action === "append") {
+    const rawUrl = body.item?.source_url;
+    if (typeof rawUrl !== "string") {
+      return NextResponse.json({ error: "A source URL is required" }, { status: 400 });
+    }
+    const classified = classifySource(rawUrl);
+    if (!classified.ok) {
+      return NextResponse.json({ error: classified.reason }, { status: 400 });
+    }
+    if (
+      body.item?.source_type !== undefined &&
+      body.item.source_type !== classified.type
+    ) {
+      return NextResponse.json(
+        { error: "source_type must match the validated source URL" },
+        { status: 400 },
+      );
+    }
+    const title =
+      typeof body.item?.title === "string" ? body.item.title.trim().slice(0, 200) : null;
+    const libraryVideoId =
+      typeof body.item?.library_video_id === "string"
+        ? body.item.library_video_id.trim() || null
+        : null;
+    command.item = {
+      id: randomUUID(),
+      source_url: classified.url,
+      source_type: classified.type,
+      ...(title ? { title } : {}),
+      ...(libraryVideoId ? { library_video_id: libraryVideoId } : {}),
+    };
+  } else if (action === "move") {
+    const toIndex = Number(body.to_index);
+    if (
+      typeof body.item_id !== "string" ||
+      !Number.isInteger(toIndex) ||
+      toIndex < 0 ||
+      toIndex >= MAX_CINEMA_PLAYLIST_ITEMS
+    ) {
+      return NextResponse.json(
+        { error: "move requires item_id and a valid to_index" },
+        { status: 400 },
+      );
+    }
+    command.item_id = body.item_id;
+    command.to_index = toIndex;
+  } else if (action === "remove" || action === "select") {
+    if (typeof body.item_id !== "string" || !body.item_id.trim()) {
+      return NextResponse.json({ error: "item_id is required" }, { status: 400 });
+    }
+    command.item_id = body.item_id;
+  } else if (action === "advance") {
+    if (typeof body.ended_item_id !== "string" || !body.ended_item_id.trim()) {
+      return NextResponse.json(
+        { error: "ended_item_id is required" },
+        { status: 400 },
+      );
+    }
+    command.ended_item_id = body.ended_item_id;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("mutate_cinema_playlist", {
+    p_space_id: spaceId,
+    p_expected_revision: expectedRevision,
+    p_command: command,
+    p_actor_id: userId,
+  });
+
+  if (error) {
+    const status = rpcStatus(error.code);
+    if (status === 409 && error.code === "40001") {
+      const { data: current } = await supabase
+        .from("room_playback_state")
+        .select("*")
+        .eq("space_id", spaceId)
+        .maybeSingle();
+      return NextResponse.json(
+        {
+          error: "The playlist changed in another host session. It has been refreshed.",
+          state: current ?? null,
+          server_now: serverNow(),
+        },
+        { status },
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status });
+  }
+
+  return NextResponse.json({ state: data, server_now: serverNow() });
 }
 
 export async function PUT(
@@ -230,6 +397,40 @@ export async function PUT(
   // Upsert on space_id: the first control the host touches creates the row.
   // `updated_at` is intentionally NOT set here — the trigger stamps it with the
   // database clock, which is the epoch every guest extrapolates from.
+  if ("source_url" in body || "source_type" in body) {
+    const nextUrl =
+      "source_url" in patch
+        ? (patch.source_url as string | null)
+        : existingSource?.source_url ?? null;
+    const nextType =
+      "source_type" in patch
+        ? (patch.source_type as string)
+        : existingSource?.source_type ?? "url";
+    const command =
+      nextUrl == null
+        ? { action: "legacy_source_set" }
+        : {
+            action: "legacy_source_set",
+            item: {
+              source_url: nextUrl,
+              source_type: nextType,
+            },
+          };
+    const { data, error } = await supabase.rpc("mutate_cinema_playlist", {
+      p_space_id: spaceId,
+      p_expected_revision: null,
+      p_command: command,
+      p_actor_id: userId,
+    });
+    if (error) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: rpcStatus(error.code) },
+      );
+    }
+    return NextResponse.json({ state: data, server_now: serverNow() });
+  }
+
   const { data, error } = await supabase
     .from("room_playback_state")
     .upsert(patch, { onConflict: "space_id" })

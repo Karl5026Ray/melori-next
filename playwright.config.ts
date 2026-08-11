@@ -11,6 +11,21 @@ import { defineConfig, devices } from "@playwright/test";
 // build-and-serve path, and an empty base URL is not a base URL.
 const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:3000";
 
+// Reuse is OFF by default, including locally. A server left running from an
+// earlier branch or an earlier build silently serves the wrong code, and the
+// suite then reports green (or red) for something other than the working tree.
+// Opt in explicitly with PW_REUSE_SERVER=1 when you know the running server is
+// the current build. CI never reused a server, so its behaviour is unchanged.
+const REUSE_SERVER = process.env.PW_REUSE_SERVER === "1";
+
+// Locally `next dev` is the convenient default, but a production build is the
+// only faithful target for hydration-dependent tests. PW_SERVER_COMMAND lets a
+// local run mirror CI exactly:
+//   npm run build && PW_SERVER_COMMAND="npm run start" npx playwright test
+const SERVER_COMMAND =
+  process.env.PW_SERVER_COMMAND ||
+  (process.env.CI ? "npm run start" : "npm run dev");
+
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
 // redirected to the vercel.com login gate. Absent the token this is a no-op.
@@ -66,9 +81,9 @@ export default defineConfig({
   // importantly, the commit under test rather than whatever is deployed.
   webServer: BASE_URL.startsWith("http://127.0.0.1")
     ? {
-        command: process.env.CI ? "npm run start" : "npm run dev",
+        command: SERVER_COMMAND,
         url: BASE_URL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: REUSE_SERVER,
         timeout: 120_000,
       }
     : undefined,

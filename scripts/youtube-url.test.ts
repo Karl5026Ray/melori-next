@@ -114,6 +114,17 @@ run("embed URL is built from the id on the privacy-enhanced host", () => {
   assertEq("loop", params.get("loop"), "1");
   assertEq("playlist is the same id", params.get("playlist"), ID);
 
+  const nonLooping = youtubeEmbedUrl(ID, {
+    autoplay: true,
+    muted: true,
+    loop: false,
+    enableJsApi: true,
+  });
+  const nonLoopingParams = new URL(nonLooping).searchParams;
+  assertEq("feed progression can disable the single-video loop", nonLoopingParams.get("loop"), "0");
+  assertEq("non-looping embeds omit a one-item playlist", nonLoopingParams.get("playlist"), null);
+  assertEq("feed embeds can subscribe to completion events", nonLoopingParams.get("enablejsapi"), "1");
+
   const idle = youtubeEmbedUrl(ID);
   assertEq(
     "defaults to no autoplay",

@@ -5,6 +5,14 @@ import Link from "next/link";
 import { VideoCard } from "@/components/social/video/VideoCard";
 import OnlineNowRow from "./OnlineNowRow";
 import type { SocialVideo } from "@/types/social";
+import {
+  canClearManualNavigationGuard,
+  getMirrorPlaybackEndAdvance,
+  MANUAL_NAVIGATION_IDLE_MS,
+  releaseManualNavigationGuard,
+  refreshManualNavigationGuard,
+  type ManualNavigationGuard,
+} from "@/lib/mirrorFeedNavigation";
 import { Compass, MessagesSquare } from "lucide-react";
 
 // Melori Mirror — the TikTok "For You"-style vertical feed.
@@ -39,6 +47,118 @@ export default function MirrorFeed({
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
+  // Refs let a late media `ended` event verify that its card is still current
+  // before moving the feed. That preserves a user's manual swipe/navigation.
+  const videosRef = useRef(videos);
+  const activeIndexRef = useRef(activeIndex);
+  const completionInFlightRef = useRef<string | null>(null);
+  // Manual navigation is detected before React's state update commits. A
+  // completion from the departing card must never win that race and pull the
+  // viewer into an autoplay scroll they did not ask for.
+  const manualNavigationRef = useRef<ManualNavigationGuard | null>(null);
+  const manualNavigationTimerRef = useRef<number | null>(null);
+  const automaticScrollTargetRef = useRef<number | null>(null);
+  const pointerStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    videosRef.current = videos;
+  }, [videos]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+    // A fresh card may complete during the next trip through the feed. Keep
+    // the previous completion latched only while its source card remains the
+    // active one, so duplicate browser/iframe end events cannot chain-advance.
+    if (videos[activeIndex]?.id !== completionInFlightRef.current) {
+      completionInFlightRef.current = null;
+    }
+  }, [activeIndex, videos]);
+
+  const clearManualNavigationTimer = useCallback(() => {
+    if (manualNavigationTimerRef.current !== null) {
+      clearTimeout(manualNavigationTimerRef.current);
+      manualNavigationTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleManualNavigationClear = useCallback(() => {
+    const guard = manualNavigationRef.current;
+    if (!guard) return;
+
+    clearManualNavigationTimer();
+    const expectedActivityAt = guard.lastActivityAt;
+    manualNavigationTimerRef.current = window.setTimeout(() => {
+      manualNavigationTimerRef.current = null;
+      const current = manualNavigationRef.current;
+      if (!current || current.lastActivityAt !== expectedActivityAt) return;
+      if (canClearManualNavigationGuard(current, Date.now())) {
+        manualNavigationRef.current = null;
+      }
+    }, MANUAL_NAVIGATION_IDLE_MS);
+  }, [clearManualNavigationTimer]);
+
+  const markManualNavigationIntent = useCallback((pointerActive?: boolean) => {
+    manualNavigationRef.current = refreshManualNavigationGuard(
+      manualNavigationRef.current,
+      pointerActive,
+      Date.now(),
+    );
+    // A direct touch/drag/wheel input supersedes any in-progress autoplay
+    // animation immediately, before scroll-state effects run.
+    automaticScrollTargetRef.current = null;
+    scheduleManualNavigationClear();
+  }, [scheduleManualNavigationClear]);
+
+  const finishManualPointer = useCallback(() => {
+    pointerStartYRef.current = null;
+    const guard = manualNavigationRef.current;
+    if (!guard) return;
+    manualNavigationRef.current = releaseManualNavigationGuard(guard, Date.now());
+    scheduleManualNavigationClear();
+  }, [scheduleManualNavigationClear]);
+
+  const clearSettledManualNavigation = useCallback(() => {
+    const guard = manualNavigationRef.current;
+    if (!guard || guard.pointerActive) return;
+    clearManualNavigationTimer();
+    manualNavigationRef.current = null;
+  }, [clearManualNavigationTimer]);
+
+  // Timers are intentionally ref-owned: media completion callbacks can outlive
+  // a render, and this cleanup prevents a completed timer from changing guard
+  // state after the feed unmounts.
+  useEffect(() => clearManualNavigationTimer, [clearManualNavigationTimer]);
+
+  // Advance inside the currently loaded sequence only. In particular, wrapping
+  // from the last post to the first must not invoke pagination or duplicate any
+  // items; loading more remains owned exclusively by the sentinel below.
+  const handlePlaybackEnded = useCallback((videoId: string) => {
+    const currentVideos = videosRef.current;
+    const currentIndex = activeIndexRef.current;
+    const container = containerRef.current;
+    const advance = getMirrorPlaybackEndAdvance({
+      videoId,
+      activeVideoId: currentVideos[currentIndex]?.id,
+      activeIndex: currentIndex,
+      itemCount: currentVideos.length,
+      pageHeight: container?.clientHeight ?? 0,
+      manualNavigationInProgress: manualNavigationRef.current !== null,
+      completionInFlightVideoId: completionInFlightRef.current,
+    });
+    if (!advance) return;
+
+    // Set the ref synchronously before requesting the scroll. A browser can
+    // emit more than one end-state message while the smooth wrap is beginning;
+    // those duplicate signals then fail the current-card guard above.
+    completionInFlightRef.current = videoId;
+    automaticScrollTargetRef.current = advance.nextIndex;
+    activeIndexRef.current = advance.nextIndex;
+    setActiveIndex(advance.nextIndex);
+
+    if (container && advance.scrollTop !== null) {
+      container.scrollTo({ top: advance.scrollTop, behavior: "smooth" });
+    }
+  }, []);
 
   // Active-card tracking, computed deterministically from scroll position.
   //
@@ -52,30 +172,74 @@ export default function MirrorFeed({
     const container = containerRef.current;
     if (!container) return;
 
-    const compute = () => {
-      rafRef.current = null;
+    const currentPage = () => {
       const vh = container.clientHeight || 1;
       const page = Math.round(container.scrollTop / vh);
-      const clamped = Math.max(0, Math.min(page, videos.length - 1));
+      return Math.max(0, Math.min(page, videos.length - 1));
+    };
+
+    const synchronizeNavigationRef = () => {
+      const clamped = currentPage();
+      const automaticTarget = automaticScrollTargetRef.current;
+
+      if (automaticTarget !== null) {
+        if (clamped === automaticTarget) {
+          automaticScrollTargetRef.current = null;
+        }
+        return;
+      }
+
+      if (clamped !== activeIndexRef.current) {
+        markManualNavigationIntent();
+        activeIndexRef.current = clamped;
+      } else if (manualNavigationRef.current) {
+        // A boundary wheel or snap-back can emit scroll without changing the
+        // page. It is still manual activity, so extend the quiet-window guard.
+        markManualNavigationIntent();
+      }
+    };
+
+    const compute = () => {
+      rafRef.current = null;
+      const clamped = currentPage();
+
+      // Do not let rAF samples from an automatic smooth scroll reactivate
+      // intermediate/old cards. A genuine touch/drag/wheel clears this target
+      // synchronously, so manual navigation continues through the normal path.
+      if (automaticScrollTargetRef.current !== null) return;
       setActiveIndex((prev) => (prev === clamped ? prev : clamped));
     };
 
     const onScroll = () => {
+      // This runs in the scroll event itself, not the later rAF state update.
+      // It closes the stale-ended-event window during a manual swipe.
+      synchronizeNavigationRef();
       if (rafRef.current != null) return;
       rafRef.current = requestAnimationFrame(compute);
     };
+    const onScrollEnd = () => {
+      // `scrollend` is the strongest available signal that momentum is over.
+      // Browsers without it retain the conservative inactivity timer instead.
+      clearSettledManualNavigation();
+    };
 
     container.addEventListener("scroll", onScroll, { passive: true });
+    container.addEventListener("scrollend", onScrollEnd);
     // Compute once on mount / when the list length changes.
     compute();
     return () => {
       container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("scrollend", onScrollEnd);
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
     };
-  }, [videos.length]);
+  }, [
+    videos.length,
+    clearSettledManualNavigation,
+    markManualNavigationIntent,
+  ]);
 
   // Keyset infinite scroll — load the next page when the sentinel appears.
   const loadMore = useCallback(async () => {
@@ -173,6 +337,36 @@ export default function MirrorFeed({
         <div
           ref={containerRef}
           className="video-snap hide-scrollbar min-h-0 flex-1 overflow-y-scroll"
+          onPointerDown={(event) => {
+            if (!event.isPrimary) return;
+            pointerStartYRef.current = event.clientY;
+            // Keep the release/cancel lifecycle on this scroll container even
+            // when a swipe leaves its bounds, so pointerActive cannot latch.
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const startY = pointerStartYRef.current;
+            if (
+              event.isPrimary &&
+              startY !== null &&
+              Math.abs(event.clientY - startY) > 8
+            ) {
+              markManualNavigationIntent(true);
+            }
+          }}
+          onPointerUp={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            finishManualPointer();
+          }}
+          onPointerCancel={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            finishManualPointer();
+          }}
+          onWheel={() => markManualNavigationIntent(false)}
         >
           {videos.map((video, index) => (
             <div
@@ -184,6 +378,8 @@ export default function MirrorFeed({
                 video={video}
                 isActive={index === activeIndex}
                 distance={Math.abs(index - activeIndex)}
+                shouldLoop={videos.length === 1}
+                onPlaybackEnded={handlePlaybackEnded}
                 onDeleted={(id) =>
                   setVideos((prev) => prev.filter((v) => v.id !== id))
                 }

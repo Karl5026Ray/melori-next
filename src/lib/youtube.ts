@@ -48,7 +48,7 @@ export function youtubeThumbnailUrl(id: string): string {
 // `playlist=<id>` — a single-video loop is a one-item playlist in the IFrame API.
 export function youtubeEmbedUrl(
   id: string,
-  opts: { autoplay?: boolean; muted?: boolean } = {},
+  opts: { autoplay?: boolean; muted?: boolean; loop?: boolean; enableJsApi?: boolean } = {},
 ): string {
   const params = new URLSearchParams({
     autoplay: opts.autoplay ? "1" : "0",
@@ -56,9 +56,10 @@ export function youtubeEmbedUrl(
     playsinline: "1",
     rel: "0",
     modestbranding: "1",
-    loop: "1",
-    playlist: id,
-  });
+    loop: opts.loop === false ? "0" : "1",
+    });
+  if (opts.loop !== false) params.set("playlist", id);
+  if (opts.enableJsApi) params.set("enablejsapi", "1");
   return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
 }
 

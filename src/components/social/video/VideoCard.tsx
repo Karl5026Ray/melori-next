@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
 import { youtubeEmbedUrl } from "@/lib/youtube";
+import { shouldLoopVideoCardMedia } from "@/lib/mirrorFeedNavigation";
 import CommentSheet from "./CommentSheet";
 import PostActionsMenu from "./PostActionsMenu";
 import {
@@ -27,6 +28,12 @@ interface VideoCardProps {
   // Called after this post is deleted (by its owner or by an admin) so the
   // parent feed can drop the card from its list.
   onDeleted?: (videoId: string) => void;
+  // Mirror uses this to move to the next already-loaded post when playback
+  // completes. Other VideoCard consumers keep their existing media behavior.
+  onPlaybackEnded?: (videoId: string) => void;
+  // A one-post Mirror sequence loops in the media element itself, avoiding a
+  // redundant scroll/state transition back onto the same card.
+  shouldLoop?: boolean;
 }
 
 // Resolve a media URL to something the browser can actually load. Video posts
@@ -46,7 +53,14 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   return `${base}/storage/v1/object/public/audio-files/${path}`;
 }
 
-function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardProps) {
+function VideoCardBase({
+  video,
+  isActive,
+  distance = 99,
+  onDeleted,
+  onPlaybackEnded,
+  shouldLoop = false,
+}: VideoCardProps) {
   const isAudio = video.media_type === "audio";
   const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
   // Artist-submitted YouTube post (migration 041): played through YouTube's own
@@ -55,9 +69,19 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
   // so the id alone is enough to switch rendering.
   const youtubeId =
     video.source === "youtube" || video.youtube_id ? video.youtube_id : null;
+  // Native video and YouTube default to in-place looping for ordinary VideoFeed
+  // consumers. Mirror opts into completion handling, which turns only a
+  // multi-item sequence into feed progression; its one-item sequence still
+  // loops in place.
+  const loopInPlace = shouldLoopVideoCardMedia(
+    shouldLoop,
+    Boolean(onPlaybackEnded),
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const youtubeFrameRef = useRef<HTMLIFrameElement>(null);
+  const playbackEndedRef = useRef(false);
   // Video posts default muted (TikTok autoplay pattern — browsers block
   // autoplay-with-sound). Audio-only posts default UNMUTED: a muted audio post
   // is pointless, and the native <audio controls> bar is the manual fallback
@@ -89,6 +113,19 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
   // Share button state — shows a brief "Copied!" confirmation when we fall
   // back to the clipboard on desktops without navigator.share.
   const [shareCopied, setShareCopied] = useState(false);
+
+  // A native media element and YouTube's iframe can each publish duplicate end
+  // notifications while a state transition is in flight. Reset the latch only
+  // for a newly active card and pass one completion upward at most.
+  useEffect(() => {
+    if (isActive) playbackEndedRef.current = false;
+  }, [isActive, video.id]);
+
+  const notifyPlaybackEnded = () => {
+    if (!isActive || playbackEndedRef.current) return;
+    playbackEndedRef.current = true;
+    onPlaybackEnded?.(video.id);
+  };
 
   // Load the caller's like state + the live count for this card. Deferred until
   // the card is at (or adjacent to) the active position, and fetched only once.
@@ -192,15 +229,19 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
     };
   }, []);
 
-  // Audio posts: reset the playhead when a clip finishes, otherwise the native
-  // controls sit in the "ended" state and tapping play does nothing (Bug:
-  // "won't stop on the correct spot / then won't play").
+  // Audio posts in Mirror advance through the feed on completion. Other
+  // consumers retain the existing playhead reset behavior when they do not
+  // supply an end callback.
   useEffect(() => {
     if (!isAudio) return;
     const el = audioRef.current;
     if (!el) return;
 
     const handleEnded = () => {
+      if (onPlaybackEnded) {
+        notifyPlaybackEnded();
+        return;
+      }
       el.pause();
       el.currentTime = 0;
     };
@@ -208,7 +249,53 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
     return () => {
       el.removeEventListener("ended", handleEnded);
     };
-  }, [isAudio]);
+  }, [isAudio, onPlaybackEnded, isActive, video.id]);
+
+  // YouTube exposes completion through postMessage rather than a DOM `ended`
+  // event. Subscribe only for active Mirror cards, verify both origin and frame
+  // source, and use the same latch as native media to reject duplicate signals.
+  useEffect(() => {
+    if (!youtubeId || !isActive || !onPlaybackEnded) return;
+    const frame = youtubeFrameRef.current;
+    if (!frame) return;
+
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== "https://www.youtube-nocookie.com" ||
+        event.source !== frame.contentWindow
+      ) {
+        return;
+      }
+      try {
+        const message =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (message?.event === "onStateChange" && message.info === 0) {
+          notifyPlaybackEnded();
+        }
+      } catch {
+        // Ignore unrelated or malformed cross-origin messages.
+      }
+    };
+
+    const subscribe = () => {
+      frame.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: "addEventListener",
+          args: ["onStateChange"],
+        }),
+        "https://www.youtube-nocookie.com",
+      );
+    };
+
+    window.addEventListener("message", onMessage);
+    frame.addEventListener("load", subscribe);
+    subscribe();
+    return () => {
+      window.removeEventListener("message", onMessage);
+      frame.removeEventListener("load", subscribe);
+    };
+  }, [youtubeId, isActive, onPlaybackEnded, video.id]);
 
   // Keep the imperative `muted` property in sync with React state for BOTH
   // media elements. The <video muted={...}> attribute is unreliable after
@@ -388,9 +475,15 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
           {isActive ? (
             <div className="relative aspect-video max-h-full w-full">
               <iframe
+                ref={youtubeFrameRef}
                 // Remount per card so the src is applied cleanly on activation.
                 key={youtubeId}
-                src={youtubeEmbedUrl(youtubeId, { autoplay: true, muted: true })}
+                src={youtubeEmbedUrl(youtubeId, {
+                  autoplay: true,
+                  muted: true,
+                  loop: loopInPlace,
+                  enableJsApi: Boolean(onPlaybackEnded),
+                })}
                 title={video.title}
                 // Autoplay is only granted to a muted player; the viewer unmutes
                 // with YouTube's own controls, which is why this card has no
@@ -428,6 +521,7 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
             ref={audioRef}
             src={mediaUrl}
             controls
+            loop={shouldLoop}
             // metadata only: full tracks can be several MB; we don't want a
             // scroll through the feed to eagerly pull every track.
             preload="metadata"
@@ -457,9 +551,10 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
             <video
               ref={videoRef}
               src={mediaUrl}
-              loop
+              loop={loopInPlace}
               muted={isMuted}
               playsInline
+              onEnded={onPlaybackEnded ? notifyPlaybackEnded : undefined}
               // Only fetch metadata until the card is active; the poster covers the
               // frame until the stream is ready, so we never flash a wrong/black
               // frame during a fast scroll.

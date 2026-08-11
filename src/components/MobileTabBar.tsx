@@ -11,7 +11,6 @@ import {
   Radio,
   RadioTower,
   Video,
-  MessageSquare,
   Sparkles,
   Heart,
   X,
@@ -38,12 +37,13 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Profile, Radio (direct), then expandable categories:
+ *       Profile, Radio, Melori Connect (direct), then expandable categories:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
- *                          (Messages is a quick press)
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
- *         • More         — Melori Connect, Mission, Artists
+ *         • More         — Mission, Artists
+ *                          (was "About"; renamed when Connect landed here,
+ *                          since the group is no longer brand pages only)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -96,16 +96,6 @@ function YouIcon() {
 export default function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
-  // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
-  // PR that runs on every page for a signed-in member, and it was what broke
-  // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
-  // in the root layout, so each signed-in page opened two Supabase Realtime
-  // subscriptions on the same channel topic ("dm-unread-badge") and re-polled
-  // /api/social/conversations/unread from both copies on every navigation.
-  // Bisected against production builds: 8405e9c (pre-#221) signs in fine,
-  // 2785ca4 (#221) does not. Messaging itself is untouched and still works at
-  // /social/messages. Re-enable only behind a single shared subscription.
-  const unreadMessages = 0;
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
@@ -175,7 +165,8 @@ export default function MobileTabBar() {
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
-  // Direct quick-press buttons (top row): Profile, Radio, Messages, Store.
+  // Direct quick-press buttons: Messages stays in the large bottom tab. This
+  // tile is intentionally Melori Connect, moved out of More per mobile IA.
   const quickLinks: LaunchItem[] = [
     {
       label: "Profile",
@@ -190,11 +181,10 @@ export default function MobileTabBar() {
       desc: "Non-stop mix",
     },
     {
-      label: "Messages",
-      href: "/social/messages",
-      icon: <MessageSquare className="h-5 w-5" />,
-      desc: "Direct chats",
-      badge: unreadMessages,
+      label: CONNECT_NAV_ITEM.label,
+      href: CONNECT_NAV_ITEM.href,
+      icon: <HeartHandshake className="h-5 w-5" />,
+      desc: "Match on music",
     },
     {
       label: "Store",
@@ -238,19 +228,11 @@ export default function MobileTabBar() {
       ],
     },
     {
-      // Was "About". Renamed to "More" because Melori Connect now lives here:
-      // the Social group is capped at four items on a 390px phone, this group
-      // isn't, and "About" no longer described its contents. Mirrors the More
-      // context in src/components/nav/navContexts.ts.
+      // Connect lives in the quick tile above. More stays a compact set of
+      // supporting destinations rather than duplicating a primary action.
       label: "More",
       icon: <MoreHorizontal className="h-5 w-5" />,
       items: [
-        {
-          label: CONNECT_NAV_ITEM.label,
-          href: CONNECT_NAV_ITEM.href,
-          icon: <HeartHandshake className="h-5 w-5" />,
-          desc: "Match on music",
-        },
         { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
         // Community moved into Melori Mirror, so it's no longer listed here.
         { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },

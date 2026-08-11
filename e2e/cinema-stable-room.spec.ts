@@ -161,7 +161,37 @@ async function mockCinemaRoom(page: Page) {
     ),
   );
   await page.route(`**/api/social/spaces/${SPACE_ID}/playback`, (route) =>
-    route.fulfill(json({ state: null, server_now: new Date().toISOString() })),
+    route.fulfill(
+      json({
+        state: {
+          space_id: SPACE_ID,
+          source_type: "url",
+          source_url: "https://cdn.example.com/opening-film.mp4",
+          playlist_items: [
+            {
+              id: "00000000-0000-4000-8000-000000000201",
+              source_type: "url",
+              source_url: "https://cdn.example.com/opening-film.mp4",
+              title: "Opening Film",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000202",
+              source_type: "youtube",
+              source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              title: "Director Q&A",
+            },
+          ],
+          active_playlist_index: 0,
+          playlist_revision: 2,
+          position_seconds: 0,
+          duration_seconds: 5400,
+          is_playing: false,
+          updated_by: HOST_ID,
+          updated_at: new Date().toISOString(),
+        },
+        server_now: new Date().toISOString(),
+      }),
+    ),
   );
   await page.route(`**/api/social/spaces/${SPACE_ID}/comments`, (route) =>
     route.fulfill(
@@ -193,6 +223,15 @@ test.describe("Cinema stable room", () => {
     expect(new URL(page.url()).pathname).toBe(`/social/cinema/${SPACE_ID}`);
 
     await expect(page.getByTestId("cinema-screen")).toBeVisible();
+    await page.getByLabel("Open playlist, 2 of 5 items").click();
+    const playlistDialog = page.getByRole("dialog", { name: "Playlist" });
+    await expect(playlistDialog).toBeVisible();
+    await expect(playlistDialog.getByText("2/5", { exact: true })).toBeVisible();
+    await expect(playlistDialog.getByText("Opening Film", { exact: true })).toBeVisible();
+    await expect(playlistDialog.getByText("Director Q&A", { exact: true })).toBeVisible();
+    await expect(playlistDialog.getByText("Now playing", { exact: true })).toBeVisible();
+    await page.getByLabel("Close playlist").click();
+    await expect(page.getByText("Playlist", { exact: true })).toHaveCount(0);
     await expect(page.getByTestId("cinema-camera-slot")).toHaveCount(3);
     await expect(page.locator("[data-camera-slot='0']")).toContainText("Cinema Host");
     await expect(page.locator("[data-camera-slot='1']")).toContainText("Camera Guest");

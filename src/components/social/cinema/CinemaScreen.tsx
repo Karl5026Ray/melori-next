@@ -12,13 +12,21 @@ import {
   Clapperboard,
   Maximize2,
   Minimize2,
+  ArrowUp,
+  ArrowDown,
+  ListVideo,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useCinemaPlayback } from "./useCinemaPlayback";
 import { CinemaSourcePicker } from "./CinemaSourcePicker";
 import { CinemaYouTubePlayer } from "./CinemaYouTubePlayer";
 import {
   type CinemaPlayerHandle,
-  type CinemaSourceType,
+  type CinemaSourceDraft,
+  MAX_CINEMA_PLAYLIST_ITEMS,
+  activeCinemaPlaylistItem,
+  effectiveCinemaPlaylist,
   formatTimecode,
   parseYouTubeId,
   planCorrection,
@@ -42,7 +50,15 @@ export function CinemaScreen({
   isHost: boolean;
   overlay?: ReactNode;
 }) {
-  const { state, loading, error, clockOffsetMs, push, reportLocalPosition } =
+  const {
+    state,
+    loading,
+    error,
+    clockOffsetMs,
+    push,
+    playlistCommand,
+    reportLocalPosition,
+  } =
     useCinemaPlayback(spaceId, isHost);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,12 +70,20 @@ export function CinemaScreen({
   const [needsGesture, setNeedsGesture] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
   // Consecutive drift ticks where the room is playing but we are not. YouTube
   // reports no error when it refuses to autoplay, so the only way to notice is
   // that our instruction keeps not taking.
   const refusedTicksRef = useRef(0);
+  const endedItemRef = useRef<string | null>(null);
 
   const sourceUrl = state?.source_url ?? null;
+  const playlist = effectiveCinemaPlaylist(state);
+  const activePlaylistItem = activeCinemaPlaylistItem(state);
+  const remainingPlaylistSlots = Math.max(
+    0,
+    MAX_CINEMA_PLAYLIST_ITEMS - playlist.length,
+  );
   const isPlaying = state?.is_playing ?? false;
   const duration = state?.duration_seconds ? Number(state.duration_seconds) : null;
 
@@ -81,6 +105,7 @@ export function CinemaScreen({
   // video's problem.
   useEffect(() => {
     setPlayerError(null);
+    endedItemRef.current = null;
   }, [sourceUrl]);
 
   const getPlayer = useCallback((): CinemaPlayerHandle | null => {
@@ -229,24 +254,22 @@ export function CinemaScreen({
     [duration, push, getPlayer],
   );
 
-  // Validation now lives in CinemaSourcePicker, which is the single funnel for
-  // all three ways in (device upload, Melori library, pasted link) and hands us
-  // an already-checked playable https URL.
-  const hostSetSource = useCallback(
-    (url: string, type: CinemaSourceType = "url") => {
-      // Reset position and pause on a new source. Carrying the old position
-      // over would drop the room 40 minutes into a video that just started.
-      // duration_seconds is cleared too: it belongs to the old file.
-      void push({
-        source_url: url,
-        source_type: type,
-        position_seconds: 0,
-        duration_seconds: null,
-        is_playing: false,
-      });
+  const hostAddSource = useCallback(
+    async (item: CinemaSourceDraft) => {
+      await playlistCommand({ action: "append", item });
     },
-    [push],
+    [playlistCommand],
   );
+
+  const hostAdvance = useCallback(() => {
+    if (!isHost || !activePlaylistItem) return;
+    if (endedItemRef.current === activePlaylistItem.id) return;
+    endedItemRef.current = activePlaylistItem.id;
+    void playlistCommand({
+      action: "advance",
+      ended_item_id: activePlaylistItem.id,
+    });
+  }, [isHost, activePlaylistItem, playlistCommand]);
 
   const handleLoadedMetadata = useCallback(() => {
     const el = videoRef.current;
@@ -340,7 +363,12 @@ export function CinemaScreen({
           />
           {overlay}
         </div>
-        {isHost && <CinemaSourcePicker onPick={hostSetSource} />}
+        {isHost && (
+          <CinemaSourcePicker
+            onPick={hostAddSource}
+            remainingSlots={remainingPlaylistSlots}
+          />
+        )}
       </div>
     );
   }
@@ -366,6 +394,10 @@ export function CinemaScreen({
             onBufferingChange={setBuffering}
             onDuration={handleYouTubeDuration}
             onError={setPlayerError}
+            onReady={() => {
+              if (isPlaying) youTubeRef.current?.play();
+            }}
+            onEnded={hostAdvance}
           />
         )}
 
@@ -382,7 +414,13 @@ export function CinemaScreen({
             onLoadedMetadata={handleLoadedMetadata}
             onWaiting={() => setBuffering(true)}
             onPlaying={() => setBuffering(false)}
-            onCanPlay={() => setBuffering(false)}
+            onCanPlay={() => {
+              setBuffering(false);
+              if (isPlaying) {
+                void videoRef.current?.play().catch(() => setNeedsGesture(true));
+              }
+            }}
+            onEnded={hostAdvance}
           />
         )}
 
@@ -453,7 +491,7 @@ export function CinemaScreen({
         <div className="h-full bg-cinema-gold transition-[width]" style={{ width: `${progress}%` }} />
       </div>
 
-      <div className="flex items-center gap-3 bg-cinema-surface px-3 py-2.5">
+      <div className="flex items-center gap-3 bg-cinema-surface px-3 py-1.5 md:py-2.5">
         {isHost ? (
           <>
             <button
@@ -489,6 +527,16 @@ export function CinemaScreen({
           <span className="text-[11px] text-white/40">The host controls playback</span>
         )}
 
+        <button
+          type="button"
+          onClick={() => setPlaylistOpen(true)}
+          aria-label={`Open playlist, ${playlist.length} of ${MAX_CINEMA_PLAYLIST_ITEMS} items`}
+          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] tabular-nums text-white/50 transition hover:bg-white/5 hover:text-cinema-gold"
+        >
+          <ListVideo className="h-4 w-4" aria-hidden />
+          {playlist.length}/{MAX_CINEMA_PLAYLIST_ITEMS}
+        </button>
+
         <span className="ml-auto font-mono text-[11px] tabular-nums text-white/50">
           {formatTimecode(displayPosition)}
           {duration ? ` / ${formatTimecode(duration)}` : ""}
@@ -510,18 +558,160 @@ export function CinemaScreen({
         </button>
       </div>
 
-      {isHost && (
-        <details className="border-t border-cinema-border bg-cinema-surface">
-          {/* Collapsed by default: once something is playing, the picker is a
-              rare action and a permanently open upload panel under the screen
-              would crowd the room. */}
-          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-white/50 transition hover:text-cinema-gold">
-            Change what&rsquo;s playing
-          </summary>
-          <div className="px-3 pb-3">
-            <CinemaSourcePicker onPick={hostSetSource} compact />
-          </div>
-        </details>
+      {playlistOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end bg-black/70 p-3 backdrop-blur-sm md:items-center md:justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cinema-playlist-title"
+          onClick={() => setPlaylistOpen(false)}
+        >
+          <section
+            className="flex max-h-[72dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-cinema-border bg-cinema-surface shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex shrink-0 items-center gap-2 border-b border-cinema-border px-3 py-2.5">
+              <ListVideo className="h-4 w-4 text-cinema-gold" aria-hidden />
+              <h2 id="cinema-playlist-title" className="text-sm font-semibold text-white/90">
+                Playlist
+              </h2>
+              <span className="text-[11px] tabular-nums text-white/40">
+                {playlist.length}/{MAX_CINEMA_PLAYLIST_ITEMS}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPlaylistOpen(false)}
+                aria-label="Close playlist"
+                className="ml-auto rounded-md p-2 text-white/50 transition hover:bg-white/5 hover:text-white"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </header>
+
+            <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
+              <ol className="space-y-1">
+                {playlist.map((item, index) => {
+                  const active = item.id === activePlaylistItem?.id;
+                  const label =
+                    item.title ||
+                    (item.source_type === "youtube"
+                      ? "YouTube video"
+                      : (() => {
+                          try {
+                            return decodeURIComponent(
+                              new URL(item.source_url).pathname
+                                .split("/")
+                                .filter(Boolean)
+                                .pop() || "Video",
+                            );
+                          } catch {
+                            return "Video";
+                          }
+                        })());
+                  return (
+                    <li
+                      key={item.id}
+                      className={`flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 ${
+                        active
+                          ? "border-cinema-gold/45 bg-cinema-gold/10"
+                          : "border-transparent bg-black/20"
+                      }`}
+                    >
+                      <span
+                        className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
+                          active ? "bg-cinema-gold text-black" : "bg-white/10 text-white/50"
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!isHost || active}
+                        onClick={() =>
+                          void playlistCommand({ action: "select", item_id: item.id })
+                        }
+                        className="min-w-0 flex-1 text-left disabled:cursor-default"
+                        aria-label={active ? `${label}, now playing` : `Play ${label} now`}
+                      >
+                        <span className="block truncate text-xs font-medium text-white/80">
+                          {label}
+                        </span>
+                        <span className="block text-[10px] uppercase tracking-wider text-white/35">
+                          {active
+                            ? "Now playing"
+                            : item.source_type === "youtube"
+                              ? "YouTube"
+                              : "Video"}
+                        </span>
+                      </button>
+                      {isHost && (
+                        <div className="flex shrink-0 items-center">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() =>
+                              void playlistCommand({
+                                action: "move",
+                                item_id: item.id,
+                                to_index: index - 1,
+                              })
+                            }
+                            aria-label={`Move ${label} up`}
+                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-cinema-gold disabled:opacity-20"
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === playlist.length - 1}
+                            onClick={() =>
+                              void playlistCommand({
+                                action: "move",
+                                item_id: item.id,
+                                to_index: index + 1,
+                              })
+                            }
+                            aria-label={`Move ${label} down`}
+                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-cinema-gold disabled:opacity-20"
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void playlistCommand({ action: "remove", item_id: item.id })
+                            }
+                            aria-label={`Remove ${label}`}
+                            className="rounded p-1.5 text-white/35 transition hover:bg-red-500/10 hover:text-red-300"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+
+              {isHost && (
+                <details className="mt-2 border-t border-cinema-border pt-2">
+                  <summary className="cursor-pointer list-none px-1 py-2 text-xs font-semibold text-white/50 transition hover:text-cinema-gold">
+                    {remainingPlaylistSlots > 0
+                      ? `Add videos (${remainingPlaylistSlots} open)`
+                      : "Playlist full"}
+                  </summary>
+                  <div className="pb-1">
+                    <CinemaSourcePicker
+                      onPick={hostAddSource}
+                      compact
+                      remainingSlots={remainingPlaylistSlots}
+                    />
+                  </div>
+                </details>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
       {error && (

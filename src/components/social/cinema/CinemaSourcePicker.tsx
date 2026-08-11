@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
-import { type CinemaSourceType, classifySource } from "@/lib/cinemaPlayback";
+import {
+  type CinemaSourceDraft,
+  classifySource,
+} from "@/lib/cinemaPlayback";
 import {
   MAX_UPLOAD_BYTES,
   RESUMABLE_THRESHOLD_BYTES,
@@ -83,11 +86,14 @@ function putWithProgress(
 export function CinemaSourcePicker({
   onPick,
   compact = false,
+  remainingSlots = 1,
 }: {
-  /** Called with a validated, directly playable https URL. */
-  onPick: (url: string, type: CinemaSourceType) => void;
+  /** Called with a validated source to append to the room playlist. */
+  onPick: (item: CinemaSourceDraft) => void | Promise<void>;
   /** Dense variant for the bar under a screen that's already playing. */
   compact?: boolean;
+  /** The server still enforces five; this prevents obviously wasted uploads. */
+  remainingSlots?: number;
 }) {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("upload");
@@ -112,20 +118,33 @@ export function CinemaSourcePicker({
 
   /** Single funnel for all three tabs, so validation can't be skipped. */
   const commit = useCallback(
-    (rawUrl: string) => {
+    async (
+      rawUrl: string,
+      options: { title?: string | null; libraryVideoId?: string | null } = {},
+    ): Promise<boolean> => {
+      if (remainingSlots <= 0) {
+        setError("This playlist already has five items.");
+        return false;
+      }
       const verdict = classifySource(rawUrl);
       if (!verdict.ok) {
         setError(verdict.reason);
-        return;
+        return false;
       }
       setError(null);
       setUrlDraft("");
       // The type travels with the URL. Without it the room would store a
       // YouTube watch link under source_type 'url' and mount a <video> that
       // can never play it.
-      onPick(verdict.url, verdict.type);
+      await onPick({
+        source_url: verdict.url,
+        source_type: verdict.type,
+        title: options.title?.trim() || null,
+        library_video_id: options.libraryVideoId ?? null,
+      });
+      return true;
     },
-    [onPick],
+    [onPick, remainingSlots],
   );
 
   // --- Upload ---------------------------------------------------------------
@@ -177,7 +196,7 @@ export function CinemaSourcePicker({
                 ),
               onSuccess: (publicUrl) => {
                 resetUploadUi();
-                commit(publicUrl);
+                void commit(publicUrl, { title: file.name });
               },
               onError: (message) => {
                 // Deliberately do NOT clear the upload UI: the bytes already on
@@ -213,7 +232,7 @@ export function CinemaSourcePicker({
         const { signedUrl, publicUrl } = await urlRes.json();
 
         await putWithProgress(signedUrl, file, setProgress);
-        commit(publicUrl);
+        await commit(publicUrl, { title: file.name });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed.");
       } finally {
@@ -327,6 +346,7 @@ export function CinemaSourcePicker({
               const file = e.target.files?.[0];
               if (file) void handleFile(file);
             }}
+            disabled={remainingSlots <= 0}
           />
           {uploading ? (
             <div className="rounded-lg border border-cinema-border bg-black/40 px-3 py-3">
@@ -386,10 +406,13 @@ export function CinemaSourcePicker({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
+              disabled={remainingSlots <= 0}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-cinema-border px-4 py-4 text-sm font-medium text-white/70 transition hover:border-cinema-gold/50 hover:text-cinema-gold"
             >
               <Upload className="h-4 w-4" aria-hidden />
-              Choose a video from your device
+              {remainingSlots > 0
+                ? "Choose a video from your device"
+                : "Playlist is full"}
             </button>
           )}
           {!uploading && (
@@ -437,28 +460,64 @@ export function CinemaSourcePicker({
       )}
 
       {tab === "link" && (
-        <div className="flex gap-2">
-          <div className="relative flex-1">
+        <div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
             <Link2
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30"
+              className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-white/30"
               aria-hidden
             />
-            <input
+            <textarea
               value={urlDraft}
               onChange={(e) => setUrlDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && commit(urlDraft)}
-              placeholder="YouTube link, or https://… .mp4"
-              aria-label="Video link"
-              className="w-full rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none"
+              placeholder={"Paste one link per line\nYouTube or direct .mp4/.webm/.m3u8"}
+              aria-label="Video links"
+              rows={Math.min(5, Math.max(2, remainingSlots))}
+              disabled={remainingSlots <= 0}
+              className="w-full resize-none rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none disabled:opacity-50"
             />
+            </div>
+            <button
+              type="button"
+              disabled={remainingSlots <= 0 || !urlDraft.trim()}
+              onClick={async () => {
+                const links = urlDraft
+                  .split(/\s+/)
+                  .map((value) => value.trim())
+                  .filter(Boolean);
+                if (links.length === 0) return;
+                if (links.length > remainingSlots) {
+                  setError(
+                    `There ${remainingSlots === 1 ? "is" : "are"} only ${remainingSlots} open ${
+                      remainingSlots === 1 ? "slot" : "slots"
+                    }.`,
+                  );
+                  return;
+                }
+                const classified = links.map((link) => ({
+                  link,
+                  verdict: classifySource(link),
+                }));
+                const invalid = classified.find(({ verdict }) => !verdict.ok);
+                if (invalid && !invalid.verdict.ok) {
+                  setError(invalid.verdict.reason);
+                  return;
+                }
+                setError(null);
+                for (const { link } of classified) {
+                  const added = await commit(link);
+                  if (!added) break;
+                }
+                setUrlDraft("");
+              }}
+              className="shrink-0 self-start rounded-lg bg-cinema-gold px-4 py-2.5 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Add {remainingSlots > 1 ? "links" : "link"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => commit(urlDraft)}
-            className="shrink-0 rounded-lg bg-cinema-gold px-4 text-sm font-semibold text-black transition hover:brightness-110"
-          >
-            Load
-          </button>
+          <p className="mt-2 text-[11px] text-white/35">
+            Add up to {remainingSlots} more {remainingSlots === 1 ? "video" : "videos"}.
+          </p>
         </div>
       )}
 
@@ -479,7 +538,10 @@ function VideoGroup({
 }: {
   label: string;
   videos: SocialVideo[];
-  onPick: (url: string, type: CinemaSourceType) => void;
+  onPick: (
+    url: string,
+    options?: { title?: string | null; libraryVideoId?: string | null },
+  ) => Promise<boolean>;
 }) {
   return (
     <div>
@@ -491,10 +553,12 @@ function VideoGroup({
           <button
             key={video.id}
             type="button"
-            onClick={() => {
-              const verdict = classifySource(video.video_url);
-              onPick(video.video_url, verdict.ok ? verdict.type : "url");
-            }}
+            onClick={() =>
+              void onPick(video.video_url, {
+                title: video.title,
+                libraryVideoId: video.id,
+              })
+            }
             className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-white/5"
           >
             <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded bg-black/60">

@@ -102,6 +102,8 @@ export interface CinemaYouTubePlayerProps {
   onBufferingChange?: (buffering: boolean) => void;
   /** Duration in seconds, once YouTube knows it. */
   onDuration?: (seconds: number) => void;
+  /** Fires when the active video completes so the host can advance the queue. */
+  onEnded?: () => void;
   /** The player could not be created or the video refused to play. */
   onError?: (message: string) => void;
 }
@@ -110,7 +112,7 @@ export const CinemaYouTubePlayer = forwardRef<
   CinemaPlayerHandle,
   CinemaYouTubePlayerProps
 >(function CinemaYouTubePlayer(
-  { videoId, onReady, onBufferingChange, onDuration, onError },
+  { videoId, onReady, onBufferingChange, onDuration, onEnded, onError },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -124,6 +126,8 @@ export const CinemaYouTubePlayer = forwardRef<
   onBufferingRef.current = onBufferingChange;
   const onDurationRef = useRef(onDuration);
   onDurationRef.current = onDuration;
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -183,6 +187,9 @@ export const CinemaYouTubePlayer = forwardRef<
               if (Number.isFinite(duration) && duration > 0) {
                 onDurationRef.current?.(duration);
               }
+            }
+            if (state === ENDED) {
+              onEndedRef.current?.();
             }
           },
           onError: (event: any) => {

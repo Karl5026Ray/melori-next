@@ -17,8 +17,11 @@ import {
   DRIFT_IGNORE_SECONDS,
   DRIFT_SEEK_SECONDS,
   RATE_CORRECTION,
+  activeCinemaPlaylistItem,
   classifySource,
+  cinemaPlaylistRevision,
   computeClockOffsetMs,
+  effectiveCinemaPlaylist,
   formatTimecode,
   parseYouTubeId,
   planCorrection,
@@ -260,6 +263,56 @@ console.log("\nformatTimecode");
   assertEq("rolls to hours", formatTimecode(3661), "1:01:01");
   assertEq("negative is safe", formatTimecode(-5), "0:00");
   assertEq("NaN is safe", formatTimecode(Number.NaN), "0:00");
+}
+
+console.log("\nCinema playlist compatibility");
+{
+  assertEq("no state has an empty playlist", effectiveCinemaPlaylist(null), []);
+  const legacy = state({
+    space_id: "legacy-room",
+    source_type: "youtube",
+    source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  });
+  assertEq("legacy source becomes a virtual one-item playlist", effectiveCinemaPlaylist(legacy), [
+    {
+      id: "legacy:legacy-room",
+      source_type: "youtube",
+      source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      title: "Current screening",
+    },
+  ]);
+
+  const queued = state({
+    playlist_items: [
+      {
+        id: "one",
+        source_type: "url",
+        source_url: "https://cdn.example.com/one.mp4",
+        title: "One",
+      },
+      {
+        id: "two",
+        source_type: "youtube",
+        source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        title: "Two",
+      },
+    ],
+    active_playlist_index: 1,
+    playlist_revision: 7,
+  });
+  assertEq("stored queue wins over the legacy mirror", effectiveCinemaPlaylist(queued).length, 2);
+  assertEq("active queue item follows its index", activeCinemaPlaylistItem(queued)?.id, "two");
+  assertEq("playlist revision is normalized", cinemaPlaylistRevision(queued), 7);
+  assertEq(
+    "bad active index clamps to the final item",
+    activeCinemaPlaylistItem({ ...queued, active_playlist_index: 99 })?.id,
+    "two",
+  );
+  assertEq(
+    "bad revision falls back to zero",
+    cinemaPlaylistRevision({ ...queued, playlist_revision: -1 }),
+    0,
+  );
 }
 
 console.log(

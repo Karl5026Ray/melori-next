@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
 import {
+  type CinemaPlaylistCommand,
   type PlaybackState,
+  cinemaPlaylistRevision,
   computeClockOffsetMs,
   HOST_HEARTBEAT_MS,
 } from "@/lib/cinemaPlayback";
@@ -63,6 +65,7 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
         // extrapolates against a corrected clock rather than briefly seeking
         // to a wrong position and then correcting.
         setClockOffsetMs(computeClockOffsetMs(json.server_now));
+        stateRef.current = json.state;
         setState(json.state);
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Playback state unavailable");
@@ -96,7 +99,9 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
           setState((current) => {
             const currentAt = current ? new Date(current.updated_at).getTime() : Number.NEGATIVE_INFINITY;
             const rowAt = new Date(row.updated_at).getTime();
-            return Number.isFinite(rowAt) && rowAt < currentAt ? current : row;
+            const next = Number.isFinite(rowAt) && rowAt < currentAt ? current : row;
+            stateRef.current = next;
+            return next;
           });
         },
       )
@@ -126,6 +131,7 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
           }
           const json = (await res.json()) as { state: PlaybackState; server_now: string };
           setClockOffsetMs(computeClockOffsetMs(json.server_now));
+          stateRef.current = json.state;
           setState(json.state);
           setError(null);
         } catch {
@@ -134,6 +140,58 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
       };
       writeQueueRef.current = writeQueueRef.current.then(write, write);
       await writeQueueRef.current;
+    },
+    [spaceId],
+  );
+
+  const playlistCommand = useCallback(
+    async (command: CinemaPlaylistCommand): Promise<boolean> => {
+      if (!isHostRef.current) return false;
+      let succeeded = false;
+      const write = async () => {
+        try {
+          const res = await authFetch(`/api/social/spaces/${spaceId}/playback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...command,
+              expected_revision: cinemaPlaylistRevision(stateRef.current),
+            }),
+          });
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            state?: PlaybackState | null;
+            server_now?: string;
+          };
+          if (!res.ok) {
+            // A revision conflict returns the winner so this tab immediately
+            // catches up instead of replaying a stale reorder blindly.
+            if (json.state) {
+              stateRef.current = json.state;
+              setState(json.state);
+            }
+            if (json.server_now) {
+              setClockOffsetMs(computeClockOffsetMs(json.server_now));
+            }
+            setError(json.error ?? "Could not update the playlist");
+            return;
+          }
+          if (!json.state || !json.server_now) {
+            setError("The room returned an incomplete playlist update");
+            return;
+          }
+          stateRef.current = json.state;
+          setClockOffsetMs(computeClockOffsetMs(json.server_now));
+          setState(json.state);
+          setError(null);
+          succeeded = true;
+        } catch {
+          setError("Could not reach the room");
+        }
+      };
+      writeQueueRef.current = writeQueueRef.current.then(write, write);
+      await writeQueueRef.current;
+      return succeeded;
     },
     [spaceId],
   );
@@ -154,5 +212,13 @@ export function useCinemaPlayback(spaceId: string, isHost: boolean) {
     return () => clearInterval(id);
   }, [isHost, push]);
 
-  return { state, loading, error, clockOffsetMs, push, reportLocalPosition };
+  return {
+    state,
+    loading,
+    error,
+    clockOffsetMs,
+    push,
+    playlistCommand,
+    reportLocalPosition,
+  };
 }

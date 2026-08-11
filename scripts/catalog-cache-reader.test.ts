@@ -81,8 +81,8 @@ console.log("\ncatalog cache reader guard (#280)\n");
 // 1. The public catalog readers must use the cached reader, not the live client.
 // ---------------------------------------------------------------------------
 //
-// These are the transitive reads that build / and /music. Every one of them
-// must be cacheable, because ONE no-store fetch anywhere in the render is
+// These are the transitive reads that build /, /music and /video. Every one of
+// them must be cacheable, because ONE no-store fetch anywhere in the render is
 // enough to make the whole route dynamic again.
 const CATALOG_READERS: Array<[string, string]> = [
   ["src/lib/data.ts", "getReleases"],
@@ -90,6 +90,7 @@ const CATALOG_READERS: Array<[string, string]> = [
   ["src/lib/data.ts", "getFeaturedTrack"],
   ["src/lib/catalog.ts", "loadStudioCatalog"],
   ["src/lib/catalog.ts", "getArtistRefsByProfileId"],
+  ["src/app/video/page.tsx", "getVideos"],
 ];
 
 for (const [file, fn] of CATALOG_READERS) {
@@ -171,7 +172,7 @@ if (!wrapper) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. The two ISR pages must not swallow Next's static-generation bailout.
+// 4. The ISR pages must not swallow Next's static-generation bailout.
 // ---------------------------------------------------------------------------
 //
 // Next aborts prerendering by throwing internal control-flow values. A bare
@@ -200,9 +201,13 @@ for (const file of [
 }
 
 // ---------------------------------------------------------------------------
-// 5. The two pages must declare a positive revalidate, never force-dynamic.
+// 5. These pages must declare a positive revalidate, never force-dynamic.
 // ---------------------------------------------------------------------------
-for (const file of ["src/app/page.tsx", "src/app/music/page.tsx"]) {
+for (const file of [
+  "src/app/page.tsx",
+  "src/app/music/page.tsx",
+  "src/app/video/page.tsx",
+]) {
   const src = read(file);
   if (/export const dynamic\s*=\s*["']force-dynamic["']/.test(src)) {
     fail(`${file} — force-dynamic guarantees the no-store header is served`);

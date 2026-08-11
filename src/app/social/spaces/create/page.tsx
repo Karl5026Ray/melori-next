@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   useCanParticipate,
@@ -10,26 +10,27 @@ import {
 import { authFetch } from "@/lib/authClient";
 import {
   ArrowLeft,
-  Clapperboard,
   Headphones,
   MessageCircle,
   Mic,
   Radio,
 } from "lucide-react";
 import Link from "next/link";
-import { roomExitHref, roomScheduledHref } from "@/lib/cinema";
+import { roomExitHref, roomHref, roomScheduledHref } from "@/lib/cinema";
 
 // `id` drives the UI selection AND is posted as the room's `type`. Those are
 // two different vocabularies: `spaces.type` has its own CHECK constraint
-// (listening | discussion | creation | dj_set) that predates room_format and
-// does NOT include 'cinema'. So Cinema carries an explicit `spaceType` of
-// 'listening' — a watch party is a listening room with a screen — while its
-// room_format is what actually distinguishes it. Without this split, creating
-// a Cinema room fails the spaces_type_check constraint.
+// (listening | discussion | creation | dj_set) that predates room_format, so
+// the UI id and the posted type are kept separate here.
+//
+// Cinema is deliberately NOT in this list. It used to be a fifth tile, which
+// meant hosting a watch party started on a form titled "Start a Space" and made
+// Cinema look like a Spaces variant. Cinema is its own selection and now has
+// its own form at /social/cinema/create — see roomCreateHref() in lib/cinema.
 const spaceTypes: {
   id: string;
   spaceType: "listening" | "discussion" | "creation" | "dj_set";
-  format: "release_party" | "discussion" | "versus_battle" | "dj_set" | "cinema";
+  format: "release_party" | "discussion" | "versus_battle" | "dj_set";
   label: string;
   icon: typeof Headphones;
   desc: string;
@@ -66,36 +67,28 @@ const spaceTypes: {
     icon: Radio,
     desc: "Continuous mix with track requests",
   },
-  {
-    id: "cinema",
-    spaceType: "listening",
-    format: "cinema",
-    label: "Cinema",
-    icon: Clapperboard,
-    desc: "Watch together on a shared screen",
-  },
 ];
 
-export default function CreateSpacePage() {
+export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, profileError } = useAuth();
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  // Honour ?format=cinema so the "+" on the Cinema discover screen lands here
-  // with Cinema already selected instead of dropping the host on Release Party.
-  //
-  // Read straight off window.location rather than useSearchParams(): this page
-  // is currently statically prerendered, and useSearchParams() would force it
-  // behind a Suspense boundary. The typeof guard keeps the prerender pass safe.
-  const [type, setType] = useState(() => {
-    if (typeof window === "undefined") return "listening";
-    const requested = new URLSearchParams(window.location.search).get("format");
-    return spaceTypes.find((s) => s.format === requested)?.id ?? "listening";
-  });
-  // The room_format the picker is currently on. Drives where "back" and a
-  // scheduled create return to, so a host who came from Cinema goes back to
-  // Cinema rather than being handed off to Spaces.
+  // Concert uses the existing room form with ?format=versus_battle. Validate
+  // against this form's selectable formats so unknown/dead query values always
+  // land on the honest Release Party default.
+  const requestedFormat = searchParams.get("format");
+  const requestedType = concertOnly
+    ? "creation"
+    : spaceTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
+  const [type, setType] = useState(requestedType);
+  useEffect(() => {
+    setType(requestedType);
+  }, [requestedType]);
+  // The room_format the picker is currently on, driving where "back" and a
+  // scheduled create return to.
   const selectedFormat = spaceTypes.find((s) => s.id === type)?.format;
 
   const [scheduleFor, setScheduleFor] = useState<"now" | "later">("now");
@@ -154,10 +147,11 @@ export default function CreateSpacePage() {
     if (res.ok) {
       const { space } = await res.json();
       router.push(
-        // A scheduled room has nothing to enter yet, so land back on the
-        // discover screen the host started from — Cinema's STARTING SOON list
-        // for a Cinema room, the scheduled tab for everything else.
-        scheduled_at ? roomScheduledHref(selectedFormat) : `/social/spaces/${space.id}`,
+        // A scheduled room has nothing to enter yet, so land on the scheduled
+        // tab rather than an empty room.
+        scheduled_at
+          ? roomScheduledHref(selectedFormat)
+          : roomHref({ id: space.id, room_format: selectedFormat }),
       );
       return;
     }
@@ -177,21 +171,23 @@ export default function CreateSpacePage() {
       <div className="max-w-lg mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Link
-            href={roomExitHref(selectedFormat)}
+            href={concertOnly ? "/social/profile" : roomExitHref(selectedFormat)}
             className="p-2 hover:bg-melori-elevated rounded-lg transition"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h2 className="text-2xl font-bold">Start a Space</h2>
+          <h2 className="text-2xl font-bold">
+            {concertOnly ? "Start a Concert" : "Start a Space"}
+          </h2>
         </div>
 
         {user && !canParticipate ? (
-          <UpgradePrompt action="start a Space" />
+          <UpgradePrompt action={concertOnly ? "start a Concert" : "start a Space"} />
         ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm text-melori-muted mb-2">
-              Space Title
+              {concertOnly ? "Concert Title" : "Space Title"}
             </label>
             <input
               type="text"
@@ -260,36 +256,52 @@ export default function CreateSpacePage() {
             )}
           </div>
 
-          <div>
-            <label className="block text-sm text-melori-muted mb-3">Room Format</label>
-            <div className="grid grid-cols-2 gap-3">
-              {spaceTypes.map((t) => {
-                const Icon = t.icon;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setType(t.id)}
-                    className={`text-left p-4 rounded-xl border transition ${
-                      type === t.id
-                        ? "border-melori-purple bg-melori-purple/10"
-                        : "border-melori-border hover:border-melori-purple/30"
-                    }`}
-                  >
-                    <Icon
-                      className={`w-5 h-5 mb-2 ${
-                        type === t.id
-                          ? "text-melori-purple"
-                          : "text-melori-muted"
-                      }`}
-                    />
-                    <p className="font-medium text-sm">{t.label}</p>
-                    <p className="text-xs text-melori-muted mt-1">{t.desc}</p>
-                  </button>
-                );
-              })}
+          {concertOnly ? (
+            <div className="rounded-xl border border-teal-500/40 bg-teal-500/10 p-4">
+              <div className="flex items-center gap-3">
+                <Mic className="h-5 w-5 shrink-0 text-teal-400" />
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">
+                    Versus Battle
+                  </p>
+                  <p className="mt-1 text-xs text-melori-muted">
+                    Start the Concert room for performers, audience voting, and live gifts.
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="block text-sm text-melori-muted mb-3">Room Format</label>
+              <div className="grid grid-cols-2 gap-3">
+                {spaceTypes.map((t) => {
+                  const Icon = t.icon;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setType(t.id)}
+                      className={`text-left p-4 rounded-xl border transition ${
+                        type === t.id
+                          ? "border-melori-purple bg-melori-purple/10"
+                          : "border-melori-border hover:border-melori-purple/30"
+                      }`}
+                    >
+                      <Icon
+                        className={`w-5 h-5 mb-2 ${
+                          type === t.id
+                            ? "text-melori-purple"
+                            : "text-melori-muted"
+                        }`}
+                      />
+                      <p className="font-medium text-sm">{t.label}</p>
+                      <p className="text-xs text-melori-muted mt-1">{t.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
@@ -307,12 +319,20 @@ export default function CreateSpacePage() {
                 ? "Scheduling..."
                 : "Going Live..."
               : scheduleFor === "later"
-                ? "Schedule Space"
-                : "Go Live"}
+                ? concertOnly
+                  ? "Schedule Concert"
+                  : "Schedule Space"
+                : concertOnly
+                  ? "Start Concert"
+                  : "Go Live"}
           </button>
         </form>
         )}
       </div>
     </div>
   );
+}
+
+export default function CreateSpacePage() {
+  return <RoomCreatePage />;
 }

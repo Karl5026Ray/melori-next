@@ -27,7 +27,7 @@ const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 //
 // Sources reflect Melori's real providers:
 //   supabase.co (auth/db/storage/realtime), stripe.com/js.stripe.com (checkout),
-//   *.livekit.cloud + wss (audio/video), *.agora.io (legacy voice),
+//   *.livekit.cloud + wss (audio/video),
 //   *.pubnub.com (presence), google/gstatic (OAuth + fonts),
 //   static.cloudflareinsights.com (Cloudflare Web Analytics beacon).
 const CSP_ENFORCED = [
@@ -46,11 +46,11 @@ const CSP_ENFORCED = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, Agora, PubNub + generic wss.
+  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, PubNub + generic wss.
   // blob: is required by the shared audio player: it fetches the unlock clip and
   // streamed track data as blob URLs, and XHR/fetch to a blob: URL is governed by
   // connect-src (not media-src). Without it the homepage radio fails to start.
-  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
+  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.pubnub.com wss://*.pubnub.com",
   // data: covers the tiny inline silent clip the player uses to unlock autoplay
   // on iOS, which was being blocked on / and /music.
   "media-src 'self' data: blob: https:",
@@ -102,7 +102,7 @@ const SECURITY_HEADERS = [
   // conversation IDs and space IDs out of Referer on outbound links.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Deny access to sensitive browser features we don't use. Camera + microphone
-  // are needed for Agora voice/video rooms, so we allow same-origin for those.
+  // are needed for LiveKit voice/video rooms, so we allow same-origin for those.
   {
     key: "Permissions-Policy",
     value:

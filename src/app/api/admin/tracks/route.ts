@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { revalidateTag } from "next/cache";
+import { getSupabaseAdmin, PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
@@ -193,6 +194,10 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    // Public catalog reads on / and /music are cached for 60s; drop that entry
+    // now so a newly created/published track reflects immediately.
+    revalidateTag(PUBLIC_CATALOG_TAG, "max");
 
     return NextResponse.json({ id: data.id }, { status: 201 });
   } catch (err: any) {

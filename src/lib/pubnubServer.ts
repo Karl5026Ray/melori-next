@@ -126,6 +126,25 @@ export async function publishSystemSignal(
   }
 }
 
+// Concert gifts are server-authoritative: unlike a reaction, a client may not
+// announce a paid gift merely by having channel write permission. The send-gift
+// route publishes this only after the atomic wallet RPC succeeds. Delivery is
+// intentionally best-effort (the completed ledger entry remains authoritative).
+export async function publishGiftSignal(
+  spaceId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const pubnub = getPubNubServer();
+    await pubnub.publish({
+      channel: spaceChannel(spaceId),
+      message: { __signal: true, type: "gift", ...payload },
+    });
+  } catch (err) {
+    console.warn("publishGiftSignal failed", err);
+  }
+}
+
 // Authoritative occupancy check via PubNub Presence hereNow(). Used by the
 // webhook as a confirmation step: PubNub sometimes coalesces events, so before
 // ending a room we re-query the true occupancy to avoid ending a room that a

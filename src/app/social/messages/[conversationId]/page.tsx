@@ -8,7 +8,14 @@ import { authFetch } from "@/lib/authClient";
 import { Message, Profile } from "@/types/social";
 import { MessageBubble } from "@/components/social/messages/MessageBubble";
 import { CallOverlay } from "@/components/social/messages/CallOverlay";
-import { CallSession, type CallMode, type CallState } from "@/lib/callClient";
+import {
+  CallSession,
+  formatCallError,
+  type CallMode,
+  type CallState,
+} from "@/lib/callClient";
+import { MediaPermissionNotice } from "@/components/media/MediaPermissionNotice";
+import { type CaptureErrorInfo } from "@/lib/mediaCapture";
 import {
   ArrowLeft,
   Phone,
@@ -72,12 +79,23 @@ export default function ChatPage() {
   const [callMode, setCallMode] = useState<CallMode>("video");
   const [callState, setCallState] = useState<CallState>("idle");
   const [incoming, setIncoming] = useState(false);
+  // Streams live in state and are handed to <CallOverlay/> as props; the
+  // overlay attaches them with refs. Reaching into the DOM by id from the
+  // session callback raced the overlay's mount.
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  // Blocked camera/mic (and signaling) failures render inline on the page
+  // rather than through a blocking browser dialog.
+  const [callError, setCallError] = useState<CaptureErrorInfo | null>(null);
+  // True from the moment a call button is pressed until start()/accept()
+  // settles, so the buttons cannot be double-fired.
+  const [callBusy, setCallBusy] = useState(false);
   const sessionRef = useRef<CallSession | null>(null);
-
-  const attachStreamToEl = (id: string, stream: MediaStream) => {
-    const el = document.getElementById(id) as HTMLVideoElement | null;
-    if (el) el.srcObject = stream;
-  };
+  // The post-call "ended" state is held for a beat before the overlay closes.
+  // That timer has to be cancellable: on unmount (or when the session is
+  // replaced) a pending callback would otherwise set state on a dead component
+  // and could reset a NEWER call back to idle.
+  const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load messages + the other participant.
   useEffect(() => {
@@ -169,8 +187,8 @@ export default function ChatPage() {
       conversationId,
       user.id,
       {
-        onLocalStream: (st) => attachStreamToEl("call-local-video", st),
-        onRemoteStream: (st) => attachStreamToEl("call-remote-video", st),
+        onLocalStream: (st) => setLocalStream(st),
+        onRemoteStream: (st) => setRemoteStream(st),
         onStateChange: (st) => setCallState(st),
         onIncoming: (info) => {
           setCallMode(info.mode);
@@ -178,53 +196,106 @@ export default function ChatPage() {
         },
         onEnded: () => {
           setIncoming(false);
-          setTimeout(() => setCallState("idle"), 400);
+          setCallBusy(false);
+          setLocalStream(null);
+          setRemoteStream(null);
+          if (endedTimerRef.current) clearTimeout(endedTimerRef.current);
+          endedTimerRef.current = setTimeout(() => {
+            endedTimerRef.current = null;
+            setCallState("idle");
+          }, 400);
+        },
+        onError: (err) => {
+          // Only non-fatal, already-classified problems arrive here. Media
+          // scope never does (capture failures reject the operation instead),
+          // so no permission copy can be rendered for a network fault.
+          if (err.scope === "signaling" || err.scope === "peer") {
+            setCallError(formatCallError(err));
+          }
         },
       },
       user.display_name,
       user.avatar_url ?? undefined,
+      { peerId: otherUser.id },
     );
-    s.listen();
     setCallSession(s);
     sessionRef.current = s;
+    // Subscribing is async now; a failure here only means incoming invites
+    // won't arrive until the next attempt, so it is surfaced, not thrown.
+    // Gated on this still being the mounted session: disposing rejects the
+    // pending listen(), and a superseded conversation must not paint its
+    // failure over the one the user is now looking at.
+    void s.listen().catch(() => {
+      if (sessionRef.current !== s) return;
+      setCallError({
+        kind: "unknown",
+        title: "Calls are unavailable right now",
+        message:
+          "We couldn't connect to the call service, so incoming calls may not ring.",
+        steps: ["Check your connection, then reload this conversation."],
+      });
+    });
     return () => {
+      if (endedTimerRef.current) {
+        clearTimeout(endedTimerRef.current);
+        endedTimerRef.current = null;
+      }
       s.dispose();
       sessionRef.current = null;
+      setCallBusy(false);
     };
   }, [conversationId, user, otherUser]);
 
   const startCall = async (mode: CallMode) => {
-    if (!sessionRef.current) return;
+    // The session itself refuses concurrent starts, but the button is also
+    // gated here so a fast double-tap never even reaches the permission prompt.
+    if (!sessionRef.current || callBusy) return;
+    setCallBusy(true);
     setCallMode(mode);
     setIncoming(false);
+    setCallError(null);
     try {
       await sessionRef.current.start(mode);
-    } catch {
-      alert("Could not access camera/microphone. Check browser permissions.");
+    } catch (err) {
+      setLocalStream(null);
+      setRemoteStream(null);
+      // Scope-aware: only a media failure is rendered as a permission problem.
+      setCallError(formatCallError(err, mode));
+    } finally {
+      setCallBusy(false);
     }
   };
 
   const acceptCall = async () => {
-    if (!sessionRef.current) return;
+    if (!sessionRef.current || callBusy) return;
+    setCallBusy(true);
+    setCallError(null);
     try {
       await sessionRef.current.accept();
-    } catch {
-      alert("Could not access camera/microphone.");
+    } catch (err) {
+      setIncoming(false);
+      setLocalStream(null);
+      setRemoteStream(null);
+      setCallError(formatCallError(err, callMode));
+    } finally {
+      setCallBusy(false);
     }
   };
   const declineCall = () => {
     sessionRef.current?.decline();
     setIncoming(false);
+    setCallBusy(false);
   };
   const hangupCall = () => {
     sessionRef.current?.hangup();
     setIncoming(false);
+    setCallBusy(false);
   };
 
   // Send the message and reconcile the optimistic bubble with the server row.
   // On failure the bubble stays on screen marked "Not sent" with a Retry
-  // action, so the text is never silently lost (it used to be an alert() that
-  // dismissed and dropped the message).
+  // action, so the text is never silently lost (it used to be a blocking browser
+  // dialog that dismissed and dropped the message).
   const postMessage = useCallback(
     async (localId: string, content: string) => {
       const markFailed = (message: string) => {
@@ -411,18 +482,20 @@ export default function ChatPage() {
         {/* Voice call */}
         <button
           onClick={() => startCall("voice")}
-          disabled={blocked || !otherUser}
+          disabled={blocked || !otherUser || callBusy || callState !== "idle"}
           className="p-2 hover:bg-melori-elevated rounded-full transition disabled:opacity-40"
           aria-label="Voice call"
+          data-testid="start-voice-call"
         >
           <Phone className="w-5 h-5 text-brand-primary" />
         </button>
         {/* Video call */}
         <button
           onClick={() => startCall("video")}
-          disabled={blocked || !otherUser}
+          disabled={blocked || !otherUser || callBusy || callState !== "idle"}
           className="p-2 hover:bg-melori-elevated rounded-full transition disabled:opacity-40"
           aria-label="Video call"
+          data-testid="start-video-call"
         >
           <Video className="w-5 h-5 text-brand-primary" />
         </button>
@@ -551,6 +624,17 @@ export default function ChatPage() {
         )}
       </div>
 
+      {callError && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[110] flex justify-center px-3">
+          <MediaPermissionNotice
+            info={callError}
+            onDismiss={() => setCallError(null)}
+            testId="call-permission-notice"
+            className="pointer-events-auto w-full max-w-md bg-[#1a0d0d]/95 shadow-2xl backdrop-blur"
+          />
+        </div>
+      )}
+
       {(callActive || incoming) && otherUser && (
         <CallOverlay
           session={callSession}
@@ -559,6 +643,8 @@ export default function ChatPage() {
           peerName={otherUser.display_name}
           peerAvatar={otherUser.avatar_url}
           isIncoming={incoming && callState === "ringing"}
+          localStream={localStream}
+          remoteStream={remoteStream}
           onAccept={acceptCall}
           onDecline={declineCall}
           onHangup={hangupCall}

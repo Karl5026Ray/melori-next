@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Play } from "lucide-react";
 import type { Space } from "@/types/social";
-import { formatWatching } from "@/lib/cinema";
+import { formatWatching, roomHref } from "@/lib/cinema";
 
 // The full-width hero card at the top of discover ("Welcome 2 Louisiana —
 // jade_m hosting · 214 watching"). 16:9 because Cinema's stage is a shared
@@ -13,7 +13,7 @@ export function FeaturedRoom({ room }: { room: Space }) {
 
   return (
     <Link
-      href={`/social/spaces/${room.id}`}
+      href={roomHref(room)}
       className="group relative block overflow-hidden rounded-2xl border border-cinema-border bg-cinema-surface"
     >
       <div className="relative aspect-video w-full">

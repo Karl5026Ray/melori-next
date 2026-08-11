@@ -23,7 +23,7 @@
     "test:spaces-moderation": "tsx scripts/spaces-moderation.test.ts",
     "test:video-mirror": "tsx scripts/video-mirror.test.ts",
     "test:end-room": "tsx scripts/end-room.test.ts",
-    "test:cinema": "tsx scripts/cinema-camera-policy.test.ts && tsx scripts/cinema-playback.test.ts && tsx scripts/cinema-server-invariants.test.ts && tsx scripts/cinema-routing.test.ts",
+    "test:cinema": "tsx scripts/cinema-camera-policy.test.ts && tsx scripts/cinema-playback.test.ts && tsx scripts/cinema-server-invariants.test.ts && tsx scripts/cinema-routing.test.ts && tsx scripts/cinema-camera-publish-gate.test.ts", 
     "test:cinema:e2e": "playwright test e2e/cinema-stable-room.spec.ts",
     "test:stage-queue": "tsx scripts/stage-queue.test.ts",
     "test:mobile-layout": "tsx scripts/mobile-layout.test.ts",

@@ -33,6 +33,7 @@ import {
 } from "@/lib/livekitClient";
 import {
   ensureVideoAudio,
+  isVideoRoomConnected,
   joinVideoRoom,
   leaveVideoRoom,
   setCameraEnabled as setCinemaCameraEnabled,
@@ -110,9 +111,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
   const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
   const [cinemaReservations, setCinemaReservations] = useState<CinemaReservation[]>([]);
+  // Did THIS page session deliberately turn the camera on? Read by the Cinema
+  // join effect to resume capture after a role change or reconnect rebuilds the
+  // room. It is a ref, not state, so it never re-triggers that effect — and it
+  // is deliberately per-page-session: a durable reservation alone must never
+  // switch a camera on for someone who just loaded the page.
+  const cinemaCameraIntentRef = useRef(false);
   const [cinemaVideoElements, setCinemaVideoElements] = useState<
     Record<string, HTMLVideoElement>
   >({});
+  // Camera capture requires a connected room. Tracked so the control is disabled
+  // until then rather than claiming a durable slot with nothing to publish on.
+  const [cinemaRoomConnected, setCinemaRoomConnected] = useState(false);
+  // A camera toggle claims a durable slot, so it must not run twice at once: a
+  // double tap would otherwise race a claim against its own release.
+  const [cinemaCameraBusy, setCinemaCameraBusy] = useState(false);
   // `participants` starts empty for two very different reasons: the roster has
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
@@ -286,6 +299,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     if (!isCinema) {
       setCinemaReservations([]);
       setCinemaVideoElements({});
+      cinemaCameraIntentRef.current = false;
       return;
     }
     void refreshCinemaSlots();
@@ -1069,11 +1083,18 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       myPart.role === "host" || myPart.role === "speaker" ? "publisher" : "subscriber";
     let cancelled = false;
 
+    // A role change or reconnect tears this room down and rebuilds it, but the
+    // slot reservation and the token's camera grant both survive. Without this
+    // the camera came back off while the seat stayed occupied and the control
+    // still read "turn camera on". joinVideoRoom additionally requires the fresh
+    // token to actually name camera, so a revoked slot cannot resume capture.
+    const resumeCamera = cinemaCameraIntentRef.current;
+
     void joinVideoRoom({
       spaceId,
       role,
       roomMode: "cinema",
-      autoEnableCamera: false,
+      autoEnableCamera: resumeCamera,
       autoEnableMicrophone: !myPart.is_muted && !myPart.host_muted,
       spaceType: space.type,
       onLocalVideo: (element) => {
@@ -1081,6 +1102,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       },
       onLocalVideoRemoved: () => {
         if (!cancelled) {
+          // Covers both an explicit Camera Off and a host revoking this seat. In
+          // either case a later reconnect must not resume capture.
+          cinemaCameraIntentRef.current = false;
           setCinemaVideoElements((current) => {
             const next = { ...current };
             delete next[user.id];
@@ -1107,6 +1131,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       onReconnected: () => !cancelled && setReconnecting(false),
       onRoomEnded: () => {
         if (cancelled) return;
+        setCinemaRoomConnected(false);
         setRoomEnded(true);
         setTimeout(() => router.push(exitHrefRef.current), 1800);
       },
@@ -1116,14 +1141,20 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         }
         console.warn("cinema LiveKit join error", err);
       },
-    }).catch((err) => {
-      if (/NotAllowedError|Permission|permission denied/i.test((err as Error).message ?? "")) {
-        setMicDenied(true);
-      }
-    });
+    })
+      .then(() => {
+        if (!cancelled) setCinemaRoomConnected(isVideoRoomConnected());
+      })
+      .catch((err) => {
+        if (!cancelled) setCinemaRoomConnected(false);
+        if (/NotAllowedError|Permission|permission denied/i.test((err as Error).message ?? "")) {
+          setMicDenied(true);
+        }
+      });
 
     return () => {
       cancelled = true;
+      setCinemaRoomConnected(false);
       void leaveVideoRoom();
     };
     // A role transition intentionally reconnects this one room with a fresh,
@@ -1395,9 +1426,20 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const localCinemaCameraEnabled = Boolean(user && cinemaVideoElements[user.id]);
 
   const toggleCinemaCamera = async () => {
-    if (!user || !isCinema) return;
+    if (!user || !isCinema || cinemaCameraBusy) return;
+    // Claiming a slot before the RTC connection exists reserved a seat that
+    // nothing could publish on, and the failure was invisible.
+    if (!cinemaRoomConnected) {
+      setShareToast("Still connecting to the room — try the camera again in a moment.");
+      setTimeout(() => setShareToast(null), 2600);
+      return;
+    }
+    setCinemaCameraBusy(true);
     try {
       if (localCinemaCameraEnabled) {
+        // Clear the resume intent first: if the release below fails, a later
+        // reconnect must not silently republish a camera the user turned off.
+        cinemaCameraIntentRef.current = false;
         await setCinemaCameraEnabled(false);
         if (user.id !== hostId) {
           const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
@@ -1426,7 +1468,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         }
         try {
           await setCinemaCameraEnabled(true);
+          cinemaCameraIntentRef.current = true;
         } catch (error) {
+          cinemaCameraIntentRef.current = false;
           let cleanupError: string | null = null;
           if (user.id !== hostId) {
             try {
@@ -1455,6 +1499,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     } catch (err) {
       setShareToast(err instanceof Error ? err.message : "Could not update camera");
       setTimeout(() => setShareToast(null), 2600);
+      // Re-read durable state after a failure so the seat the UI shows always
+      // matches what the server actually kept.
+      await refreshCinemaSlots();
+    } finally {
+      setCinemaCameraBusy(false);
     }
   };
 
@@ -2245,13 +2294,17 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 type="button"
                 onClick={() => void toggleCinemaCamera()}
                 data-testid="cinema-camera-toggle"
+                disabled={!cinemaRoomConnected || cinemaCameraBusy}
                 aria-label={localCinemaCameraEnabled ? "Turn camera off" : "Turn camera on"}
+                aria-busy={cinemaCameraBusy}
                 title={
-                  localCinemaCameraEnabled
-                    ? "Turn camera off and release your guest slot"
-                    : "Turn camera on"
+                  !cinemaRoomConnected
+                    ? "Connecting to the room…"
+                    : localCinemaCameraEnabled
+                      ? "Turn camera off and release your guest slot"
+                      : "Turn camera on"
                 }
-                className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition ${
+                className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition disabled:opacity-50 ${
                   localCinemaCameraEnabled
                     ? "bg-cinema-gold text-black"
                     : "bg-melori-void/70 text-melori-text hover:bg-melori-void"

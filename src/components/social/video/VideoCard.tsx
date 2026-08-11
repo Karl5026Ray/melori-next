@@ -384,26 +384,28 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
         // cross-origin iframe) and keeps a long feed from holding a dozen live
         // YouTube players. The poster stands in for inactive cards so the frame
         // is never blank during a fast scroll.
-        <div className="absolute inset-0 bg-black">
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
           {isActive ? (
-            <iframe
-              // Remount per card so the src is applied cleanly on activation.
-              key={youtubeId}
-              src={youtubeEmbedUrl(youtubeId, { autoplay: true, muted: true })}
-              title={video.title}
-              // Autoplay is only granted to a muted player; the viewer unmutes
-              // with YouTube's own controls, which is why this card has no
-              // Melori mute toggle.
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="absolute inset-0 h-full w-full border-0"
-            />
+            <div className="relative aspect-video max-h-full w-full">
+              <iframe
+                // Remount per card so the src is applied cleanly on activation.
+                key={youtubeId}
+                src={youtubeEmbedUrl(youtubeId, { autoplay: true, muted: true })}
+                title={video.title}
+                // Autoplay is only granted to a muted player; the viewer unmutes
+                // with YouTube's own controls, which is why this card has no
+                // Melori mute toggle.
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="absolute inset-0 h-full w-full border-0"
+              />
+            </div>
           ) : (
             video.thumbnail_url && (
               <img
                 src={video.thumbnail_url}
                 alt=""
-                className="absolute inset-0 h-full w-full object-cover"
+                className="max-h-full max-w-full object-contain"
               />
             )
           )}
@@ -446,23 +448,27 @@ function VideoCardBase({ video, isActive, distance = 99, onDeleted }: VideoCardP
           )}
         </div>
       ) : (
-        <video
-          ref={videoRef}
-          src={mediaUrl}
-          loop
-          muted={isMuted}
-          playsInline
-          // Only fetch metadata until the card is active; the poster covers the
-          // frame until the stream is ready, so we never flash a wrong/black
-          // frame during a fast scroll.
-          preload={isActive ? "auto" : "metadata"}
-          // Content is predominantly portrait, so object-cover fills the frame
-          // edge-to-edge (the TikTok look) with virtually no crop. object-top
-          // biases any crop on the occasional landscape clip toward keeping the
-          // top of the frame, and object-center keeps portrait clips centered.
-          className="absolute inset-0 h-full w-full bg-black object-cover object-center"
-          poster={video.thumbnail_url || undefined}
-        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          {/* A 9:16 native-upload stage reaches the full available height
+              without exceeding the viewport width. Landscape uploads are
+              contained inside the same stage, so they letterbox rather than
+              stretching or cropping. */}
+          <div className="relative aspect-[9/16] h-full max-w-full">
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              loop
+              muted={isMuted}
+              playsInline
+              // Only fetch metadata until the card is active; the poster covers the
+              // frame until the stream is ready, so we never flash a wrong/black
+              // frame during a fast scroll.
+              preload={isActive ? "auto" : "metadata"}
+              className="absolute inset-0 h-full w-full bg-black object-contain object-center"
+              poster={video.thumbnail_url || undefined}
+            />
+          </div>
+        </div>
       )}
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 pointer-events-none" />

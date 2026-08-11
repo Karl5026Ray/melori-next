@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { startOAuthSignIn } from "@/lib/nativeAuth";
+import {
+  hasSeenMediaSetup,
+  postSignupDestination,
+  safeNextPath,
+} from "@/lib/mediaSetupMarker";
 
 // /register — the canonical signup surface.
 //   • Free Fan  → create the Supabase account immediately (role "free").
@@ -34,11 +39,10 @@ const SNAPPD_PAYMENT_LINK =
 function RegisterInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const nextParam = params.get("next");
-  const next =
-    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
-      ? nextParam
-      : "/music";
+  // Single source of truth for redirect validation. This page used to carry its
+  // own weaker prefix check, which let `/\evil.example` through — the two must
+  // not be allowed to drift, so there is only one implementation now.
+  const next = safeNextPath(params.get("next"));
 
   // Preselect the signup tier from ?tier= (deep-linked from the M-button Signup
   // menu). Falls back to "free" for any unknown value.
@@ -179,7 +183,10 @@ function RegisterInner() {
         /* seeded later */
       }
 
-      router.push(next);
+      // Newly created free account → offer the one-time camera/microphone
+      // setup step before the page they were heading to. Once this device has
+      // been through it, this is a no-op and they go straight to `next`.
+      router.push(postSignupDestination(next, hasSeenMediaSetup()));
     } catch (err: any) {
       setError(err?.message ?? "Could not create your account.");
       setLoading(false);

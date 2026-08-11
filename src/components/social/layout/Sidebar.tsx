@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -52,7 +51,6 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  const [concertSoon, setConcertSoon] = useState(false);
 
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-brand-border bg-brand-background z-20 shrink-0">
@@ -67,24 +65,16 @@ export function Sidebar() {
           Go Live
         </Link>
 
-        {/* Concert (coming soon) — teal, sits right under Go Live. This will
-           become the TikTok-style "battle mode" head-to-head live concert
-           feature. Pressing it reveals a "Coming soon" notice for now. */}
-        <button
-          type="button"
-          onClick={() => setConcertSoon(true)}
+        {/* Concert has a dedicated creation surface while reusing the
+           server-authoritative live-room engine underneath. */}
+        <Link
+          href="/social/concert/create"
           title="Concert"
           className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-2 bg-teal-500 text-white transition-colors hover:bg-teal-400"
         >
           <Swords className="w-4 h-4" />
           Concert
-        </button>
-        {concertSoon && (
-          <div className="mb-6 rounded-xl border border-teal-500/40 bg-teal-500/10 px-3 py-2 text-center text-xs text-teal-200">
-            <span className="font-semibold">Concert is coming soon.</span> Live
-            head-to-head battle concerts — stay tuned.
-          </div>
-        )}
+        </Link>
 
         <nav className="space-y-1">
           {navItems.map((item) => {

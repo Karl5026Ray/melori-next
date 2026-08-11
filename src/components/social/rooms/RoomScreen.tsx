@@ -57,6 +57,9 @@ import CinemaChat from "@/components/social/cinema/CinemaChat";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { buildCinemaSlotAssignments, type CinemaReservation } from "@/lib/roomMediaPolicy";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
+import { GiftPicker } from "@/components/social/gifts/GiftPicker";
+import { GiftOverlay } from "@/components/social/gifts/GiftOverlay";
+import { isConcertRoom, type GiftSignal } from "@/lib/gifting";
 import {
   ChevronDown,
   Share2,
@@ -89,6 +92,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
   const [space, setSpace] = useState<Space | null>(null);
   const isCinema = space?.room_format === "cinema";
+  // PubNub callbacks are intentionally long-lived; use a ref so a signal
+  // cannot render a gift in a non-Concert room even if the room object changes
+  // after the presence subscription was created.
+  const roomFormatRef = useRef<Space["room_format"]>(null);
+  roomFormatRef.current = space?.room_format ?? null;
 
   // Where every exit from this room leads. Cinema rooms are `spaces` rows and
   // render at this same route, so without this they'd dump the viewer into
@@ -143,6 +151,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
+  const [activeGift, setActiveGift] = useState<GiftSignal | null>(null);
   // Targeted reaction bursts, keyed by the target participant's user id. Each
   // value is a list of unique burst keys ("<ts>-<seq>:<emoji>"). Rendered over
   // that person's avatar in StageGrid, separate from the center-screen bursts.
@@ -1236,6 +1245,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               setPeerHandToast(`✋ ${who} raised their hand`);
               setTimeout(() => setPeerHandToast(null), 2600);
             }
+            if (
+              signal.type === "gift" &&
+              isConcertRoom(roomFormatRef.current) &&
+              signal.gift &&
+              signal.giftSendId &&
+              signal.target
+            ) {
+              setActiveGift({
+                type: "gift",
+                giftSendId: signal.giftSendId,
+                gift: signal.gift,
+                targetId: signal.target,
+                senderName: signal.senderName,
+              });
+            }
           },
           onError: (err) => console.warn("pubnub presence", err),
         });
@@ -1513,6 +1537,17 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             <ChevronDown className="w-7 h-7" strokeWidth={2.5} />
           </Link>
           <div className="flex items-center gap-3 shrink-0">
+            {isJoined && user && isConcertRoom(space.room_format) && (
+              <GiftPicker
+                spaceId={spaceId}
+                hostId={hostId}
+                participants={participants}
+                senderName={user.display_name}
+                onSignal={(signal) => {
+                  setActiveGift(signal);
+                }}
+              />
+            )}
             <button
               type="button"
               onClick={handleShare}
@@ -1959,6 +1994,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       </div>
 
       {/* Floating reaction bursts */}
+      <GiftOverlay signal={activeGift} onFinished={() => setActiveGift(null)} />
+
       {reactions.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 safe-bottom-offset-32 z-30 flex justify-center gap-3">
           {reactions.map((r) => {

@@ -157,8 +157,7 @@ check(
 );
 check(
   "Concert route is a dedicated boundary and does not render RoomScreen",
-  concertRoute.includes("CONCERT_BATTLE_ROOM_FORMAT") &&
-    concertRoute.includes("Generic Spaces") &&
+  concertRoute.includes("ConcertBattleSetup") &&
     !/import\s+RoomScreen/.test(concertRoute) &&
     !/return\s+<RoomScreen/.test(concertRoute),
 );

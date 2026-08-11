@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/social/layout/Sidebar";
+import { BattleInviteInbox } from "@/components/social/concert/BattleInviteInbox";
 import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default function SocialLayout({
           bar) out of view. dvh tracks the actual visible area. */}
       <div className="flex min-h-[calc(100dvh-4rem)] bg-melori-void text-melori-text">
         <Sidebar />
+        <BattleInviteInbox />
         {/* min-w-0: a flex item's default min-width is `auto`, which means
             it refuses to shrink below its content's intrinsic width. On
             mobile the Sidebar is `hidden`, but this wrapper is still a flex

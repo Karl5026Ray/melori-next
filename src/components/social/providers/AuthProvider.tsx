@@ -13,6 +13,10 @@ import { signOutThisDevice } from "@/lib/authSession";
 import { authFetch } from "@/lib/authClient";
 import { Profile } from "@/types/social";
 
+type BrowserTestWindow = Window & {
+  __MELORI_E2E_AUTH_USER_ID__?: string;
+};
+
 interface AuthContextType {
   user: Profile | null;
   isLoading: boolean;
@@ -110,6 +114,34 @@ export function SocialAuthProvider({
 
   useEffect(() => {
     let cancelled = false;
+
+    // The request-mocked Playwright suite marks its browser before the bundle
+    // loads. This is intentionally runtime-only (not a public build variable);
+    // API authorization still requires a token and never trusts this value.
+    const browserTestUserId =
+      typeof window === "undefined"
+        ? ""
+        : (window as BrowserTestWindow).__MELORI_E2E_AUTH_USER_ID__ ?? "";
+    if (browserTestUserId) {
+      userIdRef.current = browserTestUserId;
+      setUser({
+        id: browserTestUserId,
+        username: "concert_initiator",
+        display_name: "Concert Initiator",
+        avatar_url: null,
+        role: "superfan",
+        bio: null,
+        verified: true,
+        followers_count: 0,
+        following_count: 0,
+        created_at: new Date().toISOString(),
+      });
+      setProfileError(null);
+      setIsLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Resolve a session into a loaded profile. Profile loading is deferred out
     // of the auth callback with setTimeout(0): @supabase/supabase-js runs the

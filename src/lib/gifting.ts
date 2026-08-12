@@ -2,7 +2,7 @@ import type { SpaceParticipant } from "@/types/social";
 
 export const COIN_PACK_SOURCE = "melorimusic.org/coin-pack";
 
-export type GiftMediaKind = "video" | "image";
+export type GiftMediaKind = "video" | "image" | "model";
 
 export interface GiftCatalogItem {
   id: string;
@@ -24,6 +24,7 @@ export interface GiftSignal {
 
 export function giftMediaKind(assetUrl: string): GiftMediaKind {
   const pathname = assetUrl.split("?")[0].toLowerCase();
+  if (/\.glb$/.test(pathname)) return "model";
   return /\.(mp4|webm|mov|m4v)$/.test(pathname) ? "video" : "image";
 }
 

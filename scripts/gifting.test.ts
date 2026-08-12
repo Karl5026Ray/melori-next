@@ -21,6 +21,7 @@ console.log("\nGifting pure contracts\n");
 
 check("MP4 catalog assets render as video", giftMediaKind("/gifts/trumpet_packed.mp4"), "video");
 check("animated GIF catalog assets render as images", giftMediaKind("/gifts/spark.gif?cache=1"), "image");
+check("GLB catalog assets render as a 3D model", giftMediaKind("/gifts/record_player.glb"), "model");
 check(
   "active Concert participant can send to active speaker",
   canSendGiftInRoom({

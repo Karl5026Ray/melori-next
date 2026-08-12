@@ -53,6 +53,15 @@ export function GiftPicker({
     }
   }, [targets, targetId]);
 
+  // @google/model-viewer registers a browser-only custom element at import
+  // time, so it must never load during SSR — pull it in lazily, client-side,
+  // only once the catalog actually has a GLB gift to thumbnail.
+  useEffect(() => {
+    if (gifts.some((gift) => giftMediaKind(gift.asset_url) === "model")) {
+      void import("@google/model-viewer");
+    }
+  }, [gifts]);
+
   async function openPicker() {
     setOpen(true);
     setError("");
@@ -162,7 +171,7 @@ export function GiftPicker({
                 {(["spark", "glow", "epic"] as const).map((tier) => {
                   const tierGifts = gifts.filter((g) => g.tier === tier);
                   if (!tierGifts.length) return null;
-                  return <div key={tier} className="mb-4"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-melori-muted">{tier}</h4><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{tierGifts.map((gift) => <button key={gift.id} type="button" disabled={!targetId || !!sending} onClick={() => sendGift(gift)} className="min-h-11 overflow-hidden rounded-xl border border-melori-border bg-black/20 text-left transition hover:border-amber-300 disabled:opacity-50" data-testid={`gift-send-${gift.id}`}><span className="flex h-24 items-center justify-center bg-black">{giftMediaKind(gift.asset_url) === "video" ? <video muted playsInline preload="metadata" src={gift.asset_url} className="h-full w-full object-contain" /> : <img src={gift.asset_url} alt="" className="h-full w-full object-contain" />}</span><span className="block p-2 text-sm font-semibold">{sending === gift.id ? "Sending…" : gift.name}<small className="block font-normal text-amber-200">{gift.price_coins} coins</small></span></button>)}</div></div>;
+                  return <div key={tier} className="mb-4"><h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-melori-muted">{tier}</h4><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{tierGifts.map((gift) => { const kind = giftMediaKind(gift.asset_url); return <button key={gift.id} type="button" disabled={!targetId || !!sending} onClick={() => sendGift(gift)} className="min-h-11 overflow-hidden rounded-xl border border-melori-border bg-black/20 text-left transition hover:border-amber-300 disabled:opacity-50" data-testid={`gift-send-${gift.id}`}><span className="flex h-24 items-center justify-center bg-black">{kind === "video" ? <video muted playsInline preload="metadata" src={gift.asset_url} className="h-full w-full object-contain" /> : kind === "model" ? <model-viewer src={gift.asset_url} alt="" auto-rotate camera-controls={false} disable-zoom interaction-prompt="none" loading="lazy" reveal="auto" className="h-full w-full" /> : <img src={gift.asset_url} alt="" className="h-full w-full object-contain" />}</span><span className="block p-2 text-sm font-semibold">{sending === gift.id ? "Sending…" : gift.name}<small className="block font-normal text-amber-200">{gift.price_coins} coins</small></span></button>; })}</div></div>;
                 })}
                 {!gifts.length && <p className="py-8 text-center text-sm text-melori-muted">No gifts are available right now.</p>}
               </>

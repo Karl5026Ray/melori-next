@@ -26,13 +26,14 @@ export async function GET(req: NextRequest) {
     );
     if (expireError) throw expireError;
 
-    const { data, error } = await supabase
+    // concert_battle_invites.space_id references concert_battles(space_id),
+    // not spaces(id) directly — there is no FK from this table straight to
+    // `spaces` for PostgREST to walk, so `spaces!concert_battle_invites_space_id_fkey`
+    // cannot be embedded here. Fetch the invite rows plain and join sender
+    // profiles and spaces manually by id instead.
+    const { data: inviteRows, error } = await supabase
       .from("concert_battle_invites")
-      .select(
-        `id, space_id, sender_id, recipient_id, status, expires_at, created_at,
-         sender:profiles!concert_battle_invites_sender_id_fkey(id, display_name, username, avatar_url, role, verified),
-         space:spaces!concert_battle_invites_space_id_fkey(id, title, topic, status, room_format)`,
-      )
+      .select("id, space_id, sender_id, recipient_id, status, expires_at, created_at")
       .eq("recipient_id", recipientId)
       .eq("status", "pending")
       .gt("expires_at", new Date().toISOString())
@@ -40,13 +41,44 @@ export async function GET(req: NextRequest) {
       .limit(20);
     if (error) throw error;
 
+    const rows = inviteRows ?? [];
+    const senderIds = Array.from(new Set(rows.map((row) => row.sender_id)));
+    const spaceIds = Array.from(new Set(rows.map((row) => row.space_id)));
+
+    const [sendersResult, spacesResult] = await Promise.all([
+      senderIds.length
+        ? supabase
+            .from("profiles")
+            .select("id, display_name, username, avatar_url, role, verified")
+            .in("id", senderIds)
+        : Promise.resolve({ data: [], error: null }),
+      spaceIds.length
+        ? supabase
+            .from("spaces")
+            .select("id, title, topic, status, room_format")
+            .in("id", spaceIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (sendersResult.error) throw sendersResult.error;
+    if (spacesResult.error) throw spacesResult.error;
+
+    const senderById = new Map((sendersResult.data ?? []).map((sender) => [sender.id, sender]));
+    const spaceById = new Map((spacesResult.data ?? []).map((space) => [space.id, space]));
+
     // The relationship filter is intentionally post-query: it keeps this
     // recipient-only table query straightforward while refusing stale/non-battle
     // envelope rows from the alert surface.
-    const invites = (data ?? []).filter((invite) => {
-      const space = invite.space as { status?: string; room_format?: string } | null;
-      return space?.status === "live" && space.room_format === "versus_battle";
-    });
+    const invites = rows
+      .map((invite) => ({
+        ...invite,
+        sender: senderById.get(invite.sender_id) ?? null,
+        space: spaceById.get(invite.space_id) ?? null,
+      }))
+      .filter((invite) => {
+        const space = invite.space as { status?: string; room_format?: string } | null;
+        return space?.status === "live" && space.room_format === "versus_battle";
+      });
+
     return NextResponse.json(
       { invites, server_now: new Date().toISOString() },
       { headers: { "Cache-Control": "no-store" } },

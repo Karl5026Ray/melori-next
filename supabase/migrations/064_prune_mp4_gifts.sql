@@ -1,4 +1,16 @@
-delete from public.gifts
+-- 064_prune_mp4_gifts.sql
+-- Retire the 13 legacy MP4 gifts seeded in migration 058 in favor of the
+-- newer GLB-based catalog (see migration 063).
+--
+-- IMPORTANT: We soft-deactivate rather than hard-delete. `public.gift_sends`
+-- references `public.gifts(id)` with the default ON DELETE NO ACTION behavior
+-- (see migration 058), so any gift that has ever been sent cannot be deleted
+-- without raising a foreign-key violation and aborting this migration. Setting
+-- `active = false` removes the gifts from the purchasable catalog (the app and
+-- RLS policies filter on `active = true`) while preserving the gift_sends
+-- ledger history that still references these ids.
+update public.gifts
+set active = false
 where id in (
   '1ce14328-89e9-447f-881e-64539c074b5c',
   '925882e0-354b-483d-9143-a4cca10cc9aa',

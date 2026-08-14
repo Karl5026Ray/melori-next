@@ -46,6 +46,7 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.5.0",
+    "@google/model-viewer": "^4.1.0",
     "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",

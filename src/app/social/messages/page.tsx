@@ -115,11 +115,12 @@ export default function MessagesPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full animate-fade-in">
-      {/* Live-presence strip pinned to the top of Messages. It used to live
-          at the top of Mirror; hosting it here keeps active/community avatars
-          adjacent to the DMs that reach them. */}
+      {/* Online-users strip pinned to the top of Messages: each friend's
+          avatar lights up when they sign on, so you can find them and open a
+          conversation. showLiveRooms=false drops the live-broadcast rings —
+          those belong to Mirror's discovery surface, not the inbox. */}
       <div className="shrink-0 border-b border-melori-border">
-        <OnlineNowRow />
+        <OnlineNowRow showLiveRooms={false} />
       </div>
       <div className="flex flex-1 min-h-0">
       <div className="w-full md:w-80 border-r border-melori-border bg-melori-void flex flex-col">

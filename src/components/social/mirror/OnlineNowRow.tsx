@@ -61,22 +61,36 @@ const STATUS_ICONS = {
   clapperboard: Clapperboard,
 } as const;
 
-// The horizontal "online now" ring row that sits at the very top of Melori
-// Mirror — Instagram-Stories-style circles of who is on Melori right now.
+// The horizontal "online now" ring row — Instagram-Stories-style circles of
+// who is on Melori right now.
 //
-// It shows two things, live rooms first:
+// It shows two things:
 //   - LIVE rooms (spaces where status='live'): a gradient "live" ring; tapping
-//     it deep-links straight into that room.
+//     it deep-links straight into that room. Discovery-oriented.
 //   - ONLINE members (signed-in and recently active via the presence heartbeat,
-//     but not hosting a room): a subtler ring linking to their profile. This is
-//     what makes other online members appear here; previously the row only ever
-//     showed live-room hosts, so members who were merely online never showed up.
+//     but not hosting a room): a subtler ring linking to their profile. This
+//     is the "user pill lights up when a friend signs on" surface.
+//
+// `showLiveRooms` toggles the first section. Default true preserves the
+// original discovery-first layout for any Mirror-style placement; the Messages
+// page passes false so the strip is pure user pills, framed as "find your
+// people" rather than "find something to join."
+//
+// `friendsOnly` restricts the user pills to the caller's MUTUAL follows — the
+// people the caller both follows and is followed by. Fires the API with
+// scope=friends; anonymous callers get nobody back and see the empty state.
 //
 // Data source is /api/mirror/live; we poll it on a light interval so the row
 // tracks who's around without a reload, and we send our own presence heartbeat
 // so this viewer shows up in everyone else's row too. When nobody is around we
 // show a subtle "be the first" prompt rather than hiding the row.
-export default function OnlineNowRow() {
+export default function OnlineNowRow({
+  showLiveRooms = true,
+  friendsOnly = false,
+}: {
+  showLiveRooms?: boolean;
+  friendsOnly?: boolean;
+} = {}) {
   const [rooms, setRooms] = useState<MirrorLiveRoom[]>([]);
   const [members, setMembers] = useState<MirrorOnlineMember[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -86,7 +100,10 @@ export default function OnlineNowRow() {
 
     async function load() {
       try {
-        const res = await authFetch("/api/mirror/live", { cache: "no-store" });
+        const url = friendsOnly
+          ? "/api/mirror/live?scope=friends"
+          : "/api/mirror/live";
+        const res = await authFetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data: {
           live?: MirrorLiveRoom[];
@@ -110,9 +127,10 @@ export default function OnlineNowRow() {
       active = false;
       clearInterval(t);
     };
-  }, []);
+  }, [friendsOnly]);
 
-  const isEmpty = rooms.length === 0 && members.length === 0;
+  const visibleRooms = showLiveRooms ? rooms : [];
+  const isEmpty = visibleRooms.length === 0 && members.length === 0;
 
   return (
     <div className="w-full border-b border-white/10 bg-melori-void/80 px-4 py-4 backdrop-blur">
@@ -147,7 +165,7 @@ export default function OnlineNowRow() {
           </Link>
         ) : (
           <>
-            {rooms.map((room) => {
+            {visibleRooms.map((room) => {
               const name =
                 room.host?.display_name ||
                 room.host?.username ||

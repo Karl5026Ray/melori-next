@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { VideoCard } from "@/components/social/video/VideoCard";
-import OnlineNowRow from "./OnlineNowRow";
 import type { SocialVideo } from "@/types/social";
 import {
   canClearManualNavigationGuard,
@@ -279,11 +278,9 @@ export default function MirrorFeed({
 
   return (
     // Outer column fills the visible viewport (100dvh minus the 4rem header).
-    // Row 1: a COMPACT online-now strip (auto height, not a full screen).
-    // Row 2: the video snap-scroller, which takes all remaining space and
-    // therefore opens ON THE FIRST VIDEO — previously the ring row was its own
-    // full-height snap page, so the feed opened on an near-empty screen and you
-    // had to scroll a whole viewport to see any content.
+    // Contains only the video snap-scroller now — the live-presence strip
+    // moved to /social/messages. The scroller therefore opens directly on the
+    // first video with no header row above it.
     <div
       // Fill the space BETWEEN the fixed header (top, 4rem) and the fixed
       // bottom chrome. `--mirror-bottom` is the shared tab-bar + default
@@ -292,27 +289,23 @@ export default function MirrorFeed({
       // collapse.
       className="mirror-viewport absolute inset-x-0 top-0 flex w-full flex-col bg-melori-void"
     >
-      {/* Compact live strip. Fixed, shrink-0, scrolls only horizontally. */}
-      <div className="shrink-0">
-        <OnlineNowRow />
-      </div>
-
       {/* Community lives INSIDE the Mirror now (moved off the side nav). A
           floating pill on the top-left keeps the right edge clear for each
           card's mute toggle. z-30 sits above the video but below any modal. */}
       <Link
         href="/social/community"
         aria-label="Community"
-        className="absolute left-3 top-16 z-30 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-opacity hover:opacity-90"
+        className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-opacity hover:opacity-90"
       >
         <MessagesSquare className="h-4 w-4" />
         Community
       </Link>
 
       {videos.length === 0 ? (
-        // Empty feed state (social_videos has no rows yet) — fills the space
-        // below the strip so Mirror never shows a blank screen.
-        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        // Empty feed state (social_videos has no rows yet). Anchored to the
+        // bottom of the viewport rather than centered so the copy doesn't
+        // crowd the middle of the screen next to the transport controls.
+        <div className="flex flex-1 flex-col items-center justify-end px-6 pb-10 text-center">
           <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-melori-elevated">
             <Compass className="h-10 w-10 text-melori-muted" />
           </div>

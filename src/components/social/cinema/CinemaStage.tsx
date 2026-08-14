@@ -98,7 +98,7 @@ function CameraSeat({
     </>
   );
 
-  const className = `relative block aspect-[9/16] w-full min-w-0 overflow-hidden rounded-xl border ${
+  const className = `relative block aspect-video w-full min-w-0 overflow-hidden rounded-xl border ${
     isHost ? "border-cinema-gold/70" : "border-cinema-border"
   } ${isSpeaking ? "ring-1 ring-melori-success/60" : ""}`;
 

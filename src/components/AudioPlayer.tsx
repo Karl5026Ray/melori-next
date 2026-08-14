@@ -135,7 +135,15 @@ function DesktopBar() {
   const fraction = duration > 0 ? currentTime / duration : 0;
 
   return (
-    <div className="hidden md:block fixed bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur">
+    <div
+      // translate3d + will-change force the desktop bar onto its own compositor
+      // layer. Without this promotion, iOS Safari and WKWebView repaint the
+      // fixed bar on the same layer as the scrolling <main> and it shears with
+      // momentum scroll — the pill appears to grab lines of text before
+      // snapping back to its anchor.
+      className="hidden md:block fixed bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur"
+      style={{ transform: "translate3d(0,0,0)", willChange: "transform" }}
+    >
       {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
       {current && sampleEnded && (
         <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
@@ -984,12 +992,15 @@ function FloatingPlayer() {
         // keeps them fixed when the panel expands or collapses — the pill grows
         // and shrinks in place instead of being re-placed a frame later.
         ...anchorStyle,
-        // Only a live drag transforms; the rest of the time the element sits on
-        // its anchor with no transform at all.
+        // translate3d(0,0,0) as the base keeps the pill on its own compositor
+        // layer at all times so momentum-scrolling the feed underneath cannot
+        // drag the pill's paint with it. Without this the fixed pill would
+        // visibly latch onto lines of text for a frame during rubber-band
+        // scroll on iOS/WKWebView, then snap back.
         transform: dragging
           ? `translate3d(${drag.dx}px, ${drag.dy}px, 0)`
-          : undefined,
-        willChange: dragging ? "transform" : undefined,
+          : "translate3d(0,0,0)",
+        willChange: "transform",
         WebkitUserSelect: "none",
         visibility: mounted ? "visible" : "hidden",
       }}

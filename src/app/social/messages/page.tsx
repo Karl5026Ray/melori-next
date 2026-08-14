@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { NewMessageModal } from "@/components/social/messages/NewMessageModal";
+import OnlineNowRow from "@/components/social/mirror/OnlineNowRow";
 import { MessageSquare, PenSquare, Search } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -113,7 +114,14 @@ export default function MessagesPage() {
   const visible = filterBySearch(tab === "primary" ? primary : requests);
 
   return (
-    <div className="flex-1 flex h-full animate-fade-in">
+    <div className="flex-1 flex flex-col h-full animate-fade-in">
+      {/* Live-presence strip pinned to the top of Messages. It used to live
+          at the top of Mirror; hosting it here keeps active/community avatars
+          adjacent to the DMs that reach them. */}
+      <div className="shrink-0 border-b border-melori-border">
+        <OnlineNowRow />
+      </div>
+      <div className="flex flex-1 min-h-0">
       <div className="w-full md:w-80 border-r border-melori-border bg-melori-void flex flex-col">
         <div className="p-4 border-b border-melori-border">
           <div className="flex items-center justify-between mb-4">
@@ -211,6 +219,7 @@ export default function MessagesPage() {
         </div>
       </div>
 
+      </div>
       {showNew && <NewMessageModal onClose={() => setShowNew(false)} />}
     </div>
   );

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { NewMessageModal } from "@/components/social/messages/NewMessageModal";
 import OnlineNowRow from "@/components/social/mirror/OnlineNowRow";
-import { MessageSquare, PenSquare, Search } from "lucide-react";
+import { NotificationSettings } from "@/components/social/messages/NotificationSettings";
+import { Bell, MessageSquare, PenSquare, Search } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 
@@ -22,6 +23,7 @@ export default function MessagesPage() {
   const [tab, setTab] = useState<"primary" | "requests">("primary");
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [showNotifSettings, setShowNotifSettings] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   // Deep link: /social/messages?to=<profileId> opens (or creates) the 1:1 thread
@@ -129,15 +131,36 @@ export default function MessagesPage() {
         <div className="p-4 border-b border-melori-border">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold">Messages</h2>
-            <button
-              onClick={() => setShowNew(true)}
-              className="p-2 hover:bg-melori-elevated rounded-lg transition text-brand-primary"
-              aria-label="New message"
-              title="New message"
-            >
-              <PenSquare className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowNotifSettings((v) => !v)}
+                aria-pressed={showNotifSettings}
+                aria-label="Notification sounds"
+                title="Notification sounds"
+                className={`p-2 rounded-lg transition ${
+                  showNotifSettings
+                    ? "bg-melori-elevated text-brand-primary"
+                    : "text-melori-muted hover:bg-melori-elevated hover:text-brand-primary"
+                }`}
+              >
+                <Bell className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowNew(true)}
+                className="p-2 hover:bg-melori-elevated rounded-lg transition text-brand-primary"
+                aria-label="New message"
+                title="New message"
+              >
+                <PenSquare className="w-5 h-5" />
+              </button>
+            </div>
           </div>
+
+          {showNotifSettings && (
+            <div className="mb-3">
+              <NotificationSettings />
+            </div>
+          )}
 
           <div className="relative mb-3">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-melori-muted" />

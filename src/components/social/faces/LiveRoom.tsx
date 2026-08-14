@@ -46,7 +46,7 @@ import {
   VideoOff,
   SwitchCamera,
   X,
-  Heart,
+  Music,
   Radio,
   Loader2,
   Users,
@@ -1132,9 +1132,9 @@ export default function LiveRoom({
               <span className="max-w-[8rem] truncate text-sm font-semibold text-white sm:max-w-[10rem]">
                 {hostName}
               </span>
-              {/* Hearts / likes total, live-updating, directly under the host name. */}
+              {/* Likes total, live-updating, directly under the host name. */}
               <span className="flex items-center gap-1 text-[11px] font-medium leading-none text-white/85">
-                <Heart className="h-3 w-3 fill-current text-brand-primary" />
+                <Music className="h-3 w-3 fill-current text-brand-primary" />
                 {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
               </span>
             </div>
@@ -1535,7 +1535,7 @@ export default function LiveRoom({
         </button>
       )}
 
-      {/* Reaction hearts — spawn at the tap point and rise/fade. Full-stage,
+      {/* Reaction glyphs — spawn at the tap point and rise/fade. Full-stage,
           click-through layer so it never blocks controls or chat. */}
       <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {hearts.map((h) => (
@@ -1544,7 +1544,7 @@ export default function LiveRoom({
             className="faces-heart absolute text-3xl"
             style={{ left: h.x, top: h.y, transform: "translate(-50%, -50%)" }}
           >
-            ❤️
+            🎵
           </span>
         ))}
       </div>

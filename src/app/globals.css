@@ -260,10 +260,21 @@ a {
   :root { --mirror-bottom: 6rem; }
 }
 /* Cards fit the actual visible slot. The vh fallback precedes dvh so an older
-   browser never drops the height declaration entirely. */
+   browser never drops the height declaration entirely.
+
+   AudioPlayer hides itself on the Mirror route (background music would fight
+   each card's soundtrack), so the 4rem + 0.5rem the base `--mirror-bottom`
+   reserved for the pill is dead space here. Override the variable on the
+   viewport so the feed reclaims that room: mobile only clears the tab bar,
+   desktop only leaves a small breathing gap. The override cascades to
+   .mirror-video-item automatically. */
 .mirror-viewport {
+  --mirror-bottom: var(--mobile-tabbar-clearance);
   height: calc(100vh - var(--mirror-top) - var(--mirror-bottom));
   height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom));
+}
+@media (min-width: 768px) {
+  .mirror-viewport { --mirror-bottom: 0.5rem; }
 }
 .mirror-video-item {
   height: 100%;

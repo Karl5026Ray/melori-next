@@ -16,6 +16,7 @@ import {
 } from "@/lib/callClient";
 import { MediaPermissionNotice } from "@/components/media/MediaPermissionNotice";
 import { type CaptureErrorInfo } from "@/lib/mediaCapture";
+import { playNotificationSound } from "@/lib/notifications";
 import {
   ArrowLeft,
   Phone,
@@ -193,6 +194,9 @@ export default function ChatPage() {
         onIncoming: (info) => {
           setCallMode(info.mode);
           setIncoming(true);
+          playNotificationSound(
+            info.mode === "video" ? "videoCall" : "phoneCall",
+          );
         },
         onEnded: () => {
           setIncoming(false);

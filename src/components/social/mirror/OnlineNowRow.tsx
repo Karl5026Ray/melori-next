@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Mic2, Radio, UserRound, Video } from "lucide-react";
 import CoverImage from "@/components/CoverImage";
 import { authFetch } from "@/lib/authClient";
+import { playNotificationSound } from "@/lib/notifications";
 import {
   getLiveRoomPresentation,
   ONLINE_PRESENCE_PRESENTATION,
@@ -94,6 +95,9 @@ export default function OnlineNowRow({
   const [rooms, setRooms] = useState<MirrorLiveRoom[]>([]);
   const [members, setMembers] = useState<MirrorOnlineMember[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Track the previous member id set so we can chime once per polling cycle
+  // when new arrivals show up. Skip the first load — everyone is "new" then.
+  const prevMemberIdsRef = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -111,7 +115,17 @@ export default function OnlineNowRow({
         } = await res.json();
         if (active) {
           setRooms(data.live ?? []);
-          setMembers(data.members ?? []);
+          const nextMembers = data.members ?? [];
+          setMembers(nextMembers);
+          const nextIds = new Set(nextMembers.map((m) => m.id));
+          const prev = prevMemberIdsRef.current;
+          if (prev) {
+            // One chime per cycle regardless of how many people arrived —
+            // avoids a flurry of overlapping tones on a busy refresh.
+            const arrived = [...nextIds].some((id) => !prev.has(id));
+            if (arrived) playNotificationSound("onlineNow");
+          }
+          prevMemberIdsRef.current = nextIds;
         }
       } catch {
         /* transient — keep whatever we already have */

@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
+import { playNotificationSound } from "@/lib/notifications";
 
 // Total unread DM count for the signed-in member.
 //
@@ -22,14 +23,20 @@ export function useUnreadMessages(): number {
   const pathname = usePathname();
   const [signedIn, setSignedIn] = useState(false);
   const [count, setCount] = useState(0);
+  // Stash the caller's own id in a ref so the realtime INSERT handler can
+  // skip the chime for messages they just sent themselves.
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     void supabase.auth.getSession().then(({ data }) => {
-      if (active) setSignedIn(!!data.session?.user);
+      if (!active) return;
+      setSignedIn(!!data.session?.user);
+      userIdRef.current = data.session?.user?.id ?? null;
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setSignedIn(!!session?.user);
+      userIdRef.current = session?.user?.id ?? null;
     });
     return () => {
       active = false;
@@ -63,7 +70,11 @@ export function useUnreadMessages(): number {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        () => {
+        (payload) => {
+          const row = payload.new as { sender_id?: string } | undefined;
+          if (row?.sender_id && row.sender_id !== userIdRef.current) {
+            playNotificationSound("message");
+          }
           void refresh();
         },
       )

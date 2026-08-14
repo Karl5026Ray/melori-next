@@ -76,14 +76,20 @@ const STATUS_ICONS = {
 // page passes false so the strip is pure user pills, framed as "find your
 // people" rather than "find something to join."
 //
+// `friendsOnly` restricts the user pills to the caller's MUTUAL follows — the
+// people the caller both follows and is followed by. Fires the API with
+// scope=friends; anonymous callers get nobody back and see the empty state.
+//
 // Data source is /api/mirror/live; we poll it on a light interval so the row
 // tracks who's around without a reload, and we send our own presence heartbeat
 // so this viewer shows up in everyone else's row too. When nobody is around we
 // show a subtle "be the first" prompt rather than hiding the row.
 export default function OnlineNowRow({
   showLiveRooms = true,
+  friendsOnly = false,
 }: {
   showLiveRooms?: boolean;
+  friendsOnly?: boolean;
 } = {}) {
   const [rooms, setRooms] = useState<MirrorLiveRoom[]>([]);
   const [members, setMembers] = useState<MirrorOnlineMember[]>([]);
@@ -94,7 +100,10 @@ export default function OnlineNowRow({
 
     async function load() {
       try {
-        const res = await authFetch("/api/mirror/live", { cache: "no-store" });
+        const url = friendsOnly
+          ? "/api/mirror/live?scope=friends"
+          : "/api/mirror/live";
+        const res = await authFetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data: {
           live?: MirrorLiveRoom[];
@@ -118,7 +127,7 @@ export default function OnlineNowRow({
       active = false;
       clearInterval(t);
     };
-  }, []);
+  }, [friendsOnly]);
 
   const visibleRooms = showLiveRooms ? rooms : [];
   const isEmpty = visibleRooms.length === 0 && members.length === 0;

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 // tolerates several missed beats before a member drops off the row.
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
-// GET /api/mirror/live
+// GET /api/mirror/live?scope=friends
 // -------------------------------------------------------------------------
 // The "online now" ring row at the top of Melori Mirror. It returns two lists:
 //
@@ -27,9 +27,16 @@ const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 //             profile. This is what makes other online members show up in the
 //             row (previously it only ever showed live-room hosts).
 //
+// scope=friends restricts `members` to the caller's MUTUAL follows (a pair
+// where caller follows X AND X follows caller). Used by the Messages page's
+// "find your friends" strip. Requires auth; returns members=[] for anonymous.
+// The live-rooms list is untouched by this scope — anyone hosting a room is
+// still discoverable via Mirror.
+//
 // Runs on the admin client so it is not gated by the per-row profiles RLS the
-// anonymous client is subject to. Auth is optional: a Bearer token only lets us
-// drop the caller from the online-members list so they don't see themselves.
+// anonymous client is subject to. Auth is optional (except for scope=friends):
+// a Bearer token lets us drop the caller from the online-members list so they
+// don't see themselves.
 export async function GET(req: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
@@ -99,14 +106,68 @@ export async function GET(req: NextRequest) {
       verified: boolean | null;
       role: string | null;
     }> = [];
+
+    // scope=friends → mutual follows only (X follows caller AND caller follows
+    // X). Anonymous callers get nothing back for this scope; there is nobody to
+    // compute mutuals against.
+    const friendsOnly = req.nextUrl.searchParams.get("scope") === "friends";
+    let mutualIds: Set<string> | null = null;
+    if (friendsOnly) {
+      if (!callerId) {
+        return NextResponse.json(
+          { live, members: [] },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      try {
+        const [followingRes, followersRes] = await Promise.all([
+          supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", callerId),
+          supabase
+            .from("follows")
+            .select("follower_id")
+            .eq("following_id", callerId),
+        ]);
+        const following = new Set(
+          (followingRes.data ?? []).map(
+            (r: { following_id: string }) => r.following_id,
+          ),
+        );
+        const followers = new Set(
+          (followersRes.data ?? []).map(
+            (r: { follower_id: string }) => r.follower_id,
+          ),
+        );
+        mutualIds = new Set(
+          [...following].filter((id) => followers.has(id)),
+        );
+        if (mutualIds.size === 0) {
+          return NextResponse.json(
+            { live, members: [] },
+            { headers: { "Cache-Control": "no-store" } },
+          );
+        }
+      } catch {
+        // Follow-graph unavailable — return zero friends rather than everyone.
+        return NextResponse.json(
+          { live, members: [] },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    }
+
     try {
       const since = new Date(Date.now() - ONLINE_WINDOW_MS).toISOString();
-      const { data: online } = await supabase
+      let query = supabase
         .from("profiles")
         .select("id, display_name, username, avatar_url, verified, role")
         .gte("last_seen_at", since)
         .order("last_seen_at", { ascending: false })
         .limit(40);
+      if (mutualIds) query = query.in("id", [...mutualIds]);
+      const { data: online } = await query;
       members = (online ?? []).filter(
         (m) => m.id !== callerId && !hostIds.has(m.id),
       );

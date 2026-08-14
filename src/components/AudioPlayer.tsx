@@ -81,20 +81,27 @@ export default function AudioPlayer() {
   const pathname = usePathname();
   const onRadio = pathname?.startsWith("/social/radio");
   const inRoom = isMediaRoomRoute(pathname);
+  // Mirror is a video feed that plays its own audio on every card, so the
+  // background music track would fight the card's soundtrack. Treat Mirror
+  // like a room: pause on entry, hide the transport UI.
+  const onMirror = pathname === "/social/mirror" ||
+    pathname?.startsWith("/social/mirror/");
 
-  // Entering a live room pauses background music so it never fights the room's
-  // own audio. Leaving does NOT auto-resume — the listener presses play again.
+  // Entering a live room OR Mirror pauses background music so it never fights
+  // the room's / feed's own audio. Leaving does NOT auto-resume — the listener
+  // presses play again.
   useEffect(() => {
-    if (inRoom) pause();
-  }, [inRoom, pause]);
+    if (inRoom || onMirror) pause();
+  }, [inRoom, onMirror, pause]);
 
   // The Radio page renders full-size controls for the same shared player, so
   // the floating transport there would just be a duplicate set of buttons.
   // Only the UI is hidden — the audio keeps playing from PlayerProvider.
   if (onRadio) return null;
-  // Hidden on room screens. The <audio> element lives in PlayerProvider (mounted
-  // at the layout root), so playback state survives this component rendering null.
-  if (inRoom) return null;
+  // Hidden on room screens and Mirror. The <audio> element lives in
+  // PlayerProvider (mounted at the layout root), so playback state survives
+  // this component rendering null.
+  if (inRoom || onMirror) return null;
 
   return (
     <>

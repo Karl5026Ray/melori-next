@@ -12,7 +12,8 @@ import {
   refreshManualNavigationGuard,
   type ManualNavigationGuard,
 } from "@/lib/mirrorFeedNavigation";
-import { Compass, MessagesSquare } from "lucide-react";
+import { Compass } from "lucide-react";
+import { CommunityToggle } from "@/components/social/community/CommunityToggle";
 
 // Melori Mirror — the TikTok "For You"-style vertical feed.
 //
@@ -289,17 +290,12 @@ export default function MirrorFeed({
       // collapse.
       className="mirror-viewport absolute inset-x-0 top-0 flex w-full flex-col bg-melori-void"
     >
-      {/* Community lives INSIDE the Mirror now (moved off the side nav). A
-          floating pill on the top-left keeps the right edge clear for each
-          card's mute toggle. z-30 sits above the video but below any modal. */}
-      <Link
-        href="/social/community"
-        aria-label="Community"
-        className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-opacity hover:opacity-90"
-      >
-        <MessagesSquare className="h-4 w-4" />
-        Community
-      </Link>
+      {/* Community lives INSIDE the Mirror now (moved off the side nav). The
+          shared toggle pill on the top-left keeps the right edge clear for
+          each card's mute toggle; z-30 sits above the video but below any
+          modal. Renders on /social/community too so tapping there navigates
+          back to Mirror — one pill, two-way toggle. */}
+      <CommunityToggle />
 
       {videos.length === 0 ? (
         // Empty feed state (social_videos has no rows yet). Anchored to the

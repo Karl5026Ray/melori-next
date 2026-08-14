@@ -12,6 +12,7 @@ import {
 import { GenreTabs } from "@/components/social/cinema/GenreTabs";
 import { FeaturedRoom } from "@/components/social/cinema/FeaturedRoom";
 import { LiveRoomTile } from "@/components/social/cinema/LiveRoomTile";
+import { CinemaLandingAudience } from "@/components/social/cinema/CinemaLandingAudience";
 import { StartingSoonList } from "@/components/social/cinema/StartingSoonList";
 
 // Queries Supabase per request; never statically prerendered, and never served
@@ -121,48 +122,93 @@ export default async function CinemaDiscoverPage(props: PageProps) {
           <GenreTabs active={genre} />
         </div>
 
+        {/* Cinema landing mirrors the shape of a Cinema room itself: one big
+            main screen up top, three portrait live tiles beneath, and an
+            audience-style avatar strip at the bottom. The shape is stable
+            whether rooms are live or the house is empty — placeholders slot
+            into the same silhouette so newcomers see what they're about to
+            walk into before they tap anything. */}
         {empty ? (
-          <div className="rounded-2xl border border-dashed border-cinema-border px-6 py-14 text-center">
-            <Clapperboard
-              className="mx-auto mb-3 h-8 w-8 text-cinema-gold-dim"
-              aria-hidden
-            />
-            <p className="text-sm font-medium text-white">
-              {genre ? "Nothing on in this genre yet" : "The house is empty"}
-            </p>
-            <p className="mx-auto mt-1 max-w-xs text-xs text-white/45">
-              {genre
-                ? "Try another genre, or start the first room here."
-                : "No rooms are live right now. Be the one who opens the doors."}
-            </p>
-            <Link
-              href={roomCreateHref(CINEMA_ROOM_FORMAT)}
-              className="mt-5 inline-flex items-center gap-2 rounded-full bg-cinema-gold px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110"
+          <div className="space-y-5">
+            <div
+              aria-label="Cinema main screen — nothing playing"
+              className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-cinema-border bg-cinema-surface/60 text-center"
             >
-              <Plus className="h-4 w-4" aria-hidden />
-              Start a room
-            </Link>
+              <div className="max-w-xs px-6">
+                <Clapperboard
+                  className="mx-auto mb-3 h-8 w-8 text-cinema-gold-dim"
+                  aria-hidden
+                />
+                <p className="text-sm font-medium text-white">
+                  {genre
+                    ? "Nothing on in this genre yet"
+                    : "The house is empty"}
+                </p>
+                <p className="mx-auto mt-1 text-xs text-white/45">
+                  {genre
+                    ? "Try another genre, or start the first room here."
+                    : "No rooms are live right now. Be the one who opens the doors."}
+                </p>
+              </div>
+            </div>
+
+            <div
+              aria-label="Live-room seats — empty"
+              className="grid grid-cols-3 gap-2 sm:gap-3"
+            >
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="aspect-[9/16] w-full rounded-xl border border-dashed border-cinema-border bg-cinema-surface/30"
+                />
+              ))}
+            </div>
+
+            <CinemaLandingAudience live={[]} />
+
+            <div className="pt-2">
+              <Link
+                href={roomCreateHref(CINEMA_ROOM_FORMAT)}
+                className="inline-flex items-center gap-2 rounded-full bg-cinema-gold px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                Start a room
+              </Link>
+            </div>
           </div>
         ) : (
           <>
             {featured && (
-              <section className="mb-7">
+              <section className="mb-5">
                 <FeaturedRoom room={featured} />
               </section>
             )}
 
-            {rest.length > 0 && (
-              <section className="mb-7">
-                <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-white/40">
-                  Live now
-                </h2>
-                <div className="grid grid-cols-2 gap-3">
-                  {rest.map((room) => (
-                    <LiveRoomTile key={room.id} room={room} />
-                  ))}
-                </div>
-              </section>
-            )}
+            {/* Three-across portrait tiles, matching the CinemaStage
+                silhouette inside a room. Always renders exactly three seats
+                so the landing's shape stays stable — empty seats fall back
+                to dashed placeholders. Any fourth+ live room drops into
+                "Starting soon" territory visually. */}
+            <section className="mb-5">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                {rest.slice(0, 3).map((room) => (
+                  <LiveRoomTile key={room.id} room={room} />
+                ))}
+                {Array.from({
+                  length: Math.max(0, 3 - Math.min(rest.length, 3)),
+                }).map((_, i) => (
+                  <div
+                    key={`seat-empty-${i}`}
+                    aria-hidden
+                    className="aspect-[9/16] w-full rounded-xl border border-dashed border-cinema-border bg-cinema-surface/30"
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="mb-7">
+              <CinemaLandingAudience live={live} />
+            </section>
 
             {soon.length > 0 && (
               <section>

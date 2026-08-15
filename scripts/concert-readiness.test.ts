@@ -111,8 +111,14 @@ console.log("\nCRON_SECRET");
   const result = evaluateConcertReadiness({ ...GOOD_ENV, CRON_SECRET: undefined }, GOOD_DB);
   const check = statusOf({ ...GOOD_ENV, CRON_SECRET: undefined }, GOOD_DB, "cron_secret");
   expect(check.status === "fail", "an unset CRON_SECRET is reported");
-  expect(check.severity === "recommended", "CRON_SECRET is advisory: no Concert path is cron-driven today");
-  expect(result.ready, "so an unset CRON_SECRET alone does not block a battle");
+  expect(
+    check.severity === "required",
+    "CRON_SECRET is required: the round-advance cron is the backstop that keeps rounds moving",
+  );
+  expect(
+    !result.ready,
+    "an unset CRON_SECRET blocks a battle, because a round could hang at 00:00",
+  );
 }
 
 console.log("\nMigration 066 objects");

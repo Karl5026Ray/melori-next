@@ -201,17 +201,19 @@ export function evaluateConcertReadiness(
       "required",
       "The secret is shown only once, at key creation. If it was lost, create a new key and update both variables together.",
     ),
-    // Not required for a battle to connect: nothing in the Concert path is
-    // cron-driven today. It is listed because the scheduled routes that keep a
-    // room's presence and cleanup healthy all reject an unauthenticated call,
-    // so an unset value silently disables them.
+    // REQUIRED since the round lifecycle shipped. /api/cron/concert-battle-rounds
+    // is the backstop that finalizes an expired round, opens the intermission,
+    // starts the next round, and completes the battle. Competitors' clients
+    // normally transition instantly, but if both drop, this cron is the only
+    // thing that moves the battle — and without the secret it answers 403, so a
+    // round can hang at 00:00. It also gates the presence/cleanup routes.
     envCheck(
       "cron_secret",
       "Cron secret",
       "CRON_SECRET",
       env.CRON_SECRET,
-      "recommended",
-      "Set any long random value in Vercel; the scheduled routes in vercel.json refuse to run without it.",
+      "required",
+      "Set any long random value in Vercel; /api/cron/concert-battle-rounds and every other scheduled route in vercel.json refuse to run without it, which can leave a round stuck at 00:00.",
     ),
     livekitReachableCheck(livekit),
     giftCatalogCheck(db.activeGiftSlugs),

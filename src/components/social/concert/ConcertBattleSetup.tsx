@@ -260,6 +260,7 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
                     opponent_id: view.battle.opponent_id,
                     status: view.battle.status,
                     current_round: view.battle.current_round ?? 1,
+                    regulation_rounds: 3,
                     phase_ends_at: view.battle.phase_ends_at ?? null,
                   },
                   initiator: view.initiator,
@@ -267,6 +268,9 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
                   viewer_slot: view.viewer_slot,
                   scores: view.scores ?? null,
                 }}
+                // Round transitions are server-side. When the stage reports one,
+                // re-read the battle rather than mutating a local copy.
+                onBattleChanged={() => void refresh()}
               />
             </section>
           ) : null}

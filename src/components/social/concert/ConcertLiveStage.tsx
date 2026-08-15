@@ -25,9 +25,13 @@ import {
 } from "@/lib/concertStage";
 import {
   canConcertBattlePerform,
-  formatConcertBattlePhaseTimer,
   type ConcertBattleStatus,
 } from "@/lib/concertBattle";
+import {
+  formatConcertPhaseCountdown,
+  formatConcertRoundLabel,
+  isConcertPhaseExpired,
+} from "@/lib/concertRounds";
 import type { GiftCatalogItem } from "@/lib/gifting";
 import { ConcertBattleStatusBar } from "./ConcertBattleStatusBar";
 import { ConcertVideoStage, type ConcertCompetitorView } from "./ConcertVideoStage";
@@ -59,6 +63,7 @@ export interface ConcertStageView {
     opponent_id: string | null;
     status: ConcertBattleStatus;
     current_round: number;
+    regulation_rounds?: number | null;
     phase_ends_at: string | null;
   };
   initiator: ConcertStagePerson | null;
@@ -90,7 +95,18 @@ interface RosterRow {
  *  - The score bar starts from the server aggregate and is then advanced by
  *    gift signals, so a viewer who joins mid-battle sees the real total.
  */
-export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
+export function ConcertLiveStage({
+  view,
+  onBattleChanged,
+}: {
+  view: ConcertStageView;
+  /**
+   * Ask the owner of the battle state to re-read it. Round transitions happen
+   * server-side, so the stage never edits the battle it was handed — it reports
+   * that the phase moved and re-reads the truth.
+   */
+  onBattleChanged?: () => void;
+}) {
   const { user } = useAuth();
   const battle = view.battle;
   const spaceId = battle.space_id;
@@ -114,8 +130,10 @@ export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
   const [mirrorLocal, setMirrorLocal] = useState(true);
   const [remoteVideos, setRemoteVideos] = useState<Record<string, HTMLVideoElement>>({});
   const [timerLabel, setTimerLabel] = useState(() =>
-    formatConcertBattlePhaseTimer(battle, Date.now()),
+    formatConcertPhaseCountdown(battle, Date.now()),
   );
+  const [roundBusy, setRoundBusy] = useState(false);
+  const [roundError, setRoundError] = useState<string | null>(null);
   const [heat, setHeat] = useState(0);
 
   const floatSeq = useRef(0);
@@ -188,11 +206,75 @@ export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
 
   // ---- countdown ---------------------------------------------------------
   useEffect(() => {
-    const tick = () => setTimerLabel(formatConcertBattlePhaseTimer(battle, Date.now()));
+    const tick = () => setTimerLabel(formatConcertPhaseCountdown(battle, Date.now()));
     tick();
     const timer = window.setInterval(tick, 1_000);
     return () => window.clearInterval(timer);
   }, [battle]);
+
+  // ---- round transitions -------------------------------------------------
+  // The server owns every transition (see /api/concert/battles/:id/rounds and
+  // the once-a-minute cron backstop). This only asks, and only for the phase it
+  // can currently see — `attemptedPhase` makes that at-most-once per phase, so a
+  // stuck deadline cannot turn into a request loop.
+  const attemptedPhase = useRef<string | null>(null);
+
+  const callRounds = useCallback(
+    async (action: "start" | "advance") => {
+      setRoundError(null);
+      setRoundBusy(true);
+      try {
+        const res = await authFetch(`/api/concert/battles/${spaceId}/rounds`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error ?? "Could not update the round.");
+        }
+        onBattleChanged?.();
+      } catch (reason) {
+        setRoundError(
+          reason instanceof Error ? reason.message : "Could not update the round.",
+        );
+      } finally {
+        setRoundBusy(false);
+      }
+    },
+    [onBattleChanged, spaceId],
+  );
+
+  useEffect(() => {
+    // Only a competitor asks. An audience of hundreds must not all fire the
+    // same transition request the instant a timer expires; the cron covers the
+    // case where neither competitor is connected.
+    if (!isCompetitor) return;
+    const phaseKey = `${battle.status}:${battle.current_round}:${battle.phase_ends_at ?? ""}`;
+    const check = () => {
+      if (attemptedPhase.current === phaseKey) return;
+      if (!isConcertPhaseExpired(battle, Date.now())) return;
+      attemptedPhase.current = phaseKey;
+      void callRounds("advance");
+    };
+    check();
+    const timer = window.setInterval(check, 1_000);
+    return () => window.clearInterval(timer);
+  }, [battle, callRounds, isCompetitor]);
+
+  // A viewer does not drive transitions, but must still SEE them. Re-read the
+  // battle shortly after its deadline instead of waiting out the parent's slow
+  // poll and watching a dead 00:00.
+  useEffect(() => {
+    if (isCompetitor || !onBattleChanged) return;
+    if (!battle.phase_ends_at) return;
+    const delay = Date.parse(battle.phase_ends_at) - Date.now() + 2_500;
+    const timer = window.setTimeout(
+      () => onBattleChanged(),
+      Math.max(1_000, Math.min(delay, 120_000)),
+    );
+    return () => window.clearTimeout(timer);
+  }, [battle.phase_ends_at, isCompetitor, onBattleChanged]);
 
   // ---- LiveKit ------------------------------------------------------------
   useEffect(() => {
@@ -250,6 +332,14 @@ export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
     void joinPresence({
       spaceId,
       uuid: user.id,
+      // Server-published transitions land here. A round ending is the one
+      // event every person in the room must see at the same moment, so it
+      // re-reads the battle immediately instead of waiting for a poll.
+      onSystemSignal: (message: Record<string, unknown>) => {
+        if (disposed) return;
+        const event = typeof message.event === "string" ? message.event : "";
+        if (event.startsWith("concert-")) onBattleChanged?.();
+      },
       onSignal: (signal: SpaceSignal) => {
         if (disposed || signal.type !== "gift" || !signal.gift) return;
         const side = concertSideForTarget({ targetId: signal.target, ...identities });
@@ -375,6 +465,53 @@ export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
     if (battle.initiator_id) setTarget("left");
   }, [target, isCompetitor, battle.initiator_id]);
 
+  // A slim control band, rendered ONLY when it has something to say. It stays
+  // out of the layout during a live round because on a 664px viewport every row
+  // that is always present is height taken from the two video feeds.
+  const isHost = viewerSlot === 1;
+  const showBand =
+    battle.status === "ready" ||
+    battle.status === "round_intermission" ||
+    Boolean(roundError);
+  const roundBand = showBand ? (
+    <div
+      className="flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] bg-[#16161c] px-3 py-1.5"
+      data-testid="concert-round-band"
+      data-battle-status={battle.status}
+    >
+      <p className="min-w-0 truncate text-[11px] font-semibold text-white/70">
+        {roundError ? (
+          <span className="text-[#ff8fa3]" role="alert">
+            {roundError}
+          </span>
+        ) : battle.status === "ready" ? (
+          isHost
+            ? "Both performers are set. Start when you're ready."
+            : "Waiting for the host to start round 1."
+        ) : (
+          <>
+            Next round in{" "}
+            <span className="tabular-nums text-[#f5e56b]">{timerLabel}</span>
+            {viewerSlot
+              ? ` · you are on the ${concertSideForSlot(viewerSlot)} stage`
+              : ""}
+          </>
+        )}
+      </p>
+      {battle.status === "ready" && isHost ? (
+        <button
+          type="button"
+          onClick={() => void callRounds("start")}
+          disabled={roundBusy}
+          className="shrink-0 rounded-full bg-[#ff2d55] px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-white disabled:opacity-50"
+          data-testid="concert-start-round"
+        >
+          {roundBusy ? "Starting…" : "Start round 1"}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <div
       className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0e0e12]"
@@ -393,12 +530,14 @@ export function ConcertLiveStage({ view }: { view: ConcertStageView }) {
         rightScore={scores.right}
         timerLabel={timerLabel}
         isLive={battle.status === "round_active"}
-        roundLabel={
-          viewerSlot
-            ? `You are on the ${concertSideForSlot(viewerSlot)} stage`
-            : `Round ${battle.current_round ?? 1}`
-        }
+        roundLabel={formatConcertRoundLabel({
+          status: battle.status,
+          current_round: battle.current_round ?? 0,
+          regulation_rounds: battle.regulation_rounds ?? 3,
+        })}
       />
+
+      {roundBand}
 
       <ConcertVideoStage
         left={competitorView("left", battle.initiator_id, view.initiator, initiatorIdentityLive)}

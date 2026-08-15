@@ -43,6 +43,11 @@ import {
 import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 import type { FacingMode } from "@/lib/videoMirror";
+import {
+  AUDIO_LEVEL_INTERVAL_MS,
+  audioLevelsChanged,
+  normalizeAudioLevel,
+} from "@/lib/voiceCircles";
 
 type AnyRoom = any;
 type AnyTrack = any;
@@ -119,6 +124,12 @@ export interface JoinVideoOptions {
   // ActiveSpeakersChanged omits the local participant, so we merge it in here).
   // Drives the speaker ring for every tile, host + viewers alike.
   onActiveSpeakersChange?: (identities: string[]) => void;
+  // Continuous per-identity microphone loudness, 0..1, sampled on a timer
+  // (local INCLUDED). ActiveSpeakersChanged is a coarse on/off signal; Cinema's
+  // voice circles need the actual level so a ring can breathe with how loud
+  // someone is rather than snapping between two states. Identities with a
+  // muted or unpublished mic are reported as 0.
+  onAudioLevels?: (levels: Record<string, number>) => void;
   // Fired when the LOCAL participant's publish permission changes at runtime
   // (host/mod approved a stage request via the server SDK). canPublish=true
   // means the viewer may now turn on camera/mic WITHOUT reconnecting.
@@ -567,6 +578,43 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.TrackMuted, refreshSpeakers);
       room.off(RoomEvent.TrackUnmuted, refreshSpeakers);
     });
+
+    // --- Continuous audio levels (volume rings) ---------------------------
+    // LiveKit exposes `audioLevel` per participant but pushes no event for it,
+    // so it has to be sampled. AUDIO_LEVEL_INTERVAL_MS is fast enough to look
+    // live and slow enough to stay off the render hot path; the callback is
+    // skipped entirely when nothing changed meaningfully, so a silent room
+    // costs no re-renders at all.
+    if (opts.onAudioLevels) {
+      const emitLevels = opts.onAudioLevels;
+      let previous: Record<string, number> = {};
+      const sample = () => {
+        const next: Record<string, number> = {};
+        const collect = (participant: any) => {
+          const identity = participant?.identity;
+          if (!identity) return;
+          const micPub = participant.getTrackPublication?.(
+            Track?.Source?.Microphone ?? "microphone",
+          );
+          // No mic, or a muted mic, is silence — not a stale last-known level.
+          const audible = Boolean(micPub) && !micPub?.isMuted;
+          next[identity] = audible ? normalizeAudioLevel(participant.audioLevel) : 0;
+        };
+        collect(room.localParticipant);
+        const remotes =
+          room.remoteParticipants ?? room.participants ?? new Map();
+        remotes.forEach?.((participant: any) => collect(participant));
+        if (!audioLevelsChanged(previous, next)) return;
+        previous = next;
+        emitLevels(next);
+      };
+      const levelTimer = setInterval(sample, AUDIO_LEVEL_INTERVAL_MS);
+      session.cleanups.push(() => {
+        clearInterval(levelTimer);
+        // Leave the UI quiet rather than frozen mid-pulse on disconnect.
+        emitLevels({});
+      });
+    }
 
     // --- Runtime permission change (server-driven promotion) --------------
     // When a host/mod approves a stage request, the server flips canPublish via

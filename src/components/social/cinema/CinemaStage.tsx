@@ -15,8 +15,6 @@ interface CinemaStageProps {
   slots: readonly CinemaCameraSlot[];
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   reactionBursts?: Record<string, string[]>;
-  /** Renders the fixed seats inside the shared Cinema media frame. */
-  embedded?: boolean;
 }
 
 function CameraSeat({
@@ -121,7 +119,6 @@ export function CinemaStage({
   slots,
   onReactToParticipant,
   reactionBursts,
-  embedded = false,
 }: CinemaStageProps) {
   // Caller maps reservations through buildCinemaSlotAssignments. This defensive
   // fill keeps the DOM shape exactly three tiles even while initial data loads.
@@ -135,11 +132,11 @@ export function CinemaStage({
 
   return (
     <div
-      className={
-        embedded
-          ? "absolute bottom-2 left-2 right-12 z-30 grid grid-cols-3 gap-1.5 sm:bottom-3 sm:left-3 sm:right-14 sm:gap-2"
-          : "mb-2 grid grid-cols-3 gap-2.5 md:mb-4"
-      }
+      // The three live spots are their own band directly under the shared
+      // screen. They used to be absolutely positioned INSIDE the media frame,
+      // which covered the bottom of whatever was playing and squeezed the faces
+      // into a right-hand gutter next to the fullscreen control.
+      className="grid shrink-0 grid-cols-3 gap-1.5 sm:gap-2"
       data-testid="cinema-camera-stage"
       aria-label="Cinema camera stage"
     >

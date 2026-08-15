@@ -486,9 +486,10 @@ export function CinemaScreen({
         )}
 
         {/* Fullscreen is viewer-local: it writes no shared state, so guests
-            get it too without touching the host's timeline. The fixed live
-            seats reserve the right-side control gutter, so this remains a
-            distinct hit target rather than sitting above the third seat. */}
+            get it too without touching the host's timeline. The live seats moved
+            out of this frame into their own band below it, so this control now
+            owns the screen's bottom-right corner outright — no shared gutter, no
+            ambiguous hit target against a seat tile. */}
         <button
           type="button"
           onClick={toggleFullscreen}
@@ -517,7 +518,7 @@ export function CinemaScreen({
         <div className="h-full bg-cinema-gold transition-[width]" style={{ width: `${progress}%` }} />
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 bg-cinema-surface px-3 py-1.5 md:py-2.5">
+      <div className="flex shrink-0 items-center gap-2.5 bg-cinema-surface px-3 py-1 sm:gap-3 sm:py-1.5 md:py-2.5">
         {isHost ? (
           <>
             <button
@@ -550,7 +551,11 @@ export function CinemaScreen({
             </button>
           </>
         ) : (
-          <span className="text-[11px] text-white/40">The host controls playback</span>
+          // nowrap: wrapping this onto a second line silently stole ~15px of
+          // height from the shared screen on a phone.
+          <span className="whitespace-nowrap text-[11px] text-white/40">
+            Host controls playback
+          </span>
         )}
 
         <button

@@ -341,63 +341,77 @@ test.describe("Cinema stable room", () => {
     expect(screenBox!.y).toBeGreaterThanOrEqual(headerBox!.y);
     expect(screenBox!.y + screenBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     expect(shellMetrics.height).toBeLessThanOrEqual(page.viewportSize()!.height);
-    // Seats are part of the shared media screen, anchored to its lower edge.
-    expect(stageBox!.y).toBeGreaterThanOrEqual(mediaBox!.y);
-    expect(stageBox!.y + stageBox!.height).toBeLessThanOrEqual(mediaBox!.y + mediaBox!.height + 1);
-    // The three fixed seats reserve a right-hand control gutter. Fullscreen
-    // must be visually separate and win its own point hit-test; merely making
-    // the button a higher z-index would leave the seat target ambiguous.
+    // The seats are their own band BELOW the shared media area, so nothing is
+    // ever laid over the thing everyone came to watch.
+    expect(stageBox!.y).toBeGreaterThanOrEqual(mediaBox!.y + mediaBox!.height - 1);
+    // Each seat is wide enough to read a face in, rather than being squeezed
+    // into a corner gutter of the screen.
+    expect(stageBox!.width).toBeGreaterThan(mediaBox!.width * 0.9);
+    // And the shared screen still dominates: a full audience must not squeeze it
+    // down to a sliver, which is exactly what a flex-only budget did.
+    expect(mediaBox!.height).toBeGreaterThan(stageBox!.height);
+    expect(mediaBox!.height).toBeGreaterThanOrEqual(136);
+    // With the seats gone from inside the frame, fullscreen owns the screen's
+    // bottom-right corner outright and must still win its own point hit-test.
     const fullscreenControl = page.getByTestId("cinema-fullscreen-control");
     await expect(fullscreenControl).toBeVisible();
-    const [fullscreenBox, stageAndFullscreenHitTest] = await Promise.all([
+    const [fullscreenBox, fullscreenHitTest] = await Promise.all([
       fullscreenControl.boundingBox(),
       page.evaluate(() => {
-        const stage = document.querySelector<HTMLElement>("[data-testid='cinema-camera-stage']");
         const control = document.querySelector<HTMLElement>(
           "[data-testid='cinema-fullscreen-control']",
         );
-        if (!stage || !control) return { hit: false, overlaps: true };
-        const stageBox = stage.getBoundingClientRect();
+        if (!control) return false;
         const controlBox = control.getBoundingClientRect();
         const hit = document.elementFromPoint(
           controlBox.left + controlBox.width / 2,
           controlBox.top + controlBox.height / 2,
         );
-        return {
-          hit: Boolean(hit && control.contains(hit)),
-          overlaps: !(
-            controlBox.right <= stageBox.left ||
-            controlBox.left >= stageBox.right ||
-            controlBox.bottom <= stageBox.top ||
-            controlBox.top >= stageBox.bottom
-          ),
-        };
+        return Boolean(hit && control.contains(hit));
       }),
     ]);
     expect(fullscreenBox).not.toBeNull();
-    expect(fullscreenBox!.x + fullscreenBox!.width).toBeLessThanOrEqual(mediaBox!.x + mediaBox!.width);
-    expect(stageAndFullscreenHitTest.overlaps).toBe(false);
-    expect(stageAndFullscreenHitTest.hit).toBe(true);
+    expect(fullscreenBox!.x + fullscreenBox!.width).toBeLessThanOrEqual(screenBox!.x + screenBox!.width);
+    // It belongs to the screen, not to the seat band that now sits underneath.
+    expect(fullscreenBox!.y + fullscreenBox!.height).toBeLessThanOrEqual(stageBox!.y + 1);
+    expect(fullscreenHitTest).toBe(true);
     await fullscreenControl.click();
     await expect(fullscreenControl).toHaveAttribute("aria-label", "Exit fullscreen");
     await fullscreenControl.click();
     await expect(fullscreenControl).toHaveAttribute("aria-label", "Enter fullscreen");
 
-    // The document itself never scrolls: only the audience row is allowed to
-    // overflow, and only horizontally.
+    // The document itself never scrolls, and the voice audience is what keeps
+    // that true under load: this room seeds 40+ listeners, so the block has to
+    // cap itself into rows plus one "+N" chip rather than growing unbounded or
+    // hiding people behind a swipe like the old horizontal strip did.
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
-    const audienceOverflow = await page.getByTestId("cinema-audience-strip").evaluate((strip) => ({
-      scrollWidth: strip.scrollWidth,
-      clientWidth: strip.clientWidth,
-      scrollHeight: strip.scrollHeight,
-      clientHeight: strip.clientHeight,
-      overflowX: getComputedStyle(strip).overflowX,
-      overflowY: getComputedStyle(strip).overflowY,
-    }));
-    expect(audienceOverflow.scrollWidth).toBeGreaterThan(audienceOverflow.clientWidth);
-    expect(audienceOverflow.scrollHeight).toBeLessThanOrEqual(audienceOverflow.clientHeight + 1);
-    expect(audienceOverflow.overflowX).toMatch(/auto|scroll/);
-    expect(audienceOverflow.overflowY).toBe("hidden");
+    const voiceBlock = page.getByTestId("cinema-voice-circles");
+    await expect(voiceBlock).toBeVisible();
+    const voiceRows = page.getByTestId("cinema-voice-row");
+    await expect(voiceRows).toHaveCount(3);
+    const circleCount = await page.getByTestId("cinema-voice-circle").count();
+    expect(circleCount).toBeGreaterThan(5);
+    expect(circleCount).toBeLessThanOrEqual(15);
+    await expect(page.getByTestId("cinema-voice-overflow")).toHaveCount(1);
+    // Every circle carries a volume ring, and a silent room leaves them at rest
+    // rather than animating on a canned loop.
+    await expect(page.getByTestId("cinema-voice-ring")).toHaveCount(circleCount);
+    expect(
+      await page.getByTestId("cinema-voice-ring").evaluateAll((rings) =>
+        rings.every((ring) => ring.getAttribute("data-ring-active") === "false"),
+      ),
+    ).toBe(true);
+    // The voice block sits below the seats and stays inside the viewport.
+    const voiceBox = await voiceBlock.boundingBox();
+    expect(voiceBox).not.toBeNull();
+    expect(voiceBox!.y).toBeGreaterThanOrEqual(stageBox!.y + stageBox!.height - 1);
+    expect(voiceBox!.y + voiceBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+    expect(
+      await voiceBlock.evaluate((block) => ({
+        overflowX: getComputedStyle(block).overflowX,
+        overflowY: getComputedStyle(block).overflowY,
+      })),
+    ).toEqual({ overflowX: "visible", overflowY: "visible" });
 
     // Exactly one Cinema composer is anchored in the visible, hit-testable dock.
     await expect(page.getByTestId("cinema-control-dock")).toHaveCount(1);

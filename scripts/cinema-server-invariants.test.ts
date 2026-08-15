@@ -52,8 +52,8 @@ const cinemaScreen = readFileSync(
   join(root, "src/components/social/cinema/CinemaScreen.tsx"),
   "utf8",
 );
-const cinemaAudience = readFileSync(
-  join(root, "src/components/social/cinema/CinemaAudience.tsx"),
+const cinemaVoiceCircles = readFileSync(
+  join(root, "src/components/social/cinema/CinemaVoiceCircles.tsx"),
   "utf8",
 );
 const cinemaChat = readFileSync(
@@ -187,28 +187,44 @@ check(
     cinemaPage.includes("{!isCinema && (\n                  <StageGrid"),
 );
 check(
-  "three ordered live video seats are embedded at the media screen bottom with clear offline state",
-  cinemaStage.includes("embedded = false") &&
-    cinemaStage.includes("absolute bottom-2 left-2 right-12") &&
-    cinemaStage.includes("sm:right-14") &&
+  "three ordered live video seats are their own band below the screen, never overlaying it",
+  cinemaStage.includes('className="grid shrink-0 grid-cols-3 gap-1.5 sm:gap-2"') &&
+    !cinemaStage.includes("absolute bottom-2 left-2 right-12") &&
+    !cinemaStage.includes("embedded") &&
+    cinemaCanvas.includes("{seats}") &&
     cinemaStage.includes('data-camera-seat={seat.slot === 0 ? "host"') &&
     cinemaStage.includes('data-testid="cinema-camera-placeholder"') &&
     cinemaStage.includes("camera is off or offline") &&
-    cinemaScreen.includes('data-testid="cinema-fullscreen-control"') &&
-    cinemaScreen.includes("right-side control gutter"),
+    cinemaScreen.includes('data-testid="cinema-fullscreen-control"'),
 );
 check(
-  "Cinema audience is horizontal-only and excludes all fixed video seat identities",
+  "the voice audience is rows of volume-ringed circles and excludes every fixed seat identity",
   cinemaPage.includes("const cinemaSeatUserIds = new Set(") &&
     cinemaPage.includes("const cinemaAudience = withSpeaking.filter(") &&
-    cinemaAudience.includes('data-testid="cinema-audience-strip"') &&
-    cinemaAudience.includes("overflow-x-auto overflow-y-hidden") &&
-    !cinemaAudience.includes("overflow-y-auto"),
+    cinemaVoiceCircles.includes('data-testid="cinema-voice-circles"') &&
+    cinemaVoiceCircles.includes('data-testid="cinema-voice-row"') &&
+    cinemaVoiceCircles.includes('data-testid="cinema-voice-ring"') &&
+    cinemaVoiceCircles.includes("splitVoiceRows(visible, VOICE_ROW_COUNT)") &&
+    // Nothing in this block hides people behind a scroll the way the old single
+    // strip did; a packed room is capped and the rest becomes one visible chip,
+    // so the block can never push the shared screen out of the viewport.
+    cinemaVoiceCircles.includes("flex flex-wrap") &&
+    !cinemaVoiceCircles.includes("overflow-x-auto") &&
+    !cinemaVoiceCircles.includes("overflow-y-auto") &&
+    cinemaVoiceCircles.includes("partitionVoiceAudience(audience)") &&
+    cinemaVoiceCircles.includes('data-testid="cinema-voice-overflow"'),
+);
+check(
+  "volume rings are driven by real sampled LiveKit loudness, not a canned animation",
+  cinemaPage.includes("onAudioLevels: (levels) =>") &&
+    cinemaPage.includes("levels={cinemaAudioLevels}") &&
+    cinemaVoiceCircles.includes("voiceRing({") &&
+    cinemaVoiceCircles.includes("transform: `scale(${ring.scale})`"),
 );
 check(
   "Cinema comments are a left-side five-line transient overlay",
   cinemaChat.includes("return next.slice(-5)") &&
-    cinemaChat.includes("bottom-[5.75rem] left-2") &&
+    cinemaChat.includes("absolute bottom-2 left-2") &&
     cinemaChat.includes('data-testid="cinema-comment-line"') &&
     cinemaChat.includes("CINEMA_COMMENT_EXIT_MS") &&
     cinemaChat.includes("data-cinema-comment-age") &&

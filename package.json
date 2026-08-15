@@ -40,7 +40,8 @@
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:unit": "npm run test:slots && npm run test:splits && npm run test:youtube && npm run test:cookies && npm run test:stripe-webhook && npm run test:favorites && npm run test:import && npm run test:capture && npm run test:audio-output && npm run test:audio-profile && npm run test:spaces-moderation && npm run test:video-mirror && npm run test:mirror-loop && npm run test:end-room && npm run test:cinema && npm run test:stage-queue && npm run test:mobile-layout && npm run test:gifting && npm run test:calling && npm run test:room-status && npm run test:concert-battle-domain && npm run test:concert-invitations && npm run test:moderation-filter && npm run test:catalog-cache && npm run test:migration-prefix"
+    "test:unit": "npm run test:slots && npm run test:splits && npm run test:youtube && npm run test:cookies && npm run test:stripe-webhook && npm run test:favorites && npm run test:import && npm run test:capture && npm run test:audio-output && npm run test:audio-profile && npm run test:spaces-moderation && npm run test:video-mirror && npm run test:mirror-loop && npm run test:end-room && npm run test:cinema && npm run test:stage-queue && npm run test:mobile-layout && npm run test:voice-circles && npm run test:gifting && npm run test:calling && npm run test:room-status && npm run test:concert-battle-domain && npm run test:concert-invitations && npm run test:moderation-filter && npm run test:catalog-cache && npm run test:migration-prefix",
+    "test:voice-circles": "tsx scripts/voice-circles.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

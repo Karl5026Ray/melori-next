@@ -63,7 +63,11 @@ export function CinemaChat({ comments }: { comments: readonly ChatComment[] }) {
 
   return (
     <div
-      className="pointer-events-none absolute bottom-[5.75rem] left-2 z-20 max-h-[42%] w-[min(66%,21rem)] overflow-hidden bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-2 pt-8 sm:bottom-[6.5rem] sm:left-3 sm:px-3"
+      // Anchored to the bottom-left of the shared screen. It used to be pushed
+      // up by 5.75rem to clear the three live seats that were overlaid inside
+      // the frame; those seats now live in their own band below the screen, so
+      // the comment column sits where the eye expects it.
+      className="pointer-events-none absolute bottom-2 left-2 z-20 max-h-[42%] w-[min(66%,21rem)] overflow-hidden bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-2 pt-8 sm:bottom-3 sm:left-3 sm:px-3"
       data-testid="cinema-comment-overlay"
       role="log"
       aria-live="polite"

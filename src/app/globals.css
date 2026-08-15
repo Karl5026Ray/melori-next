@@ -541,3 +541,31 @@ select {
     bottom: 0;
   }
 }
+
+/* Melori Concert — floating gift emoji and music notes over a competitor's
+   video tile. The animation duration is set inline from
+   CONCERT_FLOAT_DURATION_MS in src/lib/concertStage.ts, which is also the
+   timeout that prunes the float from state — keep the two in step so a spent
+   float is never left in the DOM as an invisible node. */
+.concert-float {
+  animation-name: concertFloatRise;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+@keyframes concertFloatRise {
+  0%   { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+  15%  { transform: translate(-50%, -14px) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -150px) scale(1.15) rotate(10deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .concert-float {
+    animation-name: concertFloatFade;
+  }
+  @keyframes concertFloatFade {
+    0%   { transform: translate(-50%, -40px); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translate(-50%, -40px); opacity: 0; }
+  }
+}

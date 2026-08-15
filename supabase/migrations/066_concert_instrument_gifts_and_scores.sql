@@ -1,4 +1,4 @@
--- 065_concert_instrument_gifts_and_scores.sql
+-- 066_concert_instrument_gifts_and_scores.sql
 --
 -- APPEND-ONLY MIGRATION: do not edit a migration after it is applied. Add a
 -- later numbered migration for every Concert stage catalog or scoring change.

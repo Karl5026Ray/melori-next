@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isCinemaLiveRoomRoute } from "../src/lib/cinemaRoomRoute";
+import { isTransportRoute } from "../src/lib/transportRoute";
 
 const root = process.cwd();
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
@@ -21,6 +22,8 @@ const nav = read("src/components/MobileTabBar.tsx");
 const layout = read("src/app/layout.tsx");
 const globals = read("src/app/globals.css");
 const video = read("src/components/social/video/VideoCard.tsx");
+const mainContent = read("src/components/MainContent.tsx");
+const player = read("src/components/AudioPlayer.tsx");
 
 check(
   "Chat remains the primary bottom-tab destination",
@@ -51,8 +54,36 @@ check(
     nav.match(/label: "Artists"/g)?.length === 1,
 );
 check(
-  "root content uses the shared mobile transport clearance",
-  layout.includes("pb-[var(--mobile-content-clearance)] md:pb-24"),
+  "the transport is scoped to the main page and nowhere else",
+  isTransportRoute("/") &&
+    isTransportRoute("/?ref=email") &&
+    !isTransportRoute("/music") &&
+    !isTransportRoute("/store") &&
+    !isTransportRoute("/social") &&
+    !isTransportRoute("/social/radio") &&
+    !isTransportRoute("/social/cinema/room-123") &&
+    !isTransportRoute("/studio") &&
+    !isTransportRoute("/checkout") &&
+    !isTransportRoute("/account") &&
+    !isTransportRoute("/photography") &&
+    !isTransportRoute("/artists/karl-ray") &&
+    !isTransportRoute(null),
+);
+check(
+  "AudioPlayer renders nothing off the main page",
+  player.includes('from "@/lib/transportRoute"') &&
+    player.includes("const onMainPage = isTransportRoute(pathname)") &&
+    player.includes("if (!onMainPage) return null;"),
+);
+check(
+  "root content clearance is route-aware, not a global transport reserve",
+  layout.includes("<MainContent>{children}</MainContent>") &&
+    !layout.includes("pb-[var(--mobile-content-clearance)]"),
+);
+check(
+  "the main page clears the transport, other spaces clear only the tab bar",
+  mainContent.includes("pb-[var(--mobile-content-clearance)] md:pb-24") &&
+    mainContent.includes("pb-[var(--mobile-tabbar-clearance)] md:pb-8"),
 );
 check(
   "mobile clearance includes both tab bar and floating transport",

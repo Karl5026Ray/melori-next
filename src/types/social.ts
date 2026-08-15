@@ -183,6 +183,17 @@ export interface ConcertBattleView {
   initiator: Profile;
   opponent: Profile | null;
   viewer_slot: 1 | 2 | null;
+  /**
+   * DISPLAY-ONLY gifted-coin totals per competitor, so a viewer joining
+   * mid-battle starts from the real score instead of zero. concert_battle_rounds
+   * remains the authority for round outcomes and the win condition.
+   */
+  scores: {
+    initiator_coins: number;
+    opponent_coins: number;
+    initiator_gifts: number;
+    opponent_gifts: number;
+  };
   server_now: string;
 }
 

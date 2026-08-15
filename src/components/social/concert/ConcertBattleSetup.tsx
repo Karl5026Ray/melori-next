@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Clock3, UserRoundPlus, X } from "lucide-react";
+import { Clock3, UserRoundPlus, X } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
+import { canConcertBattlePerform } from "@/lib/concertBattle";
 import { BattleOpponentPicker } from "./BattleOpponentPicker";
+import { ConcertLiveStage } from "./ConcertLiveStage";
 
 type Person = {
   id: string;
@@ -17,9 +19,12 @@ type Person = {
 type BattleState = {
   space: { id: string; title: string; topic: string | null; status: string };
   battle: {
+    space_id: string;
     initiator_id: string;
     opponent_id: string | null;
     status: "selecting_opponent" | "invited" | "ready" | "round_active" | "round_intermission" | "completed" | "cancelled" | "expired" | "forfeited";
+    current_round: number;
+    phase_ends_at: string | null;
     version: number;
   };
   initiator: Person;
@@ -31,6 +36,10 @@ type BattleState = {
     recipient_id: string;
     expires_at: string;
     recipient: Person | null;
+  } | null;
+  scores?: {
+    initiator_coins: number;
+    opponent_coins: number;
   } | null;
   server_now: string;
 };
@@ -158,6 +167,10 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
   }
 
   const pendingPerson = view.pending_invite?.recipient ?? null;
+  // Once the battle is performable the live stage IS the page. The setup tiles
+  // and topic prose are dropped so the two video feeds keep the vertical budget
+  // on a phone rather than sitting below a screen of pre-show chrome.
+  const isPerforming = canConcertBattlePerform(view.battle.status);
   const slotTwoState = view.opponent
     ? "accepted"
     : view.battle.status === "invited"
@@ -167,24 +180,32 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
   return (
     <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-8">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-melori-teal">
-            Concert Battle
-          </p>
-          <h1 className="mt-2 text-2xl font-bold md:text-3xl">{view.space.title}</h1>
-          {view.space.topic ? <p className="mt-2 text-sm text-melori-muted">{view.space.topic}</p> : null}
+        <header className={isPerforming ? "mb-3" : "mb-6"}>
+          {isPerforming ? null : (
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-melori-teal">
+              Concert Battle
+            </p>
+          )}
+          <h1 className={`mt-1 font-bold ${isPerforming ? "text-xl" : "text-2xl md:text-3xl"}`}>
+            {view.space.title}
+          </h1>
+          {view.space.topic && !isPerforming ? (
+            <p className="mt-2 text-sm text-melori-muted">{view.space.topic}</p>
+          ) : null}
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <PersonTile slot={1} person={view.initiator} state="initiator" />
-          <PersonTile
-            slot={2}
-            person={view.opponent ?? pendingPerson}
-            state={slotTwoState}
-          />
-        </div>
+        {isPerforming ? null : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <PersonTile slot={1} person={view.initiator} state="initiator" />
+            <PersonTile
+              slot={2}
+              person={view.opponent ?? pendingPerson}
+              state={slotTwoState}
+            />
+          </div>
+        )}
 
-        <div className="mt-5" aria-live="polite">
+        <div className={isPerforming ? "" : "mt-5"} aria-live="polite">
           {error ? <p role="alert" className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-400">{error}</p> : null}
           {view.battle.status === "selecting_opponent" && view.viewer_capabilities.can_select_opponent ? (
             <BattleOpponentPicker spaceId={spaceId} onInviteSent={() => void refresh()} />
@@ -221,15 +242,32 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
               </div>
             </section>
           ) : null}
-          {view.battle.status === "ready" ? (
-            <section className="rounded-2xl border border-teal-500/30 bg-teal-500/10 p-5">
-              <p className="flex items-center gap-2 font-semibold">
-                <CheckCircle2 className="h-5 w-5 text-melori-teal" />
-                Opponent accepted
-              </p>
-              <p className="mt-2 text-sm text-melori-muted">
-                Both performer slots are now fixed. Live stage and round controls arrive in the next Concert release.
-              </p>
+          {/* Once both performer identities are fixed the setup screen hands
+              over to the live battle stage. The stage is mounted only for a
+              performable status, so a cancelled or completed battle can never
+              open a camera. */}
+          {canConcertBattlePerform(view.battle.status) ? (
+            <section>
+              {/* No "slots are fixed" banner here: the stage itself shows both
+                  competitors, and on a phone that line costs the video row
+                  height it cannot spare. */}
+              <ConcertLiveStage
+                view={{
+                  space: { id: view.space.id, status: view.space.status },
+                  battle: {
+                    space_id: view.battle.space_id ?? view.space.id,
+                    initiator_id: view.battle.initiator_id,
+                    opponent_id: view.battle.opponent_id,
+                    status: view.battle.status,
+                    current_round: view.battle.current_round ?? 1,
+                    phase_ends_at: view.battle.phase_ends_at ?? null,
+                  },
+                  initiator: view.initiator,
+                  opponent: view.opponent,
+                  viewer_slot: view.viewer_slot,
+                  scores: view.scores ?? null,
+                }}
+              />
             </section>
           ) : null}
           {["cancelled", "expired", "forfeited", "completed"].includes(view.battle.status) ? (

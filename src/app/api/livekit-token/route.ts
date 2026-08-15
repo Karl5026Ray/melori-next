@@ -7,8 +7,10 @@ import { deriveRoomName, reapIfHostAbandoned, recordHostSeen } from "@/lib/endRo
 import {
   decideRoomPublish,
   type CinemaReservation,
+  type ConcertBattleIdentityInput,
   type RoomMediaRole,
 } from "@/lib/roomMediaPolicy";
+import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,6 +132,7 @@ export async function POST(req: NextRequest) {
     const roomName = deriveRoomName(space);
     const isFacesRoom = String(space.room_format ?? "").startsWith("live_");
     const isCinema = space.room_format === "cinema";
+    const isConcert = space.room_format === CONCERT_BATTLE_ROOM_FORMAT;
 
     // ---- Server-authoritative role model ---------------------------------
     // The SERVER decides who may publish, not the client's requested role.
@@ -236,6 +239,32 @@ export async function POST(req: NextRequest) {
         userId: String(row.user_id),
       }));
     }
+    // Concert publish permission comes from the battle aggregate, not from a
+    // Spaces role: only the initiator and the one accepted opponent may ever
+    // hold a camera, and only during a performable phase. A failed read must
+    // deny media rather than silently fall through to the generic policy.
+    let concertBattle: ConcertBattleIdentityInput | null = null;
+    if (isConcert) {
+      const { data: battleRow, error: battleError } = await supabase
+        .from("concert_battles")
+        .select("initiator_id, opponent_id, status")
+        .eq("space_id", space.id)
+        .maybeSingle();
+      if (battleError) {
+        return NextResponse.json(
+          { error: "Concert media authorization is unavailable" },
+          { status: 503 },
+        );
+      }
+      concertBattle = battleRow
+        ? {
+            initiatorId: String(battleRow.initiator_id),
+            opponentId: battleRow.opponent_id ? String(battleRow.opponent_id) : null,
+            status: battleRow.status ?? null,
+          }
+        : null;
+    }
+
     const media = decideRoomPublish({
       roomFormat: space.room_format,
       hostId: space.host_id,
@@ -243,6 +272,7 @@ export async function POST(req: NextRequest) {
       role: policyRole,
       hostMuted,
       reservations,
+      concertBattle,
       requested: ["camera", "microphone"],
     });
 
@@ -288,6 +318,7 @@ export async function POST(req: NextRequest) {
       expiresIn: expireTime,
       allowed_sources: media.allowedSources,
       camera_slot: media.cameraSlot,
+      concert_slot: media.concertSlot ?? null,
     });
   } catch (error) {
     console.error("[livekit-token] error", error);

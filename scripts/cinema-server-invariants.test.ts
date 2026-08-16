@@ -184,7 +184,12 @@ check(
   cinemaPage.includes("<CinemaRoomCanvas") &&
     cinemaCanvas.includes('data-testid="cinema-room-canvas"') &&
     cinemaCanvas.includes("overflow-hidden") &&
-    cinemaPage.includes("{!isCinema && (\n                  <StageGrid"),
+    // Non-Cinema rooms gate StageGrid behind `!isCinema` — this used to be a
+    // single combined grid, and is now a separate Stage section and Audience
+    // section (see RoomScreen's Stage/Audience split), so the literal source
+    // text changed. The invariant that actually matters, that Cinema itself
+    // never falls into this generic StageGrid branch, still holds either way.
+    /\{!isCinema[\s\S]{0,400}?<StageGrid/.test(cinemaPage),
 );
 check(
   "three ordered live video seats are their own band below the screen, never overlaying it",

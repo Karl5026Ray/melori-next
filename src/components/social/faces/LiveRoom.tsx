@@ -964,6 +964,18 @@ export default function LiveRoom({
     [hostId, guestId],
   );
 
+  // applyGiftSignal's identity changes with [hostId, guestId] (guestId in
+  // particular starts null and only resolves once a second tile joins), but
+  // the channel subscription below must stay mounted for the room's whole
+  // lifetime rather than tearing down and reconnecting every time guestId
+  // changes. Route calls through a ref that's kept current every render, so
+  // the subscription always applies gifts against today's guestId instead of
+  // whatever guestId (often still null) was in scope when it first connected.
+  const applyGiftSignalRef = useRef(applyGiftSignal);
+  useEffect(() => {
+    applyGiftSignalRef.current = applyGiftSignal;
+  }, [applyGiftSignal]);
+
   // Faces has no PubNub wiring (unlike Concert/Spaces) — mirror the same
   // Supabase Realtime broadcast pattern already used for hearts so every
   // other client in the room sees the gift animation and score bump too.
@@ -975,7 +987,7 @@ export default function LiveRoom({
     ch.on("broadcast", { event: "gift" }, (msg: any) => {
       const p = msg?.payload;
       if (!p?.gift || !p?.giftSendId || !p?.targetId) return;
-      applyGiftSignal({
+      applyGiftSignalRef.current({
         type: "gift",
         giftSendId: p.giftSendId,
         gift: p.gift,

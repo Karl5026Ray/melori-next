@@ -862,6 +862,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     [runHostAction],
   );
 
+  // Host-only: grant or revoke the moderator badge (🎸 in StageGrid). The
+  // route restricts this to the host regardless of who calls it, and mirrors
+  // the change into LiveKit stage permissions server-side — this is just the
+  // UI trigger. Works whether the target is currently on stage or in the
+  // audience; moderators help run the room, they don't have to be speaking.
+  const hostSetBadge = useCallback(
+    (participantUserId: string, badge: "mod" | null) =>
+      runHostAction(
+        participantUserId,
+        { badge },
+        badge === "mod" ? "Made moderator" : "Moderator removed",
+      ),
+    [runHostAction],
+  );
+
   const handleGoLive = useCallback(async () => {
     if (!isHost) return;
     const res = await authFetch(`/api/social/spaces/${spaceId}`, {
@@ -2200,22 +2215,30 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
               <div className={isCinema ? "mb-0" : "mb-8"}>
                 {reconnecting && !isCinema && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
-                {/* Audio rooms render everyone in ONE continuous grid, speakers
-                    first, the way the reference room does — role is read off
-                    the tile's own badges rather than from a section heading.
-                    Cinema keeps its split stage/audience layout: its seats are
-                    a fixed-capacity front row with their own HOST/GUEST labels,
-                    so merging them into the crowd would lose that meaning. */}
-                {!isCinema && (
-                  <StageGrid
-                    participants={[...speakers, ...audience]}
-                    onReactToParticipant={setReactTarget}
-                    onSelectParticipant={isHost ? setModTarget : setReactTarget}
-                    reactionBursts={targetedReactions}
-                    viewerId={user?.id}
-                    followingIds={followedIds}
-                    onFollow={handleFollowFromTile}
-                  />
+                {/* Audio rooms split into a Stage (host + speakers, uncapped —
+                    no live video, matching Karl's call to keep this audio-only)
+                    and an Audience grid below it, unchanged from the single
+                    grid this used to be. The header/topic/leave chrome around
+                    this block is untouched — only this participant area split.
+                    Cinema keeps its own stage/audience layout further up (fixed
+                    front-row seats with HOST/GUEST labels) and never reaches
+                    this branch. */}
+                {!isCinema && speakers.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
+                      Stage{speakers.length > 1 ? ` (${speakers.length})` : ""}
+                    </h3>
+                    <StageGrid
+                      participants={speakers}
+                      size="lg"
+                      onReactToParticipant={setReactTarget}
+                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
+                      reactionBursts={targetedReactions}
+                      viewerId={user?.id}
+                      followingIds={followedIds}
+                      onFollow={handleFollowFromTile}
+                    />
+                  </div>
                 )}
 
                 {!isCinema && isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
@@ -2282,6 +2305,23 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                           )}
                         </div>
                       ))}
+                  </div>
+                )}
+
+                {!isCinema && audience.length > 0 && (
+                  <div className="mt-8">
+                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
+                      Audience{audience.length > 1 ? ` (${audience.length})` : ""}
+                    </h3>
+                    <StageGrid
+                      participants={audience}
+                      onReactToParticipant={setReactTarget}
+                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
+                      reactionBursts={targetedReactions}
+                      viewerId={user?.id}
+                      followingIds={followedIds}
+                      onFollow={handleFollowFromTile}
+                    />
                   </div>
                 )}
               </div>
@@ -2438,6 +2478,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                       label="Send a reaction"
                       onClick={() => setReactTarget(modTarget)}
                     />
+                    {modTarget.role !== "host" && (
+                      <Item
+                        label={
+                          modTarget.badge === "mod"
+                            ? "Remove moderator 🎸"
+                            : "Make moderator 🎸"
+                        }
+                        onClick={() =>
+                          void hostSetBadge(
+                            targetId,
+                            modTarget.badge === "mod" ? null : "mod",
+                          )
+                        }
+                      />
+                    )}
                     {modTarget.role !== "host" &&
                       (onStage ? (
                         <>

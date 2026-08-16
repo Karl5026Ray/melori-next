@@ -118,7 +118,9 @@ function statusDisc(participant: SpaceParticipant): {
     case "cohost":
       return { glyph: "🥈", label: "Co-host" };
     case "mod":
-      return { glyph: "🛡️", label: "Moderator" };
+      // A musical instrument rather than a shield — moderators are trusted
+      // helpers keeping the room running, not enforcers (Karl's call).
+      return { glyph: "🎸", label: "Moderator" };
     case "vip":
       return { glyph: "⭐", label: "VIP" };
     default:

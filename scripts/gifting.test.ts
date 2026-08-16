@@ -6,6 +6,7 @@ import {
   coinPackCreditReference,
   giftMediaKind,
   isCoinPackCheckoutMetadata,
+  isGiftableRoomFormat,
 } from "@/lib/gifting";
 
 let failures = 0;
@@ -52,6 +53,42 @@ check(
     target: { user_id: "host", role: "host" },
     hostId: "host",
   }),
+  false,
+);
+check(
+  "MM Faces Duo rooms are gifting-enabled",
+  canSendGiftInRoom({
+    roomFormat: "live_duo",
+    roomStatus: "live",
+    sender: { user_id: "fan", role: "audience" },
+    target: { user_id: "host", role: "host" },
+    hostId: "host",
+  }),
+);
+check(
+  "a Duo guest who has been promoted to speaker is a valid gift target",
+  canSendGiftInRoom({
+    roomFormat: "live_duo",
+    roomStatus: "live",
+    sender: { user_id: "fan", role: "audience" },
+    target: { user_id: "guest", role: "speaker" },
+    hostId: "host",
+  }),
+);
+check(
+  "an ended Duo room is never gifting-enabled",
+  canSendGiftInRoom({
+    roomFormat: "live_duo",
+    roomStatus: "ended",
+    sender: { user_id: "fan", role: "audience" },
+    target: { user_id: "host", role: "host" },
+    hostId: "host",
+  }),
+  false,
+);
+check(
+  "MM Faces Solo and Group are not gifting-enabled (no second target / bar doesn't apply)",
+  isGiftableRoomFormat("live_solo") || isGiftableRoomFormat("live_group"),
   false,
 );
 check(

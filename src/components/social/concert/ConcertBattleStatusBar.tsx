@@ -24,7 +24,9 @@ export function ConcertBattleStatusBar({
 }: {
   leftScore: number;
   rightScore: number;
-  timerLabel: string;
+  // Optional: Concert always has a round countdown; MM Faces Duo has no
+  // formal rounds, so it omits this and the timer chip is simply skipped.
+  timerLabel?: string;
   isLive: boolean;
   roundLabel?: string;
 }) {
@@ -61,14 +63,16 @@ export function ConcertBattleStatusBar({
             />
             {isLive ? "Live" : "Paused"}
           </span>
-          <span
-            className="inline-flex items-center gap-1 rounded-full border border-[#f5e56b]/30 bg-[#f5e56b]/10 px-2 py-[3px] text-[11px] font-bold tabular-nums text-[#f5e56b]"
-            data-testid="concert-timer"
-          >
-            <span aria-hidden>⏳</span>
-            <span className="sr-only">Time remaining </span>
-            {timerLabel}
-          </span>
+          {timerLabel ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-[#f5e56b]/30 bg-[#f5e56b]/10 px-2 py-[3px] text-[11px] font-bold tabular-nums text-[#f5e56b]"
+              data-testid="concert-timer"
+            >
+              <span aria-hidden>⏳</span>
+              <span className="sr-only">Time remaining </span>
+              {timerLabel}
+            </span>
+          ) : null}
         </div>
 
         <p

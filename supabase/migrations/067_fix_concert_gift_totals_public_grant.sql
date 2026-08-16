@@ -1,0 +1,24 @@
+-- 067_fix_concert_gift_totals_public_grant.sql
+--
+-- 066 intended to lock concert_battle_gift_totals down to service_role only
+-- ("Battle reads flow through authenticated server routes only... No
+-- anon/authenticated execute grant"), but it revoked EXECUTE from the named
+-- roles `anon` and `authenticated` rather than from `public`. Postgres grants
+-- EXECUTE on every newly created function to PUBLIC by default, and anon/
+-- authenticated both inherit through PUBLIC — revoking their own named grant
+-- (which they never held directly) left the PUBLIC grant untouched. The
+-- function has been callable by anyone, including fully anonymous callers
+-- with no auth token, since 066 shipped: any space's Concert battle gift
+-- totals could be read directly via
+-- /rest/v1/rpc/concert_battle_gift_totals, bypassing the API routes.
+--
+-- Confirmed live via pg_proc.proacl on the melori-next project: the ACL
+-- carried a bare `=X/postgres` entry (the PUBLIC grant) alongside the
+-- service_role grant, with no per-role entry for anon or authenticated —
+-- i.e. they were never granted directly, they were reading through PUBLIC.
+--
+-- Every other lockdown migration in this repo (038, 041, 057, 058, 059, 060,
+-- 061) already revokes `from public`; 066 is the only one that named the
+-- roles instead. This migration corrects it the same way the others do.
+revoke all on function public.concert_battle_gift_totals(uuid) from public;
+grant execute on function public.concert_battle_gift_totals(uuid) to service_role;

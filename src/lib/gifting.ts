@@ -32,6 +32,17 @@ export function isConcertRoom(roomFormat: string | null | undefined): boolean {
   return roomFormat === "versus_battle";
 }
 
+// Room formats where gifting is turned on. Concert battles were the original
+// (and remain the only format with a formal round/score lifecycle); MM Faces
+// Duo rooms (host + one guest) reuse the same wallet/catalog/overlay plumbing
+// as a simpler, un-timed two-sided gift tally — see GiftOverlay + LiveRoom's
+// local score accumulation. Solo/Group Faces are deliberately excluded for
+// now: Solo has no second target, and Group's audience is larger than a
+// two-sided bar can represent.
+export function isGiftableRoomFormat(roomFormat: string | null | undefined): boolean {
+  return roomFormat === "versus_battle" || roomFormat === "live_duo";
+}
+
 export function isEligibleGiftTarget(
   participant: Pick<SpaceParticipant, "user_id" | "role">,
   hostId: string,
@@ -51,7 +62,7 @@ export function canSendGiftInRoom(args: {
   hostId: string;
 }): boolean {
   return Boolean(
-    isConcertRoom(args.roomFormat) &&
+    isGiftableRoomFormat(args.roomFormat) &&
       args.roomStatus === "live" &&
       args.sender &&
       isEligibleGiftTarget(args.target ?? { user_id: "", role: "audience" }, args.hostId),

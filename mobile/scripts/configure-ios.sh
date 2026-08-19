@@ -66,7 +66,7 @@ if any(scheme in entry.get("CFBundleURLSchemes", []) for entry in url_types):
 
 url_types.append(
     {
-        "CFBundleURLName": f"{scheme}.auth",
+        "CFBundleURLName": scheme,
         # Viewer role: the app receives these URLs, it does not serve them.
         "CFBundleTypeRole": "Viewer",
         "CFBundleURLSchemes": [scheme],

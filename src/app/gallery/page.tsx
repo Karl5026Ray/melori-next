@@ -94,34 +94,9 @@ export default async function GalleryIndexPage() {
           <ManageGalleriesLink />
         </div>
 
-        <p className="mt-6 max-w-2xl text-text-secondary">
-          Browse delivered photo galleries. Open your gallery to view every
-          frame, download your favorites, and purchase high-resolution digital
-          copies. You can also reach this page any time from the M-menu under{" "}
-          <span className="text-text-primary">Photography &rarr; Gallery</span>.
-        </p>
-
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          <Feature
-            icon={<Lock className="h-5 w-5" />}
-            title="Private & secure"
-            body="Password-protected galleries keep client work private."
-          />
-          <Feature
-            icon={<Download className="h-5 w-5" />}
-            title="Instant downloads"
-            body="Grab clean, full-resolution files the moment they're ready."
-          />
-          <Feature
-            icon={<ShoppingBag className="h-5 w-5" />}
-            title="Buy digital copies"
-            body="Purchase watermark-free digital downloads securely via Stripe."
-          />
-        </div>
-
         {galleries.length > 0 ? (
           <>
-            <h2 className="mt-14 mb-4 text-lg font-semibold">
+            <h2 className="mt-8 mb-4 text-lg font-semibold">
               Recent galleries
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -163,7 +138,7 @@ export default async function GalleryIndexPage() {
             </div>
           </>
         ) : (
-          <div className="mt-14 rounded-xl border border-brand-border bg-brand-surface p-8 text-center">
+          <div className="mt-8 rounded-xl border border-brand-border bg-brand-surface p-8 text-center">
             <Camera className="mx-auto h-10 w-10 text-brand-primary" />
             <p className="mt-3 font-semibold">No galleries yet</p>
             <p className="mt-1 text-sm text-text-secondary">
@@ -173,6 +148,31 @@ export default async function GalleryIndexPage() {
             </p>
           </div>
         )}
+
+        <p className="mt-14 max-w-2xl text-text-secondary">
+          Browse delivered photo galleries. Open your gallery to view every
+          frame, download your favorites, and purchase high-resolution digital
+          copies. You can also reach this page any time from the M-menu under{" "}
+          <span className="text-text-primary">Photography &rarr; Gallery</span>.
+        </p>
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <Feature
+            icon={<Lock className="h-5 w-5" />}
+            title="Private & secure"
+            body="Password-protected galleries keep client work private."
+          />
+          <Feature
+            icon={<Download className="h-5 w-5" />}
+            title="Instant downloads"
+            body="Grab clean, full-resolution files the moment they're ready."
+          />
+          <Feature
+            icon={<ShoppingBag className="h-5 w-5" />}
+            title="Buy digital copies"
+            body="Purchase watermark-free digital downloads securely via Stripe."
+          />
+        </div>
       </section>
     </main>
   );

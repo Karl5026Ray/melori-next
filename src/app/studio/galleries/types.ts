@@ -14,8 +14,15 @@ export interface GalleryListItem {
   imageCount: number;
 }
 
+export interface GalleryFolderItem {
+  id: string;
+  name: string;
+  coverPhotoId: string | null;
+}
+
 export interface GalleryImageItem {
   id: string;
+  folderId: string | null;
   previewUrl: string;
   thumbnailUrl: string;
   caption: string | null;

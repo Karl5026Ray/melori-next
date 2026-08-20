@@ -78,14 +78,14 @@ export default function AnalyticsPanel() {
             className="bg-[#c9a96e] flex items-center justify-center text-xs font-bold text-[#0a0a0a]"
             style={{ width: "100%" }}
           >
-            You keep 100% (minus payment processing)
+            No platform cut (payment processing only)
           </div>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[#c9a96e]">Your earnings: ${stats.artistShare.toFixed(2)}</span>
           <span className="text-[#888]">Payment processing: ${(stats.processingFees ?? 0).toFixed(2)}</span>
         </div>
-        <p className="text-xs text-[#666] mt-2">Melori takes 0% on music sales. You receive the full price minus Stripe&apos;s payment processing fee.</p>
+        <p className="text-xs text-[#666] mt-2">Melori adds no revenue share on music sales. You receive the sale price minus Stripe&apos;s payment processing fee — nothing else is deducted.</p>
       </div>
 
       {/* Stats Grid */}

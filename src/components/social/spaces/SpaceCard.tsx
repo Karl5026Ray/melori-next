@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { Space, getRoomFormatConfig } from "@/types/social";
+import { roomHref } from "@/lib/cinema";
 import { Badge } from "@/components/social/ui/Badge";
-import { Users, Radio, CalendarClock, X } from "lucide-react"; import { useState, type MouseEvent } from "react"; import { useRouter } from "next/navigation"; import { supabase } from "@/lib/supabase"; import { useAuth } from "@/components/social/providers/AuthProvider";
+import { Users, Radio, CalendarClock, X } from "lucide-react"; import { useState, type MouseEvent } from "react"; import { useRouter } from "next/navigation"; import { authFetch } from "@/lib/authClient"; import { useAuth } from "@/components/social/providers/AuthProvider";
 
 function formatSchedule(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -23,10 +24,10 @@ function formatSchedule(iso: string | null | undefined): string {
 export function SpaceCard({ space }: { space: Space }) {
   const format = getRoomFormatConfig(space.room_format);
   const host = space.host;
-  const isScheduled = space.status === "scheduled"; const { user } = useAuth(); const router = useRouter(); const [ending, setEnding] = useState(false); const isHost = !!user && user.id === space.host_id; const handleEndSpace = async (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); if (!isHost || ending) return; if (typeof window !== "undefined" && !window.confirm("End this space for everyone?")) return; setEnding(true); try { await supabase.from("spaces").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", space.id); router.refresh(); } catch { setEnding(false); } };
+  const isScheduled = space.status === "scheduled"; const { user } = useAuth(); const router = useRouter(); const [ending, setEnding] = useState(false); const isHost = !!user && user.id === space.host_id; const handleEndSpace = async (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); if (!isHost || ending) return; if (typeof window !== "undefined" && !window.confirm("End this space for everyone?")) return; setEnding(true); try { await authFetch(`/api/social/spaces/${space.id}/end`, { method: "POST" }); router.refresh(); } catch { setEnding(false); } };
 
   return (
-    <Link href={`/social/spaces/${space.id}`}>
+    <Link href={roomHref(space)}>
       <div className="room-card glass rounded-2xl p-5 border border-melori-border relative overflow-hidden group cursor-pointer h-full flex flex-col">
         <div className="absolute top-4 right-4 flex items-center gap-1.5">
           {isScheduled ? (

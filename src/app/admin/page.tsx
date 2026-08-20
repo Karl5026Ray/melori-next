@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { startOAuthSignIn } from "@/lib/nativeAuth";
 
 function AdminLoginInner() {
   const params = useSearchParams();
@@ -100,12 +101,7 @@ function AdminLoginInner() {
     setGoogleLoading(true);
     setError("");
     try {
-      const redirectTo = `${window.location.origin}/auth/callback?admin=1`;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo },
-      });
-      if (oauthError) throw oauthError;
+      await startOAuthSignIn("google", "admin=1");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Google sign-in failed.");
       setGoogleLoading(false);

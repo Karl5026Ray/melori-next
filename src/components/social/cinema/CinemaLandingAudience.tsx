@@ -1,0 +1,75 @@
+import Image from "next/image";
+import type { Space } from "@/types/social";
+
+// Horizontal audience-style avatar strip beneath the live-tiles row on the
+// Cinema landing. Mirrors the audience row inside a Cinema room, so the
+// landing's shape reads as "you're already looking at a Cinema" — a big main
+// screen up top, three portrait tiles below, an audience at the bottom.
+//
+// Data source is deliberately opportunistic: we take up to `MAX` distinct
+// hosts across the currently-live rooms. It isn't a real presence roster (no
+// per-viewer heartbeats here), just a way to fill the row with faces that
+// meaningfully belong to Cinema right now. When nothing is live, this row is
+// simply omitted — it used to pad out to MAX with dashed placeholder circles,
+// but those didn't resemble anything in an actual room and only misled
+// people about what they were about to walk into, so there is no longer a
+// fallback rendering here for the empty case.
+const MAX = 8;
+
+interface HostFace {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+}
+
+function hostsFromLive(live: Space[]): HostFace[] {
+  const seen = new Set<string>();
+  const out: HostFace[] = [];
+  for (const room of live) {
+    const host = room.host;
+    if (!host?.id || seen.has(host.id)) continue;
+    seen.add(host.id);
+    out.push({
+      id: host.id,
+      name: host.display_name || host.username || "Host",
+      avatarUrl: host.avatar_url ?? null,
+    });
+    if (out.length >= MAX) break;
+  }
+  return out;
+}
+
+export function CinemaLandingAudience({ live }: { live: Space[] }) {
+  const faces = hostsFromLive(live);
+  if (faces.length === 0) return null;
+
+  return (
+    <div
+      className="flex items-center gap-3 overflow-x-auto pb-1"
+      style={{ overscrollBehaviorX: "contain", touchAction: "pan-x" }}
+      aria-label="Cinema audience"
+    >
+      {faces.map((face) => (
+        <span
+          key={face.id}
+          className="relative block h-10 w-10 shrink-0 overflow-hidden rounded-full border border-cinema-border bg-cinema-surface"
+          title={face.name}
+        >
+          {face.avatarUrl ? (
+            <Image
+              src={face.avatarUrl}
+              alt=""
+              fill
+              sizes="40px"
+              className="object-cover"
+            />
+          ) : (
+            <span className="grid h-full w-full place-items-center text-[10px] font-bold text-cinema-gold">
+              {face.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}

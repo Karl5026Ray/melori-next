@@ -7,6 +7,12 @@ import type { CallMode, CallState, CallSession } from "@/lib/callClient";
 // Full-screen call overlay. Renders the remote video large with a small local
 // preview (video calls), or an avatar + status (voice calls). Works for both
 // the outgoing (ringing) and incoming (accept/decline) flows.
+//
+// Streams arrive as PROPS and are attached in an effect through refs. The old
+// version looked the remote video element up in the DOM by id from the
+// session callbacks, which raced React: on a fast answer the stream callback
+// fired before the overlay had mounted, the lookup returned null, and the call
+// connected with a black tile and no audio element bound.
 export function CallOverlay({
   session,
   mode,
@@ -14,6 +20,8 @@ export function CallOverlay({
   peerName,
   peerAvatar,
   isIncoming,
+  localStream,
+  remoteStream,
   onAccept,
   onDecline,
   onHangup,
@@ -24,21 +32,38 @@ export function CallOverlay({
   peerName: string;
   peerAvatar?: string | null;
   isIncoming: boolean;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
   onAccept: () => void;
   onDecline: () => void;
   onHangup: () => void;
 }) {
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
 
+  // Attach/detach whenever either the stream or the element identity changes.
   useEffect(() => {
-    if (!session) return;
-    // Attach streams as they arrive by re-reading from the session handlers.
-    // The parent wires onLocalStream/onRemoteStream to set these video els.
-    return () => {};
-  }, [session]);
+    const el = localRef.current;
+    if (!el) return;
+    el.srcObject = localStream;
+    return () => {
+      el.srcObject = null;
+    };
+  }, [localStream, mode]);
+
+  useEffect(() => {
+    const video = remoteRef.current;
+    if (video) video.srcObject = remoteStream;
+    const audio = remoteAudioRef.current;
+    if (audio) audio.srcObject = remoteStream;
+    return () => {
+      if (video) video.srcObject = null;
+      if (audio) audio.srcObject = null;
+    };
+  }, [remoteStream, mode]);
 
   const statusLabel =
     state === "ringing"
@@ -47,18 +72,27 @@ export function CallOverlay({
         : "Ringing…"
       : state === "connecting"
         ? "Connecting…"
-        : state === "connected"
-          ? "Connected"
-          : "";
+        : state === "reconnecting"
+          ? "Reconnecting…"
+          : state === "connected"
+            ? "Connected"
+            : "";
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-black/95 px-4 py-8 backdrop-blur">
+    <div
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-black/95 px-4 py-8 backdrop-blur"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${mode === "video" ? "Video" : "Voice"} call with ${peerName}`}
+      data-testid="call-overlay"
+    >
       {/* Remote video / avatar */}
       <div className="relative flex w-full flex-1 items-center justify-center overflow-hidden">
         {mode === "video" ? (
           <video
             ref={remoteRef}
             id="call-remote-video"
+            data-testid="call-remote-video"
             autoPlay
             playsInline
             className="max-h-full max-w-full rounded-2xl bg-black object-contain"
@@ -70,6 +104,13 @@ export function CallOverlay({
               alt=""
               className="h-32 w-32 rounded-full object-cover ring-4 ring-brand-primary/40"
             />
+            {/* Voice calls still need an element to play the remote audio. */}
+            <audio
+              ref={remoteAudioRef}
+              data-testid="call-remote-audio"
+              autoPlay
+              className="sr-only"
+            />
           </div>
         )}
 
@@ -78,6 +119,7 @@ export function CallOverlay({
           <video
             ref={localRef}
             id="call-local-video"
+            data-testid="call-local-video"
             autoPlay
             playsInline
             muted
@@ -87,7 +129,14 @@ export function CallOverlay({
 
         <div className="absolute left-1/2 top-6 -translate-x-1/2 text-center">
           <h2 className="text-lg font-bold text-white">{peerName}</h2>
-          <p className="text-sm text-white/70">{statusLabel}</p>
+          <p
+            className="text-sm text-white/70"
+            role="status"
+            aria-live="polite"
+            data-testid="call-status"
+          >
+            {statusLabel}
+          </p>
         </div>
       </div>
 
@@ -99,6 +148,7 @@ export function CallOverlay({
               onClick={onDecline}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500"
               aria-label="Decline"
+              data-testid="call-decline"
             >
               <PhoneOff className="h-7 w-7" />
             </button>
@@ -106,6 +156,7 @@ export function CallOverlay({
               onClick={onAccept}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-green-600 text-white hover:bg-green-500"
               aria-label="Accept"
+              data-testid="call-accept"
             >
               <Phone className="h-7 w-7" />
             </button>
@@ -120,6 +171,8 @@ export function CallOverlay({
                 muted ? "bg-white text-black" : "bg-white/15 text-white hover:bg-white/25"
               }`}
               aria-label={muted ? "Unmute" : "Mute"}
+              aria-pressed={muted}
+              data-testid="call-toggle-mute"
             >
               {muted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
             </button>
@@ -133,6 +186,8 @@ export function CallOverlay({
                   camOff ? "bg-white text-black" : "bg-white/15 text-white hover:bg-white/25"
                 }`}
                 aria-label={camOff ? "Turn camera on" : "Turn camera off"}
+                aria-pressed={camOff}
+                data-testid="call-toggle-camera"
               >
                 {camOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
               </button>
@@ -142,6 +197,7 @@ export function CallOverlay({
               onClick={onHangup}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500"
               aria-label="End call"
+              data-testid="call-hangup"
             >
               <PhoneOff className="h-7 w-7" />
             </button>

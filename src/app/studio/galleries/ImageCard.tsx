@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Trash2, Tag, Check } from "lucide-react";
+import { Star, Trash2, Tag, Check, FolderOpen } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import type { GalleryImageItem } from "./types";
 
 interface Props {
   image: GalleryImageItem;
   isCover: boolean;
+  isFolderCover?: boolean;
   onSetCover: (imageId: string) => void;
+  // Omitted for photos outside a folder — those have no folder tile to cover.
+  onSetFolderCover?: (imageId: string) => void;
   onDeleted: (imageId: string) => void;
   onUpdated: (image: GalleryImageItem) => void;
 }
@@ -19,7 +22,9 @@ interface Props {
 export default function ImageCard({
   image,
   isCover,
+  isFolderCover = false,
   onSetCover,
+  onSetFolderCover,
   onDeleted,
   onUpdated,
 }: Props) {
@@ -122,6 +127,15 @@ export default function ImageCard({
             <Star className="h-3 w-3 fill-amber-300" /> Cover
           </span>
         )}
+        {isFolderCover && (
+          <span
+            className={`absolute left-1.5 flex items-center gap-1 rounded-full bg-brand-background/85 px-2 py-0.5 text-[10px] font-semibold text-brand-primary ${
+              isCover ? "top-8" : "top-1.5"
+            }`}
+          >
+            <FolderOpen className="h-3 w-3" /> Folder cover
+          </span>
+        )}
         {forSale && (
           <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
             <Tag className="h-3 w-3" />
@@ -169,6 +183,22 @@ export default function ImageCard({
           </div>
 
           {error && <p className="text-[11px] text-red-400">{error}</p>}
+
+          {onSetFolderCover && (
+            <button
+              type="button"
+              onClick={() => onSetFolderCover(image.id)}
+              disabled={isFolderCover}
+              className="flex items-center gap-1 text-xs font-medium text-brand-primary disabled:opacity-40"
+            >
+              {isFolderCover ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <FolderOpen className="h-3.5 w-3.5" />
+              )}
+              {isFolderCover ? "Folder cover" : "Set as folder cover"}
+            </button>
+          )}
 
           <div className="flex items-center justify-between pt-1">
             <button

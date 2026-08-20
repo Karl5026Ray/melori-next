@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Camera } from "lucide-react";
+import { X, Camera, Link2 } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
-import type { Profile } from "@/types/social";
+import type { Profile, SocialLink } from "@/types/social";
+
+// The profile supports up to 5 clickable links (migration 039). We always render
+// exactly 5 rows so the user has clear slots to fill; empty rows are dropped on
+// save.
+const MAX_SOCIAL_LINKS = 5;
+
+function padLinks(links: SocialLink[] | null | undefined): SocialLink[] {
+  const base = Array.isArray(links) ? links.slice(0, MAX_SOCIAL_LINKS) : [];
+  while (base.length < MAX_SOCIAL_LINKS) base.push({ label: "", url: "" });
+  return base;
+}
 
 interface EditProfileModalProps {
   user: Profile;
@@ -31,6 +42,9 @@ export default function EditProfileModal({
   const [city, setCity] = useState(user.city ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     user.avatar_url ?? null,
+  );
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>(
+    padLinks(user.social_links),
   );
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -116,6 +130,10 @@ export default function EditProfileModal({
           birthday_visible: birthdayVisible,
           city: city.trim() ? city.trim() : null,
           avatar_url: avatarUrl,
+          // Drop empty rows; keep order. Server re-validates + enforces max 5.
+          social_links: socialLinks
+            .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+            .filter((l) => l.url),
         }),
       });
       if (!res.ok) {
@@ -257,6 +275,52 @@ export default function EditProfileModal({
               className="w-full bg-melori-void/60 border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
               placeholder="Chicago, IL"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-melori-muted mb-1">
+              Links
+            </label>
+            <p className="mb-2 text-xs text-melori-muted">
+              Add up to 5 clickable links (website, socials, music). Leave a row
+              blank to skip it.
+            </p>
+            <div className="space-y-2">
+              {socialLinks.map((link, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 shrink-0 text-melori-muted" />
+                  <input
+                    type="text"
+                    value={link.label}
+                    onChange={(e) =>
+                      setSocialLinks((prev) =>
+                        prev.map((l, j) =>
+                          j === i ? { ...l, label: e.target.value } : l,
+                        ),
+                      )
+                    }
+                    maxLength={60}
+                    placeholder="Label"
+                    className="w-28 shrink-0 bg-melori-void/60 border border-melori-border rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-melori-purple transition"
+                  />
+                  <input
+                    type="url"
+                    inputMode="url"
+                    value={link.url}
+                    onChange={(e) =>
+                      setSocialLinks((prev) =>
+                        prev.map((l, j) =>
+                          j === i ? { ...l, url: e.target.value } : l,
+                        ),
+                      )
+                    }
+                    maxLength={2048}
+                    placeholder="https://…"
+                    className="flex-1 min-w-0 bg-melori-void/60 border border-melori-border rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-melori-purple transition"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           <div>

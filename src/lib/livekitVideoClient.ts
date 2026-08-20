@@ -24,6 +24,30 @@
 //   track's resolution/bitrate via the profile passed in JoinVideoOptions.
 
 import { authFetch } from "@/lib/authClient";
+import {
+  preferLoudspeaker,
+  startRouteWatch,
+  stopRouteWatch,
+} from "@/lib/audioOutput";
+import {
+  audioProfileForType,
+  captureDefaultsFor,
+  publishDefaultsFor,
+  type AudioProfile,
+} from "@/lib/audioProfile";
+import {
+  permissionsAllowSource,
+  waitForPublishSource,
+  type ParticipantPermissionsLike,
+} from "@/lib/cameraPublishGate";
+import { assertCaptureSupported } from "@/lib/mediaCapture";
+import { classifyDisconnectReason } from "@/lib/roomDisconnect";
+import type { FacingMode } from "@/lib/videoMirror";
+import {
+  AUDIO_LEVEL_INTERVAL_MS,
+  audioLevelsChanged,
+  normalizeAudioLevel,
+} from "@/lib/voiceCircles";
 
 type AnyRoom = any;
 type AnyTrack = any;
@@ -31,6 +55,7 @@ type AnyParticipant = { identity: string; name?: string };
 
 export type VideoRole = "publisher" | "subscriber";
 export type VideoTier = "free" | "artist";
+export type VideoRoomMode = "faces" | "cinema";
 
 // Tier limits — mirrors the values from the MM Faces spec (KIMI), but applied
 // through LiveKit's native video capture/publish instead of a self-hosted SFU.
@@ -54,7 +79,25 @@ export interface RemoteVideo {
 export interface JoinVideoOptions {
   spaceId: string;
   role: VideoRole;
+  // Cinema shares this one camera-capable Room connection for both audio and
+  // camera. It never joins livekitClient.ts in parallel.
+  roomMode?: VideoRoomMode;
+  // Faces keeps its historical camera-on-publish behavior. Cinema starts with
+  // microphone only; a successful slot claim is required before camera capture.
+  autoEnableCamera?: boolean;
+  // Cinema must respect the participant row's persisted mute state on join.
+  // Faces retains its historical publisher-mic-on behavior.
+  autoEnableMicrophone?: boolean;
   tier?: VideoTier;
+  // Drives the audio capture + publish profile. Faces defaults to
+  // "performance" (music-grade capture that keeps echo cancellation, so a host
+  // on loudspeaker with live co-hosts cannot feed back). Pass "music" for a
+  // headphones-on performance to get full 128 kbps stereo with all DSP off, or
+  // "voice" for a talk-only room.
+  audioProfile?: AudioProfile;
+  // Optional space type, mapped through audioProfileForType when audioProfile
+  // is not given explicitly.
+  spaceType?: string | null;
   // Called when a remote participant's camera track is subscribed. The UI
   // should place `element` (an attached <video>) into a tile.
   onRemoteVideo?: (video: RemoteVideo) => void;
@@ -63,17 +106,47 @@ export interface JoinVideoOptions {
   // Called when the local camera track is published so the UI can show the
   // host's own preview tile.
   onLocalVideo?: (element: HTMLVideoElement) => void;
+  onLocalVideoRemoved?: () => void;
+  // Fired whenever the LOCAL camera's facing mode is known/changes (initial
+  // capture, or after switchCamera() flips front/back). "user" = front-facing
+  // (selfie) camera, "environment" = rear camera, null = undetermined (e.g. a
+  // desktop webcam that doesn't report facingMode). The UI uses this to decide
+  // whether to mirror the local preview — it must NEVER affect the published
+  // track, only the on-screen CSS.
+  onFacingModeChange?: (facingMode: FacingMode) => void;
   onParticipantCountChange?: (count: number) => void;
+  // Full set of identities currently CONNECTED to the LiveKit room (local
+  // INCLUDED). Emitted on connect and on every join/leave so the UI roster
+  // reflects real presence in real time instead of waiting on a DB poll. Used
+  // to filter the participant roster to who is actually in the room right now.
+  onRosterIdentitiesChange?: (ids: string[]) => void;
   // Full set of currently-active speaker identities (local INCLUDED — LiveKit's
   // ActiveSpeakersChanged omits the local participant, so we merge it in here).
   // Drives the speaker ring for every tile, host + viewers alike.
   onActiveSpeakersChange?: (identities: string[]) => void;
+  // Continuous per-identity microphone loudness, 0..1, sampled on a timer
+  // (local INCLUDED). ActiveSpeakersChanged is a coarse on/off signal; Cinema's
+  // voice circles need the actual level so a ring can breathe with how loud
+  // someone is rather than snapping between two states. Identities with a
+  // muted or unpublished mic are reported as 0.
+  onAudioLevels?: (levels: Record<string, number>) => void;
   // Fired when the LOCAL participant's publish permission changes at runtime
   // (host/mod approved a stage request via the server SDK). canPublish=true
   // means the viewer may now turn on camera/mic WITHOUT reconnecting.
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Fired when the server FORCIBLY removed the local participant (host ban /
+  // kick — LiveKit Disconnected with reason PARTICIPANT_REMOVED). Distinct from
+  // a transient network disconnect: the client will NOT auto-reconnect, so the
+  // UI should show a clear "you were removed" message rather than a retry.
+  onRemoved?: () => void;
+  // Fired when the ROOM ITSELF was deliberately ended server-side
+  // (endLiveKitRoom -> LiveKit deleteRoom, DisconnectReason.ROOM_DELETED),
+  // as opposed to a kick (onRemoved) or a network failure (onError). Local
+  // camera/mic are already stopped by the time this fires. Lets the UI show a
+  // calm "This room has ended" state instead of the generic error overlay.
+  onRoomEnded?: () => void;
   // Called whenever the browser's autoplay policy changes whether remote audio
   // can play. `canPlay === false` means the UI must show a tap-to-unmute
   // affordance and call ensureVideoAudio() from that user gesture.
@@ -90,7 +163,21 @@ interface ActiveVideoSession {
   localVideoEl: HTMLVideoElement | null;
   remoteVideoEls: Map<string, HTMLVideoElement>;
   remoteAudioEls: HTMLMediaElement[];
+  // Active audio profile, so mic re-publish reuses the same tuning.
+  audioProfile: AudioProfile;
+  // Facing mode of the currently-active LOCAL camera. Drives self-preview
+  // mirroring in the UI only — never touches the published track.
+  facingMode: FacingMode;
   cleanups: Array<() => void>;
+  // Last known LOCAL publish permissions. A runtime grant (Cinema slot claim,
+  // host stage approval) arrives as an event AFTER the API that caused it has
+  // already returned, so callers must be able to wait for it rather than
+  // publishing into a stale local copy.
+  localPermissions: ParticipantPermissionsLike | null;
+  // Listeners woken on every local permission change. Kept separate from
+  // onLocalPermissionsChanged so an internal waiter cannot be dropped by a
+  // caller that did not pass that callback.
+  permissionListeners: Set<() => void>;
   // Remembered so a subscriber can later upgrade to publisher (becomePublisher)
   // by reconnecting with the same callbacks but a publisher token.
   lastOpts: JoinVideoOptions | null;
@@ -105,9 +192,37 @@ let session: ActiveVideoSession = {
   localVideoEl: null,
   remoteVideoEls: new Map(),
   remoteAudioEls: [],
+  audioProfile: "performance",
+  facingMode: null,
   cleanups: [],
+  localPermissions: null,
+  permissionListeners: new Set(),
   lastOpts: null,
 };
+
+function notifyPermissionListeners() {
+  session.permissionListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      /* one bad waiter must not starve the others */
+    }
+  });
+}
+
+// Block until the server-side grant for `source` has actually reached this
+// client. Throws (rather than publishing and failing opaquely) when it never
+// arrives, so the caller can undo whatever it did to earn the grant.
+async function awaitPublishPermission(source: "camera" | "microphone"): Promise<void> {
+  await waitForPublishSource({
+    source,
+    read: () => session.localPermissions,
+    subscribe: (listener) => {
+      session.permissionListeners.add(listener);
+      return () => session.permissionListeners.delete(listener);
+    },
+  });
+}
 
 async function fetchToken(spaceId: string, role: VideoRole) {
   const res = await authFetch("/api/livekit-token", {
@@ -125,7 +240,127 @@ async function fetchToken(spaceId: string, role: VideoRole) {
     room: string;
     identity: string;
     role: VideoRole;
+    allowed_sources?: Array<"camera" | "microphone">;
+    camera_slot?: number | null;
   }>;
+}
+
+export type MediaPermissionState = "granted" | "denied" | "prompt" | "unknown";
+
+// Read the browser's PERSISTED camera + mic permission via the Permissions API.
+// The persisted grant is what makes a second join instant: once the user has
+// clicked "Allow" for the origin, the state is "granted" and getUserMedia will
+// NOT prompt again. We use this to (a) skip firing getUserMedia when access is
+// "denied" (it would only reject) and show a settings hint instead, and (b)
+// reason about the grant without prompting. Camera/microphone are not queryable
+// in every browser (older Firefox/Safari), so "unknown" falls back to the
+// normal getUserMedia path.
+export async function getMediaPermission(): Promise<MediaPermissionState> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+      return "unknown";
+    }
+    const [cam, mic] = await Promise.all([
+      navigator.permissions.query({ name: "camera" as PermissionName }),
+      navigator.permissions.query({ name: "microphone" as PermissionName }),
+    ]);
+    const states = [cam.state, mic.state];
+    if (states.includes("denied")) return "denied";
+    if (states.every((s) => s === "granted")) return "granted";
+    return "prompt";
+  } catch {
+    return "unknown";
+  }
+}
+
+// Turn on the local camera + mic in a SINGLE getUserMedia request and attach the
+// resulting camera track. LiveKit's enableCameraAndMicrophone() exists
+// specifically to surface ONE permission dialog (and to reuse a persisted grant
+// silently); requesting camera and mic as two separate calls made the browser
+// evaluate access twice — the repeat-prompt bug this replaces. Capture quality
+// still comes from the room's per-tier videoCaptureDefaults/publishDefaults.
+async function enableLocalCameraAndMic(
+  room: AnyRoom,
+  onLocalVideo?: (el: HTMLVideoElement) => void,
+  onFacingModeChange?: (facingMode: FacingMode) => void,
+): Promise<HTMLVideoElement | null> {
+  // The capture API itself can be missing (iOS WKWebView without the camera/mic
+  // usage descriptions, or a non-secure origin). LiveKit would surface that as a
+  // bare "undefined is not an object" TypeError, so check first and explain.
+  assertCaptureSupported();
+
+  // If the user has explicitly BLOCKED access, don't fire getUserMedia (it just
+  // rejects); surface an actionable message the UI can show instead.
+  if ((await getMediaPermission()) === "denied") {
+    throw new Error(
+      "Camera and microphone are blocked. Enable them for this site in your browser settings, then try again.",
+    );
+  }
+
+  const lp = room.localParticipant;
+  try {
+    await lp.enableCameraAndMicrophone();
+  } catch (err: any) {
+    // A genuine access failure (user denied at the prompt, no/unreadable device)
+    // must NOT trigger a second getUserMedia — that would double-prompt. Only
+    // fall back to the individual calls when the combined helper itself is
+    // unavailable in this SDK build.
+    const name = err?.name;
+    if (
+      name === "NotAllowedError" ||
+      name === "NotFoundError" ||
+      name === "NotReadableError" ||
+      name === "SecurityError"
+    ) {
+      throw err;
+    }
+    await lp.setCameraEnabled(true);
+    await lp.setMicrophoneEnabled(true);
+  }
+
+  const lk = await import("livekit-client");
+  const { Track } = lk as any;
+  const SOURCE_CAMERA = Track?.Source?.Camera ?? "camera";
+  const camPub =
+    lp.getTrackPublication?.(SOURCE_CAMERA) ??
+    Array.from(lp.trackPublications?.values?.() ?? []).find(
+      (p: any) => p?.source === SOURCE_CAMERA,
+    );
+  const camTrack = camPub?.track ?? camPub?.videoTrack;
+  if (camTrack && typeof camTrack.attach === "function") {
+    const el = camTrack.attach() as HTMLVideoElement;
+    el.playsInline = true;
+    el.autoplay = true;
+    el.muted = true; // never echo your own mic
+    session.localVideoEl = el;
+    setFacingMode(readFacingMode(camTrack), onFacingModeChange);
+    onLocalVideo?.(el);
+    return el;
+  }
+  return session.localVideoEl;
+}
+
+// Read the active facing mode off a local camera track's MediaStreamTrack
+// settings. Most laptop webcams and some browsers never report facingMode at
+// all, so this legitimately returns null — callers must treat that as "do not
+// mirror" rather than guessing.
+function readFacingMode(track: AnyTrack): FacingMode {
+  try {
+    const settings = track?.mediaStreamTrack?.getSettings?.();
+    const facingMode = settings?.facingMode;
+    if (facingMode === "user" || facingMode === "environment") return facingMode;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function setFacingMode(
+  facingMode: FacingMode,
+  onFacingModeChange?: (facingMode: FacingMode) => void,
+) {
+  session.facingMode = facingMode;
+  onFacingModeChange?.(facingMode);
 }
 
 export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
@@ -134,7 +369,8 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
   }
 
   const lk = await import("livekit-client");
-  const { Room, RoomEvent, Track, VideoPresets } = lk as any;
+  const { Room, RoomEvent, Track, VideoPresets, DisconnectReason, AudioPresets } =
+    lk as any;
 
   const tier: VideoTier = opts.tier || "free";
   const limits = VIDEO_TIER_LIMITS[tier];
@@ -142,6 +378,18 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
 
   try {
     const creds = await fetchToken(opts.spaceId, opts.role);
+
+    // Audio profile. Without this, Faces fell back to LiveKit's library
+    // defaults — 48 kbps MONO with DTX on, plus the browser's full DSP chain
+    // (noise suppression + auto gain) shredding any music the host performs.
+    // "performance" is the right default for a video room: music-grade capture
+    // at 96 kbps stereo with DTX off, echo cancellation retained for safety.
+    const audioProfile: AudioProfile =
+      opts.audioProfile ??
+      (opts.spaceType ? audioProfileForType(opts.spaceType) : "performance");
+    const audioCapture = captureDefaultsFor(audioProfile);
+    const audioPublish = publishDefaultsFor(audioProfile, AudioPresets);
+    session.audioProfile = audioProfile;
 
     const room: AnyRoom = new Room({
       adaptiveStream: true,
@@ -153,6 +401,8 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
           frameRate: limits.maxFramerate,
         },
       },
+      // Keep the raw musical signal instead of the browser's call-tuned DSP.
+      audioCaptureDefaults: audioCapture,
       publishDefaults: {
         videoEncoding: {
           maxBitrate: limits.maxBitrate,
@@ -161,6 +411,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
         // Simulcast lets viewers on weak connections get a lower layer while
         // strong connections get full quality — best-in-class default.
         simulcast: true,
+        audioPreset: audioPublish.audioPreset,
+        dtx: audioPublish.dtx,
+        red: audioPublish.red,
+        forceStereo: audioPublish.forceStereo,
       },
       stopLocalTrackOnUnpublish: true,
     });
@@ -257,16 +511,31 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed),
     );
 
-    // --- Participant count -----------------------------------------------
+    // --- Participant count + live roster ---------------------------------
     const emitCount = () => {
       // +1 for the local participant.
       const n = (room.remoteParticipants?.size ?? 0) + 1;
       opts.onParticipantCountChange?.(n);
     };
-    const onParticipantConnected = () => emitCount();
+    // Identities actually connected to LiveKit right now (local included). This
+    // is the real-time source of truth for presence — the UI intersects the DB
+    // roster with this set so a guest who dropped disappears immediately instead
+    // of lingering until their DB row is reaped.
+    const emitRoster = () => {
+      const ids: string[] = [];
+      const local = room.localParticipant?.identity;
+      if (local) ids.push(local);
+      room.remoteParticipants?.forEach((p: AnyParticipant) => ids.push(p.identity));
+      opts.onRosterIdentitiesChange?.(ids);
+    };
+    const onParticipantConnected = () => {
+      emitCount();
+      emitRoster();
+    };
     const onParticipantDisconnected = (p: AnyParticipant) => {
       opts.onRemoteVideoRemoved?.(p.identity);
       emitCount();
+      emitRoster();
     };
     room.on(RoomEvent.ParticipantConnected, onParticipantConnected);
     room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
@@ -310,15 +579,79 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.TrackUnmuted, refreshSpeakers);
     });
 
+    // --- Continuous audio levels (volume rings) ---------------------------
+    // LiveKit exposes `audioLevel` per participant but pushes no event for it,
+    // so it has to be sampled. AUDIO_LEVEL_INTERVAL_MS is fast enough to look
+    // live and slow enough to stay off the render hot path; the callback is
+    // skipped entirely when nothing changed meaningfully, so a silent room
+    // costs no re-renders at all.
+    if (opts.onAudioLevels) {
+      const emitLevels = opts.onAudioLevels;
+      let previous: Record<string, number> = {};
+      const sample = () => {
+        const next: Record<string, number> = {};
+        const collect = (participant: any) => {
+          const identity = participant?.identity;
+          if (!identity) return;
+          const micPub = participant.getTrackPublication?.(
+            Track?.Source?.Microphone ?? "microphone",
+          );
+          // No mic, or a muted mic, is silence — not a stale last-known level.
+          const audible = Boolean(micPub) && !micPub?.isMuted;
+          next[identity] = audible ? normalizeAudioLevel(participant.audioLevel) : 0;
+        };
+        collect(room.localParticipant);
+        const remotes =
+          room.remoteParticipants ?? room.participants ?? new Map();
+        remotes.forEach?.((participant: any) => collect(participant));
+        if (!audioLevelsChanged(previous, next)) return;
+        previous = next;
+        emitLevels(next);
+      };
+      const levelTimer = setInterval(sample, AUDIO_LEVEL_INTERVAL_MS);
+      session.cleanups.push(() => {
+        clearInterval(levelTimer);
+        // Leave the UI quiet rather than frozen mid-pulse on disconnect.
+        emitLevels({});
+      });
+    }
+
     // --- Runtime permission change (server-driven promotion) --------------
     // When a host/mod approves a stage request, the server flips canPublish via
     // RoomServiceClient.updateParticipant and LiveKit pushes this event — no
     // token refresh / reconnect needed. Surface it so the UI can enable media.
     const onPermChanged = (
       _prev: unknown,
-      participant: { isLocal?: boolean; permissions?: { canPublish?: boolean } },
+      participant: {
+        isLocal?: boolean;
+        permissions?: ParticipantPermissionsLike & { canPublish?: boolean };
+      },
     ) => {
       if (participant?.isLocal) {
+        // Record the full permission object (canPublishSources included) before
+        // notifying: a camera grant does not change canPublish for a
+        // participant who was already publishing a microphone, so the boolean
+        // alone cannot tell a waiter that camera became available.
+        session.localPermissions = participant.permissions ?? null;
+        notifyPermissionListeners();
+        // A revoked camera source (host released this guest's Cinema seat) mutes
+        // the track server-side but leaves the local <video> attached, so the UI
+        // would keep showing a camera the participant no longer has. Drop it.
+        if (
+          session.localVideoEl &&
+          !permissionsAllowSource(session.localPermissions, "camera")
+        ) {
+          void room.localParticipant
+            ?.setCameraEnabled?.(false)
+            .catch(() => undefined);
+          try {
+            session.localVideoEl.remove();
+          } catch {
+            /* noop */
+          }
+          session.localVideoEl = null;
+          opts.onLocalVideoRemoved?.();
+        }
         opts.onLocalPermissionsChanged?.(!!participant.permissions?.canPublish);
       }
     };
@@ -336,8 +669,32 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.Reconnecting, onReconnecting);
       room.off(RoomEvent.Reconnected, onReconnected);
     });
-    const onDisconnected = () =>
+    // A host ban/kick disconnects us with PARTICIPANT_REMOVED and LiveKit will
+    // NOT auto-reconnect. Surface that as a distinct "removed" signal so the UI
+    // can show a clear message instead of a generic error / silent retry.
+    const onDisconnected = (reason?: unknown) => {
+      if (
+        DisconnectReason &&
+        reason === DisconnectReason.PARTICIPANT_REMOVED
+      ) {
+        opts.onRemoved?.();
+        return;
+      }
+      const classification = classifyDisconnectReason(
+        reason as string | number | undefined,
+      );
+      if (classification === "room-ended") {
+        // Deliberate server-side teardown (the host ended the room, or the
+        // lazy abandonment reaper closed it): stop local camera/mic
+        // immediately rather than leaving hardware indicators on, then hand
+        // off to the calm "room ended" path instead of onError.
+        void room.localParticipant?.setCameraEnabled?.(false).catch(() => undefined);
+        void room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => undefined);
+        opts.onRoomEnded?.();
+        return;
+      }
       opts.onError?.(new Error("Disconnected from live room"));
+    };
     room.on(RoomEvent.Disconnected, onDisconnected);
     session.cleanups.push(() =>
       room.off(RoomEvent.Disconnected, onDisconnected),
@@ -366,6 +723,10 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     });
 
     session.room = room;
+    // Seed permissions from the connected participant so a host who joined with
+    // a slot already granted never waits on an event that will not fire.
+    session.localPermissions =
+      (room.localParticipant?.permissions as ParticipantPermissionsLike | undefined) ?? null;
     session.spaceId = opts.spaceId;
     session.identity = creds.identity;
     session.role = creds.role;
@@ -375,27 +736,30 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     // browser is holding audio back until a gesture.
     opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
 
-    // Publisher (host) turns on camera + mic. Viewers stay receive-only.
+    // Faces preserves the existing camera+mic-on-publisher behavior. Cinema
+    // uses this one Room for audio + camera but starts camera-off: capture is
+    // only requested after an atomic server slot claim updates permissions.
     if (creds.role === "publisher") {
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
-      const camPub =
-        room.localParticipant.getTrackPublication?.(SOURCE_CAMERA) ??
-        Array.from(room.localParticipant.trackPublications?.values?.() ?? []).find(
-          (p: any) => p?.source === SOURCE_CAMERA,
-        );
-      const camTrack = camPub?.track ?? camPub?.videoTrack;
-      if (camTrack && typeof camTrack.attach === "function") {
-        const el = camTrack.attach() as HTMLVideoElement;
-        el.playsInline = true;
-        el.autoplay = true;
-        el.muted = true; // never echo your own mic
-        session.localVideoEl = el;
-        opts.onLocalVideo?.(el);
+      if (opts.roomMode === "cinema") {
+        if (opts.autoEnableMicrophone) {
+          assertCaptureSupported();
+          await room.localParticipant.setMicrophoneEnabled(true, audioCapture, {
+            audioPreset: audioPublish.audioPreset,
+            dtx: audioPublish.dtx,
+            red: audioPublish.red,
+            forceStereo: audioPublish.forceStereo,
+          });
+        }
+        if (opts.autoEnableCamera && creds.allowed_sources?.includes("camera")) {
+          await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
+        }
+      } else {
+        await enableLocalCameraAndMic(room, opts.onLocalVideo, opts.onFacingModeChange);
       }
     }
 
     emitCount();
+    emitRoster();
   } catch (err) {
     opts.onError?.(err as Error);
     throw err;
@@ -416,11 +780,95 @@ export async function ensureVideoAudio(): Promise<void> {
     const p = el.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
   });
+
+  // On iOS, mic capture drags output to the earpiece. Push it back to the
+  // loudspeaker now that we are inside a user gesture (Safari 26+ only; no-ops
+  // everywhere else and never overrides a connected headset).
+  try {
+    await preferLoudspeaker(session.remoteAudioEls);
+    startRouteWatch(() => session.remoteAudioEls);
+  } catch (err) {
+    console.warn("[faces] loudspeaker routing skipped", err);
+  }
+}
+
+/**
+ * True once this client is connected to the room. Callers gate a camera control
+ * on this so a tap cannot claim a durable slot before there is anything to
+ * publish on.
+ */
+export function isVideoRoomConnected(): boolean {
+  return !!session.room;
+}
+
+/**
+ * True when the local participant may publish camera RIGHT NOW according to the
+ * permissions this client has actually received.
+ */
+export function canPublishCameraNow(): boolean {
+  return !!session.room && permissionsAllowSource(session.localPermissions, "camera");
 }
 
 export async function setCameraEnabled(enabled: boolean): Promise<void> {
-  if (!session.room) return;
+  // Turning the camera OFF while disconnected is already the desired state.
+  // Turning it ON is not: silently returning here reported success to a caller
+  // that had just claimed a Cinema slot, stranding that reservation with no
+  // camera and no error to trigger its release.
+  if (!session.room) {
+    if (!enabled) return;
+    throw new Error("Not connected to the room yet. Wait for the room to connect, then try again.");
+  }
+  if (enabled) {
+    // The grant that authorized this call was applied server-side; wait for it
+    // to reach this client before publishing into a stale permission set.
+    await awaitPublishPermission("camera");
+    assertCaptureSupported();
+    if ((await getMediaPermission()) === "denied") {
+      throw new Error(
+        "Camera is blocked. Enable it for this site in your browser settings, then try again.",
+      );
+    }
+  }
   await session.room.localParticipant.setCameraEnabled(enabled);
+  if (!enabled) {
+    try {
+      session.localVideoEl?.remove();
+    } catch {
+      /* noop */
+    }
+    session.localVideoEl = null;
+    session.lastOpts?.onLocalVideoRemoved?.();
+    return;
+  }
+
+  const lk = await import("livekit-client");
+  const source = (lk as any).Track?.Source?.Camera ?? "camera";
+  const publication =
+    session.room.localParticipant.getTrackPublication?.(source) ??
+    Array.from(session.room.localParticipant.trackPublications?.values?.() ?? []).find(
+      (entry: any) => entry?.source === source,
+    );
+  const track = (publication as any)?.track ?? (publication as any)?.videoTrack;
+  // No attachable camera track means the publish did not actually happen. This
+  // must surface as a failure: the caller's undo path (releasing a claimed
+  // Cinema slot) is the only thing that keeps a guest seat from leaking.
+  if (!track?.attach) {
+    // Release the capture device before reporting the failure so a dead attempt
+    // never leaves the hardware indicator on.
+    try {
+      await session.room.localParticipant.setCameraEnabled(false);
+    } catch {
+      /* best effort */
+    }
+    throw new Error("The camera did not start. Check that no other app is using it, then try again.");
+  }
+  const element = track.attach() as HTMLVideoElement;
+  element.playsInline = true;
+  element.autoplay = true;
+  element.muted = true;
+  session.localVideoEl = element;
+  setFacingMode(readFacingMode(track), session.lastOpts?.onFacingModeChange);
+  session.lastOpts?.onLocalVideo?.(element);
 }
 
 export async function setMicEnabled(enabled: boolean): Promise<void> {
@@ -442,12 +890,19 @@ export async function switchCamera(): Promise<void> {
       ?.getSettings?.()?.deviceId;
     const next = devices.find((d: any) => d.deviceId !== current) ?? devices[0];
     if (next) await session.room.switchActiveDevice("videoinput", next.deviceId);
+    // Re-read the facing mode off the (now switched) camera track so the UI
+    // can flip self-preview mirroring to match — front mirrors, back doesn't.
+    const camTrack = lp.getTrackPublication?.("camera")?.track;
+    setFacingMode(readFacingMode(camTrack), session.lastOpts?.onFacingModeChange);
   } catch (err) {
     console.warn("[faces] switchCamera failed", err);
   }
 }
 
 export async function leaveVideoRoom(): Promise<void> {
+  // Drop any pinned audio sink and stop watching route changes; a pin must
+  // never outlive the session it was applied for.
+  stopRouteWatch();
   const { room, cleanups } = session;
   cleanups.forEach((fn) => {
     try {
@@ -487,12 +942,16 @@ export async function leaveVideoRoom(): Promise<void> {
     room: null,
     spaceId: null,
     identity: null,
+    audioProfile: "performance",
+    facingMode: null,
     role: "subscriber",
     tier: "free",
     localVideoEl: null,
     remoteVideoEls: new Map(),
     remoteAudioEls: [],
     cleanups: [],
+    localPermissions: null,
+    permissionListeners: new Set(),
     lastOpts: keepOpts,
   };
 }
@@ -539,29 +998,13 @@ export async function becomeSubscriber(): Promise<void> {
 // the camera track is live so the UI can show a self-tile.
 export async function publishLocalMedia(): Promise<HTMLVideoElement | null> {
   if (!session.room) return null;
-  const lk = await import("livekit-client");
-  const { Track } = lk as any;
-  const SOURCE_CAMERA = Track?.Source?.Camera ?? "camera";
-  const lp = session.room.localParticipant;
-  await lp.setCameraEnabled(true);
-  await lp.setMicrophoneEnabled(true);
-  const camPub =
-    lp.getTrackPublication?.(SOURCE_CAMERA) ??
-    Array.from(lp.trackPublications?.values?.() ?? []).find(
-      (p: any) => p?.source === SOURCE_CAMERA,
-    );
-  const camTrack = camPub?.track ?? camPub?.videoTrack;
-  if (camTrack && typeof camTrack.attach === "function") {
-    const el = camTrack.attach() as HTMLVideoElement;
-    el.playsInline = true;
-    el.autoplay = true;
-    el.muted = true;
-    session.localVideoEl = el;
-    session.lastOpts?.onLocalVideo?.(el);
-    session.role = "publisher";
-    return el;
-  }
-  return session.localVideoEl;
+  const el = await enableLocalCameraAndMic(
+    session.room,
+    session.lastOpts?.onLocalVideo,
+    session.lastOpts?.onFacingModeChange,
+  );
+  session.role = "publisher";
+  return el;
 }
 
 export function getVideoSession() {
@@ -570,6 +1013,7 @@ export function getVideoSession() {
     identity: session.identity,
     role: session.role,
     tier: session.tier,
+    facingMode: session.facingMode,
     connected: !!session.room,
   };
 }

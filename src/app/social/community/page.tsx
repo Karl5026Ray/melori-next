@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import CommentSection, {
   type CommunityComment,
 } from "@/components/social/community/CommentSection";
+import { CommunityToggle } from "@/components/social/community/CommunityToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -29,5 +30,13 @@ async function getComments(): Promise<CommunityComment[]> {
 
 export default async function CommunityPage() {
   const comments = await getComments();
-  return <CommentSection initialComments={comments} />;
+  return (
+    <div className="relative">
+      {/* Same pill that opens Community from Mirror; here it closes Community
+          and navigates back. Absolutely positioned so the visual anchor stays
+          put across the round trip. */}
+      <CommunityToggle />
+      <CommentSection initialComments={comments} />
+    </div>
+  );
 }

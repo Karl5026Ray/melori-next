@@ -4,7 +4,10 @@ import { useState, useRef, useEffect, memo } from "react";
 import Link from "next/link";
 import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
+import { youtubeEmbedUrl } from "@/lib/youtube";
+import { shouldLoopVideoCardMedia } from "@/lib/mirrorFeedNavigation";
 import CommentSheet from "./CommentSheet";
+import PostActionsMenu from "./PostActionsMenu";
 import {
   Heart,
   MessageCircle,
@@ -22,6 +25,15 @@ interface VideoCardProps {
   // paused video's playhead without causing a reload-flash if the user flicks
   // straight back to it.
   distance?: number;
+  // Called after this post is deleted (by its owner or by an admin) so the
+  // parent feed can drop the card from its list.
+  onDeleted?: (videoId: string) => void;
+  // Mirror uses this to move to the next already-loaded post when playback
+  // completes. Other VideoCard consumers keep their existing media behavior.
+  onPlaybackEnded?: (videoId: string) => void;
+  // A one-post Mirror sequence loops in the media element itself, avoiding a
+  // redundant scroll/state transition back onto the same card.
+  shouldLoop?: boolean;
 }
 
 // Resolve a media URL to something the browser can actually load. Video posts
@@ -41,12 +53,35 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   return `${base}/storage/v1/object/public/audio-files/${path}`;
 }
 
-function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
+function VideoCardBase({
+  video,
+  isActive,
+  distance = 99,
+  onDeleted,
+  onPlaybackEnded,
+  shouldLoop = false,
+}: VideoCardProps) {
   const isAudio = video.media_type === "audio";
   const mediaUrl = resolveMediaUrl(video.video_url, isAudio);
+  // Artist-submitted YouTube post (migration 041): played through YouTube's own
+  // iframe rather than a <video> element, so none of the media-element refs or
+  // effects below apply to it. `source` may be absent on older cached payloads,
+  // so the id alone is enough to switch rendering.
+  const youtubeId =
+    video.source === "youtube" || video.youtube_id ? video.youtube_id : null;
+  // Native video and YouTube default to in-place looping for ordinary VideoFeed
+  // consumers. Mirror opts into completion handling, which turns only a
+  // multi-item sequence into feed progression; its one-item sequence still
+  // loops in place.
+  const loopInPlace = shouldLoopVideoCardMedia(
+    shouldLoop,
+    Boolean(onPlaybackEnded),
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const youtubeFrameRef = useRef<HTMLIFrameElement>(null);
+  const playbackEndedRef = useRef(false);
   // Video posts default muted (TikTok autoplay pattern — browsers block
   // autoplay-with-sound). Audio-only posts default UNMUTED: a muted audio post
   // is pointless, and the native <audio controls> bar is the manual fallback
@@ -60,6 +95,37 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
   const [likePending, setLikePending] = useState(false);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [commentsOpen, setCommentsOpen] = useState(false);
+
+  // Double-tap-to-like state.
+  //
+  // - `bursts` renders one <Heart> per double-tap at the tap point, keyed by an
+  //   ever-increasing id so React never reuses a DOM node and every animation
+  //   plays clean. Each burst auto-cleans after the animation window.
+  // - `lastTapRef` remembers the previous tap so we can detect a double-tap
+  //   within 300ms and within ~40px of the first tap (native double-tap feel,
+  //   independent of the browser's own dblclick which behaves poorly on touch).
+  const [bursts, setBursts] = useState<
+    { id: number; x: number; y: number }[]
+  >([]);
+  const burstIdRef = useRef(0);
+  const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+
+  // Share button state — shows a brief "Copied!" confirmation when we fall
+  // back to the clipboard on desktops without navigator.share.
+  const [shareCopied, setShareCopied] = useState(false);
+
+  // A native media element and YouTube's iframe can each publish duplicate end
+  // notifications while a state transition is in flight. Reset the latch only
+  // for a newly active card and pass one completion upward at most.
+  useEffect(() => {
+    if (isActive) playbackEndedRef.current = false;
+  }, [isActive, video.id]);
+
+  const notifyPlaybackEnded = () => {
+    if (!isActive || playbackEndedRef.current) return;
+    playbackEndedRef.current = true;
+    onPlaybackEnded?.(video.id);
+  };
 
   // Load the caller's like state + the live count for this card. Deferred until
   // the card is at (or adjacent to) the active position, and fetched only once.
@@ -163,15 +229,19 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     };
   }, []);
 
-  // Audio posts: reset the playhead when a clip finishes, otherwise the native
-  // controls sit in the "ended" state and tapping play does nothing (Bug:
-  // "won't stop on the correct spot / then won't play").
+  // Audio posts in Mirror advance through the feed on completion. Other
+  // consumers retain the existing playhead reset behavior when they do not
+  // supply an end callback.
   useEffect(() => {
     if (!isAudio) return;
     const el = audioRef.current;
     if (!el) return;
 
     const handleEnded = () => {
+      if (onPlaybackEnded) {
+        notifyPlaybackEnded();
+        return;
+      }
       el.pause();
       el.currentTime = 0;
     };
@@ -179,7 +249,53 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     return () => {
       el.removeEventListener("ended", handleEnded);
     };
-  }, [isAudio]);
+  }, [isAudio, onPlaybackEnded, isActive, video.id]);
+
+  // YouTube exposes completion through postMessage rather than a DOM `ended`
+  // event. Subscribe only for active Mirror cards, verify both origin and frame
+  // source, and use the same latch as native media to reject duplicate signals.
+  useEffect(() => {
+    if (!youtubeId || !isActive || !onPlaybackEnded) return;
+    const frame = youtubeFrameRef.current;
+    if (!frame) return;
+
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== "https://www.youtube-nocookie.com" ||
+        event.source !== frame.contentWindow
+      ) {
+        return;
+      }
+      try {
+        const message =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (message?.event === "onStateChange" && message.info === 0) {
+          notifyPlaybackEnded();
+        }
+      } catch {
+        // Ignore unrelated or malformed cross-origin messages.
+      }
+    };
+
+    const subscribe = () => {
+      frame.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: "addEventListener",
+          args: ["onStateChange"],
+        }),
+        "https://www.youtube-nocookie.com",
+      );
+    };
+
+    window.addEventListener("message", onMessage);
+    frame.addEventListener("load", subscribe);
+    subscribe();
+    return () => {
+      window.removeEventListener("message", onMessage);
+      frame.removeEventListener("load", subscribe);
+    };
+  }, [youtubeId, isActive, onPlaybackEnded, video.id]);
 
   // Keep the imperative `muted` property in sync with React state for BOTH
   // media elements. The <video muted={...}> attribute is unreliable after
@@ -241,9 +357,153 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
     }
   };
 
+  // Share this post. Prefers the native share sheet (mobile / newer
+  // desktops), falls back to clipboard so desktop users still get a link.
+  // Silent on user-cancelled shares (AbortError) so the console stays clean.
+  const handleShare = async () => {
+    // vibrate() is a no-op on desktops; on phones it gives the same 10ms tap
+    // the double-tap-like uses, keeping the whole card gesture set cohesive.
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try { navigator.vibrate(10); } catch { /* iOS Safari denies quietly */ }
+    }
+
+    // Absolute URL so the share target opens the post on any device. We use
+    // the user's profile as the deep-link because Mirror posts don't yet
+    // have a per-post canonical page; the profile shows their content.
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://melorimusic.org";
+    const url = video.user?.username
+      ? `${origin}/social/profile/${video.user.username}`
+      : `${origin}/social/mirror`;
+    const title = video.title
+      ? `${video.title} · Melori Mirror`
+      : "Melori Mirror";
+    const text = video.user?.display_name
+      ? `Check out ${video.user.display_name} on Melori`
+      : "Check this out on Melori";
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ title, text, url });
+        return;
+      }
+    } catch (err) {
+      // AbortError = user closed the share sheet; treat as success (no fallback).
+      if (err instanceof Error && err.name === "AbortError") return;
+    }
+
+    // Fallback: copy the URL and flash a "Copied!" label for 1.6s.
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        window.setTimeout(() => setShareCopied(false), 1600);
+      }
+    } catch {
+      /* clipboard denied; silent — nothing better we can do here */
+    }
+  };
+
+  // Spawn a heart burst at (x, y) — coordinates are relative to the tap
+  // surface, so the caller passes clientX/Y minus the surface's bounding
+  // rect. Each burst self-cleans after 900ms (matches the animation length
+  // in globals.css: `.mirror-heart-burst`).
+  const spawnBurst = (x: number, y: number) => {
+    const id = ++burstIdRef.current;
+    setBursts((prev) => [...prev, { id, x, y }]);
+    window.setTimeout(() => {
+      setBursts((prev) => prev.filter((b) => b.id !== id));
+    }, 900);
+  };
+
+  // Double-tap gesture: TikTok/Instagram-style. A second tap within 300ms
+  // and ~40px of the first tap fires a LIKE (never an unlike — this matches
+  // native app behaviour and prevents an accidental double-tap from wiping a
+  // previous like) and plays a heart burst at the tap point.
+  //
+  // We implement this manually rather than using onDoubleClick because the
+  // browser's synthetic dblclick event has a ~200ms delay on the *first* tap
+  // too (waiting to see if a second tap arrives) — that would delay any
+  // future single-tap handler we add here. Manual detection keeps single-tap
+  // handlers (e.g. play/pause) instant.
+  const handleTapSurface = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Only respond to primary touches / left mouse. Ignore right-click, pen
+    // eraser, etc.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    const now = Date.now();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const prev = lastTapRef.current;
+
+    if (
+      prev &&
+      now - prev.t < 300 &&
+      Math.abs(prev.x - x) < 40 &&
+      Math.abs(prev.y - y) < 40
+    ) {
+      // It's a double-tap: fire the burst, and if not already liked, like.
+      lastTapRef.current = null; // consume so a third tap starts fresh
+      spawnBurst(x, y);
+      // Short haptic buzz on capable devices (Android + some newer iOS).
+      // Silent no-op elsewhere; wrapped so a permissions policy denial can't
+      // throw and break the gesture.
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        try { navigator.vibrate(15); } catch { /* denied — ignore */ }
+      }
+      if (!isLiked && !likePending) {
+        void handleLike();
+      }
+      return;
+    }
+
+    lastTapRef.current = { t: now, x, y };
+  };
+
   return (
-    <div className="relative h-full w-full bg-melori-void">
-      {isAudio ? (
+    <div
+      className="relative h-full w-full bg-melori-void"
+      onPointerDown={handleTapSurface}
+    >
+      {youtubeId ? (
+        // The player is mounted ONLY while the card is active. Unmounting on
+        // scroll-away is what stops playback (there is no ref to pause on a
+        // cross-origin iframe) and keeps a long feed from holding a dozen live
+        // YouTube players. The poster stands in for inactive cards so the frame
+        // is never blank during a fast scroll.
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          {isActive ? (
+            <div className="relative aspect-video max-h-full w-full">
+              <iframe
+                ref={youtubeFrameRef}
+                // Remount per card so the src is applied cleanly on activation.
+                key={youtubeId}
+                src={youtubeEmbedUrl(youtubeId, {
+                  autoplay: true,
+                  muted: true,
+                  loop: loopInPlace,
+                  enableJsApi: Boolean(onPlaybackEnded),
+                })}
+                title={video.title}
+                // Autoplay is only granted to a muted player; the viewer unmutes
+                // with YouTube's own controls, which is why this card has no
+                // Melori mute toggle.
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="absolute inset-0 h-full w-full border-0"
+              />
+            </div>
+          ) : (
+            video.thumbnail_url && (
+              <img
+                src={video.thumbnail_url}
+                alt=""
+                className="max-h-full max-w-full object-contain"
+              />
+            )
+          )}
+        </div>
+      ) : isAudio ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
           <div className="absolute inset-0 bg-gradient-to-br from-melori-purple/30 via-melori-void to-melori-pink/20" />
           {video.thumbnail_url ? (
@@ -261,6 +521,7 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
             ref={audioRef}
             src={mediaUrl}
             controls
+            loop={shouldLoop}
             // metadata only: full tracks can be several MB; we don't want a
             // scroll through the feed to eagerly pull every track.
             preload="metadata"
@@ -281,28 +542,33 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
           )}
         </div>
       ) : (
-        <video
-          ref={videoRef}
-          src={mediaUrl}
-          loop
-          muted={isMuted}
-          playsInline
-          // Only fetch metadata until the card is active; the poster covers the
-          // frame until the stream is ready, so we never flash a wrong/black
-          // frame during a fast scroll.
-          preload={isActive ? "auto" : "metadata"}
-          // Content is predominantly portrait, so object-cover fills the frame
-          // edge-to-edge (the TikTok look) with virtually no crop. object-top
-          // biases any crop on the occasional landscape clip toward keeping the
-          // top of the frame, and object-center keeps portrait clips centered.
-          className="absolute inset-0 h-full w-full bg-black object-cover object-center"
-          poster={video.thumbnail_url || undefined}
-        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          {/* A 9:16 native-upload stage reaches the full available height
+              without exceeding the viewport width. Landscape uploads are
+              contained inside the same stage, so they letterbox rather than
+              stretching or cropping. */}
+          <div className="relative aspect-[9/16] h-full max-w-full">
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              loop={loopInPlace}
+              muted={isMuted}
+              playsInline
+              onEnded={onPlaybackEnded ? notifyPlaybackEnded : undefined}
+              // Only fetch metadata until the card is active; the poster covers the
+              // frame until the stream is ready, so we never flash a wrong/black
+              // frame during a fast scroll.
+              preload={isActive ? "auto" : "metadata"}
+              className="absolute inset-0 h-full w-full bg-black object-contain object-center"
+              poster={video.thumbnail_url || undefined}
+            />
+          </div>
+        </div>
       )}
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 pointer-events-none" />
 
-      {!isAudio && (
+      {!isAudio && !youtubeId && (
         <button
           onClick={toggleMute}
           className="absolute top-4 right-4 p-2 bg-black/30 backdrop-blur rounded-full text-white"
@@ -355,7 +621,11 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
         </p>
         <div className="flex items-center gap-2 mt-3 text-xs text-white/70">
           <Music className="w-4 h-4" />
-          <span>Original Sound — {video.user?.display_name}</span>
+          <span>
+            {youtubeId
+              ? `YouTube — shared by ${video.user?.display_name}`
+              : `Original Sound — ${video.user?.display_name}`}
+          </span>
         </div>
       </div>
 
@@ -378,10 +648,40 @@ function VideoCardBase({ video, isActive, distance = 99 }: VideoCardProps) {
           <MessageCircle className="w-7 h-7" />
           <span className="text-xs font-medium">{commentsCount}</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-white">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex flex-col items-center gap-1 text-white"
+        >
           <Share2 className="w-7 h-7" />
-          <span className="text-xs font-medium">Share</span>
+          <span className="text-xs font-medium">
+            {shareCopied ? "Copied!" : "Share"}
+          </span>
         </button>
+        <PostActionsMenu
+          videoId={video.id}
+          ownerId={video.user_id}
+          onDeleted={onDeleted}
+        />
+      </div>
+
+      {/* Heart-burst layer. Absolutely positioned so it floats above the
+          video and gradient overlay but stays below the right-rail actions
+          and comment sheet. `pointer-events-none` so the bursts never eat a
+          subsequent tap. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {bursts.map((b) => (
+          <Heart
+            key={b.id}
+            aria-hidden
+            className="mirror-heart-burst absolute h-24 w-24 fill-red-500 text-red-500 drop-shadow-[0_0_14px_rgba(255,0,80,0.55)]"
+            style={{
+              // Center the 96px heart on the tap point.
+              left: b.x - 48,
+              top: b.y - 48,
+            }}
+          />
+        ))}
       </div>
 
       <CommentSheet

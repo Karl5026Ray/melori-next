@@ -1,8 +1,17 @@
-import { redirect } from "next/navigation";
+"use client";
 
-// /checkout is an alias into the existing store cart, where checkout starts and
-// POSTs to /api/store/checkout (Stripe one-off Checkout). Kept as an alias so
-// there is a single, canonical checkout flow rather than a duplicate.
+import { CartProvider } from "../store/CartProvider";
+import CartView from "../store/CartView";
+
+// Top-level /checkout page. The cart IS the checkout starting point (the
+// Checkout button POSTs to /api/store/checkout and redirects to Stripe), so
+// this renders the same canonical CartView with a "Checkout" heading, wrapped
+// in its own localStorage-backed CartProvider. Previously /checkout merely
+// redirected to /store/cart; this gives the literal /checkout path a real page.
 export default function CheckoutPage() {
-  redirect("/store/cart");
+  return (
+    <CartProvider>
+      <CartView heading="Checkout" />
+    </CartProvider>
+  );
 }

@@ -175,28 +175,97 @@ export async function computeAvailableSlots(opts: {
     const windowStart = dayStartMs + rule.startMinute * 60 * 1000;
     const windowEnd = dayStartMs + rule.endMinute * 60 * 1000;
 
-    for (
-      let candidateStart = windowStart;
-      candidateStart + serviceMs <= windowEnd;
-      candidateStart += stepMs
-    ) {
-      const candidateEnd = candidateStart + serviceMs + bufferMs;
-
-      if (candidateStart < earliestAllowed) continue;
-      if (candidateStart > latestAllowed) continue;
-
-      const candidateInterval: Interval = {
-        start: candidateStart,
-        end: candidateEnd,
-      };
-      const conflict = busy.some((b) => overlaps(candidateInterval, b));
-      if (conflict) continue;
-
+    const starts = generateSlotStarts({
+      windowStart,
+      windowEnd,
+      serviceMs,
+      bufferMs,
+      stepMs,
+      earliestAllowed,
+      latestAllowed,
+      busy,
+    });
+    for (const candidateStart of starts) {
       slots.push(new Date(candidateStart).toISOString());
     }
   }
 
   return slots;
+}
+
+/**
+ * PURE slot-window generator (no I/O) — extracted so the boundary math can be
+ * unit-tested deterministically (see scripts/booking-slots.test.ts).
+ *
+ * Returns candidate START times (epoch ms) that satisfy ALL of:
+ *  - the FULL service duration fits before the window end:
+ *    `candidateStart + serviceMs <= windowEnd` (this is why the last slot of a
+ *    9-5 window for a 60-min service is 4:00pm, not 4:30pm),
+ *  - the start honors min-notice / max-advance bounds,
+ *  - the service + buffer does not overlap any busy interval.
+ *
+ * Keep this the single source of truth for slot-boundary behavior; changing
+ * the loop condition here is what the boundary tests guard against.
+ */
+export function generateSlotStarts(opts: {
+  windowStart: number;
+  windowEnd: number;
+  serviceMs: number;
+  bufferMs: number;
+  stepMs: number;
+  earliestAllowed: number;
+  latestAllowed: number;
+  busy: Interval[];
+}): number[] {
+  const {
+    windowStart,
+    windowEnd,
+    serviceMs,
+    bufferMs,
+    stepMs,
+    earliestAllowed,
+    latestAllowed,
+    busy,
+  } = opts;
+
+  const out: number[] = [];
+  const step = Math.max(stepMs, 5 * 60 * 1000);
+  const windowMs = windowEnd - windowStart;
+
+  // A service that is at least as long as the whole availability window can
+  // only ever be booked by running right up to (or past) closing time — its
+  // trailing buffer can never fit. For such services we do NOT enforce the
+  // end-of-day buffer, otherwise a full-day booking (e.g. an 8-hour Wedding
+  // in an 8-hour day) would be impossible to book at all. For every normal
+  // service that is shorter than the window, the buffer IS enforced at end of
+  // day so the last shoot also gets its reset gap before close.
+  const enforceEndOfDayBuffer = bufferMs > 0 && serviceMs < windowMs;
+
+  for (
+    let candidateStart = windowStart;
+    candidateStart + serviceMs <= windowEnd;
+    candidateStart += step
+  ) {
+    const candidateEnd = candidateStart + serviceMs + bufferMs;
+
+    if (candidateStart < earliestAllowed) continue;
+    if (candidateStart > latestAllowed) continue;
+
+    // End-of-day buffer: the shoot + its trailing buffer must fit before
+    // closing (mirrors the between-shoots buffer in the busy-overlap check).
+    if (enforceEndOfDayBuffer && candidateEnd > windowEnd) continue;
+
+    const candidateInterval: Interval = {
+      start: candidateStart,
+      end: candidateEnd,
+    };
+    const conflict = busy.some((b) => overlaps(candidateInterval, b));
+    if (conflict) continue;
+
+    out.push(candidateStart);
+  }
+
+  return out;
 }
 
 /**
@@ -280,13 +349,27 @@ export async function isSlotStillFree(opts: {
   const localMinuteOfDay = localStart.getHours() * 60 + localStart.getMinutes();
 
   const rules = await getWeeklyAvailability(photographerId);
-  const withinWindow = rules.some(
-    (r) =>
-      r.isActive &&
-      r.weekday === weekday &&
-      localMinuteOfDay >= r.startMinute &&
-      localMinuteOfDay + durationMinutes <= r.endMinute,
-  );
+  const bufferMinutes = settings.bufferMinutes;
+  const withinWindow = rules.some((r) => {
+    if (!r.isActive || r.weekday !== weekday) return false;
+    if (localMinuteOfDay < r.startMinute) return false;
+    // The service itself must fit before close.
+    if (localMinuteOfDay + durationMinutes > r.endMinute) return false;
+    // End-of-day buffer: for services shorter than the whole window, the
+    // trailing buffer must also fit before close — mirroring the slot
+    // generator (generateSlotStarts) so the create path never accepts a slot
+    // the /slots API would have hidden. Full-window services (service >=
+    // window length) are exempt so full-day bookings remain possible.
+    const windowLen = r.endMinute - r.startMinute;
+    const enforceEndOfDayBuffer = bufferMinutes > 0 && durationMinutes < windowLen;
+    if (
+      enforceEndOfDayBuffer &&
+      localMinuteOfDay + durationMinutes + bufferMinutes > r.endMinute
+    ) {
+      return false;
+    }
+    return true;
+  });
   if (!withinWindow) return { free: false, endsAtIso };
 
   const busy = await loadBusyIntervals(

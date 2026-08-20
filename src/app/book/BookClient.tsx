@@ -2,8 +2,45 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Camera, Clock, Loader2, CalendarDays } from "lucide-react";
+import { Camera, Clock, Loader2, CalendarDays, FileText } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
+
+// Opens the service's contract PDF (short-lived signed URL) in a new tab so a
+// client can review terms before booking. Public endpoint, no auth needed.
+function ContractReviewLink({ serviceId }: { serviceId: string }) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const open = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/booking/service-contract/${encodeURIComponent(serviceId)}`,
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.url) throw new Error(body.error ?? "Contract unavailable.");
+      window.open(body.url as string, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Contract unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={open}
+        disabled={loading}
+        className="flex items-center gap-1.5 text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+      >
+        <FileText className="h-3.5 w-3.5" />
+        {loading ? "Opening\u2026" : "Review the contract for this session (PDF)"}
+      </button>
+      {err && <p className="mt-1 text-[11px] text-red-400">{err}</p>}
+    </>
+  );
+}
 
 interface ServiceOption {
   id: string;
@@ -13,6 +50,7 @@ interface ServiceOption {
   price_cents: number;
   deposit_cents: number;
   deposit_percent: number | null;
+  hasContract?: boolean;
 }
 
 function formatPrice(cents: number): string {
@@ -243,6 +281,11 @@ export default function BookClient() {
                   </button>
                 ))}
               </div>
+              {selectedService?.hasContract && (
+                <div className="mt-2">
+                  <ContractReviewLink serviceId={selectedService.id} />
+                </div>
+              )}
             </div>
 
             {/* Step 2: pick date */}

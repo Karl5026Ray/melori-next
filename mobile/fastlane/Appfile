@@ -1,0 +1,3 @@
+app_identifier("org.melorimusic.app")
+apple_id("karlrayphotography@gmail.com")
+# Team ID is resolved automatically from the App Store Connect API key.

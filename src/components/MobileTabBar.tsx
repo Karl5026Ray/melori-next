@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { isCinemaLiveRoomRoute } from "@/lib/cinemaRoomRoute";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 import {
   User as UserIcon,
   Radio,
   RadioTower,
   Video,
-  MessageSquare,
-  Hand,
   Sparkles,
   Heart,
   X,
@@ -21,12 +21,14 @@ import {
   CalendarClock,
   UserPlus,
   Camera,
-  Info,
   Target,
-  MessageCircle,
   Users,
   ShoppingBag,
+  Swords,
+  Clapperboard,
+  HeartHandshake,
 } from "lucide-react";
+import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -35,11 +37,11 @@ import {
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Profile, Radio (direct), then expandable categories:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, Messages,
- *                          Waves, Connect
+ *       Artists, Radio, Melori Connect (direct), then navigation categories:
+ *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
  *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
- *         • Signup       — Free, Artist, Superfan, Photographer (coming soon)
+ *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
+ *         • Mission      — Why Melori (direct)
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -96,6 +98,17 @@ export default function MobileTabBar() {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
 
+  // MM Faces live rooms are fullscreen takeovers with their own vertical
+  // control rail (mic/cam/end/heart) anchored to the bottom-right. The mobile
+  // tab bar previously sat over the bottom of the stage, eating space needed
+  // for the composer and covering the End Live button on some devices. We
+  // suppress rendering on any live-room route so the stage runs edge-to-edge.
+  // Computed here so subsequent hooks still run in the same order every
+  // render (rules-of-hooks) — the actual early-return happens below.
+  const isLiveRoomRoute =
+    !!pathname && /^\/social\/live\/[^/]+/.test(pathname);
+  const isCinemaRoomRoute = isCinemaLiveRoomRoute(pathname);
+
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -147,16 +160,18 @@ export default function MobileTabBar() {
     icon: React.ReactNode;
     desc: string;
     soon?: boolean;
+    badge?: number;
   };
   type LaunchCat = { label: string; icon: React.ReactNode; items: LaunchItem[] };
 
-  // Direct quick-press buttons (top row): Profile, Radio, Messages, Waves.
+  // Direct quick-press buttons: Messages stays in the large bottom tab. This
+  // tile is intentionally Melori Connect, moved out of More per mobile IA.
   const quickLinks: LaunchItem[] = [
     {
-      label: "Profile",
-      href: user ? "/social/profile" : "/social/auth",
-      icon: <UserIcon className="h-5 w-5" />,
-      desc: "Your page",
+      label: "Artists",
+      href: "/artists",
+      icon: <Users className="h-5 w-5" />,
+      desc: "Browse artists",
     },
     {
       label: "Radio",
@@ -165,29 +180,30 @@ export default function MobileTabBar() {
       desc: "Non-stop mix",
     },
     {
-      label: "Messages",
-      href: "/social/messages",
-      icon: <MessageSquare className="h-5 w-5" />,
-      desc: "Direct chats",
+      label: CONNECT_NAV_ITEM.label,
+      href: CONNECT_NAV_ITEM.href,
+      icon: <HeartHandshake className="h-5 w-5" />,
+      desc: "Match on music",
     },
     {
-      label: "Waves",
-      href: "/social/waves",
-      icon: <Hand className="h-5 w-5" />,
-      desc: "Say hi",
+      label: "Store",
+      href: "/store",
+      icon: <ShoppingBag className="h-5 w-5" />,
+      desc: "Merch & music",
     },
   ];
 
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
     {
+      // Mirrors SOCIAL_NAV_ITEMS (see src/lib/socialNav.ts) with icons/blurbs.
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
         { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
-        { label: "Connect", href: "/social/connect", icon: <Heart className="h-5 w-5" />, desc: "Music-taste dating" },
+        { label: "MM Cinema", href: "/social/cinema", icon: <Clapperboard className="h-5 w-5" />, desc: "Premieres & screenings" },
       ],
     },
     {
@@ -207,20 +223,17 @@ export default function MobileTabBar() {
         { label: "Free", href: "/register?tier=free", icon: <UserIcon className="h-5 w-5" />, desc: "Free Fan" },
         { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
         { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
-        { label: "Photographer", href: "#", icon: <Camera className="h-5 w-5" />, desc: "Coming soon", soon: true },
-      ],
-    },
-    {
-      label: "About",
-      icon: <Info className="h-5 w-5" />,
-      items: [
-        { label: "Mission", href: "/mission", icon: <Target className="h-5 w-5" />, desc: "Why Melori" },
-        { label: "Comments", href: "/social/community", icon: <MessageCircle className="h-5 w-5" />, desc: "Community" },
-        { label: "Artists", href: "/artists", icon: <Users className="h-5 w-5" />, desc: "Browse artists" },
-        { label: "Store", href: "/store", icon: <ShoppingBag className="h-5 w-5" />, desc: "Merch & music" },
+        { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer — $14.99/mo" },
       ],
     },
   ];
+
+  const missionLink: LaunchItem = {
+    label: "Mission",
+    href: "/mission",
+    icon: <Target className="h-5 w-5" />,
+    desc: "Why Melori",
+  };
 
   function isActive(tab: Tab): boolean {
     if (tab.href === "/") return pathname === "/";
@@ -231,6 +244,10 @@ export default function MobileTabBar() {
   // Two tabs, then the center launcher, then two tabs.
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
+
+  // Suppress the tab bar only for opened, fullscreen room routes. Cinema's
+  // listing and creation pages keep normal navigation.
+  if (isLiveRoomRoute || isCinemaRoomRoute) return null;
 
   return (
     <>
@@ -262,11 +279,17 @@ export default function MobileTabBar() {
                 const inner = (
                   <>
                     <span
-                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                      className={`relative flex h-9 w-9 items-center justify-center rounded-full ${
                         active ? "bg-brand-primary text-white" : "bg-brand-muted text-brand-primary"
                       }`}
                     >
                       {l.icon}
+                      {!!l.badge && (
+                        <UnreadMessagesBadge
+                          count={l.badge}
+                          className="absolute -right-1 -top-1 border border-brand-surface"
+                        />
+                      )}
                     </span>
                     <span className="text-[11px] font-semibold leading-tight text-text-primary">
                       {l.label}
@@ -378,9 +401,10 @@ export default function MobileTabBar() {
                         <div className="grid grid-cols-4 gap-2">
                           {quickLinks.map(renderTile)}
                         </div>
-                        {/* Category buttons — same tile styling */}
+                        {/* Category buttons and the direct Mission link */}
                         <div className="mt-3 grid grid-cols-4 gap-2">
                           {categories.map(renderCatTile)}
+                          {renderTile(missionLink)}
                         </div>
                       </>
                     )}
@@ -399,18 +423,19 @@ export default function MobileTabBar() {
                         <Video className="h-4 w-4" />
                         Go Live
                       </button>
+                      {/* Concert has its own creation surface and then uses the
+                         shared room engine for the live battle. */}
                       <button
-                        onClick={() => {
-                          setLauncherOpen(false);
-                          router.push("/social/spaces/create");
-                        }}
-                        className="flex items-center justify-center gap-2 rounded-full border border-brand-primary px-4 py-3 text-sm font-bold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white"
+                        type="button"
+                        onClick={() => router.push("/social/concert/create")}
+                        className="flex items-center justify-center gap-2 rounded-full bg-teal-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-teal-400"
                       >
-                        <Radio className="h-4 w-4" />
-                        Start a Space
+                        <Swords className="h-4 w-4" />
+                        Concert
                       </button>
                     </div>
                   )}
+
                 </>
               );
             })()}

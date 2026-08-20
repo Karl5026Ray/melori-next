@@ -2,20 +2,15 @@
 
 import { useState } from "react";
 import MusicCatalog from "@/components/MusicCatalog";
-import StudioTrackGrid from "@/components/StudioTrackGrid";
-import type { ReleaseListItem, StudioTrackListItem } from "@/lib/data";
+import type { CatalogItem } from "@/lib/catalog";
 
-// Owns a single search query that drives BOTH the "Latest from Artists"
-// (studio uploads) list and the release catalog below it. Previously each of
-// those components rendered its own search box, so /music showed two search
-// bars — confusing. Now there is one search at the top of the page.
-export default function MusicPageClient({
-  releases,
-  studioTracks,
-}: {
-  releases: ReleaseListItem[];
-  studioTracks: StudioTrackListItem[];
-}) {
+// Owns the page's single search box and hands the query down to the one
+// catalog grid.
+//
+// This page used to render two lists: a "Latest from Artists" strip of studio
+// uploads above the release catalog. That split is gone — artist uploads are
+// ordinary catalog items now, so there is one list, one search, one sort.
+export default function MusicPageClient({ items }: { items: CatalogItem[] }) {
   const [query, setQuery] = useState("");
 
   return (
@@ -31,11 +26,7 @@ export default function MusicPageClient({
         />
       </div>
 
-      <StudioTrackGrid tracks={studioTracks} externalQuery={query} />
-
-      <div className="mt-16">
-        <MusicCatalog releases={releases} externalQuery={query} />
-      </div>
+      <MusicCatalog items={items} externalQuery={query} />
     </div>
   );
 }

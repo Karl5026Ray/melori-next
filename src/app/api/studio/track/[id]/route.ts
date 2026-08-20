@@ -9,6 +9,8 @@ import {
   isOwnedStudioPath,
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
+import { PRICE_RANGE_MESSAGE, parsePriceCents } from "@/lib/pricing";
+import { ensureStudioAlbum } from "@/lib/studio-albums";
 
 // Bust the public-site caches that surface studio_tracks (music catalog, home
 // feed, artist pages, and any per-track deep link) whenever a track changes
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       supabase,
       params.id,
       guard.membership.userId,
-      "title, artist, album, genre, file_url, file_path, preview_url, preview_start, preview_end, duration, status"
+      "title, artist, album, genre, price_cents, file_url, file_path, preview_url, preview_start, preview_end, duration, status"
     );
     if (isOwnershipFailure(ownership)) return ownership;
 
@@ -150,6 +152,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (typeof body.album === "string") update.album = body.album.trim() || null;
     if (typeof body.genre === "string") update.genre = body.genre.trim() || null;
 
+    // Price edits go through the same validator as creation, so an artist
+    // cannot PATCH a negative or absurd price past the form's own checks.
+    if (body.price_cents !== undefined) {
+      const priceCents = parsePriceCents(body.price_cents);
+      if (priceCents === null) {
+        return NextResponse.json({ error: PRICE_RANGE_MESSAGE }, { status: 400 });
+      }
+      update.price_cents = priceCents;
+    }
+
     // If album is changing, the track's existing sort_order refers to the OLD
     // album's ordering and would now collide with (or leave a gap in) the
     // NEW album. Recompute: append to the end of the destination album by
@@ -208,6 +220,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
     if (!data) {
       return NextResponse.json({ error: "Track not found" }, { status: 404 });
+    }
+
+    // Moving a track into a new album name creates that album's pricing row.
+    if (update.album) {
+      await ensureStudioAlbum(supabase, userId, update.album).catch(() => null);
     }
 
     // Bust the public-site cache whenever a studio track changes in a way a

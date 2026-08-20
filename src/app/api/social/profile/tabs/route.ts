@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
+import { isBlockedBetween } from "@/lib/blocks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "user_id required" }, { status: 400 });
   }
   const isOwner = !!callerId && callerId === userId;
+
+  // Mutual invisibility: a blocked pair can't load each other's content.
+  // Owners always see their own tabs; anonymous callers are unaffected.
+  if (!isOwner && callerId && (await isBlockedBetween(supabase, callerId, userId))) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
 
   const nowIso = new Date().toISOString();
 

@@ -1,0 +1,280 @@
+name: iOS Build & Upload (TestFlight)
+
+# Builds the native iOS app (Capacitor wrapper in mobile/) on a macOS runner,
+# signs it with your Apple Distribution certificate, and uploads it to
+# App Store Connect / TestFlight via Fastlane.
+#
+# TRIGGER: manual only (workflow_dispatch) or when you push a version tag like
+# "ios-v1.0.0". We keep it manual so you don't burn macOS CI minutes on every
+# commit — you run it when you actually want a new build.
+#
+# PREREQUISITES — set these repository secrets (Settings → Secrets and variables
+# → Actions → New repository secret). See mobile/fastlane/README.md for exactly
+# how to obtain each value.
+#
+#   APP_STORE_CONNECT_KEY_ID        App Store Connect API key ID
+#   APP_STORE_CONNECT_ISSUER_ID     App Store Connect API issuer ID
+#   APP_STORE_CONNECT_KEY_P8        Contents of the AuthKey_XXXX.p8 file (full text)
+#   MATCH_PASSWORD                  passphrase that encrypts the match storage repo
+#   MATCH_DEPLOY_KEY                SSH private key with write access to the
+#                                   private match storage repo
+#
+# Signing is handled by Fastlane match: one distribution certificate and one
+# App Store provisioning profile live AES-encrypted in a private repo and are
+# reused by every run. The old IOS_DIST_CERT_P12_BASE64 /
+# IOS_DIST_CERT_PASSWORD / IOS_PROVISIONING_PROFILE_BASE64 secrets are no
+# longer read and can be deleted.
+#
+# BUNDLE ID: org.melorimusic.app   APPLE ID (app): 6792791603
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Build number (must be higher than the last uploaded build)"
+        required: true
+        default: "1"
+      marketing_version:
+        description: "Marketing version / CFBundleShortVersionString (must be higher than the last APPROVED version — approved version trains are closed to new builds)"
+        required: true
+        default: "1.0.1"
+      nuke_certificates:
+        description: "DESTRUCTIVE: revoke ALL distribution certificates & App Store profiles before building. Only needed once, to clear orphaned certificates. Type 'yes' to run."
+        required: false
+        default: "no"
+  push:
+    tags:
+      - "ios-v*"
+
+env:
+  # Private repo holding the AES-encrypted signing identity managed by match.
+  MATCH_GIT_URL: git@github.com:Karl5026Ray/melori-ios-certificates.git
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & upload IPA
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: |
+          # Pick the newest installed Xcode so the matching iOS platform/SDK
+          # is available (avoids "iOS X is not installed" archive errors).
+          LATEST_XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST_XCODE" ]; then LATEST_XCODE="/Applications/Xcode.app"; fi
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -switch "$LATEST_XCODE"
+          xcodebuild -version
+          echo "--- installed iOS platforms ---"
+          xcodebuild -showsdks | grep -i ios || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Capacitor 8's CLI requires Node >=22 and refuses to run on 20.
+          node-version: "22"
+
+      - name: Install JS deps (Capacitor)
+        working-directory: mobile
+        run: npm install
+
+      - name: Add & sync iOS project
+        working-directory: mobile
+        run: |
+          # Capacitor config lives in mobile/, so add/sync must run here.
+          #
+          # --packagemanager CocoaPods is REQUIRED. Capacitor 8 defaults the iOS
+          # template to Swift Package Manager, which generates CapApp-SPM and
+          # NO Podfile / App.xcworkspace. Fastlane below builds the workspace,
+          # so without this flag `pod install` and the archive both fail.
+          npx cap add ios --packagemanager CocoaPods || echo "ios project already present"
+          npx cap sync ios
+          # Re-apply EVERYTHING `cap sync` discards, via the one script that
+          # owns that job. mobile/ios is git-ignored and regenerated from the
+          # Capacitor template on every sync, so the real app icon, the OAuth
+          # callback URL scheme and the camera/microphone usage descriptions all
+          # have to be written back afterwards.
+          #
+          # This MUST be postsync.sh and not install-ios-icon.sh alone. Calling
+          # the icon script directly is how build 17 shipped with neither the
+          # OAuth scheme nor NSCameraUsageDescription: configure-ios.sh existed
+          # and was correct, but nothing in this workflow ever invoked it, so
+          # WKWebView kept hiding navigator.mediaDevices and MM Faces / MM Spaces
+          # still could not go live. postsync.sh is the single entry point —
+          # anything added to it is picked up here automatically. It skips
+          # Android when mobile/android is absent, which it is on this runner.
+          chmod +x scripts/postsync.sh scripts/install-ios-icon.sh scripts/configure-ios.sh
+          ./scripts/postsync.sh
+          # Ensure CocoaPods (Capacitor pods) are installed so the workspace
+          # links the 'Capacitor' module — otherwise the build fails with
+          # "Unable to find module dependency: 'Capacitor'".
+          sudo gem install cocoapods --no-document || gem install cocoapods --no-document || true
+          cd ios/App
+          pod install --repo-update
+          echo "--- iOS project contents ---"
+          ls -la
+          test -d App.xcworkspace && echo "workspace present" || echo "NO WORKSPACE"
+
+      - name: Setup Ruby + Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: false
+          working-directory: mobile
+
+      - name: Install Fastlane
+        run: gem install fastlane --no-document
+
+      - name: Prepare signing keychain
+        run: |
+          # Create an unlocked keychain for Fastlane match to import the
+          # stored distribution certificate + private key into.
+          KEYCHAIN_PATH="$RUNNER_TEMP/melori.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Install the current Apple WWDR intermediate so the generated
+          # distribution cert's chain validates for code signing.
+          curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer \
+            -o "$RUNNER_TEMP/AppleWWDRCAG3.cer" || true
+          if [ -s "$RUNNER_TEMP/AppleWWDRCAG3.cer" ]; then
+            security import "$RUNNER_TEMP/AppleWWDRCAG3.cer" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign || true
+          fi
+
+          # Make it the default/searchable keychain so codesign & Fastlane use it.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" || true
+          echo "MATCH_KEYCHAIN_NAME=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "MATCH_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Write App Store Connect API key
+        env:
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          KEY_FILE="$RUNNER_TEMP/asc/AuthKey_${KEY_ID}.p8"
+          # The secret may be stored either as single-line base64 of the .p8
+          # or as the raw PEM text. Try base64-decode first; if the result is
+          # not a valid key, fall back to writing the raw secret contents.
+          if printf '%s' "$KEY_P8" | base64 --decode > "$KEY_FILE" 2>/dev/null && openssl pkey -in "$KEY_FILE" -noout 2>/dev/null; then
+            echo "Wrote API key from base64 secret"
+          else
+            printf '%s\n' "$KEY_P8" > "$KEY_FILE"
+            echo "Wrote API key from raw secret"
+          fi
+          # Sanity check
+          openssl pkey -in "$KEY_FILE" -noout && echo "API key parsed OK" || (echo "API key INVALID" && exit 1)
+
+      - name: Authorize match storage repo
+        env:
+          MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}
+        run: |
+          # match reads/writes the encrypted certificate repo over SSH using a
+          # deploy key, so no personal access token is needed.
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_ed25519
+          chmod 600 ~/.ssh/match_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'EOF'
+          Host github.com
+            User git
+            IdentityFile ~/.ssh/match_ed25519
+            IdentitiesOnly yes
+          EOF
+          ssh -o BatchMode=yes -T git@github.com 2>&1 | head -1 || true
+          # match commits the encrypted identity back to the storage repo, so
+          # the runner needs a git author identity.
+          git config --global user.name "melori-ios-ci"
+          git config --global user.email "ci@melorimusic.org"
+
+      - name: Revoke orphaned certificates (optional, destructive)
+        if: ${{ github.event.inputs.nuke_certificates == 'yes' }}
+        working-directory: mobile
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+          MATCH_GIT_URL: ${{ env.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          CONFIRM_NUKE: "yes"
+        run: fastlane ios nuke_distribution
+
+      # Last gate before anything is archived. configure-ios.sh already fails
+      # when a key is missing, but this re-reads the plist the archive will
+      # actually be built from, so a future step that regenerates or overwrites
+      # the project cannot quietly ship a build that has no camera access.
+      - name: Verify Info.plist is release-ready
+        working-directory: mobile
+        run: |
+          python3 - ios/App/App/Info.plist <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], "rb") as fh:
+              plist = plistlib.load(fh)
+
+          problems = []
+          for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription"):
+              if not str(plist.get(key, "")).strip():
+                  problems.append(
+                      f"{key} is missing - WKWebView hides navigator.mediaDevices "
+                      "without it and live streaming ships broken"
+                  )
+
+          schemes = [
+              s
+              for entry in plist.get("CFBundleURLTypes", [])
+              for s in entry.get("CFBundleURLSchemes", [])
+          ]
+          if "org.melorimusic.app" not in schemes:
+              problems.append(
+                  "org.melorimusic.app:// is missing from CFBundleURLTypes - the "
+                  "OAuth callback cannot re-enter the app and sign-in ships broken"
+              )
+
+          if problems:
+              for problem in problems:
+                  print(f"error: {problem}", file=sys.stderr)
+              raise SystemExit(
+                  "Info.plist is not release-ready. Did scripts/postsync.sh run "
+                  "after 'npx cap sync ios'?"
+              )
+
+          print("Info.plist verified: camera, microphone and OAuth scheme present.")
+          PY
+
+      - name: Build & upload with Fastlane
+        working-directory: mobile
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+          BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
+          MARKETING_VERSION: ${{ github.event.inputs.marketing_version || '1.0.1' }}
+          MATCH_GIT_URL: ${{ env.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        run: fastlane ios release
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: melori-ios-ipa
+          path: mobile/ios/App/build/*.ipa
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
+import { isBlockedBetween } from "@/lib/blocks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function GET(
   const { data: profiles } = await supabase
     .from("profiles")
     .select(
-      "id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, status",
+      "id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, social_links, status",
     )
     .ilike("username", likeSafe)
     .limit(1);
@@ -53,23 +54,25 @@ export async function GET(
   const isSelf = viewerId === profile.id;
 
   if (viewerId && !isSelf) {
-    const [{ data: rel }, { data: blk }] = await Promise.all([
+    const [{ data: rel }, isBlocked] = await Promise.all([
       supabase
         .from("follows")
         .select("follower_id")
         .eq("follower_id", viewerId)
         .eq("following_id", profile.id)
         .maybeSingle(),
-      supabase
-        .from("member_blocks")
-        .select("blocker_id")
-        .or(
-          `and(blocker_id.eq.${viewerId},blocked_id.eq.${profile.id}),and(blocker_id.eq.${profile.id},blocked_id.eq.${viewerId})`,
-        )
-        .limit(1),
+      isBlockedBetween(supabase, viewerId, profile.id),
     ]);
     following = !!rel;
-    blocked = (blk?.length ?? 0) > 0;
+    blocked = isBlocked;
+  }
+
+  // Mutual invisibility: if a block exists in EITHER direction, neither party
+  // may see the other's profile. We 404 (rather than 403) so the endpoint
+  // reveals nothing about whether the member exists — the blocked user should
+  // not be able to tell they've been blocked vs. the account being gone.
+  if (blocked) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
   // Never leak the internal status field to the client.

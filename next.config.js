@@ -18,31 +18,52 @@
 
 const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 
-// Staging-safe Content-Security-Policy. We ship it as *Report-Only* first: the
-// browser evaluates it and reports violations but NEVER blocks anything, so it
-// cannot break Stripe Checkout, Supabase realtime, LiveKit/Agora WebRTC, PubNub
-// presence, or Google OAuth. Watch the browser console / a report endpoint for
-// a few days, confirm zero legitimate violations, then flip the header key to
-// "Content-Security-Policy" (enforcing) in a follow-up PR.
+// Enforcing Content-Security-Policy. This was shipped as *Report-Only* first and
+// validated against ~2,700 production violation reports over several days: the
+// only legitimate non-allowlisted resource was the Cloudflare Web Analytics
+// beacon (static.cloudflareinsights.com), now added to script-src below. All
+// other reports were browser-injected noise or preview-only widgets. The header
+// key is now "Content-Security-Policy" (enforcing) so violations are blocked.
 //
 // Sources reflect Melori's real providers:
 //   supabase.co (auth/db/storage/realtime), stripe.com/js.stripe.com (checkout),
-//   *.livekit.cloud + wss (audio/video), *.agora.io (legacy voice),
-//   *.pubnub.com (presence), google/gstatic (OAuth + fonts).
-const CSP_REPORT_ONLY = [
+//   *.livekit.cloud + wss (audio/video),
+//   *.pubnub.com (presence), google/gstatic (OAuth + fonts),
+//   static.cloudflareinsights.com (Cloudflare Web Analytics beacon).
+const CSP_ENFORCED = [
   "default-src 'self'",
   // Next.js requires 'unsafe-inline'/'unsafe-eval' for its runtime; Stripe.js
-  // and Google OAuth load from their own hosts.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com",
+  // and Google OAuth load from their own hosts; Cloudflare Web Analytics beacon.
+  //
+  // youtube.com + s.ytimg.com are the IFrame Player API. Cinema rooms load
+  // https://www.youtube.com/iframe_api, which then pulls www-widgetapi.js from
+  // one of those two hosts depending on the rollout. frame-src already allowed
+  // the resulting iframe, so the first ship of YouTube Cinema playback failed
+  // silently: the script was blocked, onYouTubeIframeAPIReady never fired, and
+  // the room showed a black rectangle with no console error (CSP violations
+  // report to /api/csp-report, not the console API).
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, Agora, PubNub + generic wss.
-  "connect-src 'self' https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.agora.io wss://*.agora.io https://*.pubnub.com wss://*.pubnub.com",
-  "media-src 'self' blob: https:",
-  // Stripe Checkout + Google OAuth render in iframes; nothing else may embed us.
-  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com",
-  "frame-ancestors 'none'",
+  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, PubNub + generic wss.
+  // blob: is required by the shared audio player: it fetches the unlock clip and
+  // streamed track data as blob URLs, and XHR/fetch to a blob: URL is governed by
+  // connect-src (not media-src). Without it the homepage radio fails to start.
+  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.pubnub.com wss://*.pubnub.com",
+  // data: covers the tiny inline silent clip the player uses to unlock autoplay
+  // on iOS, which was being blocked on / and /music.
+  "media-src 'self' data: blob: https:",
+  // Stripe Checkout + Google OAuth render in iframes, and both /video and the
+  // Melori Mirror feed embed YouTube players (artist-submitted links; we never
+  // re-host the media). Nothing else may embed us.
+  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
+  // Was 'none'. Loosened to 'self' so wrapper browsers on iOS (Comet, Chrome iOS,
+  // Perplexity, in-app WebViews) that render the top-level page inside their own
+  // frame chrome don't get a hard "This page couldn't load" bounce. Safari native
+  // was unaffected; Comet + Chrome iOS on 5G reproduce the block. Still keeps
+  // third-party framing blocked by X-Frame-Options: SAMEORIGIN below.
+  "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
   // Violation reporting. `report-uri` is the widely-supported legacy directive;
@@ -53,13 +74,13 @@ const CSP_REPORT_ONLY = [
   "report-to csp-endpoint",
 ].join("; ");
 
-// Baseline security headers applied to every route. The CSP above is attached
-// as Report-Only (non-blocking) so it can be validated in production traffic
-// before enforcement. Everything else here is already safe to enforce.
+// Baseline security headers applied to every route. The CSP above is now
+// enforced (blocking) after Report-Only validation in production traffic.
 const SECURITY_HEADERS = [
-  // Non-enforcing CSP: report violations, block nothing. Flip to the enforcing
-  // header name once the reports are clean.
-  { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
+  // Enforcing CSP: violations are now blocked. Validated in Report-Only mode
+  // first; the reporting directives below stay so we keep visibility on any
+  // future violations after enforcement.
+  { key: "Content-Security-Policy", value: CSP_ENFORCED },
   // Names the modern Reporting API endpoint referenced by `report-to` above.
   // Browsers that support the Reporting API POST batched violation reports
   // (application/reports+json) to this URL; older browsers use `report-uri`.
@@ -68,9 +89,12 @@ const SECURITY_HEADERS = [
   // seen this header. `preload` is intentionally omitted until we're sure we
   // want to submit to the HSTS preload list.
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-  // Don't let anyone iframe the app — protects against clickjacking on the
-  // sign-in / checkout / studio surfaces.
-  { key: "X-Frame-Options", value: "DENY" },
+  // Don't let anyone else iframe the app — protects against clickjacking on the
+  // sign-in / checkout / studio surfaces. Was DENY; relaxed to SAMEORIGIN so iOS
+  // wrapper browsers (Comet, Chrome iOS) that render pages inside their own
+  // frame context can display the site. Cross-origin framing is still blocked,
+  // and frame-ancestors 'self' in the CSP above provides the modern equivalent.
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
   // Don't sniff response bodies to guess the MIME type. Belt-and-suspenders
   // against "user uploads a .jpg that's actually HTML with a script tag".
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -78,7 +102,7 @@ const SECURITY_HEADERS = [
   // conversation IDs and space IDs out of Referer on outbound links.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Deny access to sensitive browser features we don't use. Camera + microphone
-  // are needed for Agora voice/video rooms, so we allow same-origin for those.
+  // are needed for LiveKit voice/video rooms, so we allow same-origin for those.
   {
     key: "Permissions-Policy",
     value:
@@ -87,7 +111,30 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig = {
+  // Playwright starts local development coverage at 127.0.0.1. Allow that
+  // same-origin dev client to reconnect to Turbopack without weakening any
+  // production origin policy.
+  allowedDevOrigins: ["127.0.0.1"],
+  // Keeps the request-mocked Concert browser test independent from a stale
+  // development bundle that may have been built without public Supabase vars.
+  // Production keeps Next's normal `.next` output directory.
+  distDir: process.env.NEXT_E2E_DIST_DIR || '.next',
+  // The request-mocked Playwright server writes generated route types to its
+  // own config, so running the focused browser suite never rewrites tsconfig.
+  typescript: {
+    tsconfigPath: process.env.NEXT_E2E_TSCONFIG || "tsconfig.json",
+  },
   reactStrictMode: true,
+  // Studio photo galleries accept raw phone-camera JPEGs (iPhone/Canon
+  // Camera Connect commonly produce 3-12 MB per shot). The App Router
+  // default request body is 4.5 MB which returned 413 on any richly-
+  // detailed photo — the client just showed "Upload Failed" with no
+  // detail. Raising to 25 MB comfortably covers modern phone shots.
+  // NOTE: per-route `maxDuration` and Vercel function memory are set in
+  // vercel.json; this only widens the incoming request body ceiling.
+  experimental: {
+    serverActions: { bodySizeLimit: '25mb' },
+  },
   // Image optimizer allowlist. Narrow on purpose: only the Supabase public
   // storage host that actually serves Melori cover/artwork URLs. This unblocks
   // migrating components to next/image incrementally WITHOUT a broad wildcard
@@ -104,6 +151,33 @@ const nextConfig = {
         // Apply to every route including API handlers.
         source: "/:path*",
         headers: SECURITY_HEADERS,
+      },
+      {
+        // HTML-document cache override for iOS wrapper-browser compatibility.
+        //
+        // Root `/` (and other pages) use `dynamic = 'force-dynamic'`, which
+        // causes Next.js to auto-emit
+        //   Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+        // on the HTML response. That combination reliably confuses iOS wrapper
+        // browsers built on WKWebView (Comet, Chrome iOS, in-app WebViews on
+        // 5G): the response arrives (HTTP 200, full HTML body) but the browser
+        // discards it and shows "This page couldn't load". Safari native is
+        // unaffected because it doesn't wrap WKWebView.
+        //
+        // Overriding to `no-cache, must-revalidate` keeps the important part
+        // (the browser MUST revalidate every navigation — user always sees
+        // fresh HTML) but drops `no-store`, which was the trigger. Auth state
+        // still can't be cached because SSR pages re-read cookies on every
+        // request; this header only controls whether the intermediate response
+        // may sit briefly in the browser's memory pipeline.
+        //
+        // Scoped to top-level document navigations by excluding /_next/*,
+        // /api/*, and anything with a file extension. Applies to preview and
+        // production; adjust only if we start proxying private per-user HTML.
+        source: "/((?!api/|_next/|.*\\.).*)",
+        headers: [
+          { key: "Cache-Control", value: "private, no-cache, must-revalidate" },
+        ],
       },
     ];
   },

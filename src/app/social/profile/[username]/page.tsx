@@ -12,6 +12,8 @@ import { authFetch } from "@/lib/authClient";
 import FollowButton from "@/components/social/FollowButton";
 import { MemberActions } from "@/components/social/MemberActions";
 import ProfileTabs from "@/components/social/profile/ProfileTabs";
+import SocialLinks from "@/components/social/profile/SocialLinks";
+import type { SocialLink } from "@/types/social";
 import ProfileContentModal from "@/components/social/profile/ProfileContentModal";
 import type { TileContent } from "@/components/social/profile/ProfileContentTile";
 import { Loader2 } from "lucide-react";
@@ -26,6 +28,7 @@ type PublicProfile = {
   verified: boolean;
   followers_count: number;
   following_count: number;
+  social_links: SocialLink[] | null;
 };
 
 type ViewerState = {
@@ -49,6 +52,10 @@ export default function PublicProfilePage() {
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // Whether the current viewer follows this profile. Seeded from the API and
+  // kept live by FollowButton's onChange so the "followed name under the photo"
+  // affordance appears/disappears immediately on follow/unfollow.
+  const [isFollowing, setIsFollowing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -70,6 +77,7 @@ export default function PublicProfilePage() {
         };
         setProfile(data.profile);
         setViewer(data.viewer);
+        setIsFollowing(!!data.viewer?.following);
       } catch {
         if (active) setNotFound(true);
       } finally {
@@ -116,9 +124,19 @@ export default function PublicProfilePage() {
             className="h-32 w-32 rounded-full border-4 border-melori-void object-cover"
             alt={profile.display_name}
           />
+          {/* Once you follow this person, their name appears (just the name,
+              linked) directly under the photo section. */}
+          {isFollowing && !viewer?.isSelf && (
+            <Link
+              href={`/social/profile/${profile.username}`}
+              className="mt-2 block w-32 truncate text-center text-sm font-semibold text-melori-purple hover:underline"
+            >
+              {profile.display_name}
+            </Link>
+          )}
         </div>
-        <div className="mb-2 flex-1">
-          <div className="mb-1 flex items-center gap-2">
+        <div className="mb-2 min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-bold">{profile.display_name}</h2>
             {profile.verified && (
               <span className="rounded-full bg-melori-purple/10 px-2 py-0.5 text-xs font-medium text-melori-purple">
@@ -126,13 +144,14 @@ export default function PublicProfilePage() {
               </span>
             )}
           </div>
-          <p className="mb-1 text-sm text-melori-muted">@{profile.username}</p>
-          <p className="mb-1 text-sm font-medium capitalize text-melori-purple">
+          <p className="mb-1.5 text-sm text-melori-muted">@{profile.username}</p>
+          <p className="mb-2 text-sm font-medium capitalize text-melori-purple">
             {profile.role}
           </p>
-          <p className="text-sm text-melori-muted">
+          <p className="text-sm leading-relaxed text-melori-muted break-words">
             {profile.bio || "Independent music advocate"}
           </p>
+          <SocialLinks links={profile.social_links} className="mt-3" />
         </div>
 
         {/* Action: edit if it's you, follow/unfollow otherwise. Hidden when
@@ -150,7 +169,8 @@ export default function PublicProfilePage() {
               <FollowButton
                 targetId={profile.id}
                 initialFollowing={viewer.following}
-                onChange={(_f, counts) => {
+                onChange={(f, counts) => {
+                  setIsFollowing(f);
                   if (counts) {
                     setProfile((p) =>
                       p ? { ...p, followers_count: counts.followers_count } : p,

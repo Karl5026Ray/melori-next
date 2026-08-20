@@ -5,8 +5,14 @@ import ShareButton from "@/components/ShareButton";
 import ArtistDiscography from "@/components/ArtistDiscography";
 import SuperfanButton from "@/components/SuperfanButton";
 import ProfileGallery from "@/components/ProfileGallery";
+import { MemberActions } from "@/components/social/MemberActions";
+import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 import { getArtistBySlug } from "@/lib/data";
-import type { ReleaseListItem } from "@/lib/data";
+import {
+  dollarsToCents,
+  getStudioCatalogForProfile,
+  type CatalogItem,
+} from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -48,18 +54,31 @@ export default async function ArtistDetailPage(
 
   const { artist, releases } = data;
 
-  // Adapt full Release rows to the card's list-item shape.
-  const releaseItems: ReleaseListItem[] = releases.map((r) => ({
-    id: r.id,
-    title: r.title,
-    slug: r.slug,
-    release_type: r.release_type,
-    cover_art_url: r.cover_art_url,
-    price: r.price,
-    release_date: r.release_date,
-    artist: { name: artist.name, slug: artist.slug },
-    genre: null,
-  }));
+  // The artist's whole body of work in one grid: curated releases plus
+  // everything they uploaded through the Artist Studio. Before this, a
+  // self-uploading artist's profile showed "No releases yet" no matter how
+  // much music they had published.
+  const studioItems = artist.profile_id
+    ? await getStudioCatalogForProfile(artist.profile_id).catch(() => [])
+    : [];
+
+  const catalogItems: CatalogItem[] = [
+    ...releases.map((r) => ({
+      key: `release:${r.id}`,
+      kind: "release" as const,
+      id: String(r.id),
+      title: r.title,
+      href: `/albums/${r.slug}`,
+      release_type: r.release_type,
+      cover_art_url: r.cover_art_url,
+      priceCents: dollarsToCents(r.price),
+      release_date: r.release_date,
+      artist: { name: artist.name, slug: artist.slug },
+      genre: null,
+      checkout: { releaseId: r.id },
+    })),
+    ...studioItems,
+  ];
 
   return (
     <article>
@@ -103,6 +122,27 @@ export default async function ArtistDetailPage(
           </div>
         </div>
 
+        {/* Photos sit above the message actions — only renders when this
+           artist's profile has gallery photos. */}
+        {artist.profile_id && (
+          <ProfileGallery profileId={artist.profile_id} className="mt-8" />
+        )}
+
+        {/* Message / block / report. Renders nothing when signed out, when this
+           artist has no member profile, or when you're viewing your own page.
+           MemberActions reads the signed-in member from SocialAuthProvider,
+           which only wraps /social/* — so it is provided here for this subtree. */}
+        {artist.profile_id && (
+          <SocialAuthProvider>
+            <div className="mt-5 flex justify-center sm:justify-start">
+              <MemberActions
+                memberId={artist.profile_id}
+                memberName={artist.name}
+              />
+            </div>
+          </SocialAuthProvider>
+        )}
+
         {/* Bio */}
         {artist.bio && (
           <p className="mt-6 max-w-3xl text-text-secondary">{artist.bio}</p>
@@ -114,13 +154,8 @@ export default async function ArtistDetailPage(
         {/* Discography */}
         <section className="py-12">
           <h2 className="mb-6 text-2xl font-bold">Discography</h2>
-          <ArtistDiscography releases={releaseItems} />
+          <ArtistDiscography items={catalogItems} />
         </section>
-
-        {/* Photos — only renders when this artist's profile has gallery photos */}
-        {artist.profile_id && (
-          <ProfileGallery profileId={artist.profile_id} className="pb-12" />
-        )}
       </div>
     </article>
   );

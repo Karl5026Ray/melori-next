@@ -7,6 +7,47 @@ import { isUuid } from "@/lib/validators";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// GET /api/social/block — list the members the caller has blocked, hydrated
+// with enough profile info to render a "Blocked members" management screen.
+// Only rows the caller created (blocker_id = caller) are returned, so this is
+// naturally scoped to the authenticated user.
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
+  const { membership } = guard;
+
+  const supabase = getSupabaseAdmin();
+  const { data: rows, error } = await supabase
+    .from("member_blocks")
+    .select("blocked_id, created_at")
+    .eq("blocker_id", membership.userId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const ids = (rows ?? []).map((r) => r.blocked_id as string);
+  let profilesById = new Map<string, Record<string, unknown>>();
+  if (ids.length > 0) {
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, role")
+      .in("id", ids);
+    profilesById = new Map((profs ?? []).map((p) => [p.id as string, p]));
+  }
+
+  const blocked = (rows ?? []).map((r) => ({
+    id: r.blocked_id,
+    created_at: r.created_at,
+    profile: profilesById.get(r.blocked_id as string) ?? null,
+  }));
+
+  return NextResponse.json(
+    { blocked },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
+
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;

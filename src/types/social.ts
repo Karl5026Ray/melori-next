@@ -1,4 +1,15 @@
+import type {
+  ConcertBattleInviteStatus,
+  ConcertBattleRoundStatus,
+  ConcertBattleStatus,
+} from "@/lib/concertBattle";
+
 export type UserRole = "artist" | "superfan" | "admin" | "free";
+
+export interface SocialLink {
+  label: string;
+  url: string;
+}
 
 export interface Profile {
   id: string;
@@ -17,6 +28,8 @@ export interface Profile {
   birth_date?: string | null;
   birthday_visible?: boolean | null;
   city?: string | null;
+  // Up to 5 clickable links shown on the profile (migration 039).
+  social_links?: SocialLink[] | null;
   // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
   membership_tier?: string | null;
   membership_status?: string | null;
@@ -30,19 +43,24 @@ export type RoomFormat =
   | "release_party"
   | "discussion"
   | "versus_battle"
-  | "dj_set";
+  | "dj_set"
+  // MM Cinema — a shared-screen watch party. Same room engine as the formats
+  // above (roles, raise-hand queue, moderation, bans, end-room teardown); what
+  // makes it Cinema is the synced video surface, not a separate rooms table.
+  | "cinema";
 
 // Shared format → badge presentation. Used by SpaceCard and the room detail
 // header so labels/variants stay consistent. Legacy rows with a null
 // room_format fall back to `discussion` (see ROOM_FORMAT_FALLBACK).
 export const ROOM_FORMAT_CONFIG: Record<
   RoomFormat,
-  { variant: "green" | "purple" | "pink" | "orange"; label: string }
+  { variant: "green" | "purple" | "pink" | "orange" | "gold"; label: string }
 > = {
   release_party: { variant: "green", label: "Release Party" },
   discussion: { variant: "purple", label: "Discussion" },
   versus_battle: { variant: "pink", label: "Versus Battle" },
   dj_set: { variant: "orange", label: "DJ Set" },
+  cinema: { variant: "gold", label: "Cinema" },
 };
 
 export const ROOM_FORMAT_FALLBACK: RoomFormat = "discussion";
@@ -58,6 +76,14 @@ export function getRoomFormatConfig(format: RoomFormat | null | undefined) {
     ROOM_FORMAT_CONFIG[ROOM_FORMAT_FALLBACK]
   );
 }
+
+// Host-controlled hand-raise policy (Clubhouse parity):
+//   "off"      - raise-hand disabled; host invites only.
+//   "followed" - limited to accounts the host follows. TODO: enforcement is
+//                 not yet wired (see raise-hand route) — treated as "off"
+//                 today so we never silently grant more access than intended.
+//   "everyone" - any signed-in participant may raise a hand (default).
+export type HandRaiseMode = "off" | "followed" | "everyone";
 
 export interface Space {
   id: string;
@@ -75,22 +101,9 @@ export interface Space {
   agora_channel: string | null;
   scheduled_at?: string | null;
   last_activity_at?: string | null;
-}
-
-export type WaveStatus = "pending" | "accepted" | "declined" | "expired";
-
-export interface Wave {
-  id: string;
-  sender_id: string;
-  recipient_id: string;
-  message: string | null;
-  status: WaveStatus;
-  conversation_id: string | null;
-  created_at: string;
-  expires_at: string;
-  responded_at: string | null;
-  sender?: Profile;
-  recipient?: Profile;
+  hand_raise_mode?: HandRaiseMode;
+  /** Optional genre slug, used by the MM Cinema discover filter tabs. */
+  genre?: string | null;
 }
 
 export type ParticipantRole = "host" | "speaker" | "audience";
@@ -106,9 +119,82 @@ export interface SpaceParticipant {
   is_speaking: boolean;
   is_muted: boolean;
   has_raised_hand: boolean;
+  // When the CURRENT hand went up (trigger-maintained, migration 028). The
+  // raise-hand queue is ordered by this, never by joined_at.
+  stage_requested_at?: string | null;
+  // Trusted-helper badge (migration 017): 'cohost' | 'mod' | 'vip'.
+  // badge in ('mod','cohost') = moderator.
+  badge?: string | null;
   // Set by the host via force-mute; clients respect this even if the speaker
   // toggles their own is_muted back off.
   host_muted?: boolean;
+}
+
+// Concert Battle is a separate aggregate over a `spaces` room envelope.
+// These API-facing shapes intentionally contain only aggregate/view data; no
+// wallet, gift-sender, or generic-stage authorization information belongs here.
+export interface ConcertBattle {
+  space_id: string;
+  initiator_id: string;
+  opponent_id: string | null;
+  status: ConcertBattleStatus;
+  current_round: number;
+  regulation_rounds: number;
+  round_duration_seconds: number;
+  phase_started_at: string | null;
+  phase_ends_at: string | null;
+  winner_id: string | null;
+  completion_reason: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface ConcertBattleRound {
+  id: string;
+  space_id: string;
+  round_number: number;
+  state: ConcertBattleRoundStatus;
+  starts_at: string | null;
+  ends_at: string | null;
+  finalized_at: string | null;
+  winner_id: string | null;
+  initiator_gift_count: number;
+  opponent_gift_count: number;
+  initiator_coins_total: number;
+  opponent_coins_total: number;
+}
+
+export interface ConcertBattleInvite {
+  id: string;
+  space_id: string;
+  sender_id: string;
+  recipient_id: string;
+  status: ConcertBattleInviteStatus;
+  expires_at: string;
+  created_at: string;
+  responded_at: string | null;
+}
+
+export interface ConcertBattleView {
+  space: Pick<Space, "id" | "title" | "topic" | "status" | "room_format">;
+  battle: ConcertBattle;
+  initiator: Profile;
+  opponent: Profile | null;
+  viewer_slot: 1 | 2 | null;
+  /**
+   * DISPLAY-ONLY gifted-coin totals per competitor, so a viewer joining
+   * mid-battle starts from the real score instead of zero. concert_battle_rounds
+   * remains the authority for round outcomes and the win condition.
+   */
+  scores: {
+    initiator_coins: number;
+    opponent_coins: number;
+    initiator_gifts: number;
+    opponent_gifts: number;
+  };
+  server_now: string;
 }
 
 export interface Conversation {
@@ -149,6 +235,13 @@ export interface SocialVideo {
   video_url: string;
   thumbnail_url: string | null;
   media_type: "video" | "audio";
+  // Where the media lives (migration 041). 'upload' = a file in Supabase
+  // Storage; 'youtube' = an artist-submitted link rendered as an inline embed
+  // (video_url still holds the canonical watch URL, so consumers that only read
+  // video_url keep working). Optional: rows written before the migration and
+  // any cached payload omit it, and absent means 'upload'.
+  source?: "upload" | "youtube";
+  youtube_id?: string | null;
   likes_count: number;
   comments_count: number;
   created_at: string;

@@ -8,7 +8,15 @@ import { authFetch } from "@/lib/authClient";
 import { Message, Profile } from "@/types/social";
 import { MessageBubble } from "@/components/social/messages/MessageBubble";
 import { CallOverlay } from "@/components/social/messages/CallOverlay";
-import { CallSession, type CallMode, type CallState } from "@/lib/callClient";
+import {
+  CallSession,
+  formatCallError,
+  type CallMode,
+  type CallState,
+} from "@/lib/callClient";
+import { MediaPermissionNotice } from "@/components/media/MediaPermissionNotice";
+import { type CaptureErrorInfo } from "@/lib/mediaCapture";
+import { playNotificationSound } from "@/lib/notifications";
 import {
   ArrowLeft,
   Phone,
@@ -20,13 +28,43 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// A message plus its client-side send state. `_status` is only set on messages
+// this client rendered optimistically; it is cleared once the server confirms.
+type ChatMessage = Message & { _status?: "sending" | "failed" };
+
+// Realtime and the POST response can both deliver the same row, and the sender
+// already has an optimistic copy on screen. Reconcile on the server id first,
+// then fall back to matching the in-flight local copy by sender + content.
+function mergeIncoming(
+  prev: ChatMessage[],
+  incoming: Message,
+): ChatMessage[] {
+  if (prev.some((m) => m.id === incoming.id)) {
+    return prev.map((m) =>
+      m.id === incoming.id ? { ...m, ...incoming, _status: undefined } : m,
+    );
+  }
+  const localIdx = prev.findIndex(
+    (m) =>
+      m._status === "sending" &&
+      m.sender_id === incoming.sender_id &&
+      m.content === incoming.content,
+  );
+  if (localIdx >= 0) {
+    const next = [...prev];
+    next[localIdx] = { ...next[localIdx], ...incoming, _status: undefined };
+    return next;
+  }
+  return [...prev, incoming];
+}
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const conversationId = params.conversationId as string;
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -34,6 +72,7 @@ export default function ChatPage() {
   const [convStatus, setConvStatus] = useState<string>("accepted");
   const [requestedBy, setRequestedBy] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // ---- Calling state --------------------------------------------------------
@@ -41,12 +80,23 @@ export default function ChatPage() {
   const [callMode, setCallMode] = useState<CallMode>("video");
   const [callState, setCallState] = useState<CallState>("idle");
   const [incoming, setIncoming] = useState(false);
+  // Streams live in state and are handed to <CallOverlay/> as props; the
+  // overlay attaches them with refs. Reaching into the DOM by id from the
+  // session callback raced the overlay's mount.
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  // Blocked camera/mic (and signaling) failures render inline on the page
+  // rather than through a blocking browser dialog.
+  const [callError, setCallError] = useState<CaptureErrorInfo | null>(null);
+  // True from the moment a call button is pressed until start()/accept()
+  // settles, so the buttons cannot be double-fired.
+  const [callBusy, setCallBusy] = useState(false);
   const sessionRef = useRef<CallSession | null>(null);
-
-  const attachStreamToEl = (id: string, stream: MediaStream) => {
-    const el = document.getElementById(id) as HTMLVideoElement | null;
-    if (el) el.srcObject = stream;
-  };
+  // The post-call "ended" state is held for a beat before the overlay closes.
+  // That timer has to be cancellable: on unmount (or when the session is
+  // replaced) a pending callback would otherwise set state on a dead component
+  // and could reset a NEWER call back to idle.
+  const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load messages + the other participant.
   useEffect(() => {
@@ -99,7 +149,8 @@ export default function ChatPage() {
         },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            setMessages((prev) => [...prev, payload.new as Message]);
+            const incoming = payload.new as Message;
+            setMessages((prev) => mergeIncoming(prev, incoming));
             void authFetch(
               `/api/social/conversations/${conversationId}/read`,
               { method: "PATCH", keepalive: true },
@@ -137,81 +188,208 @@ export default function ChatPage() {
       conversationId,
       user.id,
       {
-        onLocalStream: (st) => attachStreamToEl("call-local-video", st),
-        onRemoteStream: (st) => attachStreamToEl("call-remote-video", st),
+        onLocalStream: (st) => setLocalStream(st),
+        onRemoteStream: (st) => setRemoteStream(st),
         onStateChange: (st) => setCallState(st),
         onIncoming: (info) => {
           setCallMode(info.mode);
           setIncoming(true);
+          playNotificationSound(
+            info.mode === "video" ? "videoCall" : "phoneCall",
+          );
         },
         onEnded: () => {
           setIncoming(false);
-          setTimeout(() => setCallState("idle"), 400);
+          setCallBusy(false);
+          setLocalStream(null);
+          setRemoteStream(null);
+          if (endedTimerRef.current) clearTimeout(endedTimerRef.current);
+          endedTimerRef.current = setTimeout(() => {
+            endedTimerRef.current = null;
+            setCallState("idle");
+          }, 400);
+        },
+        onError: (err) => {
+          // Only non-fatal, already-classified problems arrive here. Media
+          // scope never does (capture failures reject the operation instead),
+          // so no permission copy can be rendered for a network fault.
+          if (err.scope === "signaling" || err.scope === "peer") {
+            setCallError(formatCallError(err));
+          }
         },
       },
       user.display_name,
       user.avatar_url ?? undefined,
+      { peerId: otherUser.id },
     );
-    s.listen();
     setCallSession(s);
     sessionRef.current = s;
+    // Subscribing is async now; a failure here only means incoming invites
+    // won't arrive until the next attempt, so it is surfaced, not thrown.
+    // Gated on this still being the mounted session: disposing rejects the
+    // pending listen(), and a superseded conversation must not paint its
+    // failure over the one the user is now looking at.
+    void s.listen().catch(() => {
+      if (sessionRef.current !== s) return;
+      setCallError({
+        kind: "unknown",
+        title: "Calls are unavailable right now",
+        message:
+          "We couldn't connect to the call service, so incoming calls may not ring.",
+        steps: ["Check your connection, then reload this conversation."],
+      });
+    });
     return () => {
+      if (endedTimerRef.current) {
+        clearTimeout(endedTimerRef.current);
+        endedTimerRef.current = null;
+      }
       s.dispose();
       sessionRef.current = null;
+      setCallBusy(false);
     };
   }, [conversationId, user, otherUser]);
 
   const startCall = async (mode: CallMode) => {
-    if (!sessionRef.current) return;
+    // The session itself refuses concurrent starts, but the button is also
+    // gated here so a fast double-tap never even reaches the permission prompt.
+    if (!sessionRef.current || callBusy) return;
+    setCallBusy(true);
     setCallMode(mode);
     setIncoming(false);
+    setCallError(null);
     try {
       await sessionRef.current.start(mode);
-    } catch {
-      alert("Could not access camera/microphone. Check browser permissions.");
+    } catch (err) {
+      setLocalStream(null);
+      setRemoteStream(null);
+      // Scope-aware: only a media failure is rendered as a permission problem.
+      setCallError(formatCallError(err, mode));
+    } finally {
+      setCallBusy(false);
     }
   };
 
   const acceptCall = async () => {
-    if (!sessionRef.current) return;
+    if (!sessionRef.current || callBusy) return;
+    setCallBusy(true);
+    setCallError(null);
     try {
       await sessionRef.current.accept();
-    } catch {
-      alert("Could not access camera/microphone.");
+    } catch (err) {
+      setIncoming(false);
+      setLocalStream(null);
+      setRemoteStream(null);
+      setCallError(formatCallError(err, callMode));
+    } finally {
+      setCallBusy(false);
     }
   };
   const declineCall = () => {
     sessionRef.current?.decline();
     setIncoming(false);
+    setCallBusy(false);
   };
   const hangupCall = () => {
     sessionRef.current?.hangup();
     setIncoming(false);
+    setCallBusy(false);
   };
+
+  // Send the message and reconcile the optimistic bubble with the server row.
+  // On failure the bubble stays on screen marked "Not sent" with a Retry
+  // action, so the text is never silently lost (it used to be a blocking browser
+  // dialog that dismissed and dropped the message).
+  const postMessage = useCallback(
+    async (localId: string, content: string) => {
+      const markFailed = (message: string) => {
+        setSendError(message);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === localId ? { ...m, _status: "failed" as const } : m,
+          ),
+        );
+      };
+
+      try {
+        const res = await authFetch("/api/social/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            content,
+          }),
+        });
+        const j = await res.json().catch(() => ({}) as any);
+        if (!res.ok) {
+          markFailed(j?.error ?? "Could not send message.");
+          return;
+        }
+        const saved = j?.message as Message | undefined;
+        setSendError(null);
+        setMessages((prev) => {
+          if (!saved) {
+            return prev.map((m) =>
+              m.id === localId ? { ...m, _status: undefined } : m,
+            );
+          }
+          // Realtime may have delivered the row first; if so just drop the
+          // local copy instead of rendering the message twice.
+          if (prev.some((m) => m.id === saved.id)) {
+            return prev.filter((m) => m.id !== localId);
+          }
+          return prev.map((m) =>
+            m.id === localId ? { ...m, ...saved, _status: undefined } : m,
+          );
+        });
+      } catch {
+        markFailed("Could not send message. Check your connection.");
+      }
+    },
+    [conversationId],
+  );
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !user) return;
-    const res = await authFetch("/api/social/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const content = input.trim();
+    if (!content || !user) return;
+
+    const localId = `local-${crypto.randomUUID()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
         conversation_id: conversationId,
-        content: input.trim(),
-      }),
+        sender_id: user.id,
+        content,
+        created_at: new Date().toISOString(),
+        is_edited: false,
+        _status: "sending",
+      },
+    ]);
+    setInput("");
+    setSendError(null);
+
+    void supabase.channel(`typing:${conversationId}`).send({
+      type: "broadcast",
+      event: "typing",
+      payload: { user_id: user.id, typing: false },
     });
-    if (res.ok) {
-      setInput("");
-      await supabase.channel(`typing:${conversationId}`).send({
-        type: "broadcast",
-        event: "typing",
-        payload: { user_id: user.id, typing: false },
-      });
-    } else {
-      const j = await res.json().catch(() => ({}));
-      alert(j.error ?? "Could not send message.");
-    }
+
+    await postMessage(localId, content);
   };
+
+  const retryMessage = useCallback(
+    (localId: string, content: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === localId ? { ...m, _status: "sending" as const } : m,
+        ),
+      );
+      void postMessage(localId, content);
+    },
+    [postMessage],
+  );
 
   const deleteMessage = useCallback(async (id: string) => {
     // Optimistic tombstone.
@@ -308,18 +486,20 @@ export default function ChatPage() {
         {/* Voice call */}
         <button
           onClick={() => startCall("voice")}
-          disabled={blocked || !otherUser}
+          disabled={blocked || !otherUser || callBusy || callState !== "idle"}
           className="p-2 hover:bg-melori-elevated rounded-full transition disabled:opacity-40"
           aria-label="Voice call"
+          data-testid="start-voice-call"
         >
           <Phone className="w-5 h-5 text-brand-primary" />
         </button>
         {/* Video call */}
         <button
           onClick={() => startCall("video")}
-          disabled={blocked || !otherUser}
+          disabled={blocked || !otherUser || callBusy || callState !== "idle"}
           className="p-2 hover:bg-melori-elevated rounded-full transition disabled:opacity-40"
           aria-label="Video call"
+          data-testid="start-video-call"
         >
           <Video className="w-5 h-5 text-brand-primary" />
         </button>
@@ -358,6 +538,12 @@ export default function ChatPage() {
             message={msg}
             isMe={msg.sender_id === user?.id}
             onDelete={deleteMessage}
+            status={msg._status}
+            onRetry={
+              msg._status === "failed"
+                ? () => retryMessage(msg.id, msg.content)
+                : undefined
+            }
           />
         ))}
         {isTyping && (
@@ -406,7 +592,13 @@ export default function ChatPage() {
             Unblock this member to send a message.
           </p>
         ) : (
-          <form onSubmit={sendMessage} className="flex items-end gap-2">
+          <>
+            {sendError && (
+              <p role="status" className="mb-2 text-xs text-red-400">
+                {sendError}
+              </p>
+            )}
+            <form onSubmit={sendMessage} className="flex items-end gap-2">
             <button
               type="button"
               className="p-3 text-melori-muted hover:text-melori-text transition"
@@ -431,9 +623,21 @@ export default function ChatPage() {
             <button type="submit" className="p-3 btn-primary rounded-full shadow-lg">
               <Send className="w-5 h-5" />
             </button>
-          </form>
+            </form>
+          </>
         )}
       </div>
+
+      {callError && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[110] flex justify-center px-3">
+          <MediaPermissionNotice
+            info={callError}
+            onDismiss={() => setCallError(null)}
+            testId="call-permission-notice"
+            className="pointer-events-auto w-full max-w-md bg-[#1a0d0d]/95 shadow-2xl backdrop-blur"
+          />
+        </div>
+      )}
 
       {(callActive || incoming) && otherUser && (
         <CallOverlay
@@ -443,6 +647,8 @@ export default function ChatPage() {
           peerName={otherUser.display_name}
           peerAvatar={otherUser.avatar_url}
           isIncoming={incoming && callState === "ringing"}
+          localStream={localStream}
+          remoteStream={remoteStream}
           onAccept={acceptCall}
           onDecline={declineCall}
           onHangup={hangupCall}

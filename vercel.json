@@ -1,5 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/api/studio/gallery/[id]/images/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    },
+    "src/app/api/studio/gallery/[id]/images/finalize/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    },
+    "src/app/api/gallery/upload/route.ts": {
+      "maxDuration": 60,
+      "memory": 3009
+    }
+  },
   "crons": [
     {
       "path": "/api/health",
@@ -12,6 +26,18 @@
     {
       "path": "/api/cron/mm-presence-reap",
       "schedule": "*/5 * * * *"
-}
+    },
+    {
+      "path": "/api/cron/photo-balance-reminders",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/dm-email-notifications",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/concert-battle-rounds",
+      "schedule": "* * * * *"
+    }
   ]
 }

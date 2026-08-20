@@ -4,7 +4,9 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
+import MainContent from "@/components/MainContent";
 import MobileTabBar from "@/components/MobileTabBar";
+import NativeAuthListener from "@/components/NativeAuthListener";
 import PlayerProvider from "@/components/player/PlayerProvider";
 import { SITE_URL } from "@/lib/site";
 
@@ -48,7 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "MELORI MUSIC",
     title: "MELORI MUSIC",
-    description: "Stream freely. Support directly. Create endlessly.",
+    description: "Preview freely. Support directly. Create endlessly.",
     images: [
       {
         url: "/images/og-image.png",
@@ -62,7 +64,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "MELORI MUSIC",
-    description: "Stream freely. Support directly. Create endlessly.",
+    description: "Preview freely. Support directly. Create endlessly.",
     images: ["/images/og-image.png"],
   },
 };
@@ -76,14 +78,17 @@ export default function RootLayout({
     <html lang="en" className={inter.variable}>
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
         <PlayerProvider>
+          {/* Native-only: catches the OAuth deep link back from the system
+              browser. Renders nothing and does nothing on the web. */}
+          <NativeAuthListener />
           <Header />
-          {/* Bottom padding clears the fixed bars: on mobile the tab bar
-             (h-14) — the music transport now floats and overlays content — and
-             on desktop the full-width audio bar. */}
-          <main className="flex-1 pb-24">{children}</main>
+          {/* Bottom clearance is route-aware: the main page clears the tab bar
+             AND the transport, every other space only clears the tab bar. */}
+          <MainContent>{children}</MainContent>
           <Footer />
-          {/* AudioPlayer stacks ABOVE the mobile tab bar (bottom-14) on
-             mobile so the two fixed bars never overlap; flush bottom on md+. */}
+          {/* The transport renders on the main page ONLY. It stays mounted here
+             so it can read the route; it returns null everywhere else, while
+             PlayerProvider keeps the audio itself playing platform-wide. */}
           <AudioPlayer />
           <MobileTabBar />
         </PlayerProvider>

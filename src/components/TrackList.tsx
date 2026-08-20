@@ -3,10 +3,10 @@
 import { useMemo } from "react";
 import BuyButton from "@/components/BuyButton";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
-import { formatDuration } from "@/lib/format";
+import { formatCount, formatDuration } from "@/lib/format";
 import type { Track } from "@/types";
 
-const DEFAULT_TRACK_PRICE = 0.99;
+const DEFAULT_TRACK_PRICE = 1.99;
 
 interface TrackListProps {
   tracks: Track[];
@@ -19,7 +19,7 @@ export default function TrackList({
   artistName,
   coverUrl,
 }: TrackListProps) {
-  const { current, isPlaying, playQueue } = usePlayer();
+  const { current, isPlaying, playQueue, playCounts } = usePlayer();
 
   // The whole album becomes the player queue; clicking a row starts there.
   const queue = useMemo<PlayerTrack[]>(
@@ -43,6 +43,9 @@ export default function TrackList({
         const isCurrent = current?.id === track.id;
         const showPause = isCurrent && isPlaying;
         const isPlayable = Boolean(track.audio_url || track.preview_url);
+        // Prefer the live total the player published after counting a play, so
+        // the number ticks up mid-listen instead of waiting for a refetch.
+        const plays = playCounts[track.id] ?? track.play_count ?? 0;
         return (
           <li
             key={track.id}
@@ -83,6 +86,16 @@ export default function TrackList({
               }`}
             >
               {track.title}
+            </span>
+
+            <span
+              className="flex shrink-0 items-center gap-1 text-sm tabular-nums text-text-secondary"
+              title={`${plays.toLocaleString("en-US")} ${plays === 1 ? "play" : "plays"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {formatCount(plays)}
             </span>
 
             <span className="shrink-0 text-sm text-text-secondary">

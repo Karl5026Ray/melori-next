@@ -2,14 +2,84 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Video, Mic, Upload, Circle, Square } from "lucide-react";
+import { Plus, X, Video, Mic, Upload, Circle, Square, Youtube } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
+import { parseYouTubeUrl } from "@/lib/youtube";
+import {
+  MediaCaptureUnavailableError,
+  requestUserMedia,
+} from "@/lib/mediaCapture";
 
-type Mode = "video" | "audio" | "file";
+type Mode = "video" | "audio" | "file" | "youtube";
 type MediaType = "video" | "audio";
 
 const MAX_SECONDS: Record<MediaType, number> = { video: 60, audio: 120 };
+
+// Reels should stay lightweight. Reject oversized uploads on the client before
+// we ever start a multi-hundred-MB transfer (a 732 MB clip makes tiles blank
+// and playback hang). Recorded clips are already short, so this only guards the
+// "Upload File" path.
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
+
+// Grab the first visible frame of a video as a JPEG poster so the profile /
+// feed grids have something to show without downloading the whole file. Runs
+// entirely in the browser via <canvas>; returns null if the frame can't be
+// read (e.g. cross-origin or unsupported codec) so publishing still succeeds.
+async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(source);
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.src = url;
+
+      const cleanup = () => URL.revokeObjectURL(url);
+      const fail = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      video.onloadeddata = () => {
+        // Seek slightly in so we don't grab a black leading frame.
+        const target = Math.min(0.1, (video.duration || 1) / 2);
+        const onSeeked = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth || 720;
+            canvas.height = video.videoHeight || 1280;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return fail();
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(
+              (blob) => {
+                cleanup();
+                resolve(blob);
+              },
+              "image/jpeg",
+              0.8,
+            );
+          } catch {
+            fail();
+          }
+        };
+        video.onseeked = onSeeked;
+        try {
+          video.currentTime = target;
+        } catch {
+          onSeeked();
+        }
+      };
+      video.onerror = fail;
+      // Safety timeout so a stuck decode never blocks publishing.
+      setTimeout(fail, 8000);
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 function pickVideoMime(): string {
   const candidates = [
@@ -38,6 +108,7 @@ export default function CreatePostButton() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +158,7 @@ export default function CreatePostButton() {
   const closeModal = useCallback(() => {
     cleanup();
     setTitle("");
+    setYoutubeUrl("");
     setOpen(false);
   }, [cleanup]);
 
@@ -108,19 +180,24 @@ export default function CreatePostButton() {
     async (m: Mode) => {
       stopStream();
       setError(null);
-      if (m === "file") return;
+      // Neither the file picker nor a YouTube link needs the camera/mic.
+      if (m === "file" || m === "youtube") return;
       try {
         const constraints =
           m === "video" ? { video: true, audio: true } : { audio: true };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const stream = await requestUserMedia(constraints);
         streamRef.current = stream;
         if (m === "video" && livePreviewRef.current) {
           livePreviewRef.current.srcObject = stream;
           livePreviewRef.current.play().catch(() => {});
         }
-      } catch {
+      } catch (err) {
+        // An unsupported container reports WHY (and how to fix it); an ordinary
+        // denial keeps the shorter permission hint.
         setError(
-          "Camera/mic blocked. Grant permission or use Upload File instead.",
+          err instanceof MediaCaptureUnavailableError
+            ? err.message
+            : "Camera/mic blocked. Grant permission or use Upload File instead.",
         );
       }
     },
@@ -202,6 +279,21 @@ export default function CreatePostButton() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setError(null);
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      // Reset the input so the same oversized file can be re-picked after the
+      // user trims it, and surface a clear limit instead of silently uploading
+      // a huge clip that later renders as a blank tile.
+      e.target.value = "";
+      setPickedFile(null);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setError(
+        `That file is ${(file.size / (1024 * 1024)).toFixed(0)}MB. Reels must be under ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB — please trim or compress it.`,
+      );
+      return;
+    }
     setPickedFile(file);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -209,7 +301,44 @@ export default function CreatePostButton() {
     });
   };
 
+  // Artist-only: publish a YouTube link as a Mirror post. Nothing is uploaded —
+  // the server re-validates the URL, extracts the id, and stores the canonical
+  // watch URL plus the YouTube thumbnail. Title is optional here because the
+  // server falls back to the video's own title via oEmbed.
+  const publishYouTube = useCallback(async () => {
+    const parsed = parseYouTubeUrl(youtubeUrl);
+    if (!parsed) {
+      setError("That doesn't look like a YouTube video link.");
+      return;
+    }
+
+    setPublishing(true);
+    setError(null);
+    try {
+      const res = await authFetch("/api/social/videos/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: parsed.url, title: title.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not publish your post.");
+      }
+      closeModal();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setPublishing(false);
+    }
+  }, [youtubeUrl, title, closeModal, router]);
+
   const publish = useCallback(async () => {
+    if (mode === "youtube") {
+      await publishYouTube();
+      return;
+    }
+
     const trimmed = title.trim();
     if (!trimmed) {
       setError("Add a title first.");
@@ -264,6 +393,36 @@ export default function CreatePostButton() {
       });
       if (!putRes.ok) throw new Error("Upload failed — please try again.");
 
+      // For video reels, capture a poster frame client-side and upload it so
+      // grids can show a real thumbnail instead of trying to paint an .mp4 in
+      // an <img>. Best-effort: any failure here just leaves thumbnail_url null.
+      let thumbnailUrl: string | null = null;
+      if (mediaType === "video") {
+        try {
+          const poster = await captureVideoPoster(source);
+          if (poster) {
+            const thumbName = `${filename.replace(/\.[^.]+$/, "")}_poster.jpg`;
+            const thumbUrlRes = await authFetch("/api/social/upload-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: thumbName, type: "thumbnail" }),
+            });
+            if (thumbUrlRes.ok) {
+              const { signedUrl: thumbSigned, publicUrl: thumbPublic } =
+                await thumbUrlRes.json();
+              const thumbPut = await fetch(thumbSigned, {
+                method: "PUT",
+                body: poster,
+                headers: { "Content-Type": "image/jpeg" },
+              });
+              if (thumbPut.ok) thumbnailUrl = thumbPublic;
+            }
+          }
+        } catch {
+          /* poster is optional — publish without it */
+        }
+      }
+
       const saveRes = await authFetch("/api/social/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -271,6 +430,7 @@ export default function CreatePostButton() {
           title: trimmed,
           video_url: publicUrl,
           media_type: mediaType,
+          thumbnail_url: thumbnailUrl,
         }),
       });
       if (!saveRes.ok) {
@@ -285,7 +445,7 @@ export default function CreatePostButton() {
     } finally {
       setPublishing(false);
     }
-  }, [title, mode, pickedFile, recordedBlob, closeModal, router]);
+  }, [title, mode, pickedFile, recordedBlob, closeModal, router, publishYouTube]);
 
   const handleFabClick = () => {
     if (!user) {
@@ -304,11 +464,23 @@ export default function CreatePostButton() {
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const hasClip = mode === "file" ? !!pickedFile : !!recordedBlob;
 
+  // Linking a YouTube video is artist tooling (POST /api/social/videos/youtube
+  // is gated on requireArtist), so the tab only appears for artists and admins.
+  // The server re-checks — this just avoids offering an action that would 403.
+  const canPostYouTube = user.role === "artist" || user.role === "admin";
+
   const tabs: { key: Mode; label: string; icon: typeof Video }[] = [
     { key: "video", label: "Record Video", icon: Video },
     { key: "audio", label: "Record Audio", icon: Mic },
     { key: "file", label: "Upload File", icon: Upload },
+    ...(canPostYouTube
+      ? [{ key: "youtube" as Mode, label: "YouTube Link", icon: Youtube }]
+      : []),
   ];
+
+  const parsedYouTube = mode === "youtube" ? parseYouTubeUrl(youtubeUrl) : null;
+  const canPublish =
+    mode === "youtube" ? !!parsedYouTube : hasClip && !!title.trim();
 
   return (
     <>
@@ -343,7 +515,11 @@ export default function CreatePostButton() {
             </div>
 
             {/* Mode tabs */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div
+              className={`grid gap-2 mb-4 ${
+                tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"
+              }`}
+            >
               {tabs.map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -426,10 +602,39 @@ export default function CreatePostButton() {
                   />
                 </label>
               )}
+
+              {mode === "youtube" && (
+                <div className="w-full rounded-xl border border-melori-border bg-melori-void p-4">
+                  <input
+                    type="url"
+                    inputMode="url"
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    className="w-full bg-melori-elevated border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
+                  />
+                  <p className="mt-2 text-xs text-melori-muted">
+                    Paste a YouTube watch, Shorts, or youtu.be link. The video
+                    plays inline in the Mirror — nothing is re-uploaded.
+                  </p>
+                  {parsedYouTube && (
+                    <img
+                      src={parsedYouTube.thumbnailUrl}
+                      alt=""
+                      className="mt-3 w-full rounded-lg object-cover"
+                    />
+                  )}
+                  {youtubeUrl.trim() && !parsedYouTube && (
+                    <p className="mt-2 text-xs text-red-400">
+                      That doesn&apos;t look like a YouTube video link.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Capture controls */}
-            {mode !== "file" && (
+            {mode !== "file" && mode !== "youtube" && (
               <div className="flex justify-center mb-4">
                 {!hasClip && !recording && (
                   <button
@@ -467,7 +672,11 @@ export default function CreatePostButton() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={120}
-              placeholder="Add a title…"
+              placeholder={
+                mode === "youtube"
+                  ? "Add a title… (optional — we'll use the video's own)"
+                  : "Add a title…"
+              }
               className="w-full bg-melori-void/60 border border-melori-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-melori-purple transition"
             />
 
@@ -489,7 +698,7 @@ export default function CreatePostButton() {
               <button
                 type="button"
                 onClick={publish}
-                disabled={publishing || !hasClip || !title.trim()}
+                disabled={publishing || !canPublish}
                 className="btn-primary px-6 py-2.5 rounded-full font-semibold text-sm disabled:opacity-50"
               >
                 {publishing ? "Posting…" : "Post"}

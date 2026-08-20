@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Camera, Clock, DollarSign } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import ContractLink from "./ContractLink";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ interface ServiceCard {
   priceCents: number;
   depositCents: number;
   depositPercent: number | null;
+  hasContract: boolean;
 }
 
 async function getActiveServices(): Promise<ServiceCard[]> {
@@ -27,7 +29,7 @@ async function getActiveServices(): Promise<ServiceCard[]> {
     const { data: services, error } = await supabase
       .from("photo_services")
       .select(
-        "id, name, description, duration_minutes, price_cents, deposit_cents, deposit_percent",
+        "id, name, description, duration_minutes, price_cents, deposit_cents, deposit_percent, contract_url",
       )
       .eq("is_active", true)
       .order("sort_order", { ascending: true })
@@ -42,6 +44,7 @@ async function getActiveServices(): Promise<ServiceCard[]> {
       priceCents: s.price_cents as number,
       depositCents: s.deposit_cents as number,
       depositPercent: s.deposit_percent as number | null,
+      hasContract: Boolean(s.contract_url),
     }));
   } catch (err) {
     console.error("pricing page list error", err);
@@ -135,6 +138,9 @@ export default async function PricingPage() {
                 >
                   Book
                 </Link>
+                {service.hasContract && (
+                  <ContractLink serviceId={service.id} />
+                )}
               </div>
             ))}
           </div>

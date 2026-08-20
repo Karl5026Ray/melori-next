@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Clapperboard, Mic2, Radio, UserRound, Video } from "lucide-react";
 import CoverImage from "@/components/CoverImage";
 import { authFetch } from "@/lib/authClient";
+import { playNotificationSound } from "@/lib/notifications";
+import {
+  getLiveRoomPresentation,
+  ONLINE_PRESENCE_PRESENTATION,
+  type LivePresenceTone,
+} from "@/lib/roomStatus";
 
 // A live room, as returned by GET /api/mirror/live. Mirrors the select in that
 // route. Only the fields the ring row needs are typed here.
@@ -34,63 +41,73 @@ export type MirrorOnlineMember = {
   role: string | null;
 };
 
-// Video room formats deep-link into MM Faces; everything else is an audio Space.
-const VIDEO_FORMATS = new Set(["live_solo", "live_duo", "live_group"]);
-
-function roomHref(room: MirrorLiveRoom) {
-  return VIDEO_FORMATS.has(room.room_format ?? "")
-    ? `/social/live/${room.id}`
-    : `/social/spaces/${room.id}`;
-}
-
 function memberName(m: MirrorOnlineMember) {
   return m.display_name || m.username || "Member";
 }
 
-// The horizontal "online now" ring row that sits at the very top of Melori
-// Mirror — Instagram-Stories-style circles of who is on Melori right now.
+const TONE_CLASSES: Record<
+  LivePresenceTone,
+  { ring: string; badge: string }
+> = {
+  orange: { ring: "bg-brand-primary", badge: "bg-brand-primary" },
+  teal: { ring: "bg-melori-teal", badge: "bg-melori-teal" },
+  purple: { ring: "bg-melori-purple", badge: "bg-melori-purple" },
+  gold: { ring: "bg-cinema-gold", badge: "bg-cinema-gold text-black" },
+};
+
+const STATUS_ICONS = {
+  video: Video,
+  mic: Mic2,
+  radio: Radio,
+  clapperboard: Clapperboard,
+} as const;
+
+// The horizontal "online now" ring row — Instagram-Stories-style circles of
+// who is on Melori right now.
 //
-// It shows two things, live rooms first:
+// It shows two things:
 //   - LIVE rooms (spaces where status='live'): a gradient "live" ring; tapping
-//     it deep-links straight into that room.
+//     it deep-links straight into that room. Discovery-oriented.
 //   - ONLINE members (signed-in and recently active via the presence heartbeat,
-//     but not hosting a room): a subtler ring linking to their profile. This is
-//     what makes other online members appear here; previously the row only ever
-//     showed live-room hosts, so members who were merely online never showed up.
+//     but not hosting a room): a subtler ring linking to their profile. This
+//     is the "user pill lights up when a friend signs on" surface.
+//
+// `showLiveRooms` toggles the first section. Default true preserves the
+// original discovery-first layout for any Mirror-style placement; the Messages
+// page passes false so the strip is pure user pills, framed as "find your
+// people" rather than "find something to join."
+//
+// `friendsOnly` restricts the user pills to the caller's MUTUAL follows — the
+// people the caller both follows and is followed by. Fires the API with
+// scope=friends; anonymous callers get nobody back and see the empty state.
 //
 // Data source is /api/mirror/live; we poll it on a light interval so the row
 // tracks who's around without a reload, and we send our own presence heartbeat
 // so this viewer shows up in everyone else's row too. When nobody is around we
 // show a subtle "be the first" prompt rather than hiding the row.
-export default function OnlineNowRow() {
+export default function OnlineNowRow({
+  showLiveRooms = true,
+  friendsOnly = false,
+}: {
+  showLiveRooms?: boolean;
+  friendsOnly?: boolean;
+} = {}) {
   const [rooms, setRooms] = useState<MirrorLiveRoom[]>([]);
   const [members, setMembers] = useState<MirrorOnlineMember[]>([]);
   const [loaded, setLoaded] = useState(false);
-
-  // Presence heartbeat: tell the server we're online so we appear in other
-  // members' rows. Fire on mount and every 60s while the page is open.
-  useEffect(() => {
-    let active = true;
-    const ping = () => {
-      if (!active) return;
-      authFetch("/api/presence/heartbeat", { method: "POST" }).catch(() => {
-        /* transient — the next tick retries */
-      });
-    };
-    ping();
-    const t = setInterval(ping, 60_000);
-    return () => {
-      active = false;
-      clearInterval(t);
-    };
-  }, []);
+  // Track the previous member id set so we can chime once per polling cycle
+  // when new arrivals show up. Skip the first load — everyone is "new" then.
+  const prevMemberIdsRef = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function load() {
       try {
-        const res = await fetch("/api/mirror/live", { cache: "no-store" });
+        const url = friendsOnly
+          ? "/api/mirror/live?scope=friends"
+          : "/api/mirror/live";
+        const res = await authFetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data: {
           live?: MirrorLiveRoom[];
@@ -98,7 +115,17 @@ export default function OnlineNowRow() {
         } = await res.json();
         if (active) {
           setRooms(data.live ?? []);
-          setMembers(data.members ?? []);
+          const nextMembers = data.members ?? [];
+          setMembers(nextMembers);
+          const nextIds = new Set(nextMembers.map((m) => m.id));
+          const prev = prevMemberIdsRef.current;
+          if (prev) {
+            // One chime per cycle regardless of how many people arrived —
+            // avoids a flurry of overlapping tones on a busy refresh.
+            const arrived = [...nextIds].some((id) => !prev.has(id));
+            if (arrived) playNotificationSound("onlineNow");
+          }
+          prevMemberIdsRef.current = nextIds;
         }
       } catch {
         /* transient — keep whatever we already have */
@@ -114,9 +141,10 @@ export default function OnlineNowRow() {
       active = false;
       clearInterval(t);
     };
-  }, []);
+  }, [friendsOnly]);
 
-  const isEmpty = rooms.length === 0 && members.length === 0;
+  const visibleRooms = showLiveRooms ? rooms : [];
+  const isEmpty = visibleRooms.length === 0 && members.length === 0;
 
   return (
     <div className="w-full border-b border-white/10 bg-melori-void/80 px-4 py-4 backdrop-blur">
@@ -151,20 +179,28 @@ export default function OnlineNowRow() {
           </Link>
         ) : (
           <>
-            {rooms.map((room) => {
+            {visibleRooms.map((room) => {
               const name =
                 room.host?.display_name ||
                 room.host?.username ||
                 "Live";
+              const status = getLiveRoomPresentation({
+                ...room,
+                status: "live",
+              });
+              if (!status) return null;
+              const tone = TONE_CLASSES[status.tone];
+              const StatusIcon = STATUS_ICONS[status.icon];
               return (
                 <Link
                   key={`room-${room.id}`}
-                  href={roomHref(room)}
+                  href={status.href}
                   className="group flex shrink-0 flex-col items-center gap-2"
                   title={room.title ?? name}
+                  aria-label={`Join ${room.title ?? name}. ${status.ariaLabel}, hosted by ${name}`}
+                  data-testid={`mirror-presence-${status.kind}-${room.id}`}
                 >
-                  {/* Gradient "live" ring around the host avatar. */}
-                  <span className="rounded-full bg-gradient-to-tr from-brand-primary via-melori-pink to-melori-purple p-[2px]">
+                  <span className={`relative rounded-full p-[3px] ${tone.ring}`}>
                     <span className="block rounded-full bg-melori-void p-[2px]">
                       <CoverImage
                         src={room.host?.avatar_url ?? null}
@@ -174,10 +210,15 @@ export default function OnlineNowRow() {
                         rounded="rounded-full"
                       />
                     </span>
+                    <span
+                      className={`absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white shadow ${tone.badge}`}
+                    >
+                      <StatusIcon className="h-2.5 w-2.5" aria-hidden="true" />
+                      {status.label}
+                    </span>
                   </span>
-                  <span className="flex max-w-[4.5rem] items-center gap-1 truncate text-center text-xs text-white">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-primary" />
-                    <span className="truncate">{name}</span>
+                  <span className="max-w-[4.5rem] truncate pt-0.5 text-center text-xs text-white">
+                    {name}
                   </span>
                 </Link>
               );
@@ -194,9 +235,10 @@ export default function OnlineNowRow() {
                   href={href}
                   className="group flex shrink-0 flex-col items-center gap-2"
                   title={name}
+                  aria-label={`Open ${name}'s profile. ${ONLINE_PRESENCE_PRESENTATION.ariaLabel}`}
+                  data-testid={`mirror-presence-online-${member.id}`}
                 >
-                  {/* Subtle static ring: online, but not broadcasting a room. */}
-                  <span className="rounded-full bg-white/15 p-[2px]">
+                  <span className="relative rounded-full bg-white/25 p-[3px]">
                     <span className="block rounded-full bg-melori-void p-[2px]">
                       <CoverImage
                         src={member.avatar_url ?? null}
@@ -206,10 +248,17 @@ export default function OnlineNowRow() {
                         rounded="rounded-full"
                       />
                     </span>
+                    <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-melori-elevated px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white shadow">
+                      <UserRound className="h-2.5 w-2.5" aria-hidden="true" />
+                      {ONLINE_PRESENCE_PRESENTATION.label}
+                    </span>
+                    <span
+                      className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-melori-void bg-emerald-400"
+                      aria-hidden="true"
+                    />
                   </span>
-                  <span className="flex max-w-[4.5rem] items-center gap-1 truncate text-center text-xs text-melori-muted">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                    <span className="truncate">{name}</span>
+                  <span className="max-w-[4.5rem] truncate pt-0.5 text-center text-xs text-melori-muted">
+                    {name}
                   </span>
                 </Link>
               );

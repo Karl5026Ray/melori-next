@@ -10,7 +10,7 @@ export function VideoFeed({
 }: {
   initialVideos: SocialVideo[];
 }) {
-  const [videos] = useState<SocialVideo[]>(initialVideos);
+  const [videos, setVideos] = useState<SocialVideo[]>(initialVideos);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +63,13 @@ export function VideoFeed({
           data-index={index}
           className="video-item h-full w-full flex-shrink-0 relative"
         >
-          <VideoCard video={video} isActive={index === activeIndex} />
+          <VideoCard
+            video={video}
+            isActive={index === activeIndex}
+            onDeleted={(id) =>
+              setVideos((prev) => prev.filter((v) => v.id !== id))
+            }
+          />
         </div>
       ))}
     </div>

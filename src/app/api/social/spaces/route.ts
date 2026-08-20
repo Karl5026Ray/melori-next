@@ -39,15 +39,34 @@ export async function POST(req: NextRequest) {
         ? body.type
         : "listening";
 
-        const ALLOWED_FORMATS = new Set([
+    // Must stay in sync with the spaces_room_format_check constraint. Note the
+    // MM Faces live_* formats are absent here on purpose: Faces rooms are
+    // created through their own route, not this one.
+    const ALLOWED_FORMATS = new Set([
       "release_party",
       "discussion",
       "versus_battle",
       "dj_set",
+      // MM Cinema watch party (migration 050).
+      "cinema",
     ]);
     const room_format =
       typeof body.room_format === "string" && ALLOWED_FORMATS.has(body.room_format)
         ? (body.room_format as string)
+        : null;
+
+    // Optional genre slug, used only by the Cinema discover filter tabs
+    // (migration 050). Narrowed to the tabs we actually render, so a bad or
+    // stale value can't create a room that no tab will ever surface. Null =
+    // untagged, which still appears under the default "live now" tab.
+    //
+    // Accepted for any format rather than cinema-only: `genre` is a plain
+    // column on `spaces`, and rejecting it here would just push the same
+    // validation into a second place when another format wants tagging.
+    const ALLOWED_GENRES = new Set(["hip-hop", "rnb", "afrobeats", "pop"]);
+    const genre =
+      typeof body.genre === "string" && ALLOWED_GENRES.has(body.genre)
+        ? (body.genre as string)
         : null;
 
     // Optional scheduled_at → room is created in `scheduled` status; the
@@ -91,6 +110,7 @@ export async function POST(req: NextRequest) {
         topic: topic || "Open Discussion",
         type,
                 room_format,
+        genre,
         host_id: membership.userId,
         status: scheduledAt ? "scheduled" : "live",
         scheduled_at: scheduledAt,

@@ -143,6 +143,43 @@ export async function PATCH(req: NextRequest) {
       update.avatar_url = trimmed;
     }
   }
+  if ("social_links" in body) {
+    // Up to 5 clickable links per profile. Each is { label, url }. We bound the
+    // count and lengths, and require http(s) URLs so a caller can't store a
+    // javascript:/data: URL that renders as a clickable <a>. The column has a
+    // matching max-5 CHECK constraint (migration 039) as a backstop.
+    const raw = body.social_links;
+    if (raw === null) {
+      update.social_links = [];
+    } else if (!Array.isArray(raw)) {
+      return NextResponse.json(
+        { error: "social_links must be an array" },
+        { status: 400 },
+      );
+    } else {
+      if (raw.length > 5) {
+        return NextResponse.json(
+          { error: "You can add up to 5 links" },
+          { status: 400 },
+        );
+      }
+      const cleaned: { label: string; url: string }[] = [];
+      for (const item of raw) {
+        if (!item || typeof item !== "object") continue;
+        const label = typeof item.label === "string" ? item.label.trim().slice(0, 60) : "";
+        const url = typeof item.url === "string" ? item.url.trim().slice(0, 2048) : "";
+        if (!url) continue; // skip empty rows
+        if (!/^https?:\/\//i.test(url) || url.includes("..")) {
+          return NextResponse.json(
+            { error: "Each link must be a valid http(s) URL" },
+            { status: 400 },
+          );
+        }
+        cleaned.push({ label: label || url, url });
+      }
+      update.social_links = cleaned;
+    }
+  }
   if ("notifications_email" in body) {
     if (typeof body.notifications_email !== "boolean") {
       return NextResponse.json(

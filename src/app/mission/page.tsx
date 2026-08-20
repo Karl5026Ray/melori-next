@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import HelpUsImprove from "@/components/HelpUsImprove";
+import NameMeaning from "@/components/NameMeaning";
 
 export const metadata: Metadata = {
   title: "Mission",
@@ -55,7 +56,7 @@ export default function MissionPage() {
               {
                 num: "01",
                 title: "Transparent Monetization",
-                desc: "Artists keep 100% of every music sale — Melori takes no cut. Only Stripe's standard payment processing fee is deducted. No opaque distribution algorithms, no intermediary gatekeeping determining your compensation.",
+                desc: "No platform cut — artists keep every dollar after payment processing. Melori adds no revenue share on top of Stripe's standard card fee, so what reaches you is the sale price minus processing and nothing else. No opaque distribution algorithms, no intermediary gatekeeping determining your compensation.",
               },
               {
                 num: "02",
@@ -88,6 +89,9 @@ export default function MissionPage() {
           </div>
         </div>
       </section>
+
+      {/* The story behind the name — linked from the footer and the homepage. */}
+      <NameMeaning variant="full" />
 
       <section className="border-t border-brand-border">
         <div className="max-w-3xl mx-auto px-6 py-20 text-center">

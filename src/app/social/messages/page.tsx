@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ConversationList } from "@/components/social/messages/ConversationList";
 import { NewMessageModal } from "@/components/social/messages/NewMessageModal";
-import { MessageSquare, PenSquare, Search } from "lucide-react";
+import OnlineNowRow from "@/components/social/mirror/OnlineNowRow";
+import { NotificationSettings } from "@/components/social/messages/NotificationSettings";
+import { Bell, MessageSquare, PenSquare, Search } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 
@@ -14,11 +17,50 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 // caller and runs the aggregate query with the service-role client.
 export default function MessagesPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"primary" | "requests">("primary");
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  // Deep link: /social/messages?to=<profileId> opens (or creates) the 1:1 thread
+  // with that member. The Discover profile scroller's Message button has always
+  // linked here, but nothing consumed ?to= — it dropped you on the inbox with no
+  // thread open, which is why "Message" looked broken from Discover.
+  //
+  // Read from window.location instead of useSearchParams() so this page does not
+  // need a Suspense boundary to stay prerenderable.
+  useEffect(() => {
+    if (!user?.id) return;
+    const to = new URLSearchParams(window.location.search).get("to");
+    if (!to || to === user.id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch("/api/social/conversations/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient_id: to }),
+        });
+        const body = await res.json().catch(() => ({}) as any);
+        if (cancelled) return;
+        if (res.ok && body?.conversation_id) {
+          router.replace(`/social/messages/${body.conversation_id}`);
+          return;
+        }
+        setStartError(body?.error ?? "Could not open that conversation.");
+      } catch {
+        if (!cancelled) setStartError("Could not open that conversation.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,20 +116,51 @@ export default function MessagesPage() {
   const visible = filterBySearch(tab === "primary" ? primary : requests);
 
   return (
-    <div className="flex-1 flex h-full animate-fade-in">
+    <div className="flex-1 flex flex-col h-full animate-fade-in">
+      {/* Online-friends strip pinned to the top of Messages: each mutual
+          follower's avatar lights up when they sign on, so you can find them
+          and open a conversation. showLiveRooms=false drops the live-broadcast
+          rings — those belong to Mirror's discovery surface, not the inbox.
+          friendsOnly restricts to mutual follows (they follow you AND you
+          follow them). */}
+      <div className="shrink-0 border-b border-melori-border">
+        <OnlineNowRow showLiveRooms={false} friendsOnly />
+      </div>
+      <div className="flex flex-1 min-h-0">
       <div className="w-full md:w-80 border-r border-melori-border bg-melori-void flex flex-col">
         <div className="p-4 border-b border-melori-border">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold">Messages</h2>
-            <button
-              onClick={() => setShowNew(true)}
-              className="p-2 hover:bg-melori-elevated rounded-lg transition text-brand-primary"
-              aria-label="New message"
-              title="New message"
-            >
-              <PenSquare className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowNotifSettings((v) => !v)}
+                aria-pressed={showNotifSettings}
+                aria-label="Notification sounds"
+                title="Notification sounds"
+                className={`p-2 rounded-lg transition ${
+                  showNotifSettings
+                    ? "bg-melori-elevated text-brand-primary"
+                    : "text-melori-muted hover:bg-melori-elevated hover:text-brand-primary"
+                }`}
+              >
+                <Bell className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowNew(true)}
+                className="p-2 hover:bg-melori-elevated rounded-lg transition text-brand-primary"
+                aria-label="New message"
+                title="New message"
+              >
+                <PenSquare className="w-5 h-5" />
+              </button>
+            </div>
           </div>
+
+          {showNotifSettings && (
+            <div className="mb-3">
+              <NotificationSettings />
+            </div>
+          )}
 
           <div className="relative mb-3">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-melori-muted" />
@@ -130,6 +203,12 @@ export default function MessagesPage() {
           </div>
         </div>
 
+        {startError && (
+          <p className="border-b border-red-600/30 bg-red-600/10 px-4 py-2 text-center text-xs text-red-300">
+            {startError}
+          </p>
+        )}
+
         <div className="flex-1 overflow-y-auto p-2 space-y-1 pb-28 md:pb-2">
           {loading ? (
             <div className="text-center py-8 text-melori-muted text-sm">
@@ -166,6 +245,7 @@ export default function MessagesPage() {
         </div>
       </div>
 
+      </div>
       {showNew && <NewMessageModal onClose={() => setShowNew(false)} />}
     </div>
   );

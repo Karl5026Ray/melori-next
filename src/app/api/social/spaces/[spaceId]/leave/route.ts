@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
 import { promoteHostOnLeave } from "@/lib/roomHost";
+import { deriveRoomName } from "@/lib/endRoom";
+import {
+  livekitConfigured,
+  revokePublishedSources,
+} from "@/lib/livekitServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +44,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
   // Was the leaver the host? If so, check if any other hosts remain.
   const { data: space } = await supabase
     .from("spaces")
-    .select("id, host_id, status")
+    .select("id, host_id, status, room_format, livekit_room")
     .eq("id", spaceId)
     .maybeSingle();
 
@@ -48,7 +53,29 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
   }
 
   const isHostLeaving = space.host_id === userId;
-  if (!isHostLeaving) return NextResponse.json({ ok: true });
+  if (!isHostLeaving) {
+    if (space.room_format === "cinema") {
+      if (livekitConfigured()) {
+        await revokePublishedSources(
+          deriveRoomName(space),
+          userId,
+          ["camera", "microphone"],
+          { disconnectOnCamera: true },
+        );
+      }
+      const { error: releaseError } = await supabase.rpc("release_cinema_camera_slot", {
+        p_space_id: spaceId,
+        p_user_id: userId,
+      });
+      if (releaseError) {
+        return NextResponse.json(
+          { ok: false, reason: "camera-slot-release-failed" },
+          { status: 503 },
+        );
+      }
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   // Host left: atomically promote the oldest moderator (else oldest speaker),
   // or end the room gracefully if nobody is eligible. Race-safe across the

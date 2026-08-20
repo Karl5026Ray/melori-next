@@ -30,6 +30,9 @@ export interface BookingItem {
   notes: string | null;
   depositCents: number;
   depositPaid: boolean;
+  balanceCents: number;
+  balancePaid: boolean;
+  servicePriceCents: number | null;
   hasGoogleEvent: boolean;
   createdAt: string;
 }

@@ -1,8 +1,20 @@
 import type { Metadata } from "next";
+import { unstable_rethrow } from "next/navigation";
 import MusicPageClient from "@/components/MusicPageClient";
-import { getReleases, getPublishedStudioTracks } from "@/lib/data";
+import { getReleases } from "@/lib/data";
+import { getCatalogItems } from "@/lib/catalog";
 
-export const dynamic = "force-dynamic";
+// ISR instead of `dynamic = 'force-dynamic'` — see issue #280 and the longer
+// note in src/app/page.tsx.
+//
+// force-dynamic made Next.js stamp `no-store` on the HTML response, which iOS
+// WKWebView wrapper browsers refuse to render. On Vercel that function-set
+// header cannot be overridden by next.config.js or src/proxy.ts.
+//
+// Safe here for the same reason as the homepage: the catalog is read through
+// `getSupabaseAdmin()` and is identical for every visitor, with auth state
+// resolved client-side.
+export const revalidate = 60;
 
 const description =
   "Browse every release on MELORI Music — singles, EPs, and albums from independent artists.";
@@ -24,12 +36,16 @@ export const metadata: Metadata = {
 };
 
 export default async function MusicPage() {
-  // Load both sources in parallel — legacy releases and artist-studio uploads.
-  // A failure in one list must not blank the other, so each has its own catch.
-  const [releases, studioTracks] = await Promise.all([
-    getReleases().catch(() => []),
-    getPublishedStudioTracks(500).catch(() => []),
-  ]);
+  // One catalog: admin-curated releases and artist self-uploads together.
+  // getCatalogItems swallows a studio-side failure so a partial outage
+  // degrades the list rather than blanking the page.
+  // Rethrow Next.js control-flow errors before degrading — a bare catch here
+  // swallows the static-generation bailout and prerenders an empty catalog.
+  const releases = await getReleases().catch((err) => {
+    unstable_rethrow(err);
+    return [];
+  });
+  const items = await getCatalogItems(releases);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
@@ -37,7 +53,7 @@ export default async function MusicPage() {
       <p className="mt-2 mb-8 text-text-secondary">
         Browse every release on MELORI Music.
       </p>
-      <MusicPageClient releases={releases} studioTracks={studioTracks} />
+      <MusicPageClient items={items} />
     </div>
   );
 }

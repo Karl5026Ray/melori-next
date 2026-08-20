@@ -4,6 +4,12 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { startOAuthSignIn } from "@/lib/nativeAuth";
+import {
+  hasSeenMediaSetup,
+  postSignupDestination,
+  safeNextPath,
+} from "@/lib/mediaSetupMarker";
 
 // /register — the canonical signup surface.
 //   • Free Fan  → create the Supabase account immediately (role "free").
@@ -13,35 +19,44 @@ import { supabase } from "@/lib/supabase";
 //     client-side without payment.
 // One auth system (Supabase). Google sign-in offered for the free path.
 
-const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
-
-type Tier = "free" | "superfan" | "artist";
+type Tier = "free" | "superfan" | "artist" | "snappd";
 
 const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
-  { id: "free", name: "Free Fan", price: "$0", blurb: "Stream music, join the community." },
-  { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Early access, exclusives, HD audio." },
-  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, keep 100%." },
+  { id: "free", name: "Free Fan", price: "$0", blurb: "Free 30-second previews, playlists, community." },
+  { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Full-length playback, early access, exclusives, HD audio." },
+  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, no platform cut on sales." },
+  { id: "snappd", name: "Snappd", price: "$14.99/mo", blurb: "Photographer membership: profile, galleries, tethering, $1.99 instant prints (keep 80%)." },
 ];
+
+// Snappd is sold through its own live Stripe Payment Link, whose completion
+// redirects to /welcome?tier=snappd to auto-provision the photographer account
+// and grant the studio role. Sending the buyer straight here (rather than via
+// /membership) makes signup one click. Public hosted-checkout URL — safe to
+// ship to the client.
+const SNAPPD_PAYMENT_LINK =
+  "https://buy.stripe.com/cNiaER1gQgKTbVfexI7Zu0b";
 
 function RegisterInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const nextParam = params.get("next");
-  const next =
-    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
-      ? nextParam
-      : "/music";
+  // Single source of truth for redirect validation. This page used to carry its
+  // own weaker prefix check, which let `/\evil.example` through — the two must
+  // not be allowed to drift, so there is only one implementation now.
+  const next = safeNextPath(params.get("next"));
 
   // Preselect the signup tier from ?tier= (deep-linked from the M-button Signup
   // menu). Falls back to "free" for any unknown value.
   const tierParam = params.get("tier");
   const initialTier: Tier =
-    tierParam === "artist" || tierParam === "superfan" ? tierParam : "free";
+    tierParam === "artist" ||
+    tierParam === "superfan" ||
+    tierParam === "snappd"
+      ? tierParam
+      : "free";
   const [tier, setTier] = useState<Tier>(initialTier);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   // When email confirmation is required, we hold the address here so the user
@@ -76,18 +91,10 @@ function RegisterInner() {
     setError("");
     try {
       // Route Google through the dedicated /auth/callback page, which runs
-      // exchangeCodeForSession client-side (same localStorage that holds the
-      // PKCE code verifier). Redirecting straight to `next` skips the exchange
-      // and throws "PKCE code verifier not found in storage".
-      const redirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo },
-      });
-      if (oauthError) throw oauthError;
+      // exchangeCodeForSession client-side (same store that holds the PKCE code
+      // verifier). Redirecting straight to `next` skips the exchange and throws
+      // "PKCE code verifier not found in storage".
+      await startOAuthSignIn("google", `next=${encodeURIComponent(next)}`);
     } catch (err: any) {
       setError(err?.message ?? "Google sign-in failed.");
     }
@@ -98,8 +105,17 @@ function RegisterInner() {
     setError("");
     setNotice("");
 
-    // Paid tiers go through Stripe — send the user to /membership where the
-    // live Payment Links start Checkout → /welcome grants the role after pay.
+    // Snappd goes straight to its own live Payment Link (hosted Stripe
+    // Checkout). On completion Stripe redirects to /welcome?tier=snappd, which
+    // auto-provisions the photographer account + studio role — no separate
+    // signup form step needed here.
+    if (tier === "snappd") {
+      window.location.href = SNAPPD_PAYMENT_LINK;
+      return;
+    }
+
+    // Other paid tiers go through Stripe — send the user to /membership where
+    // the live Payment Links start Checkout → /welcome grants the role after pay.
     if (tier !== "free") {
       router.push("/membership");
       return;
@@ -109,24 +125,14 @@ function RegisterInner() {
       setError("Password must be at least 6 characters.");
       return;
     }
-    const normalizedUsername = username.trim().toLowerCase();
-    if (!USERNAME_RE.test(normalizedUsername)) {
-      setError(
-        "Username must be 3–30 chars: lowercase letters, numbers, underscore or dot.",
-      );
-      return;
-    }
-
-    setLoading(true);
+        setLoading(true);
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            username: normalizedUsername,
             role: "free",
-            display_name: normalizedUsername,
           },
         },
       });
@@ -170,14 +176,17 @@ function RegisterInner() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ username: normalizedUsername, role: "free" }),
+            body: JSON.stringify({ role: "free" }),
           });
         }
       } catch {
         /* seeded later */
       }
 
-      router.push(next);
+      // Newly created free account → offer the one-time camera/microphone
+      // setup step before the page they were heading to. Once this device has
+      // been through it, this is a no-op and they go straight to `next`.
+      router.push(postSignupDestination(next, hasSeenMediaSetup()));
     } catch (err: any) {
       setError(err?.message ?? "Could not create your account.");
       setLoading(false);
@@ -241,19 +250,23 @@ function RegisterInner() {
         {paid ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center">
             <p className="text-sm text-[#bbb]">
-              {tier === "artist" ? "Artist" : "Superfan"} membership is set up
-              through secure Stripe checkout. After payment you&apos;ll finish
-              creating your account.
+              {tier === "artist"
+                ? "Artist"
+                : tier === "snappd"
+                  ? "Snappd photographer"
+                  : "Superfan"}{" "}
+              membership is set up through secure Stripe checkout. After payment
+              you&apos;ll finish creating your account.
             </p>
-            {tier === "artist" && (
+            {(tier === "artist" || tier === "snappd") && (
   <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
     <p className="text-sm font-medium text-[#f0d99c]">
       After you join, set up payouts to get paid
     </p>
     <p className="mt-1 text-xs text-[#888]">
-      Artists keep 100% of every sale (only Stripe&apos;s processing fee is deducted). Once your account is created,
-      head to Artist Studio &rarr; Payouts to connect Stripe. Have these
-      ready:
+      {tier === "snappd"
+        ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"
+        : "No platform cut on music sales — you keep every dollar after Stripe's payment processing fee. Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"}
     </p>
     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
       <li>A government-issued photo ID to verify your identity.</li>
@@ -269,7 +282,11 @@ function RegisterInner() {
 )}
             <button
               type="button"
-              onClick={() => router.push("/membership")}
+              onClick={() =>
+                tier === "snappd"
+                  ? (window.location.href = SNAPPD_PAYMENT_LINK)
+                  : router.push("/membership")
+              }
               className="mt-4 w-full py-3 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm"
             >
               Continue to checkout
@@ -290,15 +307,7 @@ function RegisterInner() {
               <span className="h-px flex-1 bg-white/10" />
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username"
-                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c9a96e] transition"
-              />
-              <input
+  <input
                 type="email"
                 required
                 value={email}

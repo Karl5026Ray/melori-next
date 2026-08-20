@@ -32,7 +32,7 @@ async function getPublicGalleries(): Promise<GalleryCard[]> {
       .limit(60);
     if (error || !galleries) return [];
 
-    return await Promise.all(
+    const cards = await Promise.all(
       galleries.map(async (g) => {
         // Prefer the explicit cover; otherwise fall back to the first image's
         // watermarked thumbnail so the card is never blank.
@@ -67,6 +67,10 @@ async function getPublicGalleries(): Promise<GalleryCard[]> {
         };
       }),
     );
+
+    // A gallery with no photos has nothing to show, so it would render as a
+    // blank placeholder tile. Hide it until it has at least one image.
+    return cards.filter((c) => c.imageCount > 0);
   } catch (err) {
     console.error("gallery index list error", err);
     return [];

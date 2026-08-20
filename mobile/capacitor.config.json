@@ -12,9 +12,7 @@
       "js.stripe.com",
       "hooks.stripe.com",
       "checkout.stripe.com",
-      "accounts.google.com",
       "*.livekit.cloud",
-      "*.agora.io",
       "*.pubnub.com"
     ]
   },
@@ -22,5 +20,11 @@
     "contentInset": "always",
     "backgroundColor": "#111111",
     "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "backgroundColor": "#111111",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
   }
 }

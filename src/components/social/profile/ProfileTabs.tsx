@@ -55,8 +55,8 @@ const TAB_META: {
   icon: typeof Film;
   ownerOnly?: boolean;
 }[] = [
-  { key: "reels", label: "Reels", icon: Film },
   { key: "photos", label: "Photos", icon: ImageIcon },
+  { key: "reels", label: "Reels", icon: Film },
   { key: "liked", label: "Liked", icon: Heart, ownerOnly: true },
   { key: "shared", label: "Shared", icon: Share2 },
   { key: "saves", label: "Saves", icon: Bookmark, ownerOnly: true },
@@ -77,7 +77,7 @@ export default function ProfileTabs({
   onEditProfile?: () => void;
   onOpenContent?: (content: TileContent, type: "video" | "photo") => void;
 }) {
-  const [active, setActive] = useState<TabKey>("reels");
+  const [active, setActive] = useState<TabKey>("photos");
   const [data, setData] = useState<TabsData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -488,6 +488,21 @@ function SettingsPanel({ onEditProfile }: { onEditProfile?: () => void }) {
         </span>
         <SettingsIcon className="h-5 w-5 text-melori-muted" />
       </button>
+
+      <Link
+        href="/social/blocked"
+        className="flex w-full items-center justify-between rounded-2xl border border-melori-border bg-melori-elevated px-5 py-4 text-left transition hover:border-melori-purple/40"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-melori-text">
+            Blocked members
+          </span>
+          <span className="block text-xs text-melori-muted">
+            Review and unblock people you&apos;ve blocked
+          </span>
+        </span>
+        <span className="text-melori-muted">›</span>
+      </Link>
 
       <Link
         href="/settings"

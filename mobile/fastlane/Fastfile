@@ -1,0 +1,171 @@
+# Fastlane config for the Melori Music iOS app (Capacitor wrapper).
+#
+# Runs on the macOS GitHub Actions runner (see .github/workflows/ios-build.yml)
+# but also works locally on your Mac if you set the same env vars.
+#
+# Bundle ID: org.melorimusic.app   App Store Connect Apple ID: 6792791603
+
+default_platform(:ios)
+
+APP_IDENTIFIER = "org.melorimusic.app"
+# Anchor all paths to the mobile/ dir (parent of this fastlane/ folder) so
+# they resolve regardless of Fastlane's runtime working directory.
+MOBILE_DIR = File.expand_path("..", __dir__)
+XCODE_PROJECT  = File.join(MOBILE_DIR, "ios/App/App.xcodeproj")
+XCODE_WORKSPACE = File.join(MOBILE_DIR, "ios/App/App.xcworkspace")
+SCHEME = "App"
+TEAM_ID = "ZDPS766DHY"
+# Fallback label only -- match names its profiles "match AppStore <bundle id>".
+PROFILE_NAME = "match AppStore org.melorimusic.app"
+
+platform :ios do
+  desc "Build and upload a signed build to App Store Connect / TestFlight"
+  lane :release do
+    # App Store Connect API key (from env written by the workflow).
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"],
+      in_house: false
+    )
+
+    build_number = ENV["BUILD_NUMBER"] || "1"
+
+    # Marketing version (CFBundleShortVersionString). This MUST be higher than
+    # the last version Apple approved, or altool rejects the upload with:
+    #   "Invalid Pre-Release Train. The train version 'X' is closed for new
+    #    build submissions"
+    # Once a version is approved its train closes permanently, so shipping a
+    # fix (e.g. a corrected app icon) always requires a version bump.
+    marketing_version = ENV["MARKETING_VERSION"] || "1.0.1"
+
+    # ------------------------------------------------------------------
+    # Signing: Fastlane match.
+    #
+    # The previous approach called get_certificates on a fresh CI keychain
+    # every run. Because the generated private key only ever lived in that
+    # throwaway keychain, each run had to create a BRAND NEW distribution
+    # certificate -- and Apple caps a team at 3. The pipeline hit that cap and
+    # died with "Could not create another Distribution certificate", leaving
+    # three certificates nobody held a private key for.
+    #
+    # match stores one certificate + provisioning profile, AES-encrypted, in a
+    # private git repo, and every run reuses that same identity. No new
+    # certificates are ever created, so the cap is a non-issue.
+    # ------------------------------------------------------------------
+    sync_code_signing(
+      type: "appstore",
+      app_identifier: APP_IDENTIFIER,
+      team_id: TEAM_ID,
+      api_key: api_key,
+      git_url: ENV["MATCH_GIT_URL"],
+      storage_mode: "git",
+      git_branch: "main",
+      keychain_name: ENV["MATCH_KEYCHAIN_NAME"],
+      keychain_password: ENV["MATCH_KEYCHAIN_PASSWORD"],
+      # CI must be able to create the identity on the first run; afterwards it
+      # simply decrypts and reuses what is already stored.
+      readonly: false
+    )
+
+    # match exports the profile name it installed, keyed by bundle id.
+    mapping = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {}
+    profile_name = mapping[APP_IDENTIFIER] || PROFILE_NAME
+    UI.success("Signing with profile: #{profile_name}")
+
+    # Set the marketing version and build number on the generated Xcode project.
+    increment_version_number(
+      version_number: marketing_version,
+      xcodeproj: XCODE_PROJECT
+    )
+    UI.message("Version #{marketing_version} (#{build_number})")
+    increment_build_number(
+      build_number: build_number,
+      xcodeproj: XCODE_PROJECT
+    )
+
+    # Manual signing pointed at the freshly-fetched cert + profile.
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: XCODE_PROJECT,
+      team_id: TEAM_ID,
+      targets: ["App"],
+      bundle_identifier: APP_IDENTIFIER,
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name
+    )
+
+    # Build the signed .ipa from the CocoaPods WORKSPACE (never the bare
+    # .xcodeproj) so the Capacitor pod is compiled and linked. Building the
+    # project alone fails with "Unable to find module dependency: 'Capacitor'".
+    unless File.exist?(XCODE_WORKSPACE)
+      UI.user_error!("Expected CocoaPods workspace at #{XCODE_WORKSPACE} (run pod install)")
+    end
+
+    # Guard against shipping the Capacitor template's placeholder icon again.
+    # scripts/install-ios-icon.sh must have run after `cap sync`.
+    marketing_icon = File.join(
+      MOBILE_DIR,
+      "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+    )
+    unless File.exist?(marketing_icon)
+      UI.user_error!(
+        "App icon not installed (missing #{marketing_icon}). " \
+        "Run mobile/scripts/install-ios-icon.sh after `npx cap sync ios`."
+      )
+    end
+    UI.success("App icon present: #{marketing_icon}")
+    build_app(
+      workspace: XCODE_WORKSPACE,
+      scheme: SCHEME,
+      export_method: "app-store",
+      output_directory: "./ios/App/build",
+      output_name: "MeloriMusic.ipa",
+      clean: true,
+      export_team_id: TEAM_ID,
+      export_options: {
+        teamID: TEAM_ID,
+        method: "app-store",
+        provisioningProfiles: {
+          APP_IDENTIFIER => profile_name
+        },
+        signingStyle: "manual"
+      }
+    )
+
+    # Upload to TestFlight (does not auto-submit to review — you promote it
+    # from App Store Connect when ready).
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true
+    )
+  end
+
+  desc "DESTRUCTIVE: revoke ALL distribution certificates and App Store profiles for this team"
+  desc "Run once to clear orphaned certificates before adopting match. Requires CONFIRM_NUKE=yes."
+  lane :nuke_distribution do
+    UI.user_error!("Refusing to nuke without CONFIRM_NUKE=yes") unless ENV["CONFIRM_NUKE"] == "yes"
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"],
+      in_house: false
+    )
+
+    UI.important("Revoking all distribution certificates + App Store profiles for team #{TEAM_ID}")
+    match_nuke(
+      type: "appstore",
+      app_identifier: APP_IDENTIFIER,
+      team_id: TEAM_ID,
+      api_key: api_key,
+      git_url: ENV["MATCH_GIT_URL"],
+      storage_mode: "git",
+      git_branch: "main",
+      skip_confirmation: true
+    )
+    UI.success("Nuke complete -- the next release run will create one durable identity.")
+  end
+end

@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { signOutThisDevice } from "@/lib/authSession";
+import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
+import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -20,16 +24,40 @@ type NavGroup = { label: string; items: NavItem[] };
 const navGroups: NavGroup[] = [];
 
 // Standalone links surfaced in the hamburger. "Become a Member" is the one
-// high-intent action for new visitors; "Photography" is a light-touch second
-// entry point (mirrors the desktop nav link above) so mobile visitors have a
-// path to /photography from the hamburger too, without duplicating the full
-// M-menu "Photo" category.
+// high-intent action for new visitors. We deliberately do NOT repeat
+// "Photography" here — it already lives in the desktop top nav and in the full
+// M-menu "Photo" category, so listing it in the hamburger too was showing the
+// same thing twice (noticeable once you're a member).
 const standaloneLinks: NavItem[] = [
   { label: "Become a Member", href: "/membership" },
+];
+
+// Desktop top-bar dropdown menus. Karl's ask: surface the same apps that live
+// in the center "M" menu (MobileTabBar) as top-bar dropdowns on desktop —
+// Social, Radio, Photography, Profile. Radio/Profile are single destinations
+// (no sub-items) so they render as plain links; Social & Photography mirror
+// the M-menu categories as dropdowns. The Social list is the shared
+// SOCIAL_NAV_ITEMS so the top bar, the profile action row and the M menu can't
+// drift apart.
+const PHOTO_ITEMS: NavItem[] = [
   { label: "Photography", href: "/photography" },
+  { label: "Gallery", href: "/gallery" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "Book", href: "/book" },
 ];
 
 export default function Header() {
+  const pathname = usePathname() ?? "";
+  // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
+  // PR that runs on every page for a signed-in member, and it was what broke
+  // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
+  // in the root layout, so each signed-in page opened two Supabase Realtime
+  // subscriptions on the same channel topic ("dm-unread-badge") and re-polled
+  // /api/social/conversations/unread from both copies on every navigation.
+  // Bisected against production builds: 8405e9c (pre-#221) signs in fine,
+  // 2785ca4 (#221) does not. Messaging itself is untouched and still works at
+  // /social/messages. Re-enable only behind a single shared subscription.
+  const unreadMessages = 0;
   const [open, setOpen] = useState(false); // mobile menu
   const [openGroup, setOpenGroup] = useState<string | null>(null); // desktop dropdown
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null); // mobile accordion (one open at a time)
@@ -63,6 +91,13 @@ export default function Header() {
     };
   }, []);
 
+  // Navigating away closes whatever menu launched the navigation.
+  useEffect(() => {
+    setOpenGroup(null);
+    setAccountOpen(false);
+    setOpen(false);
+  }, [pathname]);
+
   // Lock body scroll while the slide-in drawer is open so the page behind it
   // stays put (a contained off-canvas panel, not a page that keeps scrolling).
   useEffect(() => {
@@ -74,7 +109,7 @@ export default function Header() {
     };
   }, [open]);
 
-  // Track Supabase auth state so the header can show Log In vs. an account menu.
+  // Track Supabase auth state so the header can show Sign In vs. an account menu.
   useEffect(() => {
     let active = true;
     let mintedAdmin = false;
@@ -165,19 +200,7 @@ export default function Header() {
   }, []);
 
   async function handleLogout() {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      /* ignore */
-    }
-    try {
-      await fetch("/api/admin/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      /* ignore */
-    }
+    await signOutThisDevice();
     window.location.href = "/";
   }
 
@@ -193,7 +216,7 @@ export default function Header() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             aria-controls="mobile-nav"
-            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary"
+            className="flex h-10 w-10 items-center justify-center rounded-md text-text-primary transition-colors hover:text-brand-primary md:hidden"
           >
             <svg
               viewBox="0 0 24 24"
@@ -212,8 +235,10 @@ export default function Header() {
             </svg>
           </button>
 
-          {/* Brand M — a plain Home link. Melori Mirror now lives in the
-             bottom-bar launcher (MobileTabBar), NOT on the brand mark. */}
+          {/* Brand M — always a plain Home link on every screen size. On mobile
+             the hamburger to its left opens the drawer; on desktop the top bar
+             (incl. Sign In / Create a Profile) covers nav, so the logo is purely
+             Home. */}
           <Link
             href="/"
             onClick={() => setOpen(false)}
@@ -335,22 +360,106 @@ export default function Header() {
                 href="/social/auth"
                 className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
               >
-                Log In
+                Sign In
               </Link>
               <Link
                 href="/register"
                 className="rounded-md border border-brand-primary px-4 py-1.5 font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-black"
               >
-                Sign Up Free
+                Create a Profile
               </Link>
             </>
           )}
 
+          {/* Top-bar app dropdowns (desktop) mirroring the center M menu:
+             Social ▾, Radio, Photography ▾, Profile. */}
+          {([
+            { key: "Social", items: SOCIAL_NAV_ITEMS },
+            { key: "Photography", items: PHOTO_ITEMS },
+          ] as const).map(({ key, items }) => {
+            const isOpen = openGroup === key;
+            const groupCurrent = items.some((item) =>
+              isSocialNavCurrent(pathname, item.href),
+            );
+            return (
+              <div key={key} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroup((g) => (g === key ? null : key))}
+                  aria-expanded={isOpen}
+                  aria-haspopup="menu"
+                  aria-current={groupCurrent ? "page" : undefined}
+                  className={`flex items-center gap-1 rounded-md px-3 py-1.5 transition-colors hover:text-brand-primary ${
+                    groupCurrent ? "text-brand-primary" : "text-text-secondary"
+                  }`}
+                >
+                  {key}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    className={`h-3.5 w-3.5 transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                    aria-hidden
+                  >
+                    <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+                  </svg>
+                </button>
+                {isOpen && (
+                  <div
+                    role="menu"
+                    aria-label={key}
+                    className="absolute left-0 mt-2 min-w-52 overflow-hidden rounded-lg border border-brand-border bg-brand-background shadow-xl"
+                  >
+                    {items.map((item) => {
+                      const current = isSocialNavCurrent(pathname, item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          role="menuitem"
+                          onClick={() => setOpenGroup(null)}
+                          aria-current={current ? "page" : undefined}
+                          className={`block px-4 py-2.5 transition-colors hover:bg-white/5 hover:text-brand-primary ${
+                            current
+                              ? "bg-white/5 font-medium text-brand-primary"
+                              : "text-text-secondary"
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
           <Link
-            href="/photography"
+            href="/social/radio"
             className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
           >
-            Photography
+            Radio
+          </Link>
+
+          {user && (
+            <Link
+              href="/social/messages"
+              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+            >
+              Messages
+              <UnreadMessagesBadge count={unreadMessages} />
+            </Link>
+          )}
+
+          <Link
+            href={user ? "/social/profile" : "/social/auth"}
+            className="rounded-md px-3 py-1.5 text-text-secondary transition-colors hover:text-brand-primary"
+          >
+            Profile
           </Link>
 
           <Link
@@ -377,7 +486,7 @@ export default function Header() {
       <div
         onClick={() => setOpen(false)}
         aria-hidden
-        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 md:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -385,7 +494,7 @@ export default function Header() {
       <nav
         id="mobile-nav"
         aria-label="Main menu"
-        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out ${
+        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-[84vw] max-w-sm flex-col border-r border-brand-border bg-brand-background shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -417,7 +526,7 @@ export default function Header() {
             paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
           }}
         >
-            {/* Account / Log In — pinned to the top of the drawer so it's
+            {/* Account / Sign In — pinned to the top of the drawer so it's
                visible immediately without scrolling. */}
             {user ? (
               <div className="pb-2 mb-1 border-b border-brand-border">
@@ -456,6 +565,33 @@ export default function Header() {
                 >
                   My profile
                 </Link>
+                {/* Edit Profile now lives here in the hamburger (moved off the
+                    profile page's action row). It routes to the profile and
+                    fires an event the profile page listens for to open the edit
+                    modal — so it works from any page. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    if (typeof window !== "undefined") {
+                      // If already on the profile page, the listener opens the
+                      // modal immediately. Otherwise navigate first; the profile
+                      // page checks a one-shot flag on mount.
+                      try {
+                        sessionStorage.setItem("melori:open-edit-profile", "1");
+                      } catch {
+                        /* storage disabled — event below still covers same-page */
+                      }
+                      window.dispatchEvent(new CustomEvent("melori:open-edit-profile"));
+                      if (window.location.pathname !== "/social/profile") {
+                        window.location.href = "/social/profile";
+                      }
+                    }
+                  }}
+                  className="block w-full py-2.5 text-left text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  Edit Profile
+                </button>
                 <Link
                   href="/settings"
                   onClick={() => setOpen(false)}
@@ -499,14 +635,14 @@ export default function Header() {
                   onClick={() => setOpen(false)}
                   className="rounded-md border border-brand-border px-4 py-2.5 text-center font-semibold text-text-primary transition-colors hover:text-brand-primary"
                 >
-                  Log In
+                  Sign In
                 </Link>
                 <Link
                   href="/register"
                   onClick={() => setOpen(false)}
                   className="rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
                 >
-                  Sign Up Free
+                  Create a Profile
                 </Link>
               </div>
             )}
@@ -560,16 +696,19 @@ export default function Header() {
               );
             })}
 
-            {standaloneLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
-              >
-                {link.label}
-              </Link>
-            ))}
+            {standaloneLinks
+              // Don't show "Become a Member" to someone who's already a member.
+              .filter((link) => !(user && link.href === "/membership"))
+              .map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
+                >
+                  {link.label}
+                </Link>
+              ))}
 
             <Link
               href="/donate"

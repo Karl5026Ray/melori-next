@@ -9,7 +9,13 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { signOutThisDevice } from "@/lib/authSession";
+import { authFetch } from "@/lib/authClient";
 import { Profile } from "@/types/social";
+
+type BrowserTestWindow = Window & {
+  __MELORI_E2E_AUTH_USER_ID__?: string;
+};
 
 interface AuthContextType {
   user: Profile | null;
@@ -70,7 +76,7 @@ export function SocialAuthProvider({
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status",
+          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status, social_links, city, birth_date, birthday_visible",
         )
         .eq("id", id)
         .maybeSingle();
@@ -108,6 +114,34 @@ export function SocialAuthProvider({
 
   useEffect(() => {
     let cancelled = false;
+
+    // The request-mocked Playwright suite marks its browser before the bundle
+    // loads. This is intentionally runtime-only (not a public build variable);
+    // API authorization still requires a token and never trusts this value.
+    const browserTestUserId =
+      typeof window === "undefined"
+        ? ""
+        : (window as BrowserTestWindow).__MELORI_E2E_AUTH_USER_ID__ ?? "";
+    if (browserTestUserId) {
+      userIdRef.current = browserTestUserId;
+      setUser({
+        id: browserTestUserId,
+        username: "concert_initiator",
+        display_name: "Concert Initiator",
+        avatar_url: null,
+        role: "superfan",
+        bio: null,
+        verified: true,
+        followers_count: 0,
+        following_count: 0,
+        created_at: new Date().toISOString(),
+      });
+      setProfileError(null);
+      setIsLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Resolve a session into a loaded profile. Profile loading is deferred out
     // of the auth callback with setTimeout(0): @supabase/supabase-js runs the
@@ -178,8 +212,35 @@ export function SocialAuthProvider({
     };
   }, [loadProfile]);
 
+  // Presence belongs to the authenticated social shell, not the Mirror page.
+  // This keeps a member visible in Mirror while they browse Faces, Spaces,
+  // Cinema, Connect, messages, or another social surface.
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    const ping = () => {
+      if (!active) return;
+      authFetch("/api/presence/heartbeat", { method: "POST" }).catch(() => {
+        /* transient: the next interval retries */
+      });
+    };
+    ping();
+    const interval = window.setInterval(ping, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [user?.id]);
+
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Ending any hosted live room happens INSIDE signOutThisDevice() itself
+    // (src/lib/authSession.ts), not here — Header.tsx and settings/page.tsx
+    // call signOutThisDevice()/signOutAllDevices() directly and never go
+    // through this AuthProvider.signOut() wrapper, so putting the room-ending
+    // call only here would silently miss the app's two actual sign-out
+    // buttons. Keeping every sign-out path routed through one shared choke
+    // point.
+    await signOutThisDevice();
     userIdRef.current = null;
     setUser(null);
   }, []);

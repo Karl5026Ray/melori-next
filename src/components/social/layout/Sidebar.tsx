@@ -3,30 +3,48 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
+import { SOCIAL_NAV_ITEMS } from "@/lib/socialNav";
 import {
   Radio,
   Video,
   MessageSquare,
-  MessagesSquare,
   User,
   LogOut,
-  Home,
   Plus,
+  Swords,
   Sparkles,
-  Heart,
+  Clapperboard,
+  type LucideIcon,
 } from "lucide-react";
 
+// Icon per Social destination. Keyed by href so it stays correct even if the
+// canonical list is reordered or relabelled in socialNav.ts.
+const SOCIAL_ICONS: Record<string, LucideIcon> = {
+  "/social/mirror": Sparkles,
+  "/social/live": Video,
+  "/social/spaces": Radio,
+  "/social/cinema": Clapperboard,
+};
+
 // Slimmed, orange-branded social nav. We keep only the destinations people
-// actually use day to day; Waves and the standalone Video page are reachable
-// from within Community/Faces and the mobile launcher, so they no longer clutter
-// this rail. Brand orange (#ff5500) replaces the old purple accents.
+// actually use day to day; the standalone Video page is reachable from within
+// Community/Faces and the mobile launcher, so it no longer clutters this
+// rail. Brand orange (#ff5500) replaces the old purple accents.
+//
+// The middle of the rail is DERIVED from SOCIAL_NAV_ITEMS rather than
+// hand-listed. This rail previously hardcoded its own copy and drifted: it
+// kept Melori Connect and never picked up MM Cinema when Cinema took Connect's
+// slot, so desktop showed one set of Social destinations in the rail and a
+// different set in the top-bar dropdown. Deriving keeps every surface honest.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
-  { href: "/social/mirror", label: "Melori Mirror", icon: Sparkles },
-  { href: "/social/connect", label: "Melori Connect", icon: Heart },
-  { href: "/social/spaces", label: "MM Spaces", icon: Radio },
-  { href: "/social/live", label: "MM Faces", icon: Video },
-  { href: "/social/community", label: "Community", icon: MessagesSquare },
+  ...SOCIAL_NAV_ITEMS.map((item) => ({
+    href: item.href,
+    label: item.label,
+    icon: SOCIAL_ICONS[item.href] ?? Sparkles,
+  })),
+  // Community moved INTO Melori Mirror (floating pill) — no longer a top-level
+  // rail item. Messages is deliberately outside SOCIAL_NAV_ITEMS.
   { href: "/social/messages", label: "Messages", icon: MessageSquare },
 ];
 
@@ -37,23 +55,25 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-brand-border bg-brand-background z-20 shrink-0">
       <div className="p-6 pb-4">
-        <Link href="/" className="flex items-center gap-3 mb-8">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/logo.png" alt="Melori" className="w-10 h-10 object-contain" />
-          <div>
-            <h1 className="font-bold text-lg tracking-tight text-text-primary">
-              MM Social
-            </h1>
-            <p className="text-xs text-text-secondary">Spaces &amp; Faces</p>
-          </div>
-        </Link>
-
+        {/* The "MM Social / Spaces & Faces" wordmark + M logo were removed here
+            (per product) so the Go Live button rides at the top of the rail. */}
         <Link
           href="/social/live"
-          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-6 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-3 bg-brand-primary text-white transition-colors hover:bg-brand-primary-dark"
         >
           <Plus className="w-4 h-4" />
           Go Live
+        </Link>
+
+        {/* Concert has a dedicated creation surface while reusing the
+           server-authoritative live-room engine underneath. */}
+        <Link
+          href="/social/concert/create"
+          title="Concert"
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-2 bg-teal-500 text-white transition-colors hover:bg-teal-400"
+        >
+          <Swords className="w-4 h-4" />
+          Concert
         </Link>
 
         <nav className="space-y-1">
@@ -75,13 +95,6 @@ export function Sidebar() {
               </Link>
             );
           })}
-          <Link
-            href="/"
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium text-sm text-text-secondary hover:bg-brand-surface hover:text-text-primary"
-          >
-            <Home className="w-5 h-5" />
-            Back to Melori
-          </Link>
         </nav>
       </div>
 

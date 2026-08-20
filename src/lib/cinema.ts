@@ -1,0 +1,166 @@
+// Shared constants + helpers for MM Cinema.
+//
+// Cinema is a room FORMAT on the existing Spaces engine, not a separate
+// product: a Cinema room is a `spaces` row with room_format = 'cinema'. It
+// therefore inherits host/speaker/audience roles, the ordered raise-hand queue,
+// moderation, room bans, and unified end-room teardown for free. What makes it
+// Cinema is the shared, host-synced video surface on the stage.
+
+import type { Space } from "@/types/social";
+import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
+
+export const CINEMA_ROOM_FORMAT = "cinema" as const;
+
+/**
+ * Discover-screen filter tabs, in mockup order. "live now" is the default and
+ * is NOT a genre — it means "don't filter", so it carries a null slug.
+ */
+export const CINEMA_GENRE_TABS: ReadonlyArray<{
+  label: string;
+  slug: string | null;
+}> = [
+  { label: "live now", slug: null },
+  { label: "hip hop", slug: "hip-hop" },
+  { label: "r&b", slug: "rnb" },
+  { label: "afrobeats", slug: "afrobeats" },
+  { label: "pop", slug: "pop" },
+];
+
+/**
+ * Where a room's "back" / "leave" / "ended" exits should land.
+ *
+ * A Cinema room is a `spaces` row rendered by /social/spaces/[spaceId], so
+ * every exit on that page used to be hardcoded to /social/spaces — which meant
+ * entering from Cinema and being ejected into Spaces. Route the exit by format
+ * instead, so people come back out where they went in.
+ */
+export function roomExitHref(
+  roomFormat: string | null | undefined,
+): string {
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
+  return "/social/spaces";
+}
+
+/** Matching link text for {@link roomExitHref}. */
+export function roomExitLabel(
+  roomFormat: string | null | undefined,
+): string {
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "Back to Cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "Back to Concert";
+  return "Back to Spaces";
+}
+
+/**
+ * Where to land after SCHEDULING a room for later. Spaces has a dedicated
+ * scheduled tab; Cinema surfaces scheduled rooms in its STARTING SOON list on
+ * the discover screen, so there's no tab to select.
+ */
+export function roomScheduledHref(
+  roomFormat: string | null | undefined,
+): string {
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
+  return "/social/spaces?tab=scheduled";
+}
+
+/**
+ * Where a room LIVES. The counterpart to {@link roomExitHref}, which only ever
+ * handled the way out.
+ *
+ * Cinema and Spaces rooms are both `spaces` rows, and for a long time both
+ * rendered at /social/spaces/[spaceId] — so a Cinema room's URL, share link and
+ * every tile pointing at it all said "spaces". Callers hardcoded that path,
+ * which is why Cinema kept surfacing as part of Spaces even after the exits
+ * were fixed.
+ *
+ * Route by format instead. Every link to a room should come from here, so
+ * adding a future format means changing one function and not hunting six call
+ * sites again.
+ */
+export function roomHref(
+  room: { id: string; room_format?: string | null } | null | undefined,
+): string {
+  if (!room?.id) return "/social/spaces";
+  if (room.room_format === CINEMA_ROOM_FORMAT) return `/social/cinema/${room.id}`;
+  if (room.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
+    return `/social/concert/${room.id}`;
+  }
+  return `/social/spaces/${room.id}`;
+}
+
+/**
+ * Where hosting STARTS for each format.
+ *
+ * Cinema had no creation route of its own: the "+" on the Cinema discover
+ * screen sent hosts to /social/spaces/create?format=cinema, i.e. the "Start a
+ * Space" form with Cinema pre-selected as a fifth Room Format tile. Cinema is
+ * its own selection, not a Spaces variant, so it now has its own form and no
+ * longer appears in the Spaces format picker.
+ */
+export function roomCreateHref(
+  roomFormat: string | null | undefined,
+): string {
+  if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema/create";
+  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert/create";
+  return "/social/spaces/create";
+}
+
+/** Narrows an arbitrary `?genre=` search param to a tab we actually render. */
+export function resolveGenreParam(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const match = CINEMA_GENRE_TABS.find((tab) => tab.slug === raw);
+  return match?.slug ?? null;
+}
+
+/**
+ * "starts in 12 min" / "starts in 2 hr" / "starting now".
+ *
+ * The mockup's STARTING SOON rows are relative, not absolute — a countdown is
+ * what makes someone set a reminder. Deliberately coarse: rounding to whole
+ * minutes avoids a server-rendered value that's visibly stale by the time it
+ * paints, and avoids implying second-level precision we don't have.
+ */
+export function formatStartsIn(scheduledAt: string | null | undefined): string {
+  if (!scheduledAt) return "starting soon";
+  const date = new Date(scheduledAt);
+  if (Number.isNaN(date.getTime())) return "starting soon";
+
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return "starting now";
+
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) return "starting now";
+  if (minutes < 60) return `starts in ${minutes} min`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `starts in ${hours} hr`;
+
+  const days = Math.round(hours / 24);
+  return `starts in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** "214 watching" — the audience number the mockup leads with. */
+export function formatWatching(count: number | null | undefined): string {
+  const n = Math.max(0, count ?? 0);
+  return `${n.toLocaleString()} watching`;
+}
+
+/**
+ * Picks the room to feature at the top of discover: the live Cinema room with
+ * the biggest audience. Returns the featured room and the remainder, so the
+ * "LIVE NOW" grid below never repeats the featured card.
+ */
+export function pickFeatured(live: Space[]): {
+  featured: Space | null;
+  rest: Space[];
+} {
+  if (live.length === 0) return { featured: null, rest: [] };
+  let featured = live[0];
+  for (const room of live) {
+    if ((room.participant_count ?? 0) > (featured.participant_count ?? 0)) {
+      featured = room;
+    }
+  }
+  return { featured, rest: live.filter((room) => room.id !== featured.id) };
+}

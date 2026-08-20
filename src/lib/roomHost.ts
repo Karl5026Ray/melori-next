@@ -2,10 +2,12 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   applyStagePermissions,
-  endLiveKitRoom,
   livekitConfigured,
+  revokePublishedSources,
 } from "@/lib/livekitServer";
 import { publishSystemSignal } from "@/lib/pubnubServer";
+import { deriveRoomName, endRoomAndTeardown, teardownRoomOnly } from "@/lib/endRoom";
+import { decideRoomPublish, type CinemaReservation } from "@/lib/roomMediaPolicy";
 
 // Server-authoritative HOST auto-promotion.
 //
@@ -37,6 +39,23 @@ export async function promoteHostOnLeave(
 ): Promise<PromoteResult> {
   const supabase = getSupabaseAdmin();
 
+  const { data: currentSpace } = await supabase
+    .from("spaces")
+    .select("id, livekit_room, room_format")
+    .eq("id", spaceId)
+    .maybeSingle();
+  if (currentSpace?.room_format === "cinema" && livekitConfigured()) {
+    // Do not transfer slot zero while the departing host could still have a
+    // camera track. Webhook-driven calls see an already-absent participant and
+    // return safely; beacon-driven calls disconnect first.
+    await revokePublishedSources(
+      deriveRoomName(currentSpace),
+      departingHostId,
+      ["camera", "microphone"],
+      { disconnectOnCamera: true },
+    );
+  }
+
   const { data, error } = await supabase.rpc("promote_next_host", {
     p_space_id: spaceId,
     p_departing_host: departingHostId,
@@ -52,6 +71,8 @@ export async function promoteHostOnLeave(
   const newHostId = (row?.new_host_id ?? null) as string | null;
 
   if (outcome === "promoted" && newHostId) {
+    // Migration 054's spaces trigger transfers Cinema slot zero in the same
+    // transaction as promote_next_host. Ordinary Spaces never touch Cinema data.
     await onPromoted(supabase, spaceId, newHostId);
   } else if (outcome === "ended-no-successor") {
     await onGracefulEnd(supabase, spaceId);
@@ -75,8 +96,8 @@ async function onPromoted(
     .maybeSingle();
 
   if (space && livekitConfigured()) {
-    const roomName: string = space.livekit_room ?? `space_${space.id}`;
-    const withVideo = String(space.room_format ?? "").startsWith("live_");
+    const roomName = deriveRoomName(space);
+    const isCinema = space.room_format === "cinema";
 
     const { data: avatarRow } = await supabase
       .from("profiles")
@@ -86,11 +107,31 @@ async function onPromoted(
     const avatarUrl =
       (avatarRow as { avatar_url?: string | null } | null)?.avatar_url ?? null;
 
+    let reservations: CinemaReservation[] = [];
+    if (isCinema) {
+      const { data: slotRows } = await supabase
+        .from("cinema_camera_slots")
+        .select("slot, user_id")
+        .eq("space_id", spaceId);
+      reservations = (slotRows ?? []).map((row) => ({
+        slot: Number(row.slot),
+        userId: String(row.user_id),
+      }));
+    }
+    const media = decideRoomPublish({
+      roomFormat: space.room_format,
+      hostId: newHostId,
+      userId: newHostId,
+      role: "host",
+      hostMuted: false,
+      reservations,
+      requested: ["camera", "microphone"],
+    });
+
     await applyStagePermissions({
       roomName,
       identity: newHostId,
-      onStage: true,
-      withVideo,
+      sources: media.allowedSources,
       socialRole: "host",
       avatarUrl,
     });
@@ -104,29 +145,16 @@ async function onPromoted(
   });
 }
 
-// No eligible successor: the RPC already flipped the room to 'ended' and marked
-// participants left. Disconnect any LiveKit stragglers and surface the clean
-// "room ended" state to clients.
+// No eligible successor: the promote_next_host RPC already flipped the room
+// to 'ended' and marked participants left as part of its own transaction, so
+// there is no DB transition left for us to (idempotently) win here — we only
+// need the teardown half: disconnect any LiveKit stragglers and publish the
+// "room ended" signal.
 async function onGracefulEnd(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  _supabase: ReturnType<typeof getSupabaseAdmin>,
   spaceId: string,
 ): Promise<void> {
-  if (livekitConfigured()) {
-    const { data: space } = await supabase
-      .from("spaces")
-      .select("id, livekit_room")
-      .eq("id", spaceId)
-      .maybeSingle();
-    if (space) {
-      const roomName: string = space.livekit_room ?? `space_${space.id}`;
-      await endLiveKitRoom(roomName);
-    }
-  }
-
-  await publishSystemSignal(spaceId, {
-    event: "space-ended",
-    reason: "host-left-no-successor",
-  });
+  await teardownRoomOnly(spaceId, "host-left-no-successor");
 }
 
 // Forcefully end a Space regardless of occupancy. Used by the admin "Shut down"
@@ -147,54 +175,6 @@ export async function endSpaceAsAdmin(spaceId: string): Promise<{
   found: boolean;
   ended: boolean;
 }> {
-  const supabase = getSupabaseAdmin();
-
-  const { data: space } = await supabase
-    .from("spaces")
-    .select("id, status, livekit_room")
-    .eq("id", spaceId)
-    .maybeSingle();
-
-  if (!space) return { found: false, ended: false };
-
-  // Idempotent DB end. Returns the id only when this call flipped live->ended.
-  let ended = false;
-  const { data: endedId, error: rpcErr } = await supabase.rpc("end_space_now", {
-    p_space_id: spaceId,
-  });
-  if (rpcErr) {
-    // Fallback if the RPC isn't deployed: guarded direct update.
-    const { data: updated } = await supabase
-      .from("spaces")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
-      .eq("id", spaceId)
-      .eq("status", "live")
-      .select("id")
-      .maybeSingle();
-    ended = !!updated;
-    if (ended) {
-      await supabase
-        .from("space_participants")
-        .update({ left_at: new Date().toISOString() })
-        .eq("space_id", spaceId)
-        .is("left_at", null);
-    }
-  } else {
-    ended = !!endedId;
-  }
-
-  // Tear down the live room even if the DB row was already 'ended' — a stale
-  // LiveKit room can outlive the DB state, and this is exactly what an admin is
-  // trying to kill. deleteRoom is a no-op on a missing/empty room.
-  if (livekitConfigured()) {
-    const roomName: string = space.livekit_room ?? `space_${space.id}`;
-    await endLiveKitRoom(roomName);
-  }
-
-  await publishSystemSignal(spaceId, {
-    event: "space-ended",
-    reason: "admin-shutdown",
-  });
-
-  return { found: true, ended };
+  const result = await endRoomAndTeardown(spaceId, "admin-shutdown");
+  return { found: result.found, ended: result.ended };
 }

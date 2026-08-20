@@ -3,6 +3,7 @@ import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,6 +69,8 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   // @ts-expect-error nested select shape
   const artistId: number | null = track?.releases?.artist_id ?? null;
   if (artistId) revalidateTag(`artist-${artistId}`, "max");
+  // A takedown must leave the public catalog immediately, not in 60s.
+  revalidateTag(PUBLIC_CATALOG_TAG, "max");
   revalidatePath("/browse");
   revalidatePath("/");
 

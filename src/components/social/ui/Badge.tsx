@@ -2,7 +2,7 @@ import { cn } from "@/lib/social";
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: "purple" | "pink" | "green" | "orange" | "default";
+  variant?: "purple" | "pink" | "green" | "orange" | "gold" | "default";
   className?: string;
 }
 
@@ -11,6 +11,9 @@ const variants = {
   pink: "bg-melori-pink/10 text-melori-pink border-melori-pink/20",
   green: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   orange: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  // MM Cinema's marquee gold. Brighter and higher-contrast than `orange` so a
+  // Cinema badge reads as the room's own branding rather than a DJ Set tag.
+  gold: "bg-cinema-gold/10 text-cinema-gold border-cinema-gold/30",
   default: "bg-melori-elevated text-melori-muted border-melori-border",
 };
 

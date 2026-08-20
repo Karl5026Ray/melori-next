@@ -1,5 +1,13 @@
 import "server-only";
-import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
+import {
+  RoomServiceClient,
+  TrackSource,
+  EgressClient,
+  EncodedFileType,
+  EncodedFileOutput,
+  S3Upload,
+} from "livekit-server-sdk";
+import type { PublishSource } from "@/lib/roomMediaPolicy";
 
 // Server-only LiveKit control-plane helper.
 //
@@ -15,6 +23,27 @@ import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
 const LIVEKIT_URL = process.env.LIVEKIT_URL ?? "";
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY ?? "";
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
+
+// --- Egress (recording) config ---------------------------------------------
+// Recording a Mirror live session writes an MP4 to S3-compatible storage. We
+// point LiveKit egress at the Supabase Storage S3 endpoint (Supabase Storage is
+// S3-compatible) using dedicated S3 access keys generated in the Supabase
+// dashboard (Storage → S3 Access Keys). These are SEPARATE from the service-role
+// key and must be added to the environment before recording can work:
+//   STORAGE_S3_ENDPOINT   e.g. https://<ref>.supabase.co/storage/v1/s3
+//   STORAGE_S3_REGION     e.g. us-east-2 (the project region)
+//   STORAGE_S3_ACCESS_KEY / STORAGE_S3_SECRET_KEY
+//   STORAGE_S3_BUCKET     defaults to the public "social-videos" bucket
+// When any of these are missing, recordingConfigured() returns false and the
+// Go-Live-on-Mirror flow degrades gracefully (records nothing, tells the host
+// recording isn't set up) instead of throwing.
+const S3_ENDPOINT = process.env.STORAGE_S3_ENDPOINT ?? "";
+const S3_REGION = process.env.STORAGE_S3_REGION ?? "";
+const S3_ACCESS_KEY = process.env.STORAGE_S3_ACCESS_KEY ?? "";
+const S3_SECRET_KEY = process.env.STORAGE_S3_SECRET_KEY ?? "";
+const S3_BUCKET = process.env.STORAGE_S3_BUCKET ?? "social-videos";
+const PUBLIC_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
 
 export type SocialRole = "audience" | "speaker" | "moderator" | "host";
 
@@ -44,14 +73,99 @@ function client(): RoomServiceClient {
   return cached;
 }
 
+let cachedEgress: EgressClient | null = null;
+
+// Recording is available only when LiveKit is configured AND the S3 output
+// credentials are present. UI/routes should gate on this and degrade nicely.
+export function recordingConfigured(): boolean {
+  return !!(
+    livekitConfigured() &&
+    S3_ENDPOINT &&
+    S3_ACCESS_KEY &&
+    S3_SECRET_KEY &&
+    S3_BUCKET
+  );
+}
+
+function egress(): EgressClient {
+  if (!recordingConfigured()) {
+    throw new Error("LiveKit egress (recording) is not configured");
+  }
+  if (!cachedEgress) {
+    cachedEgress = new EgressClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+  }
+  return cachedEgress;
+}
+
+export interface StartRecordingResult {
+  egressId: string;
+  // Storage key (path within the bucket) the MP4 will be written to.
+  storageKey: string;
+  // Public URL the finished MP4 will be reachable at (bucket is public).
+  publicUrl: string;
+}
+
+// Start a room-composite recording (single MP4 of the whole live scene) and
+// return the egress id + the storage key/URL it will land at. The caller should
+// persist egressId on the space row so it can be stopped when the host ends the
+// live. Best-effort by design: throws only if egress is configured but the API
+// call itself fails; callers catch and continue (the live still works, just
+// unrecorded).
+export async function startRoomRecording(
+  roomName: string,
+): Promise<StartRecordingResult> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const storageKey = `mirror-live/${roomName}/${stamp}.mp4`;
+
+  const output = new EncodedFileOutput({
+    fileType: EncodedFileType.MP4,
+    filepath: storageKey,
+    output: {
+      case: "s3",
+      value: new S3Upload({
+        accessKey: S3_ACCESS_KEY,
+        secret: S3_SECRET_KEY,
+        bucket: S3_BUCKET,
+        region: S3_REGION || undefined,
+        endpoint: S3_ENDPOINT,
+        forcePathStyle: true, // Supabase S3 requires path-style addressing
+      }),
+    },
+  });
+
+  // Modern SDK signature: (roomName, output, RoomCompositeOptions). Pass the
+  // EncodedFileOutput directly; "speaker" layout records the active speaker /
+  // host full-frame which suits a single-host Mirror live.
+  const info = await egress().startRoomCompositeEgress(roomName, output, {
+    layout: "speaker",
+  });
+
+  const publicUrl = `${PUBLIC_SUPABASE_URL}/storage/v1/object/public/${S3_BUCKET}/${storageKey}`;
+  return { egressId: info.egressId, storageKey, publicUrl };
+}
+
+// Stop a running recording. Best-effort: a missing/already-stopped egress is not
+// an error. Returns true if a stop was issued.
+export async function stopRoomRecording(egressId: string): Promise<boolean> {
+  if (!egressId) return false;
+  try {
+    await egress().stopEgress(egressId);
+    return true;
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|already|complete/i.test(msg)) return false;
+    console.warn("[livekitServer] stopEgress failed", msg);
+    return false;
+  }
+}
+
 interface ApplyOptions {
   roomName: string;
   identity: string;
-  // true → on stage (may publish); false → audience (subscribe-only).
-  onStage: boolean;
-  // Faces (video) rooms allow camera + mic when on stage; Spaces (audio) allow
-  // mic only. Ignored when onStage is false.
-  withVideo: boolean;
+  // The caller has already used roomMediaPolicy against durable role/mute/slot
+  // state. Keeping the explicit source list here prevents a boolean "video"
+  // shortcut from granting every Cinema speaker a camera.
+  sources: readonly PublishSource[];
   socialRole: SocialRole;
   avatarUrl?: string | null;
 }
@@ -61,11 +175,9 @@ interface ApplyOptions {
 // fine — their next join token will already carry the right grant because the
 // token route reads the same DB role).
 export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean> {
-  const sources = opts.onStage
-    ? opts.withVideo
-      ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
-      : [TrackSource.MICROPHONE]
-    : [];
+  const sources = opts.sources.map((source) =>
+    source === "camera" ? TrackSource.CAMERA : TrackSource.MICROPHONE,
+  );
 
   const metadata: StageMetadata = {
     social_role: opts.socialRole,
@@ -77,7 +189,7 @@ export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean
       metadata: JSON.stringify(metadata),
       permission: {
         canSubscribe: true,
-        canPublish: opts.onStage,
+        canPublish: sources.length > 0,
         canPublishData: true,
         canPublishSources: sources,
       },
@@ -92,8 +204,7 @@ export async function applyStagePermissions(opts: ApplyOptions): Promise<boolean
     if (/not found|does not exist|no participant/i.test(msg)) {
       return false;
     }
-    console.warn("[livekitServer] updateParticipant failed", msg);
-    return false;
+    throw err;
   }
 }
 
@@ -111,10 +222,63 @@ export async function endLiveKitRoom(roomName: string): Promise<void> {
   }
 }
 
+// Forcibly disconnect a participant from a live room right now (host ban /
+// kick). LiveKit sends the client a Disconnected event with reason
+// PARTICIPANT_REMOVED and will NOT auto-reconnect it. Best-effort: a participant
+// who is already gone is not an error.
+export async function removeLiveKitParticipant(
+  roomName: string,
+  identity: string,
+): Promise<void> {
+  try {
+    await client().removeParticipant(roomName, identity);
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|no participant/i.test(msg)) return;
+    console.warn("[livekitServer] removeParticipant failed", msg);
+  }
+}
+
 // Force-mute (or unmute) a participant's published microphone track server-side
 // so a demoted / host-muted speaker actually stops being heard even if their
 // client is slow to react. Best-effort: returns silently if they aren't
 // publishing.
+export async function revokePublishedSources(
+  roomName: string,
+  identity: string,
+  sources: readonly PublishSource[],
+  options: { disconnectOnCamera?: boolean } = {},
+): Promise<boolean> {
+  try {
+    const svc = client();
+    const participants = await svc.listParticipants(roomName);
+    const p = participants.find((x) => x.identity === identity);
+    if (!p) return false;
+    const forbidden = new Set<TrackSource>(
+      sources.map((source) =>
+        source === "camera" ? TrackSource.CAMERA : TrackSource.MICROPHONE,
+      ),
+    );
+    const tracks = p.tracks.filter((track) => forbidden.has(track.source));
+    await Promise.all(
+      tracks.map((track) => svc.mutePublishedTrack(roomName, identity, track.sid, true)),
+    );
+
+    // LiveKit permission updates stop new tracks, and muting makes the existing
+    // source inert without dropping audio participation. Hard disconnect is
+    // reserved for explicit removal, ban, leave, and host-handoff flows.
+    if (options.disconnectOnCamera) {
+      await svc.removeParticipant(roomName, identity);
+    }
+    return true;
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|no participant/i.test(msg)) return false;
+    throw err;
+  }
+}
+
+// Backward-compatible microphone-only adapter for existing non-Cinema callers.
 export async function serverMuteMicrophone(
   roomName: string,
   identity: string,
@@ -123,13 +287,13 @@ export async function serverMuteMicrophone(
   try {
     const svc = client();
     const participants = await svc.listParticipants(roomName);
-    const p = participants.find((x) => x.identity === identity);
-    if (!p) return;
-    const micTrack = p.tracks.find(
-      (t) => t.source === TrackSource.MICROPHONE,
+    const participant = participants.find((entry) => entry.identity === identity);
+    const microphone = participant?.tracks.find(
+      (track) => track.source === TrackSource.MICROPHONE,
     );
-    if (!micTrack) return;
-    await svc.mutePublishedTrack(roomName, identity, micTrack.sid, muted);
+    if (microphone) {
+      await svc.mutePublishedTrack(roomName, identity, microphone.sid, muted);
+    }
   } catch (err) {
     console.warn("[livekitServer] serverMuteMicrophone failed", (err as Error)?.message);
   }

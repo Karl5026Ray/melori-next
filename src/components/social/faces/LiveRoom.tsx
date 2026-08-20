@@ -31,10 +31,18 @@ import {
   type VideoTier,
   type RemoteVideo,
 } from "@/lib/livekitVideoClient";
+import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoMirror";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
+import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import RoomChat from "@/components/social/rooms/RoomChat";
+import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
+import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
+import { GiftPicker, type GiftTargetCandidate } from "@/components/social/gifts/GiftPicker";
+import { GiftOverlay } from "@/components/social/gifts/GiftOverlay";
+import { ConcertBattleStatusBar } from "@/components/social/concert/ConcertBattleStatusBar";
+import type { GiftSignal } from "@/lib/gifting";
 import {
   Mic,
   MicOff,
@@ -42,7 +50,7 @@ import {
   VideoOff,
   SwitchCamera,
   X,
-  Heart,
+  Music,
   Radio,
   Loader2,
   Users,
@@ -53,6 +61,9 @@ import {
   Square,
   LayoutGrid,
   Focus,
+  Share2,
+  ArrowDownToLine,
+  Ban,
 } from "lucide-react";
 
 export type LiveMode = "live_solo" | "live_duo" | "live_group";
@@ -78,7 +89,8 @@ interface LiveRoomProps {
 
 interface FloatingHeart {
   id: number;
-  left: number;
+  x: number; // viewport coords of the tap (or a random point for remote hearts)
+  y: number;
 }
 
 // A tile = one on-camera participant (host or guest) plus their attached
@@ -93,7 +105,10 @@ interface Tile {
 // Auto-layout grid (KIMI/TikTok math), returned as a Tailwind grid class.
 function gridClassFor(count: number): string {
   if (count <= 1) return "grid-cols-1 grid-rows-1";
-  if (count === 2) return "grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1";
+  // Two people: side-by-side (2 cols × 1 row) at ALL widths, including mobile
+  // portrait — TikTok/duet style. Only very narrow screens (<360px) fall back to
+  // stacked so faces stay usable. See `two-up-side-by-side` note in the PR.
+  if (count === 2) return "grid-cols-1 grid-rows-2 min-[360px]:grid-cols-2 min-[360px]:grid-rows-1";
   if (count <= 4) return "grid-cols-2 grid-rows-2";
   if (count <= 6) return "grid-cols-2 grid-rows-3 sm:grid-cols-3 sm:grid-rows-2";
   if (count <= 8) return "grid-cols-2 grid-rows-4 sm:grid-cols-3 sm:grid-rows-3";
@@ -129,11 +144,32 @@ export default function LiveRoom({
   const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  // Set when the host removes/bans us: PARTICIPANT_REMOVED, no auto-reconnect.
+  // Drives a terminal "You were removed" overlay instead of a generic error.
+  const [removed, setRemoved] = useState(false);
+  // Distinct from `removed` (kicked) and `error` (network/other failure): the
+  // room itself was deliberately ended (host ended it, or the lazy
+  // abandonment reaper closed it after the host went quiet). Calm, not scary.
+  const [roomEnded, setRoomEnded] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  // Facing mode of MY OWN active camera ("user" = front/selfie, "environment"
+  // = rear, null = unknown/desktop webcam). Drives whether my own preview tile
+  // is mirrored — never affects what remote viewers see (display-only CSS).
+  const [facingMode, setFacingMode] = useState<FacingMode>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
+  // Duo-only gifting: the currently-playing overlay animation, and a running
+  // per-side coin tally for the TikTok-battle-style score bar. Both are
+  // session-local (reset on reload) — there's no formal "battle" row for Duo
+  // the way Concert has `concert_battles`, so this intentionally doesn't try
+  // to persist or resume a score across reconnects yet.
+  const [activeGift, setActiveGift] = useState<GiftSignal | null>(null);
+  const [duoScores, setDuoScores] = useState<{ host: number; guest: number }>({
+    host: 0,
+    guest: 0,
+  });
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [onCamera, setOnCamera] = useState<boolean>(isHost); // am I publishing?
   const [handRaised, setHandRaised] = useState(false);
@@ -145,7 +181,46 @@ export default function LiveRoom({
   const [audience, setAudience] = useState<
     { user_id: string; name: string; avatar: string | null }[]
   >([]);
-  const [showRequests, setShowRequests] = useState(false);
+  // Only one right-side panel may be open at a time (Invite / Guests / Roster).
+  // Previously each had its own `showX` flag and they all rendered at the same
+  // `right-4 top-16` slot — so opening two stacked them on top of each other.
+  // We now derive individual show-flags from a single `activePanel` value so
+  // opening one automatically closes the others.
+  type ActivePanel = "invite" | "requests" | "roster" | null;
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const showRequests = activePanel === "requests";
+  const showRoster = activePanel === "roster";
+  const showInvite = activePanel === "invite";
+  const setShowRequests = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "requests";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "requests" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
+  const setShowRoster = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "roster";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "roster" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
+  const setShowInvite = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setActivePanel((prev) => {
+        const currentlyOpen = prev === "invite";
+        const next = typeof v === "function" ? v(currentlyOpen) : v;
+        return next ? "invite" : currentlyOpen ? null : prev;
+      });
+    },
+    [],
+  );
   // Guests with an in-flight promote (invite/approve) call, for pending UI.
   const [pending, setPending] = useState<Set<string>>(new Set());
   // Tile arrangement (local view only). Starts as the equal auto-grid.
@@ -162,14 +237,21 @@ export default function LiveRoom({
   // Full in-room roster (everyone present, on camera or not) for the "who's
   // here" sheet — sourced from the space_participants presence rows + profiles.
   const [roster, setRoster] = useState<
-    { user_id: string; name: string; avatar: string | null; role: string; has_raised_hand: boolean }[]
+    {
+      user_id: string;
+      name: string;
+      avatar: string | null;
+      role: string;
+      has_raised_hand: boolean;
+      stage_requested_at?: string | null;
+    }[]
   >([]);
-  const [showRoster, setShowRoster] = useState(false);
 
-  // Invite-followers panel (host only). Distinct from the Guests panel above:
-  // this invites people the host FOLLOWS who are NOT yet in the room, via an
-  // in-app live invite. The Guests panel promotes people already present.
-  const [showInvite, setShowInvite] = useState(false);
+
+  // Invite-followers panel state (host only). Distinct from the Guests panel:
+  // this invites people the host FOLLOWS who are NOT yet in the room. The
+  // `showInvite` open-flag itself lives in `activePanel` above so all three
+  // right-side panels are mutually exclusive.
   const [following, setFollowing] = useState<
     { id: string; name: string; avatar: string | null }[]
   >([]);
@@ -192,6 +274,27 @@ export default function LiveRoom({
   // the LiveKit ParticipantPermissionsChanged event fire for the same approval.
   const promotingRef = useRef(false);
 
+  // Identities currently CONNECTED to the LiveKit room (from the client's
+  // real-time roster events). This is the live source of truth for presence:
+  // the DB participant rows lag (a dropped guest's row isn't reaped until the
+  // webhook/leave fires), so we intersect the DB roster with this set to hide
+  // people who have actually left. `presentVersion` bumps on every join/leave
+  // so the roster/requests effects re-fetch immediately instead of waiting on
+  // their slow poll.
+  const presentIdsRef = useRef<Set<string>>(new Set());
+  const [presentVersion, setPresentVersion] = useState(0);
+  const isPresent = useCallback(
+    (id: string) => {
+      const set = presentIdsRef.current;
+      // Before the first LiveKit roster event lands, don't hide anyone.
+      if (set.size === 0) return true;
+      // The host is always shown even if their tile briefly drops on a
+      // reconnect, so the room never looks host-less.
+      return set.has(id) || id === hostId;
+    },
+    [hostId],
+  );
+
   const upsertTile = useCallback((t: Tile) => {
     setTiles((prev) => {
       const idx = prev.findIndex((x) => x.identity === t.identity);
@@ -207,7 +310,16 @@ export default function LiveRoom({
     remoteEls.current.delete(identity);
   }, []);
 
-  const handleLeave = useCallback(async () => {
+  // Recording (item 8): the host may record the live to the Mirror. When the
+  // host ends while recording, we DON'T navigate immediately — we stop the
+  // recording and show the "Post this LIVE to the Mirror?" prompt first, then
+  // finish leaving once the host decides.
+  const [isRecording, setIsRecording] = useState(false);
+  const [showEndPrompt, setShowEndPrompt] = useState(false);
+
+  // The actual teardown + navigation, factored out so it can run either
+  // immediately (not recording) or after the post-prompt decision.
+  const finishLeave = useCallback(async () => {
     if (endTimerRef.current) clearTimeout(endTimerRef.current);
     await leaveVideoRoom();
     if (isHost) {
@@ -232,6 +344,15 @@ export default function LiveRoom({
     router.push("/social/live");
   }, [isHost, spaceId, router, user]);
 
+  const handleLeave = useCallback(async () => {
+    // Host ending mid-recording → run the stop + post-prompt flow first.
+    if (isHost && isRecording) {
+      setShowEndPrompt(true);
+      return;
+    }
+    await finishLeave();
+  }, [isHost, isRecording, finishLeave]);
+
   // Ensure a participant row exists for anyone who joins (audience by default;
   // host row is 'host'). Enables the raise-hand / promote flow.
   useEffect(() => {
@@ -248,6 +369,25 @@ export default function LiveRoom({
         { onConflict: "space_id,user_id" },
       );
   }, [user, spaceId, isHost]);
+
+  // Heartbeat every 60s, mirroring MM Spaces (page.tsx). Keeps
+  // spaces.last_activity_at fresh for the idle reaper, and — when the caller
+  // is the host — also stamps host_last_seen_at (see src/lib/endRoom.ts) so
+  // the lazy abandonment reaper doesn't treat a genuinely-broadcasting host as
+  // gone after HOST_GRACE_PERIOD_SECONDS. Faces previously had no heartbeat at
+  // all, which would have made a broadcasting host look abandoned to the new
+  // reaper after 2 minutes even mid-stream; this is the smallest fix that
+  // makes host_last_seen_at meaningful for Faces rooms.
+  useEffect(() => {
+    if (!user) return;
+    const ping = () =>
+      authFetch(`/api/social/spaces/${spaceId}/heartbeat`, {
+        method: "POST",
+      }).catch(() => undefined);
+    ping();
+    const interval = setInterval(ping, 60_000);
+    return () => clearInterval(interval);
+  }, [user, spaceId]);
 
   // Connect to the LiveKit room on mount.
   useEffect(() => {
@@ -281,8 +421,13 @@ export default function LiveRoom({
           },
           onRemoteVideoRemoved: (identity) => removeTile(identity),
           onParticipantCountChange: (n) => setViewerCount(n),
+          onRosterIdentitiesChange: (ids) => {
+            presentIdsRef.current = new Set(ids);
+            setPresentVersion((v) => v + 1);
+          },
           onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
           onActiveSpeakersChange: (ids) => setSpeakers(new Set(ids)),
+          onFacingModeChange: (mode) => setFacingMode(mode),
           onLocalPermissionsChanged: (allowed) => {
             // Server promoted me (host/mod approved my raised hand). Publish in
             // place — no reconnect — per the runtime-permission flow.
@@ -290,6 +435,18 @@ export default function LiveRoom({
           },
           onReconnecting: () => setReconnecting(true),
           onReconnected: () => setReconnecting(false),
+          onRemoved: () => {
+            if (!cancelled) {
+              setReconnecting(false);
+              setRemoved(true);
+            }
+          },
+          onRoomEnded: () => {
+            if (!cancelled) {
+              setReconnecting(false);
+              setRoomEnded(true);
+            }
+          },
           onError: (e) => {
             if (!cancelled) setError(e.message);
           },
@@ -335,15 +492,23 @@ export default function LiveRoom({
     let active = true;
     const load = async () => {
       try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const { participants } = await res.json();
         if (!active) return;
-        const guests = (participants ?? []).filter((p: any) => p.role === "audience");
+        // Only guests actually still connected to LiveKit — a dropped guest's DB
+        // row lingers until the webhook reaps it, so filter by live presence.
+        const guests = (participants ?? []).filter(
+          (p: any) => p.role === "audience" && isPresent(p.user_id),
+        );
+        // Oldest request first (src/lib/stageQueue.ts) — the roster comes back
+        // in join order, which is not the order hands went up.
         setRequests(
-          guests
-            .filter((p: any) => p.has_raised_hand)
-            .map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
+          sortStageQueue(guests.filter((p: any) => p.has_raised_hand)).map(
+            (p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar }),
+          ),
         );
         setAudience(
           guests.map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
@@ -367,7 +532,7 @@ export default function LiveRoom({
       clearInterval(poll);
       void supabase.removeChannel(ch);
     };
-  }, [isHost, spaceId]);
+  }, [isHost, spaceId, presentVersion, isPresent]);
 
   // In-room roster ("who's here"): every active participant with a name +
   // avatar, for the tappable Users badge sheet. Read through the server route
@@ -379,10 +544,16 @@ export default function LiveRoom({
     let active = true;
     const load = async () => {
       try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`);
+        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const { participants } = await res.json();
-        if (active) setRoster(participants ?? []);
+        if (!active) return;
+        // Show only people still connected to LiveKit so a dropped viewer leaves
+        // the "who's here" sheet immediately instead of lingering until their DB
+        // presence row is reaped.
+        setRoster((participants ?? []).filter((p: any) => isPresent(p.user_id)));
       } catch {
         /* transient — the poll will retry */
       }
@@ -393,7 +564,7 @@ export default function LiveRoom({
       active = false;
       clearInterval(poll);
     };
-  }, [user, spaceId, viewerCount]);
+  }, [user, spaceId, viewerCount, presentVersion, isPresent]);
 
   // Guest: watch my own row — when host promotes me to speaker, go on camera.
   useEffect(() => {
@@ -535,6 +706,20 @@ export default function LiveRoom({
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setError(data?.error ?? "Could not invite that guest.");
+        } else {
+          // Optimistic: drop the just-approved guest from the local requests
+          // list so the panel fades to only the guests still waiting. If they
+          // were the last one, close the panel entirely so it stops covering
+          // the stage. Realtime + poll will reconcile authoritatively.
+          setRequests((prev) => {
+            const nextReqs = prev.filter((r) => r.user_id !== guestId);
+            if (nextReqs.length === 0 && prev.length > 0) {
+              // Defer the close so we don't setState during another setState.
+              queueMicrotask(() => setShowRequests(false));
+            }
+            return nextReqs;
+          });
+          setAudience((prev) => prev.filter((a) => a.user_id !== guestId));
         }
       } catch {
         setError("Network error inviting that guest.");
@@ -549,14 +734,47 @@ export default function LiveRoom({
     [spaceId, tiles.length, maxOnCamera],
   );
 
+  // Demote an on-camera guest to audience. Server-authoritative: the PATCH
+  // route flips their LiveKit publish permission off (camera/mic stop for
+  // everyone) and persists role=audience so any rejoin is subscriber-only. We
+  // reflect the role locally so the roster updates before the next poll.
   const removeGuest = useCallback(
     async (guestId: string) => {
+      setRoster((r) =>
+        r.map((p) =>
+          p.user_id === guestId
+            ? { ...p, role: "audience", has_raised_hand: false }
+            : p,
+        ),
+      );
       await authFetch(
         `/api/social/spaces/${spaceId}/participants/${guestId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: "audience" }),
+        },
+      );
+    },
+    [spaceId],
+  );
+
+  // Ban + remove a guest from the room entirely (host only). The PATCH route
+  // ejects them via RoomServiceClient.removeParticipant AND records a room-
+  // scoped ban so the token route refuses to let them rejoin. We optimistically
+  // drop them from every local list; their tile is removed when LiveKit fires
+  // the participant-disconnected event.
+  const banGuest = useCallback(
+    async (guestId: string) => {
+      setRoster((r) => r.filter((p) => p.user_id !== guestId));
+      setAudience((a) => a.filter((p) => p.user_id !== guestId));
+      setRequests((q) => q.filter((p) => p.user_id !== guestId));
+      await authFetch(
+        `/api/social/spaces/${spaceId}/participants/${guestId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ban: true }),
         },
       );
     },
@@ -662,18 +880,24 @@ export default function LiveRoom({
     };
   }, [spaceId]);
 
-  const spawnHeart = useCallback(() => {
+  // Spawn a floating heart at viewport coords (x,y). Local likes pass the tap
+  // point; remote (broadcast) hearts have none, so we scatter them across the
+  // lower-middle of the stage.
+  const spawnHeart = useCallback((x?: number, y?: number) => {
     const id = ++heartSeq.current;
-    const left = 20 + Math.random() * 50;
-    setHearts((h) => [...h, { id, left }]);
-    setTimeout(() => setHearts((h) => h.filter((x) => x.id !== id)), 2200);
+    const px =
+      x ?? (typeof window !== "undefined" ? window.innerWidth * (0.3 + Math.random() * 0.4) : 100);
+    const py =
+      y ?? (typeof window !== "undefined" ? window.innerHeight * (0.55 + Math.random() * 0.2) : 400);
+    setHearts((h) => [...h, { id, x: px, y: py }]);
+    setTimeout(() => setHearts((h) => h.filter((v) => v.id !== id)), 2200);
   }, []);
 
-  // Tap a heart: animate instantly, optimistically bump the counter, persist the
-  // increment server-side, then broadcast the authoritative new total so every
-  // other client animates + syncs. Reverts the optimistic bump on failure.
-  const sendHeart = useCallback(() => {
-    spawnHeart();
+  // Tap to like: animate instantly at the tap point, optimistically bump the
+  // counter, persist the increment server-side, then broadcast the authoritative
+  // new total so every other client animates + syncs. Reverts on failure.
+  const sendHeart = useCallback((x?: number, y?: number) => {
+    spawnHeart(x, y);
     setHeartCount((c) => c + 1);
     (async () => {
       try {
@@ -699,6 +923,148 @@ export default function LiveRoom({
       }
     })();
   }, [spawnHeart, spaceId]);
+
+  // --- Gifting (Duo only) -----------------------------------------------
+  // The other on-camera person, if any — Duo's gift "battle" is always this
+  // person vs. the host. Only meaningful once a second tile has actually
+  // joined; the picker/score bar are gated on this being present.
+  const guestId = useMemo(
+    () => tiles.find((t) => t.identity !== hostId)?.identity ?? null,
+    [tiles, hostId],
+  );
+  // GiftPicker's target list — built from the LiveKit tile roster rather than
+  // a `space_participants` fetch, since that's what LiveRoom already tracks.
+  // Server-side eligibility (host/speaker + live room) is re-verified by
+  // /api/gifts/send regardless of what's offered here.
+  const giftTargets = useMemo<GiftTargetCandidate[]>(
+    () =>
+      tiles.map((t) => ({
+        user_id: t.identity,
+        role: t.identity === hostId ? "host" : "speaker",
+        user: { display_name: t.identity === hostId ? hostName : t.name },
+      })),
+    [tiles, hostId, hostName],
+  );
+
+  // Apply a gift signal locally: pop the overlay animation and, if it targets
+  // the host or the current guest, add its coin price to that side's running
+  // total for the score bar. Used both for the sender's own optimistic result
+  // (from GiftPicker's onSignal) and for signals received from other clients.
+  const applyGiftSignal = useCallback(
+    (signal: GiftSignal) => {
+      setActiveGift(signal);
+      const amount = Number(signal.gift?.price_coins) || 0;
+      if (!amount) return;
+      if (signal.targetId === hostId) {
+        setDuoScores((s) => ({ ...s, host: s.host + amount }));
+      } else if (guestId && signal.targetId === guestId) {
+        setDuoScores((s) => ({ ...s, guest: s.guest + amount }));
+      }
+    },
+    [hostId, guestId],
+  );
+
+  // applyGiftSignal's identity changes with [hostId, guestId] (guestId in
+  // particular starts null and only resolves once a second tile joins), but
+  // the channel subscription below must stay mounted for the room's whole
+  // lifetime rather than tearing down and reconnecting every time guestId
+  // changes. Route calls through a ref that's kept current every render, so
+  // the subscription always applies gifts against today's guestId instead of
+  // whatever guestId (often still null) was in scope when it first connected.
+  const applyGiftSignalRef = useRef(applyGiftSignal);
+  useEffect(() => {
+    applyGiftSignalRef.current = applyGiftSignal;
+  }, [applyGiftSignal]);
+
+  // Faces has no PubNub wiring (unlike Concert/Spaces) — mirror the same
+  // Supabase Realtime broadcast pattern already used for hearts so every
+  // other client in the room sees the gift animation and score bump too.
+  const giftChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  useEffect(() => {
+    const ch = supabase.channel(`faces_gifts:${spaceId}`, {
+      config: { broadcast: { self: false } },
+    });
+    ch.on("broadcast", { event: "gift" }, (msg: any) => {
+      const p = msg?.payload;
+      if (!p?.gift || !p?.giftSendId || !p?.targetId) return;
+      applyGiftSignalRef.current({
+        type: "gift",
+        giftSendId: p.giftSendId,
+        gift: p.gift,
+        targetId: p.targetId,
+        senderName: p.senderName,
+      });
+    }).subscribe();
+    giftChannelRef.current = ch;
+    return () => {
+      void supabase.removeChannel(ch);
+      giftChannelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId]);
+
+  // GiftPicker already confirms the send with the server and hands back the
+  // authoritative signal (real gift_send_id, catalog row) — apply it locally,
+  // then fan it out to everyone else watching.
+  const handleGiftSignal = useCallback(
+    (signal: GiftSignal) => {
+      applyGiftSignal(signal);
+      giftChannelRef.current?.send({
+        type: "broadcast",
+        event: "gift",
+        payload: {
+          giftSendId: signal.giftSendId,
+          gift: signal.gift,
+          targetId: signal.targetId,
+          senderName: signal.senderName,
+        },
+      });
+    },
+    [applyGiftSignal],
+  );
+
+  // Tap-anywhere-to-like: a tap on empty video area spawns a heart at the tap
+  // point and fires the same like action. Guarded so it never steals taps meant
+  // for controls, chat, the share button, panels, or (in spotlight) tile
+  // buttons — anything interactive or explicitly marked `data-no-like`.
+  const handleStageTap = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'button, a, input, textarea, select, [role="dialog"], [data-no-like]',
+        )
+      ) {
+        return;
+      }
+      sendHeart(e.clientX, e.clientY);
+    },
+    [sendHeart],
+  );
+
+  // Share the live room: native share sheet where available, else copy the URL
+  // to the clipboard with a brief "Link copied" confirmation.
+  const [shareCopied, setShareCopied] = useState(false);
+  const handleShare = useCallback(async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    if (!url) return;
+    const nav = typeof navigator !== "undefined" ? navigator : undefined;
+    if (nav?.share) {
+      try {
+        await nav.share({ title, text: `Watch ${hostName} live on MELORI`, url });
+      } catch {
+        /* user dismissed the share sheet — nothing to do */
+      }
+      return;
+    }
+    try {
+      await nav?.clipboard?.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1800);
+    } catch {
+      /* clipboard blocked — best effort */
+    }
+  }, [title, hostName]);
 
   // Autoplay unlock — must run from a user gesture. Retries startAudio() and
   // re-plays every attached remote <audio>, then clears the prompt.
@@ -748,11 +1114,26 @@ export default function LiveRoom({
       const el = t.isLocal ? localElRef.current : remoteEls.current.get(t.identity);
       if (container && el && el.parentElement !== container) {
         el.className = "absolute inset-0 h-full w-full object-cover";
+        // Mirror ONLY my own tile, and only while the front-facing camera is
+        // active — a fresh attach must carry the current mirror state too, or
+        // switching layouts would silently un-mirror the self-view.
+        el.style.transform = mirrorTransform(shouldMirrorTile(t.isLocal, facingMode));
         container.querySelectorAll("video").forEach((v) => v.remove());
         container.appendChild(el);
       }
     });
-  }, [tiles, layout, featuredId]);
+  }, [tiles, layout, featuredId, facingMode]);
+
+  // Keep the local tile's mirror CSS in sync with facingMode even when no
+  // re-attach happens (e.g. flipping front/back camera while the layout is
+  // unchanged). Display-only: this NEVER touches the published LiveKit track,
+  // only the local <video> element's on-screen transform, so remote viewers
+  // always see the correct, un-mirrored orientation regardless of this.
+  useEffect(() => {
+    const el = localElRef.current;
+    if (!el) return;
+    el.style.transform = mirrorTransform(shouldMirrorTile(true, facingMode));
+  }, [facingMode, tiles]);
 
   const gridClass = useMemo(() => gridClassFor(Math.max(1, tiles.length)), [tiles.length]);
   const showStageFallback = tiles.length === 0;
@@ -778,8 +1159,8 @@ export default function LiveRoom({
           {t.name.charAt(0).toUpperCase()}
         </div>
       </div>
-      <span className="absolute bottom-2 left-2 z-10 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
-        {t.identity === hostId ? `${t.name} · Host` : t.name}
+      <span className="absolute bottom-2 left-2 z-10 max-w-[85%] truncate rounded-md bg-black/45 px-2 py-0.5 text-xs font-semibold text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] backdrop-blur">
+        {t.name}
       </span>
     </div>
   );
@@ -788,7 +1169,7 @@ export default function LiveRoom({
   const stripTiles = tiles.filter((t) => t.identity !== featuredTile?.identity);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black">
+    <div className="fixed inset-0 z-[60] bg-black" onClick={handleStageTap}>
       {/* Video stage — single tile (solo) or auto-grid (duo/group) */}
       <div className="absolute inset-0 bg-black p-0.5">
         {showStageFallback ? (
@@ -846,82 +1227,131 @@ export default function LiveRoom({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 to-transparent" />
 
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-full bg-black/40 px-3 py-1.5 backdrop-blur">
-            {hostAvatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
-            ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
-                {hostName.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <span className="max-w-[9rem] truncate text-sm font-semibold text-white">{hostName}</span>
+      <div data-no-like className="absolute inset-x-0 top-0 flex flex-col gap-2 p-3 sm:p-4">
+        {/* Duo gift battle bar — host vs. the current guest, TikTok-battle
+            style. Only once a second person is actually on camera; a solo
+            host waiting for a guest sees nothing here. */}
+        {mode === "live_duo" && guestId && (
+          <div className="overflow-hidden rounded-xl">
+            <ConcertBattleStatusBar
+              leftScore={duoScores.host}
+              rightScore={duoScores.guest}
+              isLive
+            />
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-primary px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
-            <Radio className="h-3 w-3" />
-            Live
-          </span>
-          {!isSolo && (
-            <span className="hidden rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium text-white backdrop-blur sm:inline">
-              {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isHost && (
-            <button
-              onClick={openInvitePanel}
-              aria-label="Invite followers"
-              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Invite</span>
-            </button>
-          )}
-          {isHost && !isSolo && (
-            <button
-              onClick={() => setShowRequests((s) => !s)}
-              className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
-            >
-              <Hand className="h-4 w-4" />
-              {requests.length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
-                  {requests.length}
-                </span>
+        )}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
+              {hostAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                  {hostName.charAt(0).toUpperCase()}
+                </div>
               )}
+              <div className="flex min-w-0 flex-col leading-tight">
+                <span className="max-w-[8rem] truncate text-sm font-semibold text-white sm:max-w-[10rem]">
+                  {hostName}
+                </span>
+                {/* Likes total, live-updating, directly under the host name. */}
+                <span className="flex items-center gap-1 text-[11px] font-medium leading-none text-white/85">
+                  <Music className="h-3 w-3 fill-current text-brand-primary" />
+                  {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
+                </span>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-primary px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-wide text-white sm:px-2.5 sm:text-xs">
+              <Radio className="h-3 w-3" />
+              Live
+            </span>
+            {/* "You / Host" self-tag — moved off the video tiles up to the header. */}
+            {(isHost || onCamera) && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase leading-none tracking-wide text-white backdrop-blur sm:text-xs">
+                {isHost ? "You · Host" : "You"}
+              </span>
+            )}
+            {!isSolo && (
+              <span className="hidden shrink-0 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium leading-none text-white backdrop-blur sm:inline">
+                {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
+              </span>
+            )}
+            {/* Title inline on tablet/desktop — single truncated line, no wrap. */}
+            <span className="hidden min-w-0 truncate text-sm font-medium text-white/90 drop-shadow sm:inline">
+              {title}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {mode === "live_duo" && guestId && user && (
+              <GiftPicker
+                spaceId={spaceId}
+                hostId={hostId}
+                participants={giftTargets}
+                senderName={user.display_name}
+                roomLabel="Duo"
+                onSignal={handleGiftSignal}
+              />
+            )}
+            {isHost && (
+              <button
+                onClick={openInvitePanel}
+                aria-label="Invite followers"
+                className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span className="hidden sm:inline">Invite</span>
+              </button>
+            )}
+            {isHost && !isSolo && (
+              <button
+                onClick={() => setShowRequests((s) => !s)}
+                className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+              >
+                <Hand className="h-4 w-4" />
+                {requests.length > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
+                    {requests.length}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => setShowRoster((s) => !s)}
+              aria-label="Show who's here"
+              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-black/60"
+            >
+              <Users className="h-4 w-4" />
+              {viewerCount}
             </button>
-          )}
-          <button
-            onClick={() => setShowRoster((s) => !s)}
-            aria-label="Show who's here"
-            className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-black/60"
-          >
-            <Users className="h-4 w-4" />
-            {viewerCount}
-          </button>
-          <button
-            onClick={handleLeave}
-            aria-label="Leave live"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-          >
-            <X className="h-5 w-5" />
-          </button>
+            <button
+              onClick={handleLeave}
+              aria-label="Leave live"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Title */}
-      <div className="absolute left-4 top-16 max-w-[70%]">
-        <p className="truncate text-sm font-medium text-white/90 drop-shadow">{title}</p>
+      {/* Title — mobile only. On sm+ it's rendered inline in the top bar
+          above so it never collides with the right-side panels. On mobile
+          we keep the previous placement but constrain width and cap it to a
+          single line so the guests panel that opens at `top-16` can't
+          overlap the title. */}
+      <div data-no-like className="absolute left-3 top-14 max-w-[62%] pr-2 sm:hidden">
+        <p className="truncate text-[13px] font-medium leading-tight text-white/90 drop-shadow">
+          {title}
+        </p>
       </div>
 
       {/* Invite-followers panel (host) — bring people who FOLLOW the host into
           the live via an in-app invite. Distinct from the Guests panel below,
           which promotes people already in the room. */}
       {isHost && showInvite && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-black/50 p-3 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">Invite followers</p>
             <button
@@ -995,7 +1425,7 @@ export default function LiveRoom({
           Hands" + "Audience" sections; every action hits the same server-side
           moderation endpoint. */}
       {isHost && !isSolo && showRequests && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">Guests</p>
             <span className="text-xs text-text-secondary">{tiles.length}/{maxOnCamera} on camera</span>
@@ -1084,7 +1514,7 @@ export default function LiveRoom({
           from the space_participants presence rows. Opened from the Users badge;
           updates live as people join/leave. Anyone can view it. */}
       {showRoster && (
-        <div className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/95 p-3 backdrop-blur">
+        <div data-no-like className="absolute right-4 top-16 z-20 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-brand-border bg-black/50 p-3 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">In the room</p>
             <button
@@ -1100,7 +1530,12 @@ export default function LiveRoom({
               <p className="text-xs text-text-secondary">No one here yet.</p>
             ) : (
               <ul className="space-y-2">
-                {roster.map((p) => (
+                {roster.map((p) => {
+                  // Host-only moderation: never on the host row, never on
+                  // yourself. Demote is offered only for someone on camera.
+                  const canModerate =
+                    isHost && p.user_id !== hostId && p.user_id !== user?.id;
+                  return (
                   <li key={p.user_id} className="flex items-center gap-2">
                     {p.avatar ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -1119,22 +1554,95 @@ export default function LiveRoom({
                         {p.role === "host" ? "Host" : "On camera"}
                       </span>
                     )}
+                    {canModerate && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        {p.role === "speaker" && (
+                          <button
+                            onClick={() => void removeGuest(p.user_id)}
+                            aria-label={`Move ${p.name} to audience`}
+                            title="Move to audience"
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-text-secondary hover:bg-brand-muted hover:text-text-primary"
+                          >
+                            <ArrowDownToLine className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void banGuest(p.user_id)}
+                          aria-label={`Remove ${p.name} from the room`}
+                          title="Remove from room"
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10"
+                        >
+                          <Ban className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>
         </div>
       )}
 
+      {/* Removed-by-host overlay — terminal. LiveKit disconnected us with
+          PARTICIPANT_REMOVED (host ban/kick) and will NOT auto-reconnect, and
+          the token route refuses a rejoin, so we show a clear message and only
+          offer a way back to the Faces list. Takes precedence over other UI. */}
+      {removed && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6 backdrop-blur">
+          <div className="w-[min(90%,24rem)] rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
+              <Ban className="h-6 w-6 text-red-500" />
+            </div>
+            <p className="text-base font-semibold text-text-primary">
+              You were removed from this room
+            </p>
+            <p className="mt-1 text-sm text-text-secondary">
+              The host removed you from this live room.
+            </p>
+            <Link
+              href="/social/live"
+              className="mt-4 inline-block rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark"
+            >
+              Back to MM Faces
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Room-ended overlay — calm, non-alarming, distinct from the terminal
+          "removed" (kicked) overlay above and from the generic `error`
+          overlay below. The room was deliberately closed (host ended it, or
+          the lazy abandonment reaper closed it after the host went quiet for
+          too long), not a failure, so no error styling / "Dismiss" affordance
+          — just a way back to the Faces list. Takes precedence over `error`
+          in case both fire during the same disconnect. */}
+      {roomEnded && !removed && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6 backdrop-blur"
+          data-testid="faces-room-ended"
+        >
+          <div className="w-[min(90%,24rem)] rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
+            <p className="text-base font-semibold text-text-primary">{ROOM_ENDED_MESSAGE}</p>
+            <Link
+              href="/social/live"
+              className="mt-4 inline-block rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark"
+            >
+              Back to MM Faces
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Status overlays */}
-      {(connecting || reconnecting) && (
+      {(connecting || reconnecting) && !removed && !roomEnded && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm text-white backdrop-blur">
           <Loader2 className="h-4 w-4 animate-spin" />
           {reconnecting ? "Reconnecting…" : "Connecting…"}
         </div>
       )}
-      {error && (
+      {error && !roomEnded && !removed && (
         <div className="absolute left-1/2 top-1/2 z-30 w-[min(90%,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brand-border bg-brand-surface p-6 text-center">
           <p className="text-sm text-text-secondary">{error}</p>
           <div className="mt-4 flex justify-center gap-3">
@@ -1161,37 +1669,53 @@ export default function LiveRoom({
         </button>
       )}
 
-      {/* Comment stream — shared RoomChat (auto-scroll, new-message pill,
-          grouping, sticky composer). Fixed-height floating shell over the video
-          so the internal scroll + composer behave. Orange accent for Faces. */}
-      <div className="absolute bottom-24 left-0 z-10 flex h-[42%] w-full max-w-sm flex-col overflow-hidden pl-4 pr-24 md:bottom-28 md:pr-4">
-        <div className="faces-comment-shell flex min-h-0 flex-1 flex-col">
-          <RoomChat spaceId={spaceId} accent="orange" className="flex-1" />
-        </div>
-      </div>
-
-      {/* Reaction hearts — rise just LEFT of the right-side control rail. */}
-      <div className="pointer-events-none absolute bottom-40 right-20 h-56 w-20 md:bottom-28">
+      {/* Reaction glyphs — spawn at the tap point and rise/fade. Full-stage,
+          click-through layer so it never blocks controls or chat. */}
+      <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {hearts.map((h) => (
-          <span key={h.id} className="faces-heart absolute bottom-0 text-2xl" style={{ left: h.left }}>
-            ❤️
+          <span
+            key={h.id}
+            className="faces-heart absolute text-3xl"
+            style={{ left: h.x, top: h.y, transform: "translate(-50%, -50%)" }}
+          >
+            🎵
           </span>
         ))}
       </div>
 
-      {/* Broadcast controls — VERTICAL RIGHT-SIDE RAIL.
-          The old bottom row sat UNDER the mobile tab bar (fixed, z-[70]) and
-          behind its center "M" launcher, so camera/mic/flip/End Live/heart were
-          covered and untappable on a live phone. They now live in a rail on the
-          RIGHT edge (opposite the left hamburger), anchored ABOVE the tab bar +
-          M button and clear of the bottom-left chat, honoring iOS safe areas.
-          Applies to all three modes (solo/duo/group). */}
+      {/* TikTok-style live comment overlay — raised off the very bottom so it
+          sits ABOVE the control bar. Messages float above the translucent input
+          and auto-fade. Click-through except its own input/messages. */}
       <div
-        className="absolute z-30 flex flex-col items-center gap-3"
+        data-no-like
+        className="pointer-events-none absolute left-3 right-3 z-10 flex flex-col justify-end sm:right-auto sm:w-96"
         style={{
-          right: "calc(env(safe-area-inset-right) + 0.75rem)",
-          bottom: "calc(env(safe-area-inset-bottom) + 4.75rem)",
+          bottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+          top: "40%",
         }}
+      >
+        <FacesLiveChat spaceId={spaceId} />
+      </div>
+
+      {/* "Link copied" confirmation for the share fallback. */}
+      {shareCopied && (
+        <div
+          data-no-like
+          className="absolute left-1/2 z-40 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-sm font-semibold text-white backdrop-blur"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 8.5rem)" }}
+        >
+          Link copied
+        </div>
+      )}
+
+      {/* Broadcast controls — CENTERED BOTTOM BAR (moved off the right rail).
+          Horizontally laid out, pinned to the safe-area bottom, and sitting
+          below the raised chat so nothing overlaps. The dedicated heart button
+          is gone — tap anywhere on empty video to like (see handleStageTap). */}
+      <div
+        data-no-like
+        className="absolute inset-x-0 z-30 flex items-center justify-center gap-3 px-3"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 0.85rem)" }}
       >
         {/* Layout toggle — grid ⇄ spotlight. Only for multi-visitor rooms with
             2+ tiles to arrange; it's a local view preference (never broadcast,
@@ -1252,6 +1776,22 @@ export default function LiveRoom({
             <Hand className="h-5 w-5" />
           </Link>
         )}
+        {/* Share — native share sheet where available, else copy link. */}
+        <button
+          onClick={handleShare}
+          aria-label="Share this live"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+        >
+          <Share2 className="h-5 w-5" />
+        </button>
+        {/* Record to Mirror (host) — start/stop live recording that can be
+            posted to the Melori Mirror feed. */}
+        {isHost && !showEndPrompt && (
+          <MirrorRecordingControls
+            spaceId={spaceId}
+            onRecordingChange={setIsRecording}
+          />
+        )}
         {/* End Live (host) — primary, prominent, and always reachable. */}
         {isHost && (
           <button
@@ -1263,23 +1803,25 @@ export default function LiveRoom({
             <span className="text-[9px] font-bold uppercase leading-none">End</span>
           </button>
         )}
-        {/* Heart / reaction — everyone, bottom-most (frequent + harmless tap).
-            Shows the room's running like total beneath the button. */}
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={sendHeart}
-            aria-label="Send heart"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-transform hover:scale-110 active:scale-95"
-          >
-            <Heart className="h-6 w-6" />
-          </button>
-          {heartCount > 0 && (
-            <span className="min-w-[1.5rem] rounded-full bg-black/40 px-1.5 py-0.5 text-center text-[11px] font-semibold text-white backdrop-blur">
-              {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
-            </span>
-          )}
-        </div>
       </div>
+
+      {/* End-of-live "Post this LIVE to the Mirror?" prompt. Shown when the host
+          ends while recording; on decision we finish leaving. */}
+      {showEndPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <MirrorRecordingControls
+            spaceId={spaceId}
+            autoStopAndPrompt
+            onRecordingChange={setIsRecording}
+            onDone={() => {
+              setShowEndPrompt(false);
+              void finishLeave();
+            }}
+          />
+        </div>
+      )}
+
+      <GiftOverlay signal={activeGift} onFinished={() => setActiveGift(null)} />
     </div>
   );
 }

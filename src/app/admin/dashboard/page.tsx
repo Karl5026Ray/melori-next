@@ -259,6 +259,14 @@ export default function AdminDashboardPage() {
               <span>📻</span>
               Spaces
             </Link>
+            <Link
+              href="/admin/mirror"
+              onClick={() => setSidebarOpen(false)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>🪞</span>
+              Mirror posts
+            </Link>
           </div>
         </nav>
 
@@ -416,13 +424,19 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
           >
             SMS Blast
           </Link>
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="px-4 py-2 bg-purple-500/15 text-purple-300 rounded-lg text-sm font-medium hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
-          >
-            {seeding ? "Seeding…" : "🌱 Seed MM Social Demo"}
-          </button>
+          {/* Demo seeding is a pre-launch tool. Melori is live, so the control
+              is hidden unless NEXT_PUBLIC_ALLOW_DEMO_SEED is explicitly set —
+              nobody should be able to drop placeholder spaces and posts into a
+              production catalog with one stray click. */}
+          {process.env.NEXT_PUBLIC_ALLOW_DEMO_SEED === "true" && (
+            <button
+              onClick={handleSeed}
+              disabled={seeding}
+              className="px-4 py-2 bg-purple-500/15 text-purple-300 rounded-lg text-sm font-medium hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {seeding ? "Seeding…" : "🌱 Seed MM Social Demo (non-production)"}
+            </button>
+          )}
         </div>
         {seedMsg && (
           <p className="mt-3 text-xs text-[#888]">{seedMsg}</p>

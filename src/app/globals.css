@@ -61,6 +61,72 @@ body {
   overflow-x: hidden;
 }
 
+/* Cinema is a viewport-owned live video room, not a document-sized feed.
+   The route adds .cinema-room-shell after its room format resolves. Keep the
+   application chrome out of the layout calculation so the only permitted
+   scrolling surface is Cinema's horizontal audience strip. */
+@supports selector(body:has(.cinema-room-shell)) {
+  body:has(.cinema-room-shell) {
+    overflow: hidden;
+  }
+  body:has(.cinema-room-shell) main {
+    flex: 0 1 auto;
+    min-height: 0;
+    padding-bottom: 0 !important;
+  }
+  body:has(.cinema-room-shell) > header {
+    display: none;
+  }
+  body:has(.cinema-room-shell) footer {
+    display: none;
+  }
+}
+
+/* `viewport-fit=cover` lets Cinema use the whole display, including the area
+   beneath a phone notch. The safe top padding belongs to the outer room shell,
+   not the media canvas, so its header controls clear the hardware cutout while
+   the flex canvas keeps the full remaining stage visible. The custom property
+   also lets browser coverage simulate a non-zero inset deterministically. */
+:root {
+  --cinema-safe-area-top: env(safe-area-inset-top, 0px);
+}
+.cinema-room-shell {
+  padding-top: max(0.5rem, var(--cinema-safe-area-top));
+}
+
+@keyframes cinemaCommentEnter {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.cinema-comment-line {
+  transition: opacity 600ms ease, transform 600ms ease;
+}
+.cinema-comment-line-content {
+  display: block;
+  animation: cinemaCommentEnter 220ms ease-out both;
+}
+.cinema-comment-line[data-cinema-comment-age="5"] { opacity: 0.42; }
+.cinema-comment-line[data-cinema-comment-age="4"] { opacity: 0.56; }
+.cinema-comment-line[data-cinema-comment-age="3"] { opacity: 0.7; }
+.cinema-comment-line[data-cinema-comment-age="2"] { opacity: 0.84; }
+.cinema-comment-line[data-cinema-comment-exiting="true"] {
+  opacity: 0;
+  transform: translateY(-0.25rem);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinema-comment-line,
+  .cinema-comment-line-content {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* Any element that opts into horizontal scrolling (carousels, tab strips)
    must not leak that scroll up to the page. */
 * {
@@ -80,6 +146,20 @@ a {
     rgba(255, 85, 0, 0.08) 35%,
     transparent 70%
   );
+}
+
+/* Homepage hero waveform — bars "breathe" while a track plays. Applied inline
+   with a per-bar delay so the row animates like a live visualization. Gated in
+   JS on isPlaying + !prefers-reduced-motion, so this only ever runs when the
+   visitor has opted into motion and audio is actually playing. */
+@keyframes meloriWave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
 
 /* ============================================================ */
@@ -134,6 +214,26 @@ a {
   70% { box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
+/* Active-speaker ring for the squircle AUDIO tiles in MM Spaces. The reference
+   room design marks the speaker with a soft neutral outline rather than the
+   green used on Faces video tiles, and the ring has to follow the 30% squircle
+   radius instead of forcing a circle like .speaking-ring does. outline follows
+   border-radius in all current browsers, so the tile's own radius is inherited.
+   Swap the colour to #22c55e here if you'd rather keep Spaces and Faces on one
+   green speaking language. */
+.speaking-ring-squircle {
+  outline: 3px solid rgba(248, 250, 252, 0.85);
+  outline-offset: 2px;
+  animation: pulseRingSquircle 1.4s ease-out infinite;
+}
+@keyframes pulseRingSquircle {
+  0% { box-shadow: 0 0 0 0 rgba(248, 250, 252, 0.45); }
+  70% { box-shadow: 0 0 0 14px rgba(248, 250, 252, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 250, 252, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .speaking-ring-squircle { animation: none; }
+}
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .mobile-nav-gradient { background: linear-gradient(to top, #0a0a0f 60%, transparent); }
@@ -146,13 +246,45 @@ a {
 .video-snap { scroll-snap-type: y mandatory; scroll-snap-stop: always; }
 .video-snap > * { scroll-snap-align: start; }
 
-/* Melori Mirror viewport height. Fills the area between the fixed 4rem header
-   and the fixed bottom bars. Mobile: audio player + tab bar (root layout uses
-   pb-44 = 11rem). Desktop (md+, >=768px): only the player (pb-24 = 6rem). Using
-   dvh so mobile URL-bar collapse doesn't over/under-size the cards. */
-.mirror-viewport { height: calc(100dvh - 4rem - 11rem); }
+/* One mobile clearance contract for content under the fixed tab bar and the
+   default 56px floating transport (which is parked 8px above it). A listener
+   can drag the transport elsewhere, but normal scrolling content never starts
+   under either fixed control. Desktop retains the 6rem full-width transport.
+
+   The transport is MAIN-PAGE ONLY (src/lib/transportRoute.ts), so the combined
+   `--mobile-content-clearance` applies on "/"; MainContent falls back to the
+   tab-bar-only clearance in every other space. */
+:root {
+  --mobile-tabbar-clearance: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  --mobile-content-clearance: calc(var(--mobile-tabbar-clearance) + 4rem + 0.5rem);
+  --mirror-top: calc(4rem + 1px);
+  --mirror-bottom: var(--mobile-content-clearance);
+}
 @media (min-width: 768px) {
-  .mirror-viewport { height: calc(100dvh - 4rem - 6rem); }
+  :root { --mirror-bottom: 6rem; }
+}
+/* Cards fit the actual visible slot. The vh fallback precedes dvh so an older
+   browser never drops the height declaration entirely.
+
+   AudioPlayer never renders on the Mirror route (it is main-page only, and
+   background music would fight each card's soundtrack anyway), so the 4rem +
+   0.5rem the base `--mirror-bottom` reserves for the pill is dead space here.
+   Override the variable on the
+   viewport so the feed reclaims that room: mobile only clears the tab bar,
+   desktop only leaves a small breathing gap. The override cascades to
+   .mirror-video-item automatically. */
+.mirror-viewport {
+  --mirror-bottom: var(--mobile-tabbar-clearance);
+  height: calc(100vh - var(--mirror-top) - var(--mirror-bottom));
+  height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom));
+}
+@media (min-width: 768px) {
+  .mirror-viewport { --mirror-bottom: 0.5rem; }
+}
+.mirror-video-item {
+  height: 100%;
+  max-height: calc(100vh - var(--mirror-top) - var(--mirror-bottom));
+  max-height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom));
 }
 .msg-bubble-sent {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
@@ -205,15 +337,37 @@ a {
   12%  { opacity: 1; transform: translateY(-10px) scale(1); }
   100% { transform: translateY(-200px) scale(1.1) rotate(12deg); opacity: 0; }
 }
-/* Comment stream inside the live stage: transparent, no card chrome, light
-   text over video, and no fixed page layout — it floats over the stage. */
-.faces-comment-shell :is(section, form) { background: transparent !important; }
-.faces-comment-shell { color: #fff; }
-.faces-comment-shell input,
-.faces-comment-shell textarea {
-  background: rgba(0,0,0,0.4);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff;
+
+/* Melori Mirror — double-tap-to-like heart burst.
+   The heart pops in at the tap point, over-scales briefly, then fades up and
+   away. Duration (900ms) MUST match the setTimeout cleanup in VideoCard.tsx
+   so a burst is removed from state right after its animation ends and does
+   not linger as an invisible element. */
+.mirror-heart-burst {
+  animation: mirrorHeartBurst 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: transform, opacity;
+  transform-origin: center;
+  pointer-events: none;
+}
+@keyframes mirrorHeartBurst {
+  0%   { transform: scale(0.2) rotate(-8deg); opacity: 0; }
+  25%  { transform: scale(1.25) rotate(-4deg); opacity: 1; }
+  55%  { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1.4) translateY(-40px) rotate(8deg); opacity: 0; }
+}
+/* TikTok-style live comment overlay (FacesLiveChat). Each message floats over
+   the video, rises from the bottom, holds, then auto-fades so chat never piles
+   up over guest faces. The 7s total MUST match LIFETIME_MS in
+   FacesLiveChat.tsx. */
+.faces-live-msg {
+  animation: facesLiveMsg 7s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes facesLiveMsg {
+  0%   { opacity: 0; transform: translateY(12px); }
+  6%   { opacity: 1; transform: translateY(0); }
+  82%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-8px); }
 }
 
 /* Mobile nav launcher bottom-sheet slide-up */
@@ -297,5 +451,121 @@ select {
   }
   .safe-area-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Safe-area-aware BOTTOM OFFSETS for `fixed`/`absolute` elements positioned
+   with `bottom-*`. Same reasoning as `.safe-area-bottom` above (viewportFit:
+   'cover' lets content run under the iPhone home indicator), but these add
+   the inset to a fixed offset instead of to padding, for floating overlays
+   that must clear the mobile tab bar AND the home indicator. Used by the MM
+   Spaces page (src/app/social/spaces/[spaceId]/page.tsx) for its floating
+   reaction/toast layers and its bottom control bar. Falls back to the plain
+   pixel offset when env() is unsupported. */
+.safe-bottom-offset-32 {
+  bottom: 8rem; /* Tailwind bottom-32 fallback */
+}
+.safe-bottom-offset-44 {
+  bottom: 11rem; /* Tailwind bottom-44 fallback */
+}
+@supports (bottom: max(0px)) {
+  .safe-bottom-offset-32 {
+    bottom: calc(8rem + env(safe-area-inset-bottom));
+  }
+  .safe-bottom-offset-44 {
+    bottom: calc(11rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Adds the home-indicator inset ON TOP OF an element's existing responsive
+   `p-4 md:p-6` bottom padding, instead of replacing it (unlike
+   `.safe-area-bottom`, which assumes no other bottom padding to preserve).
+   Used for the Spaces in-flow control bar, which must keep the exact same
+   1rem/1.5rem bottom padding on desktop/tablet — only mobile (<768px) gets
+   the extra home-indicator inset added on top, and only on devices where
+   env() actually resolves to something non-zero. */
+.safe-area-pad-extra-bottom {
+  padding-bottom: 1rem;
+}
+@media (min-width: 768px) {
+  .safe-area-pad-extra-bottom {
+    padding-bottom: 1.5rem;
+  }
+}
+@supports (padding: max(0px)) {
+  .safe-area-pad-extra-bottom {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .safe-area-pad-extra-bottom {
+      padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Same idea as `.safe-area-pad-extra-bottom` above, but for the per-person
+   reaction picker's `p-5` bottom sheet (Spaces page). Below the `sm:`
+   breakpoint it renders as a bottom sheet (`items-end`) so it needs the
+   home-indicator inset added on top of its 1.25rem (p-5) padding; at `sm:`
+   and up it re-centers as a normal modal (`sm:items-center`) with nothing to
+   clear, so the extra inset is dropped there entirely. */
+.safe-area-pad-extra-bottom-5 {
+  padding-bottom: 1.25rem;
+}
+@supports (padding: max(0px)) {
+  .safe-area-pad-extra-bottom-5 {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 640px) {
+  .safe-area-pad-extra-bottom-5 {
+    padding-bottom: 1.25rem;
+  }
+}
+
+/* Bottom offset for a STICKY bar that must sit just above MobileTabBar
+   (`md:hidden fixed bottom-0 z-[70]`, h-14 = 3.5rem + home-indicator inset).
+   Same reasoning as .safe-bottom-offset-32 above, but sized to the tab bar
+   itself and self-clearing at md, where the tab bar is hidden. Used by the
+   Cinema comment composer. */
+.safe-bottom-offset-tabbar {
+  bottom: 3.5rem; /* Tailwind bottom-14 fallback */
+}
+@supports (bottom: max(0px)) {
+  .safe-bottom-offset-tabbar {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 768px) {
+  .safe-bottom-offset-tabbar {
+    bottom: 0;
+  }
+}
+
+/* Melori Concert — floating gift emoji and music notes over a competitor's
+   video tile. The animation duration is set inline from
+   CONCERT_FLOAT_DURATION_MS in src/lib/concertStage.ts, which is also the
+   timeout that prunes the float from state — keep the two in step so a spent
+   float is never left in the DOM as an invisible node. */
+.concert-float {
+  animation-name: concertFloatRise;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+@keyframes concertFloatRise {
+  0%   { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+  15%  { transform: translate(-50%, -14px) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -150px) scale(1.15) rotate(10deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .concert-float {
+    animation-name: concertFloatFade;
+  }
+  @keyframes concertFloatFade {
+    0%   { transform: translate(-50%, -40px); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translate(-50%, -40px); opacity: 0; }
   }
 }

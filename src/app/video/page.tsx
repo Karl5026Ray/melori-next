@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseCatalogReader } from "@/lib/supabase/admin";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// ISR instead of `dynamic = 'force-dynamic'` — see issue #280 and the longer
+// note in src/lib/supabase/admin.ts.
+//
+// force-dynamic (plus the old revalidate = 0) made Next.js stamp `no-store` on
+// the HTML response, which iOS WKWebView wrapper browsers refuse to render. On
+// Vercel that function-set header cannot be overridden by next.config.js or
+// src/proxy.ts.
+//
+// Safe here for the same reason as / and /music: the video list is read
+// through getSupabaseCatalogReader() and is identical for every visitor —
+// there is no viewer-entitlement filtering on this query.
+export const revalidate = 60;
 
 const description =
   "Watch the official music videos and visuals from MELORI Music artists.";
@@ -35,7 +45,7 @@ interface VideoRow {
 }
 
 async function getVideos(): Promise<VideoRow[]> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseCatalogReader();
   const { data, error } = await supabase
     .from("videos")
     .select(

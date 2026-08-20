@@ -22,26 +22,30 @@
 // - Publisher = host + speakers; subscriber = audience.
 
 import { authFetch } from "@/lib/authClient";
+import {
+  preferLoudspeaker,
+  startRouteWatch,
+  stopRouteWatch,
+} from "@/lib/audioOutput";
+import {
+  audioProfileForType as resolveAudioProfile,
+  captureDefaultsFor,
+  publishDefaultsFor,
+  type AudioProfile,
+} from "@/lib/audioProfile";
+import { assertCaptureSupported } from "@/lib/mediaCapture";
 import { supabase } from "@/lib/supabase";
+import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 
 type AnyRoom = any;
 type AnyTrack = any;
 
 export type LiveKitRole = "publisher" | "subscriber";
-export type AudioProfile = "music" | "voice";
 
-// Map a space type to the audio profile that should drive capture + publish.
-export function audioProfileForType(spaceType?: string | null): AudioProfile {
-  switch ((spaceType || "").toLowerCase()) {
-    case "listening":
-    case "dj_set":
-    case "dj set":
-    case "creation":
-      return "music";
-    default:
-      return "voice";
-  }
-}
+// Audio profiles live in @/lib/audioProfile so MM Faces shares the exact same
+// capture + publish tuning. Re-exported here for existing callers.
+export type { AudioProfile } from "@/lib/audioProfile";
+export { audioProfileForType } from "@/lib/audioProfile";
 
 export interface JoinOptions {
   spaceId: string;
@@ -64,6 +68,12 @@ export interface JoinOptions {
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
+  // Fired when the ROOM ITSELF was deliberately ended server-side
+  // (endLiveKitRoom -> LiveKit deleteRoom), as opposed to a network drop.
+  // Distinct from onError so the UI can show a calm "This room has ended"
+  // state instead of a scary generic error. Local mic/tracks are already
+  // stopped by the time this fires.
+  onRoomEnded?: () => void;
   onError?: (err: Error) => void;
 }
 
@@ -127,46 +137,6 @@ async function writeLocalSpeaking(spaceId: string, identity: string, speaking: b
   }
 }
 
-// Capture (getUserMedia) constraints tuned per profile.
-function captureDefaultsFor(profile: AudioProfile) {
-  if (profile === "music") {
-    // Preserve the source: disable the DSP that mangles music.
-    return {
-      autoGainControl: false,
-      echoCancellation: false,
-      noiseSuppression: false,
-      channelCount: 2,
-      sampleRate: 48000,
-    };
-  }
-  // Voice: clean speech.
-  return {
-    autoGainControl: true,
-    echoCancellation: true,
-    noiseSuppression: true,
-    channelCount: 1,
-    sampleRate: 48000,
-  };
-}
-
-// Publish options tuned per profile.
-function publishDefaultsFor(profile: AudioProfile, AudioPresets: any) {
-  if (profile === "music") {
-    return {
-      audioPreset: AudioPresets?.musicHighQualityStereo,
-      dtx: false,
-      red: false,
-      forceStereo: true,
-    };
-  }
-  return {
-    audioPreset: AudioPresets?.speech,
-    dtx: true,
-    red: true,
-    forceStereo: false,
-  };
-}
-
 export async function joinChannel(opts: JoinOptions): Promise<void> {
   // Re-join cleanly if already connected somewhere.
   if (session.room) {
@@ -177,7 +147,7 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   const { Room, RoomEvent, AudioPresets, Track } = lk as any;
 
   const profile =
-    opts.audioProfile || audioProfileForType(opts.spaceType);
+    opts.audioProfile || resolveAudioProfile(opts.spaceType);
   const capture = captureDefaultsFor(profile);
   const publish = publishDefaultsFor(profile, AudioPresets);
 
@@ -251,7 +221,22 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     session.cleanups.push(() => room.off(RoomEvent.Reconnecting, onReconnecting));
     session.cleanups.push(() => room.off(RoomEvent.Reconnected, onReconnected));
 
-    const onDisconnected = () => {
+    const onDisconnected = (reason?: unknown) => {
+      const classification = classifyDisconnectReason(
+        reason as string | number | undefined,
+      );
+      if (classification === "room-ended") {
+        // Deliberate server-side teardown, not a failure: stop local media so
+        // the mic indicator/hardware light turns off immediately, then hand
+        // off to the calm "room ended" path instead of onError.
+        void room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => undefined);
+        opts.onRoomEnded?.();
+        return;
+      }
+      // "removed" (kicked) has no dedicated Spaces UI state today (unlike
+      // Faces' `removed` overlay) — out of scope to add one here per the
+      // brief's constraint against changing moderation/ban UX, so it still
+      // reports through onError, matching current behaviour.
       opts.onError?.(new Error("Disconnected from space"));
     };
     room.on(RoomEvent.Disconnected, onDisconnected);
@@ -319,6 +304,10 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
 
     // Publishers start with the mic enabled; subscribers stay silent.
     if (creds.role === "publisher") {
+      // LiveKit reaches for navigator.mediaDevices internally. Check first so a
+      // container without capture support reports why instead of throwing
+      // "undefined is not an object" at the user.
+      assertCaptureSupported();
       await room.localParticipant.setMicrophoneEnabled(true, capture, {
         audioPreset: publish.audioPreset,
         dtx: publish.dtx,
@@ -356,6 +345,16 @@ export async function ensureAudioPlayback(): Promise<void> {
       });
     }
   });
+
+  // On iOS, mic capture drags output to the earpiece. Push it back to the
+  // loudspeaker now that we are inside a user gesture (Safari 26+ only; no-ops
+  // everywhere else and never overrides a connected headset).
+  try {
+    await preferLoudspeaker(session.remoteAudioEls);
+    startRouteWatch(() => session.remoteAudioEls);
+  } catch (err) {
+    console.warn("[spaces] loudspeaker routing skipped", err);
+  }
 }
 
 export async function setMuted(muted: boolean): Promise<void> {
@@ -397,6 +396,9 @@ export async function setRole(role: LiveKitRole): Promise<void> {
 }
 
 export async function leaveChannel(): Promise<void> {
+  // Drop any pinned audio sink and stop watching route changes; a pin must
+  // never outlive the session it was applied for.
+  stopRouteWatch();
   const { room, cleanups } = session;
   cleanups.forEach((fn) => {
     try {

@@ -51,23 +51,28 @@ workspace, so a bare `cap add ios` produces a project they can't archive.
 ```bash
 npm run sync
 ```
-**Use `npm run sync`, not a bare `npx cap sync ios`.** `cap sync` regenerates
-`ios/App` from the Capacitor template and throws away everything applied to
-it — the real app icon, the OAuth callback URL scheme, and the camera/mic
-usage descriptions. `npm run sync` is `cap sync && npm run configure:native`,
-which chains `scripts/postsync.sh` to re-apply all of that
-(`install-ios-icon.sh` + `configure-ios.sh`). A bare `npx cap sync ios` only
-runs the first half and stops — the icon (and worse, the URL scheme) never
-gets re-applied.
+**Use `npm run sync`, not a bare `npx cap sync ios`.** These custom entries —
+the real app icon, the OAuth callback URL scheme, and the camera/mic usage
+descriptions — don't exist in `ios/App` until something applies them, and
+`cap sync`/`cap add` never do it on their own. `npm run sync` is
+`cap sync && npm run configure:native`, which chains `scripts/postsync.sh`
+(`install-ios-icon.sh` + `configure-ios.sh`) to apply all of that. A bare
+`npx cap sync ios` only runs the Capacitor half and stops — it won't destroy
+entries applied by an earlier `npm run sync`, but if you've never run
+`npm run sync` (e.g. right after Step 3's fresh `cap add ios`), the icon and
+URL scheme are simply never added in the first place. `postsync.sh` is
+idempotent (it skips already-registered entries), so running `npm run sync`
+every time is always safe and is the only way to be sure.
 
 Verify the URL scheme actually registered before you move on:
 ```bash
-python3 -c "import plistlib; print(plistlib.load(open('ios/App/App/Info.plist','rb'))['CFBundleURLTypes'][0]['CFBundleURLSchemes'])"
-# should print: ['org.melorimusic.app']
+python3 -c "import plistlib; print(plistlib.load(open('ios/App/App/Info.plist','rb')).get('CFBundleURLTypes', []))"
+# should show an entry with CFBundleURLSchemes: ['org.melorimusic.app']
 ```
-If this doesn't print `['org.melorimusic.app']`, sign-in will silently fail
-in TestFlight/App Store builds — the OAuth redirect has nowhere to land, so
-the user ends up "signed in" in the browser sheet but signed out in the app.
+If `CFBundleURLTypes` is missing or doesn't contain `org.melorimusic.app`,
+sign-in will silently fail in TestFlight/App Store builds — the OAuth
+redirect has nowhere to land, so the user ends up "signed in" in the browser
+sheet but signed out in the app.
 
 ### 5. Open in Xcode
 ```bash
@@ -116,7 +121,7 @@ the Melori “M” mark in every slot, not a placeholder.
 
 ### 8. Set version & build number
 - Still on the target → **General** tab.
-- **Version:** `1.0.2`   **Build:** `19`
+- **Version:** `1.0.2`   **Build:** `20`
 - The build number must be higher than the last one you uploaded for this
   version train — App Store Connect rejects a duplicate/lower build number.
   Bump it every time you upload, even for a same-version re-upload.
@@ -134,7 +139,7 @@ The wrapper already declares standard HTTPS-only encryption (exempt). If Xcode/A
 
 ### 11. Attach the build to your listing
 - Wait ~5–15 min for Apple to finish "Processing" the build (you'll get an email).
-- Go to [App Store Connect → Melori Music → 1.0.2](https://appstoreconnect.apple.com/apps/6792791603) → **Build** section → **"+"** / **Select a build** → choose Build 19.
+- Go to [App Store Connect → Melori Music → 1.0.2](https://appstoreconnect.apple.com/apps/6792791603) → **Build** section → **"+"** / **Select a build** → choose Build 20.
 - Answer the export-compliance prompt (Yes HTTPS / exempt) if shown.
 
 ### 12. Submit
@@ -144,11 +149,15 @@ The wrapper already declares standard HTTPS-only encryption (exempt). If Xcode/A
 
 ## Notes & gotchas
 
-- **Signed-in-then-signed-out?** Trace it back to Step 4. If `npx cap sync ios`
-  ran without `npm run configure:native` (i.e. you didn't use `npm run sync`),
-  the OAuth callback URL scheme never got re-registered in Info.plist, and
-  every sign-in dead-ends in the Safari sheet. Re-run `npm run sync` and
-  re-verify with the Info.plist check in Step 4 before re-archiving.
+- **Signed-in-then-signed-out?** Trace it back to Step 4. If `ios/App` was
+  ever created (`cap add ios`) or reset (`rm -rf ios && cap add ios`) without
+  a subsequent `npm run sync`, `configure-ios.sh` never ran, so the OAuth
+  callback URL scheme was never registered in Info.plist and every sign-in
+  dead-ends in the Safari sheet. Re-run `npm run sync` and re-verify with the
+  Info.plist check in Step 4 before re-archiving. (Routine `cap sync` calls on
+  a project that was already configured don't undo this — Capacitor doesn't
+  touch custom `Info.plist` entries it didn't add — but it costs nothing to
+  re-run `npm run sync` anyway since `postsync.sh` is idempotent.)
 - **App Store review risk (thin-wrapper rule):** Apple sometimes rejects apps that are "just a website." Melori is a rich PWA with streaming, accounts, community, live audio, and purchases, which satisfies the "app-like" bar, but if reviewers push back, the reply is: it's a full-featured streaming/community platform, not a repackaged marketing page. Having native status-bar handling + offline fallback (both included here) helps.
 - **In-app purchases:** the app loads your Stripe/web checkout. Under Apple's rules, digital-goods purchases inside the app normally require Apple IAP. Safest v1 posture: the iOS app is stream + discover + community; if a reviewer flags the buy buttons, either (a) apply for the **Reader App** entitlement, or (b) hide purchase buttons on iOS via a user-agent check. Ask me and I'll add the iOS-detection toggle to the web app.
 - **Push notifications, deep links:** not included in v1. Can be added later.

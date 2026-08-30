@@ -25,7 +25,12 @@ export const SOCIAL_NAV_ITEMS: SocialNavItem[] = [
  * Melori Connect's entry point. Rendered in the MORE group on both the local
  * nav bar (src/components/nav/navContexts.ts) and the mobile M menu
  * (src/components/MobileTabBar.tsx). Ungated in the nav — the entry is visible
- * to everyone and /social/connect enforces its own access rules.
+ * to everyone.
+ *
+ * The href is the public landing page (/connect), which markets the dating
+ * feature to logged-out visitors and routes signed-in members straight into
+ * the swipe stack at /social/connect. The app route enforces its own access
+ * rules (18+ / Superfan+).
  *
  * The separate own-profile pill idea still stands as a follow-up, and that one
  * IS gated: own-profile only, 18+ / Superfan+. Do not render a pill on another
@@ -34,7 +39,7 @@ export const SOCIAL_NAV_ITEMS: SocialNavItem[] = [
  */
 export const CONNECT_NAV_ITEM: SocialNavItem = {
   label: "Melori Connect",
-  href: "/social/connect",
+  href: "/connect",
 };
 
 /** True when `href` is the current route (or an ancestor of it). */

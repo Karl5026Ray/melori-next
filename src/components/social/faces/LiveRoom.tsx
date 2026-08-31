@@ -39,6 +39,10 @@ import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
 import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
+import { GiftPicker, type GiftTargetCandidate } from "@/components/social/gifts/GiftPicker";
+import { GiftOverlay } from "@/components/social/gifts/GiftOverlay";
+import { ConcertBattleStatusBar } from "@/components/social/concert/ConcertBattleStatusBar";
+import type { GiftSignal } from "@/lib/gifting";
 import {
   Mic,
   MicOff,
@@ -156,6 +160,16 @@ export default function LiveRoom({
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
+  // Duo-only gifting: the currently-playing overlay animation, and a running
+  // per-side coin tally for the TikTok-battle-style score bar. Both are
+  // session-local (reset on reload) — there's no formal "battle" row for Duo
+  // the way Concert has `concert_battles`, so this intentionally doesn't try
+  // to persist or resume a score across reconnects yet.
+  const [activeGift, setActiveGift] = useState<GiftSignal | null>(null);
+  const [duoScores, setDuoScores] = useState<{ host: number; guest: number }>({
+    host: 0,
+    guest: 0,
+  });
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [onCamera, setOnCamera] = useState<boolean>(isHost); // am I publishing?
   const [handRaised, setHandRaised] = useState(false);
@@ -910,6 +924,105 @@ export default function LiveRoom({
     })();
   }, [spawnHeart, spaceId]);
 
+  // --- Gifting (Duo only) -----------------------------------------------
+  // The other on-camera person, if any — Duo's gift "battle" is always this
+  // person vs. the host. Only meaningful once a second tile has actually
+  // joined; the picker/score bar are gated on this being present.
+  const guestId = useMemo(
+    () => tiles.find((t) => t.identity !== hostId)?.identity ?? null,
+    [tiles, hostId],
+  );
+  // GiftPicker's target list — built from the LiveKit tile roster rather than
+  // a `space_participants` fetch, since that's what LiveRoom already tracks.
+  // Server-side eligibility (host/speaker + live room) is re-verified by
+  // /api/gifts/send regardless of what's offered here.
+  const giftTargets = useMemo<GiftTargetCandidate[]>(
+    () =>
+      tiles.map((t) => ({
+        user_id: t.identity,
+        role: t.identity === hostId ? "host" : "speaker",
+        user: { display_name: t.identity === hostId ? hostName : t.name },
+      })),
+    [tiles, hostId, hostName],
+  );
+
+  // Apply a gift signal locally: pop the overlay animation and, if it targets
+  // the host or the current guest, add its coin price to that side's running
+  // total for the score bar. Used both for the sender's own optimistic result
+  // (from GiftPicker's onSignal) and for signals received from other clients.
+  const applyGiftSignal = useCallback(
+    (signal: GiftSignal) => {
+      setActiveGift(signal);
+      const amount = Number(signal.gift?.price_coins) || 0;
+      if (!amount) return;
+      if (signal.targetId === hostId) {
+        setDuoScores((s) => ({ ...s, host: s.host + amount }));
+      } else if (guestId && signal.targetId === guestId) {
+        setDuoScores((s) => ({ ...s, guest: s.guest + amount }));
+      }
+    },
+    [hostId, guestId],
+  );
+
+  // applyGiftSignal's identity changes with [hostId, guestId] (guestId in
+  // particular starts null and only resolves once a second tile joins), but
+  // the channel subscription below must stay mounted for the room's whole
+  // lifetime rather than tearing down and reconnecting every time guestId
+  // changes. Route calls through a ref that's kept current every render, so
+  // the subscription always applies gifts against today's guestId instead of
+  // whatever guestId (often still null) was in scope when it first connected.
+  const applyGiftSignalRef = useRef(applyGiftSignal);
+  useEffect(() => {
+    applyGiftSignalRef.current = applyGiftSignal;
+  }, [applyGiftSignal]);
+
+  // Faces has no PubNub wiring (unlike Concert/Spaces) — mirror the same
+  // Supabase Realtime broadcast pattern already used for hearts so every
+  // other client in the room sees the gift animation and score bump too.
+  const giftChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  useEffect(() => {
+    const ch = supabase.channel(`faces_gifts:${spaceId}`, {
+      config: { broadcast: { self: false } },
+    });
+    ch.on("broadcast", { event: "gift" }, (msg: any) => {
+      const p = msg?.payload;
+      if (!p?.gift || !p?.giftSendId || !p?.targetId) return;
+      applyGiftSignalRef.current({
+        type: "gift",
+        giftSendId: p.giftSendId,
+        gift: p.gift,
+        targetId: p.targetId,
+        senderName: p.senderName,
+      });
+    }).subscribe();
+    giftChannelRef.current = ch;
+    return () => {
+      void supabase.removeChannel(ch);
+      giftChannelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId]);
+
+  // GiftPicker already confirms the send with the server and hands back the
+  // authoritative signal (real gift_send_id, catalog row) — apply it locally,
+  // then fan it out to everyone else watching.
+  const handleGiftSignal = useCallback(
+    (signal: GiftSignal) => {
+      applyGiftSignal(signal);
+      giftChannelRef.current?.send({
+        type: "broadcast",
+        event: "gift",
+        payload: {
+          giftSendId: signal.giftSendId,
+          gift: signal.gift,
+          targetId: signal.targetId,
+          senderName: signal.senderName,
+        },
+      });
+    },
+    [applyGiftSignal],
+  );
+
   // Tap-anywhere-to-like: a tap on empty video area spawns a heart at the tap
   // point and fires the same like action. Guarded so it never steals taps meant
   // for controls, chat, the share button, panels, or (in spotlight) tile
@@ -1114,91 +1227,112 @@ export default function LiveRoom({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 to-transparent" />
 
       {/* Top bar */}
-      <div
-        data-no-like
-        className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-          <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
-            {hostAvatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
-            ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
-                {hostName.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="flex min-w-0 flex-col leading-tight">
-              <span className="max-w-[8rem] truncate text-sm font-semibold text-white sm:max-w-[10rem]">
-                {hostName}
-              </span>
-              {/* Likes total, live-updating, directly under the host name. */}
-              <span className="flex items-center gap-1 text-[11px] font-medium leading-none text-white/85">
-                <Music className="h-3 w-3 fill-current text-brand-primary" />
-                {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
-              </span>
-            </div>
+      <div data-no-like className="absolute inset-x-0 top-0 flex flex-col gap-2 p-3 sm:p-4">
+        {/* Duo gift battle bar — host vs. the current guest, TikTok-battle
+            style. Only once a second person is actually on camera; a solo
+            host waiting for a guest sees nothing here. */}
+        {mode === "live_duo" && guestId && (
+          <div className="overflow-hidden rounded-xl">
+            <ConcertBattleStatusBar
+              leftScore={duoScores.host}
+              rightScore={duoScores.guest}
+              isLive
+            />
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-primary px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-wide text-white sm:px-2.5 sm:text-xs">
-            <Radio className="h-3 w-3" />
-            Live
-          </span>
-          {/* "You / Host" self-tag — moved off the video tiles up to the header. */}
-          {(isHost || onCamera) && (
-            <span className="inline-flex shrink-0 items-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase leading-none tracking-wide text-white backdrop-blur sm:text-xs">
-              {isHost ? "You · Host" : "You"}
-            </span>
-          )}
-          {!isSolo && (
-            <span className="hidden shrink-0 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium leading-none text-white backdrop-blur sm:inline">
-              {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
-            </span>
-          )}
-          {/* Title inline on tablet/desktop — single truncated line, no wrap. */}
-          <span className="hidden min-w-0 truncate text-sm font-medium text-white/90 drop-shadow sm:inline">
-            {title}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isHost && (
-            <button
-              onClick={openInvitePanel}
-              aria-label="Invite followers"
-              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Invite</span>
-            </button>
-          )}
-          {isHost && !isSolo && (
-            <button
-              onClick={() => setShowRequests((s) => !s)}
-              className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
-            >
-              <Hand className="h-4 w-4" />
-              {requests.length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
-                  {requests.length}
-                </span>
+        )}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
+              {hostAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={hostAvatar} alt={hostName} className="h-7 w-7 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-muted text-xs font-bold text-text-primary">
+                  {hostName.charAt(0).toUpperCase()}
+                </div>
               )}
+              <div className="flex min-w-0 flex-col leading-tight">
+                <span className="max-w-[8rem] truncate text-sm font-semibold text-white sm:max-w-[10rem]">
+                  {hostName}
+                </span>
+                {/* Likes total, live-updating, directly under the host name. */}
+                <span className="flex items-center gap-1 text-[11px] font-medium leading-none text-white/85">
+                  <Music className="h-3 w-3 fill-current text-brand-primary" />
+                  {heartCount > 999 ? `${(heartCount / 1000).toFixed(1)}k` : heartCount}
+                </span>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-primary px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-wide text-white sm:px-2.5 sm:text-xs">
+              <Radio className="h-3 w-3" />
+              Live
+            </span>
+            {/* "You / Host" self-tag — moved off the video tiles up to the header. */}
+            {(isHost || onCamera) && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase leading-none tracking-wide text-white backdrop-blur sm:text-xs">
+                {isHost ? "You · Host" : "You"}
+              </span>
+            )}
+            {!isSolo && (
+              <span className="hidden shrink-0 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium leading-none text-white backdrop-blur sm:inline">
+                {mode === "live_duo" ? "Duo" : "Room"} · {tiles.length}/{maxOnCamera}
+              </span>
+            )}
+            {/* Title inline on tablet/desktop — single truncated line, no wrap. */}
+            <span className="hidden min-w-0 truncate text-sm font-medium text-white/90 drop-shadow sm:inline">
+              {title}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {mode === "live_duo" && guestId && user && (
+              <GiftPicker
+                spaceId={spaceId}
+                hostId={hostId}
+                participants={giftTargets}
+                senderName={user.display_name}
+                roomLabel="Duo"
+                onSignal={handleGiftSignal}
+              />
+            )}
+            {isHost && (
+              <button
+                onClick={openInvitePanel}
+                aria-label="Invite followers"
+                className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span className="hidden sm:inline">Invite</span>
+              </button>
+            )}
+            {isHost && !isSolo && (
+              <button
+                onClick={() => setShowRequests((s) => !s)}
+                className="relative inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-black/60"
+              >
+                <Hand className="h-4 w-4" />
+                {requests.length > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-[10px] font-bold">
+                    {requests.length}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => setShowRoster((s) => !s)}
+              aria-label="Show who's here"
+              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-black/60"
+            >
+              <Users className="h-4 w-4" />
+              {viewerCount}
             </button>
-          )}
-          <button
-            onClick={() => setShowRoster((s) => !s)}
-            aria-label="Show who's here"
-            className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1.5 text-sm font-semibold text-white backdrop-blur transition-colors hover:bg-black/60"
-          >
-            <Users className="h-4 w-4" />
-            {viewerCount}
-          </button>
-          <button
-            onClick={handleLeave}
-            aria-label="Leave live"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-          >
-            <X className="h-5 w-5" />
-          </button>
+            <button
+              onClick={handleLeave}
+              aria-label="Leave live"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1686,6 +1820,8 @@ export default function LiveRoom({
           />
         </div>
       )}
+
+      <GiftOverlay signal={activeGift} onFinished={() => setActiveGift(null)} />
     </div>
   );
 }

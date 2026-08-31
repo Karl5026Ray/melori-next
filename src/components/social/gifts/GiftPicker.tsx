@@ -11,6 +11,15 @@ import {
 } from "@/lib/gifting";
 import type { SpaceParticipant } from "@/types/social";
 
+// Narrowed to just what this component reads, so callers outside MM Spaces
+// (MM Faces' LiveRoom builds its roster from LiveKit tiles, not
+// `space_participants` rows) can pass a target list without fabricating a
+// full Profile. A real SpaceParticipant satisfies this structurally, so
+// existing Concert callers are unaffected.
+export type GiftTargetCandidate = Pick<SpaceParticipant, "user_id" | "role"> & {
+  user?: { display_name?: string | null } | null;
+};
+
 type CoinPack = {
   id: string;
   name: string;
@@ -24,12 +33,17 @@ export function GiftPicker({
   hostId,
   participants,
   senderName,
+  roomLabel = "Concert",
   onSignal,
 }: {
   spaceId: string;
   hostId: string;
-  participants: SpaceParticipant[];
+  participants: GiftTargetCandidate[];
   senderName?: string;
+  // Copy only — which room type this is doesn't change any behavior here,
+  // the server enforces eligibility. Concert keeps its existing copy by
+  // default; Faces Duo passes "Duo".
+  roomLabel?: string;
   onSignal: (signal: GiftSignal) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -137,18 +151,18 @@ export function GiftPicker({
         onClick={openPicker}
         className="inline-flex min-h-11 items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-black shadow-lg transition hover:bg-amber-300"
         data-testid="gift-picker-open"
-        aria-label="Send a Concert gift"
+        aria-label={`Send a ${roomLabel} gift`}
       >
         <Gift className="h-4 w-4" aria-hidden />
         Gift
       </button>
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-end bg-black/65 p-0 sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label="Send a Concert gift">
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/65 p-0 sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={`Send a ${roomLabel} gift`}>
           <button className="absolute inset-0" aria-label="Close gifts" onClick={() => setOpen(false)} />
           <section className="relative max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-white/10 bg-melori-elevated p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:rounded-3xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold">Concert gifts</h2>
+                <h2 className="text-lg font-bold">{roomLabel} gifts</h2>
                 <p className="text-sm text-melori-muted">{balance === null ? "Loading balance…" : `${balance.toLocaleString()} coins`}</p>
               </div>
               <button type="button" onClick={() => setOpen(false)} className="grid min-h-11 min-w-11 place-items-center rounded-full hover:bg-white/10" aria-label="Close gifts"><X className="h-5 w-5" /></button>
@@ -160,7 +174,7 @@ export function GiftPicker({
                 <label className="mb-4 block text-sm font-medium">
                   Send to
                   <select value={targetId} onChange={(e) => setTargetId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-melori-border bg-black/20 px-3" data-testid="gift-target-select">
-                    {targets.length ? targets.map((p) => <option key={p.user_id} value={p.user_id}>{p.user?.display_name ?? "Concert performer"}</option>) : <option value="">No active hosts or speakers</option>}
+                    {targets.length ? targets.map((p) => <option key={p.user_id} value={p.user_id}>{p.user?.display_name ?? `${roomLabel} performer`}</option>) : <option value="">No active hosts or speakers</option>}
                   </select>
                 </label>
                 <div className="mb-3 flex items-center justify-between">

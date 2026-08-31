@@ -122,6 +122,7 @@ export default async function CinemaDiscoverPage(props: PageProps) {
           <GenreTabs active={genre} />
         </div>
 
+<<<<<<< HEAD
         {/* Cinema landing mirrors the shape of a Cinema room itself: one big
             main screen up top, three portrait live tiles beneath, and an
             audience-style avatar strip at the bottom. The shape is stable
@@ -167,6 +168,32 @@ export default async function CinemaDiscoverPage(props: PageProps) {
             <CinemaLandingAudience live={[]} />
 
             <div className="pt-2">
+=======
+        {/* Cinema landing echoes the shape of a Cinema room (a main screen,
+            live tiles, an audience strip) whenever there's real content to
+            show, but it no longer fakes that shape with dashed mockup boxes
+            when the house is empty — those placeholders didn't resemble an
+            actual room and only misled people about what they were about to
+            walk into. The empty state below is plain, honest copy instead. */}
+        {empty ? (
+          <div className="space-y-5">
+            <div className="px-6 py-10 text-center">
+              <Clapperboard
+                className="mx-auto mb-3 h-8 w-8 text-cinema-gold-dim"
+                aria-hidden
+              />
+              <p className="text-sm font-medium text-white">
+                {genre ? "Nothing on in this genre yet" : "The house is empty"}
+              </p>
+              <p className="mx-auto mt-1 text-xs text-white/45">
+                {genre
+                  ? "Try another genre, or start the first room here."
+                  : "No rooms are live right now. Be the one who opens the doors."}
+              </p>
+            </div>
+
+            <div className="pt-2 text-center">
+>>>>>>> origin/main
               <Link
                 href={roomCreateHref(CINEMA_ROOM_FORMAT)}
                 className="inline-flex items-center gap-2 rounded-full bg-cinema-gold px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110"
@@ -184,6 +211,7 @@ export default async function CinemaDiscoverPage(props: PageProps) {
               </section>
             )}
 
+<<<<<<< HEAD
             {/* Three-across portrait tiles, matching the CinemaStage
                 silhouette inside a room. Always renders exactly three seats
                 so the landing's shape stays stable — empty seats fall back
@@ -205,6 +233,28 @@ export default async function CinemaDiscoverPage(props: PageProps) {
                 ))}
               </div>
             </section>
+
+            <section className="mb-7">
+              <CinemaLandingAudience live={live} />
+            </section>
+=======
+            {/* Up to three-across portrait tiles, matching the CinemaStage
+                silhouette inside a room — but only for rooms that are
+                actually live. This used to pad out to exactly three with
+                dashed placeholder boxes when fewer rooms were live; those
+                didn't represent anything real, so a short row is now just a
+                short row. Any fourth+ live room drops into "Starting soon"
+                territory visually. */}
+            {rest.length > 0 && (
+              <section className="mb-5">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                  {rest.slice(0, 3).map((room) => (
+                    <LiveRoomTile key={room.id} room={room} />
+                  ))}
+                </div>
+              </section>
+            )}
+>>>>>>> origin/main
 
             <section className="mb-7">
               <CinemaLandingAudience live={live} />

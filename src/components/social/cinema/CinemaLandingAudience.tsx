@@ -9,8 +9,16 @@ import type { Space } from "@/types/social";
 // Data source is deliberately opportunistic: we take up to `MAX` distinct
 // hosts across the currently-live rooms. It isn't a real presence roster (no
 // per-viewer heartbeats here), just a way to fill the row with faces that
+<<<<<<< HEAD
 // meaningfully belong to Cinema right now. When nothing is live we render
 // dashed placeholder circles that match the PDF wireframe exactly.
+=======
+// meaningfully belong to Cinema right now. When nothing is live, this row is
+// simply omitted — it used to pad out to MAX with dashed placeholder circles,
+// but those didn't resemble anything in an actual room and only misled
+// people about what they were about to walk into, so there is no longer a
+// fallback rendering here for the empty case.
+>>>>>>> origin/main
 const MAX = 8;
 
 interface HostFace {
@@ -38,10 +46,14 @@ function hostsFromLive(live: Space[]): HostFace[] {
 
 export function CinemaLandingAudience({ live }: { live: Space[] }) {
   const faces = hostsFromLive(live);
+<<<<<<< HEAD
   // Always render MAX slots so the strip's silhouette is stable whether one
   // room is live or eight are. Empty slots are dashed circles, matching the
   // wireframe placeholder.
   const slots = Array.from({ length: MAX }, (_, i) => faces[i] ?? null);
+=======
+  if (faces.length === 0) return null;
+>>>>>>> origin/main
 
   return (
     <div
@@ -49,6 +61,7 @@ export function CinemaLandingAudience({ live }: { live: Space[] }) {
       style={{ overscrollBehaviorX: "contain", touchAction: "pan-x" }}
       aria-label="Cinema audience"
     >
+<<<<<<< HEAD
       {slots.map((face, i) =>
         face ? (
           <span
@@ -78,6 +91,29 @@ export function CinemaLandingAudience({ live }: { live: Space[] }) {
           />
         ),
       )}
+=======
+      {faces.map((face) => (
+        <span
+          key={face.id}
+          className="relative block h-10 w-10 shrink-0 overflow-hidden rounded-full border border-cinema-border bg-cinema-surface"
+          title={face.name}
+        >
+          {face.avatarUrl ? (
+            <Image
+              src={face.avatarUrl}
+              alt=""
+              fill
+              sizes="40px"
+              className="object-cover"
+            />
+          ) : (
+            <span className="grid h-full w-full place-items-center text-[10px] font-bold text-cinema-gold">
+              {face.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+        </span>
+      ))}
+>>>>>>> origin/main
     </div>
   );
 }

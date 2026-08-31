@@ -71,6 +71,28 @@ export async function GET(req: NextRequest, { params }: Props) {
       return NextResponse.json({ error: "Concert initiator is unavailable." }, { status: 409 });
     }
 
+    // DISPLAY-ONLY live score. concert_battle_rounds still owns round outcomes;
+    // a failed aggregate degrades to zeroes rather than failing the whole read,
+    // because a missing score must not black out the live stage.
+    let scores = { initiator_coins: 0, opponent_coins: 0, initiator_gifts: 0, opponent_gifts: 0 };
+    const { data: totals, error: totalsError } = await supabase.rpc(
+      "concert_battle_gift_totals",
+      { p_space_id: spaceId },
+    );
+    if (totalsError) {
+      console.error("concert battle gift totals failed", totalsError);
+    } else {
+      const row = Array.isArray(totals) ? totals[0] : totals;
+      if (row) {
+        scores = {
+          initiator_coins: Number(row.initiator_coins ?? 0),
+          opponent_coins: Number(row.opponent_coins ?? 0),
+          initiator_gifts: Number(row.initiator_gifts ?? 0),
+          opponent_gifts: Number(row.opponent_gifts ?? 0),
+        };
+      }
+    }
+
     const { data: pendingInvite, error: inviteError } = await supabase
       .from("concert_battle_invites")
       .select("id, sender_id, recipient_id, status, expires_at, created_at")
@@ -101,6 +123,7 @@ export async function GET(req: NextRequest, { params }: Props) {
         battle,
         initiator,
         opponent: battle.opponent_id ? profileById.get(battle.opponent_id) ?? null : null,
+        scores,
         viewer_slot: getConcertBattleSlot(battle, viewerId),
         viewer_capabilities: {
           can_select_opponent:

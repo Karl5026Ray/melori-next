@@ -53,7 +53,7 @@ import { StageGrid } from "@/components/social/spaces/StageGrid";
 import RoomCommentOverlay from "@/components/social/spaces/RoomCommentOverlay";
 import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
-import CinemaAudience from "@/components/social/cinema/CinemaAudience";
+import CinemaVoiceCircles from "@/components/social/cinema/CinemaVoiceCircles";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
 import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
@@ -125,6 +125,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // Camera capture requires a connected room. Tracked so the control is disabled
   // until then rather than claiming a durable slot with nothing to publish on.
   const [cinemaRoomConnected, setCinemaRoomConnected] = useState(false);
+  // Identity -> 0..1 microphone level, sampled from LiveKit. Drives the volume
+  // rings on Cinema's voice circles.
+  const [cinemaAudioLevels, setCinemaAudioLevels] = useState<Record<string, number>>({});
   // A camera toggle claims a durable slot, so it must not run twice at once: a
   // double tap would otherwise race a claim against its own release.
   const [cinemaCameraBusy, setCinemaCameraBusy] = useState(false);
@@ -859,6 +862,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     [runHostAction],
   );
 
+  // Host-only: grant or revoke the moderator badge (🎸 in StageGrid). The
+  // route restricts this to the host regardless of who calls it, and mirrors
+  // the change into LiveKit stage permissions server-side — this is just the
+  // UI trigger. Works whether the target is currently on stage or in the
+  // audience; moderators help run the room, they don't have to be speaking.
+  const hostSetBadge = useCallback(
+    (participantUserId: string, badge: "mod" | null) =>
+      runHostAction(
+        participantUserId,
+        { badge },
+        badge === "mod" ? "Made moderator" : "Moderator removed",
+      ),
+    [runHostAction],
+  );
+
   const handleGoLive = useCallback(async () => {
     if (!isHost) return;
     const res = await authFetch(`/api/social/spaces/${spaceId}`, {
@@ -1195,6 +1213,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       },
       onActiveSpeakersChange: (identities) => {
         if (!cancelled) setSpeakingIds(new Set(identities));
+      },
+      // Continuous loudness for the voice circles' volume rings. The sampler
+      // only emits on a meaningful change, so a quiet room does not re-render.
+      onAudioLevels: (levels) => {
+        if (!cancelled) setCinemaAudioLevels(levels);
       },
       onReconnecting: () => !cancelled && setReconnecting(true),
       onReconnected: () => !cancelled && setReconnecting(false),
@@ -1699,7 +1722,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         </div>
 
         <div
-          className="px-4 md:px-6 pt-3 pb-1 flex items-center justify-between shrink-0"
+          className={`px-4 md:px-6 flex items-center justify-between shrink-0 ${
+            isCinema ? "pt-1.5 pb-0.5" : "pt-3 pb-1"
+          }`}
           data-testid={isCinema ? "cinema-room-header" : undefined}
         >
           <Link
@@ -1779,7 +1804,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             so the closest true equivalent is the host — same shape, same
             inline follow affordance, backed by the follow API we already use
             on the tiles. */}
-        <div className={`px-4 md:px-6 pt-2 shrink-0 ${isCinema ? "pb-2" : "pb-4"}`}>
+        <div className={`px-4 md:px-6 shrink-0 ${isCinema ? "pt-1 pb-1.5" : "pt-2 pb-4"}`}>
           <div className="flex items-center gap-2 min-w-0">
             <img
               src={hostProfile?.avatar_url || "/favicon.png"}
@@ -1789,6 +1814,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             <span className="text-[15px] font-semibold uppercase tracking-wide truncate min-w-0">
               {hostProfile?.display_name ?? "Host"}
             </span>
+            {/* In Cinema the format chip rides along on the host row instead of
+                claiming a line of its own below the title: every pixel spent on
+                chrome here comes straight out of the shared screen. */}
+            {isCinema && (
+              <Badge variant={format.variant} className="shrink-0">
+                {format.label}
+              </Badge>
+            )}
             {!isHost && hostId && (
               <button
                 type="button"
@@ -1904,16 +1937,27 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
           {/* Title gets room to wrap to two lines instead of being truncated
               next to a row of badges. break-words guards the long unbroken
-              title the mobile-layout spec exercises. */}
+              title the mobile-layout spec exercises.
+
+              Cinema is the exception: its header is competing for height with a
+              big shared screen, three live seats, and three rows of listeners in
+              one non-scrolling viewport, so the title stays on a single small
+              line there and the topic prose is dropped entirely. */}
           <h1
-            className={`mt-1.5 leading-[1.15] font-bold break-words ${
-              isCinema ? "text-[20px] sm:text-[26px]" : "text-[26px]"
+            className={`leading-[1.15] font-bold break-words ${
+              isCinema
+                ? "mt-0.5 truncate text-[15px] sm:text-[22px]"
+                : "mt-1.5 text-[26px]"
             }`}
           >
             {space.title}
           </h1>
 
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <div
+            className={`flex items-center gap-2 flex-wrap ${
+              isCinema ? "hidden" : "mt-2"
+            }`}
+          >
             {space.topic && (
               <p className="text-[15px] text-melori-muted break-words min-w-0">
                 {space.topic}
@@ -2143,22 +2187,20 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                       spaceId={spaceId}
                       isHost={isHost}
                       viewportBound
-                      overlay={
-                        <>
-                          <CinemaChat comments={roomComments} />
-                          <CinemaStage
-                            embedded
-                            slots={cinemaSlots}
-                            onReactToParticipant={setReactTarget}
-                            reactionBursts={targetedReactions}
-                          />
-                        </>
-                      }
+                      overlay={<CinemaChat comments={roomComments} />}
+                    />
+                  }
+                  seats={
+                    <CinemaStage
+                      slots={cinemaSlots}
+                      onReactToParticipant={setReactTarget}
+                      reactionBursts={targetedReactions}
                     />
                   }
                   audience={
-                    <CinemaAudience
+                    <CinemaVoiceCircles
                       audience={cinemaAudience}
+                      levels={cinemaAudioLevels}
                       onReactToParticipant={setReactTarget}
                       reactionBursts={targetedReactions}
                     />
@@ -2173,22 +2215,30 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
               <div className={isCinema ? "mb-0" : "mb-8"}>
                 {reconnecting && !isCinema && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
-                {/* Audio rooms render everyone in ONE continuous grid, speakers
-                    first, the way the reference room does — role is read off
-                    the tile's own badges rather than from a section heading.
-                    Cinema keeps its split stage/audience layout: its seats are
-                    a fixed-capacity front row with their own HOST/GUEST labels,
-                    so merging them into the crowd would lose that meaning. */}
-                {!isCinema && (
-                  <StageGrid
-                    participants={[...speakers, ...audience]}
-                    onReactToParticipant={setReactTarget}
-                    onSelectParticipant={isHost ? setModTarget : setReactTarget}
-                    reactionBursts={targetedReactions}
-                    viewerId={user?.id}
-                    followingIds={followedIds}
-                    onFollow={handleFollowFromTile}
-                  />
+                {/* Audio rooms split into a Stage (host + speakers, uncapped —
+                    no live video, matching Karl's call to keep this audio-only)
+                    and an Audience grid below it, unchanged from the single
+                    grid this used to be. The header/topic/leave chrome around
+                    this block is untouched — only this participant area split.
+                    Cinema keeps its own stage/audience layout further up (fixed
+                    front-row seats with HOST/GUEST labels) and never reaches
+                    this branch. */}
+                {!isCinema && speakers.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
+                      Stage{speakers.length > 1 ? ` (${speakers.length})` : ""}
+                    </h3>
+                    <StageGrid
+                      participants={speakers}
+                      size="lg"
+                      onReactToParticipant={setReactTarget}
+                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
+                      reactionBursts={targetedReactions}
+                      viewerId={user?.id}
+                      followingIds={followedIds}
+                      onFollow={handleFollowFromTile}
+                    />
+                  </div>
                 )}
 
                 {!isCinema && isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
@@ -2255,6 +2305,23 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                           )}
                         </div>
                       ))}
+                  </div>
+                )}
+
+                {!isCinema && audience.length > 0 && (
+                  <div className="mt-8">
+                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
+                      Audience{audience.length > 1 ? ` (${audience.length})` : ""}
+                    </h3>
+                    <StageGrid
+                      participants={audience}
+                      onReactToParticipant={setReactTarget}
+                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
+                      reactionBursts={targetedReactions}
+                      viewerId={user?.id}
+                      followingIds={followedIds}
+                      onFollow={handleFollowFromTile}
+                    />
                   </div>
                 )}
               </div>
@@ -2411,6 +2478,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                       label="Send a reaction"
                       onClick={() => setReactTarget(modTarget)}
                     />
+                    {modTarget.role !== "host" && (
+                      <Item
+                        label={
+                          modTarget.badge === "mod"
+                            ? "Remove moderator 🎸"
+                            : "Make moderator 🎸"
+                        }
+                        onClick={() =>
+                          void hostSetBadge(
+                            targetId,
+                            modTarget.badge === "mod" ? null : "mod",
+                          )
+                        }
+                      />
+                    )}
                     {modTarget.role !== "host" &&
                       (onStage ? (
                         <>

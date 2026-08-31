@@ -3,15 +3,35 @@
 // LiveKit SDK dependency: callers must still obtain roles and reservations from
 // durable server-side state before using its answer.
 
+import {
+  CONCERT_BATTLE_ROOM_FORMAT,
+  canConcertBattlePerform,
+  getConcertBattleSlot,
+  type ConcertBattleStatus,
+} from "@/lib/concertBattle";
+
 export const CINEMA_CAMERA_SLOT_COUNT = 3 as const;
 
 export type PublishSource = "camera" | "microphone";
 export type CinemaSlot = 0 | 1 | 2;
+export type ConcertSlot = 1 | 2;
 export type RoomMediaRole = "host" | "speaker" | "moderator" | "audience";
 
 export interface CinemaReservation {
   slot: CinemaSlot | number;
   userId: string;
+}
+
+/**
+ * The battle's two immutable competitor identities plus its lifecycle status.
+ * Concert publish permission is derived from THIS, never from a generic Spaces
+ * host/speaker role, so promoting an audience member cannot create a third
+ * camera in a two-person battle.
+ */
+export interface ConcertBattleIdentityInput {
+  initiatorId: string;
+  opponentId: string | null;
+  status: ConcertBattleStatus | string | null;
 }
 
 export interface RoomMediaInput {
@@ -27,6 +47,11 @@ export interface RoomMediaInput {
    * decision into a camera grant.
    */
   requested: readonly PublishSource[];
+  /**
+   * Required for `versus_battle` rooms. Absent or unreadable battle identity
+   * fails closed: no camera and no microphone.
+   */
+  concertBattle?: ConcertBattleIdentityInput | null;
 }
 
 export type RoomMediaReason =
@@ -35,11 +60,16 @@ export type RoomMediaReason =
   | "host-muted"
   | "invalid-reservations"
   | "no-camera-slot"
+  | "missing-battle"
+  | "battle-not-performable"
+  | "not-competitor"
   | "allowed";
 
 export interface RoomMediaDecision {
   allowedSources: readonly PublishSource[];
   cameraSlot: CinemaSlot | null;
+  /** Populated only for `versus_battle`: 1 = initiator (left), 2 = opponent. */
+  concertSlot?: ConcertSlot | null;
   reason: RoomMediaReason;
 }
 
@@ -133,13 +163,55 @@ function decideCinemaPublish(input: RoomMediaInput): RoomMediaDecision {
 }
 
 /**
- * The one media-policy entry point. Cinema is the only non-live format that
- * can publish camera, and only when a durable slot reservation matches.
- * Ordinary Spaces remain microphone-only even when their participants are on
- * stage. MM Faces (`live_*`) retain their existing camera + microphone policy.
+ * Concert Battle media policy.
+ *
+ * Exactly the two competitors may publish, and only while the battle is in a
+ * performable phase. Audience members receive NOTHING — not even a microphone —
+ * because a Concert audience is a subscriber population by design. The room's
+ * generic `role` is intentionally ignored here.
+ */
+function decideConcertPublish(input: RoomMediaInput): RoomMediaDecision {
+  const requested = uniqueRequested(input.requested);
+  const battle = input.concertBattle;
+  if (!battle?.initiatorId) {
+    return { allowedSources: [], cameraSlot: null, concertSlot: null, reason: "missing-battle" };
+  }
+  // Slot 1 is always the space host. A battle whose initiator has drifted from
+  // the room host is malformed, so refuse rather than guess.
+  if (battle.initiatorId !== input.hostId) {
+    return { allowedSources: [], cameraSlot: null, concertSlot: null, reason: "missing-battle" };
+  }
+  if (!canConcertBattlePerform(battle.status as ConcertBattleStatus)) {
+    return {
+      allowedSources: [],
+      cameraSlot: null,
+      concertSlot: null,
+      reason: "battle-not-performable",
+    };
+  }
+  const slot = getConcertBattleSlot(
+    { initiator_id: battle.initiatorId, opponent_id: battle.opponentId },
+    input.userId,
+  );
+  if (slot === null) {
+    return { allowedSources: [], cameraSlot: null, concertSlot: null, reason: "not-competitor" };
+  }
+  if (input.hostMuted) {
+    return { allowedSources: [], cameraSlot: null, concertSlot: slot, reason: "host-muted" };
+  }
+  return { allowedSources: requested, cameraSlot: null, concertSlot: slot, reason: "allowed" };
+}
+
+/**
+ * The one media-policy entry point. Cinema publishes camera against a durable
+ * slot reservation; Concert publishes camera against the battle's two immutable
+ * competitor identities. Ordinary Spaces remain microphone-only even when their
+ * participants are on stage, and MM Faces (`live_*`) retain their existing
+ * camera + microphone policy.
  */
 export function decideRoomPublish(input: RoomMediaInput): RoomMediaDecision {
   if (input.roomFormat === "cinema") return decideCinemaPublish(input);
+  if (input.roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return decideConcertPublish(input);
 
   const requested = uniqueRequested(input.requested);
   if (!isOnStage(input.role)) {
@@ -156,6 +228,7 @@ export function decideRoomPublish(input: RoomMediaInput): RoomMediaDecision {
   return {
     allowedSources,
     cameraSlot: null,
+    concertSlot: null,
     reason: "not-cinema",
   };
 }

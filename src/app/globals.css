@@ -249,7 +249,11 @@ a {
 /* One mobile clearance contract for content under the fixed tab bar and the
    default 56px floating transport (which is parked 8px above it). A listener
    can drag the transport elsewhere, but normal scrolling content never starts
-   under either fixed control. Desktop retains the 6rem full-width transport. */
+   under either fixed control. Desktop retains the 6rem full-width transport.
+
+   The transport is MAIN-PAGE ONLY (src/lib/transportRoute.ts), so the combined
+   `--mobile-content-clearance` applies on "/"; MainContent falls back to the
+   tab-bar-only clearance in every other space. */
 :root {
   --mobile-tabbar-clearance: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   --mobile-content-clearance: calc(var(--mobile-tabbar-clearance) + 4rem + 0.5rem);
@@ -262,9 +266,16 @@ a {
 /* Cards fit the actual visible slot. The vh fallback precedes dvh so an older
    browser never drops the height declaration entirely.
 
+<<<<<<< HEAD
    AudioPlayer hides itself on the Mirror route (background music would fight
    each card's soundtrack), so the 4rem + 0.5rem the base `--mirror-bottom`
    reserved for the pill is dead space here. Override the variable on the
+=======
+   AudioPlayer never renders on the Mirror route (it is main-page only, and
+   background music would fight each card's soundtrack anyway), so the 4rem +
+   0.5rem the base `--mirror-bottom` reserves for the pill is dead space here.
+   Override the variable on the
+>>>>>>> origin/main
    viewport so the feed reclaims that room: mobile only clears the tab bar,
    desktop only leaves a small breathing gap. The override cascades to
    .mirror-video-item automatically. */
@@ -534,5 +545,33 @@ select {
 @media (min-width: 768px) {
   .safe-bottom-offset-tabbar {
     bottom: 0;
+  }
+}
+
+/* Melori Concert — floating gift emoji and music notes over a competitor's
+   video tile. The animation duration is set inline from
+   CONCERT_FLOAT_DURATION_MS in src/lib/concertStage.ts, which is also the
+   timeout that prunes the float from state — keep the two in step so a spent
+   float is never left in the DOM as an invisible node. */
+.concert-float {
+  animation-name: concertFloatRise;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+@keyframes concertFloatRise {
+  0%   { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+  15%  { transform: translate(-50%, -14px) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -150px) scale(1.15) rotate(10deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .concert-float {
+    animation-name: concertFloatFade;
+  }
+  @keyframes concertFloatFade {
+    0%   { transform: translate(-50%, -40px); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translate(-50%, -40px); opacity: 0; }
   }
 }

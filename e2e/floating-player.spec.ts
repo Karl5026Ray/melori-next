@@ -28,7 +28,10 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 // real PointerEvents on the target instead. This mirrors what an actual finger
 // produces on a mobile browser.
 
-const START_URL = "/music";
+// The transport is a MAIN-PAGE-ONLY control (src/lib/transportRoute.ts), so the
+// pill only exists on the site root. Pointing this suite anywhere else would
+// correctly find no player at all.
+const START_URL = "/";
 
 // Height of the fixed mobile tab bar (h-14), mirrored from AudioPlayer.tsx.
 const TAB_BAR = 56;

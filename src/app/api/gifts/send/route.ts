@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isUuid } from "@/lib/validators";
-import { canSendGiftInRoom, isEligibleGiftTarget } from "@/lib/gifting";
+import { canSendGiftInRoom, isEligibleGiftTarget, isGiftableRoomFormat } from "@/lib/gifting";
 import { publishGiftSignal } from "@/lib/pubnubServer";
 
 export const runtime = "nodejs";
@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (roomError) return NextResponse.json({ error: "Could not verify room" }, { status: 500 });
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
-  if (room.status !== "live" || room.room_format !== "versus_battle") {
-    return NextResponse.json({ error: "Gifts are only available in live Concert rooms" }, { status: 409 });
+  if (room.status !== "live" || !isGiftableRoomFormat(room.room_format)) {
+    return NextResponse.json({ error: "Gifts are only available in live Concert or Duo rooms" }, { status: 409 });
   }
 
   const { data: roomParticipants, error: participantError } = await supabase
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     target: targetAllowed ? effectiveTarget : null,
     hostId: room.host_id,
   })) {
-    return NextResponse.json({ error: "You can only gift an active Concert host or speaker" }, { status: 403 });
+    return NextResponse.json({ error: "You can only gift an active host or speaker in this room" }, { status: 403 });
   }
 
   const { data: rpcData, error: rpcError } = await supabase.rpc("spend_coins_on_gift", {

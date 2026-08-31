@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
+import { useIsNativeApp } from "@/components/NativeAppProvider";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { isSuperfanOrBetter } from "@/lib/membership";
 import { canRaiseHand } from "@/lib/spacesStage";
@@ -38,9 +39,29 @@ export function UpgradePrompt({
   action?: string;
   className?: string;
 }) {
+  const isNativeApp = useIsNativeApp();
+
+  if (isNativeApp) {
+    return (
+      <div
+        className={`rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 text-center ${className}`}
+      >
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-melori-purple/20">
+          <Sparkles className="h-6 w-6 text-melori-purple" />
+        </div>
+        <h3 className="text-lg font-bold">This action is not available</h3>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-melori-muted">
+          Your account doesn&apos;t include this yet. Everything you already have
+          is available here as soon as you sign in.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 text-center ${className}`}
+      data-native-hide
     >
       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-melori-purple/20">
         <Sparkles className="h-6 w-6 text-melori-purple" />

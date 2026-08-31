@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useIsNativeApp } from "@/components/NativeAppProvider";
 
 interface BuyButtonProps {
   /** Supabase release id — used for whole-album purchases. */
@@ -51,6 +52,7 @@ export default function BuyButton({
   title,
   variant = "default",
 }: BuyButtonProps) {
+  const isNativeApp = useIsNativeApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,6 +109,8 @@ export default function BuyButton({
     }
   }
 
+  if (isNativeApp) return null;
+
   const isCompact = variant === "compact";
   const label = loading
     ? "…"
@@ -119,6 +123,7 @@ export default function BuyButton({
       <>
         <button
           type="button"
+          data-native-hide
           onClick={handleBuy}
           disabled={loading}
           className="inline-flex shrink-0 items-center justify-center rounded-md border border-brand-primary px-2.5 py-1 text-xs font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
@@ -141,7 +146,7 @@ export default function BuyButton({
   }
 
   return (
-    <div className="mt-4 flex flex-col gap-2">
+    <div className="mt-4 flex flex-col gap-2" data-native-hide>
       <button
         type="button"
         onClick={handleBuy}

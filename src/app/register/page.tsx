@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useIsNativeApp } from "@/components/NativeAppProvider";
 import { supabase } from "@/lib/supabase";
 import { startOAuthSignIn } from "@/lib/nativeAuth";
 import {
@@ -39,6 +40,7 @@ const SNAPPD_PAYMENT_LINK =
 function RegisterInner() {
   const router = useRouter();
   const params = useSearchParams();
+  const isNativeApp = useIsNativeApp();
   // Single source of truth for redirect validation. This page used to carry its
   // own weaker prefix check, which let `/\evil.example` through — the two must
   // not be allowed to drift, so there is only one implementation now.
@@ -63,6 +65,12 @@ function RegisterInner() {
   // can resend the confirmation link without retyping / re-submitting.
   const [pendingEmail, setPendingEmail] = useState("");
   const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    if (isNativeApp) setTier("free");
+  }, [isNativeApp]);
+
+  const visibleTiers = isNativeApp ? TIERS.filter((tier) => tier.id === "free") : TIERS;
 
   const handleResendConfirmation = async () => {
     if (!pendingEmail) return;
@@ -104,6 +112,11 @@ function RegisterInner() {
     e.preventDefault();
     setError("");
     setNotice("");
+
+    if (isNativeApp && tier !== "free") {
+      setTier("free");
+      return;
+    }
 
     // Snappd goes straight to its own live Payment Link (hosted Stripe
     // Checkout). On completion Stripe redirects to /welcome?tier=snappd, which
@@ -193,7 +206,7 @@ function RegisterInner() {
     }
   };
 
-  const paid = tier !== "free";
+  const paid = tier !== "free" && !isNativeApp;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -201,15 +214,18 @@ function RegisterInner() {
         <div className="text-center mb-8">
           <p className="text-xs uppercase tracking-widest text-[#c9a96e]">Join Melori</p>
           <h1 className="text-3xl font-bold mt-1">Create your account</h1>
-          <p className="text-sm text-[#888] mt-1">Pick a plan to get started.</p>
+          <p className="text-sm text-[#888] mt-1">
+            {isNativeApp ? "Set up your free account." : "Pick a plan to get started."}
+          </p>
         </div>
 
         {/* Tier picker */}
         <div className="grid gap-3 mb-6">
-          {TIERS.map((t) => (
+          {visibleTiers.map((t) => (
             <button
               key={t.id}
               type="button"
+              data-native-hide={t.id === "free" ? undefined : ""}
               onClick={() => setTier(t.id)}
               className={`text-left rounded-2xl border p-4 transition ${
                 tier === t.id
@@ -248,7 +264,7 @@ function RegisterInner() {
         )}
 
         {paid ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center" data-native-hide>
             <p className="text-sm text-[#bbb]">
               {tier === "artist"
                 ? "Artist"

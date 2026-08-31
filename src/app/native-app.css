@@ -1,0 +1,46 @@
+/*
+ * App Store compliance backstop. The bootstrap script in layout.tsx sets
+ * data-native-app before first paint; components still gate affordances after
+ * hydration, while these selectors cover that initial frame.
+ *
+ * Route selectors deliberately match an exact route or its slash-delimited
+ * descendants. They must mirror matchesPrefix in src/lib/nativePlatform.ts:
+ * a "/book" selector must not hide unrelated paths such as "/bookmarks".
+ */
+
+html[data-native-app="1"] a[href="/donate"],
+html[data-native-app="1"] a[href^="/donate/"],
+html[data-native-app="1"] a[href^="/donate?"],
+html[data-native-app="1"] a[href^="/donate#"],
+html[data-native-app="1"] a[href="/membership"],
+html[data-native-app="1"] a[href^="/membership/"],
+html[data-native-app="1"] a[href^="/membership?"],
+html[data-native-app="1"] a[href^="/membership#"],
+html[data-native-app="1"] a[href="/store"],
+html[data-native-app="1"] a[href^="/store/"],
+html[data-native-app="1"] a[href^="/store?"],
+html[data-native-app="1"] a[href^="/store#"],
+html[data-native-app="1"] a[href="/cart"],
+html[data-native-app="1"] a[href^="/cart/"],
+html[data-native-app="1"] a[href^="/cart?"],
+html[data-native-app="1"] a[href^="/cart#"],
+html[data-native-app="1"] a[href="/checkout"],
+html[data-native-app="1"] a[href^="/checkout/"],
+html[data-native-app="1"] a[href^="/checkout?"],
+html[data-native-app="1"] a[href^="/checkout#"],
+html[data-native-app="1"] a[href="/pricing"],
+html[data-native-app="1"] a[href^="/pricing/"],
+html[data-native-app="1"] a[href^="/pricing?"],
+html[data-native-app="1"] a[href^="/pricing#"],
+html[data-native-app="1"] a[href="/book"],
+html[data-native-app="1"] a[href^="/book/"],
+html[data-native-app="1"] a[href^="/book?"],
+html[data-native-app="1"] a[href^="/book#"],
+html[data-native-app="1"] a[href^="/register?"][href*="tier=artist"],
+html[data-native-app="1"] a[href^="/register?"][href*="tier=superfan"],
+html[data-native-app="1"] a[href^="/register?"][href*="tier=snappd"],
+html[data-native-app="1"] a[href^="https://buy.stripe.com"],
+html[data-native-app="1"] a[href^="https://checkout.stripe.com"],
+html[data-native-app="1"] [data-native-hide] {
+  display: none !important;
+}

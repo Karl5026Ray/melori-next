@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAdminSecretKey } from "@/lib/admin-secret";
+import {
+  NATIVE_INFO_PATH,
+  isBlockedNativeApi,
+  isBlockedNativePage,
+  isNativeUserAgent,
+} from "@/lib/nativePlatform";
 
 // Do NOT fall back to a hard-coded secret — the previous fallback string was
 // public in this repo, so a misconfigured production env would let anyone
@@ -77,8 +83,38 @@ async function guardAdmin(request: NextRequest): Promise<NextResponse> {
   }
 }
 
+function guardNativeCommerce(
+  request: NextRequest,
+  pathname: string,
+): NextResponse | null {
+  if (!isNativeUserAgent(request.headers.get("user-agent"))) return null;
+
+  if (isBlockedNativeApi(pathname)) {
+    return NextResponse.json(
+      {
+        error:
+          "Purchases and donations are not available in the Melori Music app.",
+      },
+      { status: 403 },
+    );
+  }
+
+  if (isBlockedNativePage(pathname, request.nextUrl.searchParams.get("tier"))) {
+    return NextResponse.redirect(new URL(NATIVE_INFO_PATH, request.url));
+  }
+
+  return null;
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
+
+  const nativeBlock = guardNativeCommerce(request, pathname);
+  if (nativeBlock) return nativeBlock;
+
+  if (isBlockedNativeApi(pathname)) {
+    return NextResponse.next();
+  }
 
   // Admin dashboard gate runs first — its redirects should not carry the
   // HTML cache-control override (they're 307/308 redirects, not documents).
@@ -99,6 +135,12 @@ export const config = {
   //     keep their existing long-lived cache headers).
   matcher: [
     "/admin/:path*",
+    "/api/donate/checkout",
+    "/api/music/checkout",
+    "/api/store/checkout",
+    "/api/gallery/checkout",
+    "/api/gifts/checkout",
+    "/api/booking/create",
     "/((?!api/|_next/|favicon.ico|.*\\..*).*)",
   ],
 };

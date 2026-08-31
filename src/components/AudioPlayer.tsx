@@ -98,22 +98,11 @@ export default function AudioPlayer() {
     if (inRoom || onMirror) pause();
   }, [inRoom, onMirror, pause]);
 
-<<<<<<< HEAD
-  // The Radio page renders full-size controls for the same shared player, so
-  // the floating transport there would just be a duplicate set of buttons.
-  // Only the UI is hidden — the audio keeps playing from PlayerProvider.
-  if (onRadio) return null;
-  // Hidden on room screens and Mirror. The <audio> element lives in
-  // PlayerProvider (mounted at the layout root), so playback state survives
-  // this component rendering null.
-  if (inRoom || onMirror) return null;
-=======
   // Everywhere except the main page renders no transport. The <audio> element
   // lives in PlayerProvider (mounted at the layout root), so a track started
   // on the main page keeps playing as the listener browses — only the UI is
   // route-scoped. Pages that need controls (Radio) render their own.
   if (!onMainPage) return null;
->>>>>>> origin/main
 
   return (
     <>

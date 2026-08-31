@@ -266,16 +266,10 @@ a {
 /* Cards fit the actual visible slot. The vh fallback precedes dvh so an older
    browser never drops the height declaration entirely.
 
-<<<<<<< HEAD
-   AudioPlayer hides itself on the Mirror route (background music would fight
-   each card's soundtrack), so the 4rem + 0.5rem the base `--mirror-bottom`
-   reserved for the pill is dead space here. Override the variable on the
-=======
    AudioPlayer never renders on the Mirror route (it is main-page only, and
    background music would fight each card's soundtrack anyway), so the 4rem +
    0.5rem the base `--mirror-bottom` reserves for the pill is dead space here.
    Override the variable on the
->>>>>>> origin/main
    viewport so the feed reclaims that room: mobile only clears the tab bar,
    desktop only leaves a small breathing gap. The override cascades to
    .mirror-video-item automatically. */

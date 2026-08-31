@@ -45,5 +45,5 @@ export function isBlockedNativePage(
     return true;
   }
 
-  return matchesPrefix(pathname, "/register") && Boolean(tier) && PAID_TIERS.has(tier);
+  return matchesPrefix(pathname, "/register") && !!tier && PAID_TIERS.has(tier);
 }

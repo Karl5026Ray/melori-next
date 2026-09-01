@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { signOutThisDevice } from "@/lib/authSession";
 import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
 import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
+import { useIsNativeApp } from "@/components/NativeAppProvider";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -48,6 +49,7 @@ const PHOTO_ITEMS: NavItem[] = [
 
 export default function Header() {
   const pathname = usePathname() ?? "";
+  const isNativeApp = useIsNativeApp();
   // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
   // PR that runs on every page for a signed-in member, and it was what broke
   // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
@@ -462,12 +464,14 @@ export default function Header() {
             Profile
           </Link>
 
+          {!isNativeApp && (
           <Link
             href="/donate"
             className="ml-1 rounded-md bg-brand-primary px-4 py-1.5 font-semibold text-black transition-opacity hover:opacity-90"
           >
             Donate
           </Link>
+          )}
         </nav>
         {/* Hamburger toggle moved to the LEFT cluster (top of file), next to
            the brand mark, since the drawer opens from the left. */}
@@ -710,13 +714,15 @@ export default function Header() {
                 </Link>
               ))}
 
-            <Link
+          {!isNativeApp && (
+          <Link
               href="/donate"
               onClick={() => setOpen(false)}
               className="my-3 rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
             >
               Donate
             </Link>
+          )}
         </div>
       </nav>
 

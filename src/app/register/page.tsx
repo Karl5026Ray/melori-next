@@ -275,14 +275,14 @@ function RegisterInner() {
               you&apos;ll finish creating your account.
             </p>
             {(tier === "artist" || tier === "snappd") && (
-  <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
+  <div data-native-hide className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
     <p className="text-sm font-medium text-[#f0d99c]">
       After you join, set up payouts to get paid
     </p>
     <p className="mt-1 text-xs text-[#888]">
       {tier === "snappd"
-        ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"
-        : "No platform cut on music sales — you keep every dollar after Stripe's payment processing fee. Once your account is created, head to Artist Studio \u2192 Payouts to connect Stripe. Have these ready:"}
+        ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio → Payouts to connect Stripe. Have these ready:"
+        : "No platform cut on music sales — you keep every dollar after Stripe's payment processing fee. Once your account is created, head to Artist Studio → Payouts to connect Stripe. Have these ready:"}
     </p>
     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
       <li>A government-issued photo ID to verify your identity.</li>

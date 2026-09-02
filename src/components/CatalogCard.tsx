@@ -57,7 +57,13 @@ export default function CatalogCard({ item }: { item: CatalogItem }) {
             {item.trackPlayCounts && (
               <PlayCount baseline={item.trackPlayCounts} />
             )}
-            <span className="font-medium text-brand-primary">
+            {/* data-native-hide: a price is a purchase affordance under App
+                Store guideline 3.1.1, and this card renders on ISR-cached pages
+                whose HTML is shared by web and app visitors alike — the server
+                cannot know the platform, so the pre-paint CSS in native-app.css
+                is what removes it inside the wrapper. See
+                docs/ios-app-store-compliance.md. */}
+            <span data-native-hide className="font-medium text-brand-primary">
               {formatPriceCents(item.priceCents)}
             </span>
           </span>

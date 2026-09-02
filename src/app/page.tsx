@@ -161,7 +161,9 @@ Melori is where independent creators share their work, go live, and earn — you
 <NameMeaning />
 
 {/* Why Melori — value props */}
-<section className="max-w-6xl mx-auto px-6 pb-20">
+{/* Marketing copy about buying, selling and unlocking with a plan. Harmless
+    on the web, an alternative-payment call to action inside the wrapper. */}
+<section data-native-hide className="max-w-6xl mx-auto px-6 pb-20">
 <div className="grid gap-6 sm:grid-cols-3">
 <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
 <h3 className="text-lg font-semibold text-text-primary">Preview freely</h3>

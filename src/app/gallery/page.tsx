@@ -171,11 +171,16 @@ export default async function GalleryIndexPage() {
             title="Instant downloads"
             body="Grab clean, full-resolution files the moment they're ready."
           />
-          <Feature
-            icon={<ShoppingBag className="h-5 w-5" />}
-            title="Buy digital copies"
-            body="Purchase watermark-free digital downloads securely via Stripe."
-          />
+          {/* Names a purchase and an external payment processor by name —
+              exactly what guideline 3.1.1 treats as an alternative payment
+              mechanism. Hidden inside the wrapper before first paint. */}
+          <div data-native-hide className="contents">
+            <Feature
+              icon={<ShoppingBag className="h-5 w-5" />}
+              title="Buy digital copies"
+              body="Purchase watermark-free digital downloads securely via Stripe."
+            />
+          </div>
         </div>
       </section>
     </main>

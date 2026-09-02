@@ -141,6 +141,8 @@ export const config = {
     "/api/gallery/checkout",
     "/api/gifts/checkout",
     "/api/booking/create",
+    "/api/music/download",
+    "/api/gallery/download",
     "/((?!api/|_next/|favicon.ico|.*\\..*).*)",
   ],
 };

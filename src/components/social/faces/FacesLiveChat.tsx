@@ -221,6 +221,7 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
           </form>
         ) : (
           <button
+            data-native-hide
             type="button"
             onClick={() => router.push("/membership")}
             className="w-full rounded-full border border-white/25 bg-black/30 px-4 py-2 text-center text-sm font-medium text-white/90 backdrop-blur-md"

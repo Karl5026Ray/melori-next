@@ -152,9 +152,16 @@ function DesktopBar() {
       className="hidden md:block fixed bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur"
       style={{ transform: "translate3d(0,0,0)", willChange: "transform" }}
     >
-      {/* Free-preview upgrade prompt — shown when a 30s sample ends. */}
+      {/* Free-preview upgrade prompt — shown when a 30s sample ends.
+          data-native-hide: this is the single most exposed purchase call to
+          action in the product. It fires the moment a 30-second preview ends,
+          which is exactly what an App Review tester does first in a music app,
+          and it carries both a plan name and a price ("Become a Superfan",
+          "Upgrade — $2.99/mo"). The CSS route selectors in native-app.css hide
+          the /membership anchor but not the sentence around it, so the whole
+          banner is marked. See docs/ios-app-store-compliance.md. */}
       {current && sampleEnded && (
-        <div className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
+        <div data-native-hide className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
           <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="text-text-secondary">
               You&apos;re hearing a 30-second preview. Become a Superfan to play

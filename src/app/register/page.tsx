@@ -235,7 +235,14 @@ function RegisterInner() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-semibold">{t.name}</span>
-                <span className="text-sm text-[#c9a96e]">{t.price}</span>
+                {/* The paid cards are already hidden natively, which left the
+                    free tier's "$0" as the only price rendering in the wrapper.
+                    $0 is not a purchase, but it is an amount in a pricing
+                    table, and this app has been rejected three times over this
+                    class of thing. The wrapper shows plan names, not amounts. */}
+                <span data-native-hide className="text-sm text-[#c9a96e]">
+                  {t.price}
+                </span>
               </div>
               <p className="text-xs text-[#888] mt-1">{t.blurb}</p>
             </button>

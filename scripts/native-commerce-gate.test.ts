@@ -56,6 +56,16 @@ for (const tier of ["artist", "superfan", "snappd"]) {
 }
 
 for (const path of [
+  "/music/success",
+  "/music/success/anything",
+  "/gallery/purchase",
+  "/gallery/purchase/success",
+  "/download-success",
+]) {
+  expect(`${path} is blocked in the app`, isBlockedNativePage(path), true);
+}
+
+for (const path of [
   "/",
   "/music",
   "/music/12",
@@ -75,6 +85,12 @@ for (const path of [
   "/api/gallery/checkout",
   "/api/gifts/checkout",
   "/api/booking/create",
+  // Guideline 3.1.1, second finding on submission 6c0eeca5. Music and photo
+  // sales stay on the web, so the app must not deliver what was bought there.
+  // These flipped from allowed to refused on 2 Sep 2026 — deliberately, and
+  // the assertion above was updated in the same commit.
+  "/api/music/download",
+  "/api/gallery/download",
 ]) {
   expect(`${path} is refused in the app`, isBlockedNativeApi(path), true);
 }
@@ -83,7 +99,6 @@ for (const path of [
   "/api/gifts",
   "/api/gifts/send",
   "/api/gifts/wallet",
-  "/api/music/download",
   "/api/members/stripe-webhook",
   "/api/music/checkout-history",
 ]) {

@@ -105,6 +105,31 @@ Superfan streaming is untouched too, and is covered instead by the subscription
 IAP rail: once subscriptions are purchasable in-app, 3.1.3(b) is satisfied for
 subscription content.
 
+## Merch is web-only too — a deliberate over-block
+
+Apple does not require this one. Guideline 3.1.5(a) says goods consumed outside
+the app **must not** use IAP, and the store sells physical items only — hoodie,
+tee, mug, tote. Blocking `/store` inside the wrapper is stricter than the
+guidelines demand, and it costs real merch revenue from app users.
+
+It stays blocked anyway. Decision by Karl on 5 Sep 2026, while 1.0.2 sat in
+review after three consecutive 3.1.1 rejections: a mixed digital/physical
+storefront is exactly the surface a reviewer misreads, and a fourth rejection
+costs more than the merch it would earn. Safety over revenue until the app is
+approved and stable.
+
+**Do not "fix" this as dead code or an over-block.** It is intentional.
+
+Revisit only when all three hold:
+- 1.0.2 (or later) is approved and released
+- the store surface can be proven physical-only, with no digital item and no
+  path from a merch page to music, gallery, membership or coins
+- there is an appetite to re-enter review if it is misread
+
+If it is ever unblocked, `/cart` and `/checkout` are shared with digital goods
+and must stay blocked, which means the merch flow needs its own physical-only
+cart and checkout route before `/store` can come back.
+
 ## Adding a new paid feature
 
 1. Add the route to `BLOCKED_PAGE_PREFIXES` (or the handler to

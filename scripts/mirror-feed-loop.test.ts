@@ -11,6 +11,9 @@ import {
   refreshManualNavigationGuard,
   releaseManualNavigationGuard,
   shouldLoopVideoCardMedia,
+  buildMirrorRenderList,
+  shouldAppendMirrorCycle,
+  MIRROR_MAX_RECYCLE_CYCLES,
 } from "@/lib/mirrorFeedNavigation";
 
 let failures = 0;
@@ -254,4 +257,78 @@ console.log(
     ? "\nAll Mirror feed looping contracts passed.\n"
     : `\n${failures} Mirror feed looping contract(s) failed.\n`,
 );
+// --- Endless scroll wrap (074 / fix: feed dead-ended at the last card) -------
+
+console.log("\nMirror endless-scroll recycling\n");
+
+const three = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+assertEq(
+  "a single cycle renders each loaded item exactly once",
+  buildMirrorRenderList(three, 1).length,
+  3,
+);
+assertEq(
+  "a second cycle re-renders the same items without refetching",
+  buildMirrorRenderList(three, 2).length,
+  6,
+);
+assertEq(
+  "recycled entries keep the original video id for playback callbacks",
+  buildMirrorRenderList(three, 2)[3]?.item.id,
+  "a",
+);
+assert(
+  "recycled React keys are unique across cycles",
+  new Set(buildMirrorRenderList(three, 3).map((r) => r.key)).size === 9,
+);
+assertEq(
+  "the first cycle keeps the bare id as its key",
+  buildMirrorRenderList(three, 2)[0]?.key,
+  "a",
+);
+assertEq(
+  "an empty feed renders nothing rather than throwing",
+  buildMirrorRenderList([], 4).length,
+  0,
+);
+
+assert(
+  "nearing the end with no cursor appends another cycle",
+  shouldAppendMirrorCycle({
+    cursor: null, baseCount: 3, renderedCount: 3, activeIndex: 1, cycles: 1,
+  }),
+);
+assert(
+  "a pending cursor keeps pagination in charge instead of recycling",
+  !shouldAppendMirrorCycle({
+    cursor: "2026-09-05_abc", baseCount: 3, renderedCount: 3, activeIndex: 2, cycles: 1,
+  }),
+);
+assert(
+  "sitting far from the end does not grow the DOM",
+  !shouldAppendMirrorCycle({
+    cursor: null, baseCount: 20, renderedCount: 20, activeIndex: 2, cycles: 1,
+  }),
+);
+assert(
+  "a one-item feed is left to the in-place media loop",
+  !shouldAppendMirrorCycle({
+    cursor: null, baseCount: 1, renderedCount: 1, activeIndex: 0, cycles: 1,
+  }),
+);
+assert(
+  "recycling stops at the ceiling so a feed left open cannot grow forever",
+  !shouldAppendMirrorCycle({
+    cursor: null, baseCount: 3, renderedCount: 150,
+    activeIndex: 149, cycles: MIRROR_MAX_RECYCLE_CYCLES,
+  }),
+);
+
+assertEq(
+  "the wrap still closes the loop across a recycled sequence",
+  nextMirrorVideoIndex(5, 6),
+  0,
+);
+
 process.exit(failures === 0 ? 0 : 1);

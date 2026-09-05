@@ -331,4 +331,26 @@ assertEq(
   0,
 );
 
+// --- Vertical YouTube rendering (fix: Shorts rendered as a tiny strip) ------
+
+console.log("\nMirror vertical YouTube rendering\n");
+
+const youtubeBlock = videoCard.slice(
+  videoCard.indexOf("{youtubeId ? ("),
+  videoCard.indexOf(") : isAudio ? ("),
+);
+
+assert(
+  "the active YouTube player is not boxed into a fixed 16:9 wrapper",
+  !youtubeBlock.includes("aspect-video max-h-full"),
+);
+assert(
+  "the YouTube player wrapper fills the whole vertical card",
+  youtubeBlock.includes('<div className="relative h-full w-full">'),
+);
+assert(
+  "the inactive poster is still centered and fit, not stretched",
+  youtubeBlock.includes("object-contain"),
+);
+
 process.exit(failures === 0 ? 0 : 1);

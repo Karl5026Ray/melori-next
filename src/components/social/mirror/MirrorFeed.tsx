@@ -10,6 +10,8 @@ import {
   MANUAL_NAVIGATION_IDLE_MS,
   releaseManualNavigationGuard,
   refreshManualNavigationGuard,
+  buildMirrorRenderList,
+  shouldAppendMirrorCycle,
   type ManualNavigationGuard,
 } from "@/lib/mirrorFeedNavigation";
 import { Compass } from "lucide-react";
@@ -43,6 +45,12 @@ export default function MirrorFeed({
   // Start at 0 so the first video plays immediately on load (the scroller opens
   // on it). The scroll listener keeps this in sync as the user moves.
   const [activeIndex, setActiveIndex] = useState(0);
+  // Endless scroll: once pagination is exhausted the loaded items are
+  // re-rendered as additional cycles so swiping wraps instead of dead-ending.
+  // This appends no data and issues no request -- see mirrorFeedNavigation.
+  const [cycles, setCycles] = useState(1);
+
+  const renderList = buildMirrorRenderList(videos, cycles);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -50,6 +58,7 @@ export default function MirrorFeed({
   // Refs let a late media `ended` event verify that its card is still current
   // before moving the feed. That preserves a user's manual swipe/navigation.
   const videosRef = useRef(videos);
+  const renderLengthRef = useRef(1);
   const activeIndexRef = useRef(activeIndex);
   const completionInFlightRef = useRef<string | null>(null);
   // Manual navigation is detected before React's state update commits. A
@@ -65,14 +74,37 @@ export default function MirrorFeed({
   }, [videos]);
 
   useEffect(() => {
+    renderLengthRef.current = Math.max(1, renderList.length);
+  }, [renderList.length]);
+
+  useEffect(() => {
     activeIndexRef.current = activeIndex;
     // A fresh card may complete during the next trip through the feed. Keep
     // the previous completion latched only while its source card remains the
     // active one, so duplicate browser/iframe end events cannot chain-advance.
-    if (videos[activeIndex]?.id !== completionInFlightRef.current) {
+    if (renderList[activeIndex]?.item.id !== completionInFlightRef.current) {
       completionInFlightRef.current = null;
     }
-  }, [activeIndex, videos]);
+  }, [activeIndex, renderList]);
+
+  // Endless scroll: when pagination is exhausted and the viewer is within
+  // MIRROR_RECYCLE_LOOKAHEAD cards of the end, append one more recycled cycle
+  // of the SAME loaded items. Purely a render-list operation -- no fetch, no
+  // mutation of `videos`, so keyset pagination and delete callbacks are
+  // unaffected.
+  useEffect(() => {
+    if (
+      shouldAppendMirrorCycle({
+        cursor,
+        baseCount: videos.length,
+        renderedCount: renderList.length,
+        activeIndex,
+        cycles,
+      })
+    ) {
+      setCycles((c) => c + 1);
+    }
+  }, [cursor, videos.length, renderList.length, activeIndex, cycles]);
 
   const clearManualNavigationTimer = useCallback(() => {
     if (manualNavigationTimerRef.current !== null) {
@@ -138,9 +170,9 @@ export default function MirrorFeed({
     const container = containerRef.current;
     const advance = getMirrorPlaybackEndAdvance({
       videoId,
-      activeVideoId: currentVideos[currentIndex]?.id,
+      activeVideoId: currentVideos[currentIndex % Math.max(1, currentVideos.length)]?.id,
       activeIndex: currentIndex,
-      itemCount: currentVideos.length,
+      itemCount: renderLengthRef.current,
       pageHeight: container?.clientHeight ?? 0,
       manualNavigationInProgress: manualNavigationRef.current !== null,
       completionInFlightVideoId: completionInFlightRef.current,
@@ -175,7 +207,7 @@ export default function MirrorFeed({
     const currentPage = () => {
       const vh = container.clientHeight || 1;
       const page = Math.round(container.scrollTop / vh);
-      return Math.max(0, Math.min(page, videos.length - 1));
+      return Math.max(0, Math.min(page, renderLengthRef.current - 1));
     };
 
     const synchronizeNavigationRef = () => {
@@ -236,7 +268,7 @@ export default function MirrorFeed({
       }
     };
   }, [
-    videos.length,
+    renderList.length,
     clearSettledManualNavigation,
     markManualNavigationIntent,
   ]);
@@ -255,6 +287,8 @@ export default function MirrorFeed({
           await res.json();
         setVideos((prev) => [...prev, ...(data.items ?? [])]);
         setCursor(data.nextCursor ?? null);
+        // Genuinely new posts supersede any recycled cycles.
+        setCycles(1);
       }
     } catch {
       /* transient — the sentinel will retry on next scroll */
@@ -357,9 +391,9 @@ export default function MirrorFeed({
           }}
           onWheel={() => markManualNavigationIntent(false)}
         >
-          {videos.map((video, index) => (
+          {renderList.map(({ item: video, key }, index) => (
             <div
-              key={video.id}
+              key={key}
               data-index={index}
               className="mirror-video-item video-snap-item relative h-full w-full flex-shrink-0 overflow-hidden"
             >
@@ -367,7 +401,7 @@ export default function MirrorFeed({
                 video={video}
                 isActive={index === activeIndex}
                 distance={Math.abs(index - activeIndex)}
-                shouldLoop={videos.length === 1}
+                shouldLoop={renderList.length === 1}
                 onPlaybackEnded={handlePlaybackEnded}
                 onDeleted={(id) =>
                   setVideos((prev) => prev.filter((v) => v.id !== id))

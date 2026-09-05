@@ -473,7 +473,15 @@ function VideoCardBase({
         // is never blank during a fast scroll.
         <div className="absolute inset-0 flex items-center justify-center bg-black">
           {isActive ? (
-            <div className="relative aspect-video max-h-full w-full">
+            // Mirror is a VERTICAL feed. This wrapper used to be
+            // a fixed 16:9 box sitting inside a 9:16 card
+            // (447x251 inside 447x610). YouTube then pillarboxed a 9:16 Short
+            // inside THAT, so a full-screen WTB episode rendered as a ~141x251
+            // strip adrift in black on all four sides. Filling the card means
+            // the player applies exactly one fit: a vertical post fills it,
+            // and a landscape post letterboxes to the same card-width x 9/16
+            // it already occupied -- so 16:9 uploads are unchanged.
+            <div className="relative h-full w-full">
               <iframe
                 ref={youtubeFrameRef}
                 // Remount per card so the src is applied cleanly on activation.

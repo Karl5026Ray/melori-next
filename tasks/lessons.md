@@ -63,3 +63,24 @@ Patterns to not repeat. Each entry is a correction that cost real time.
 - **Check the paperwork dependency first.** No IAP product can be created until
   the Paid Applications Agreement, banking and tax forms are complete. A day of
   code is worthless if that gate is closed.
+
+- **Run the whole unit suite, not the suites you think are relevant.** A
+  VideoCard layout change passed `test:mirror-loop` and `test:video-mirror`
+  locally and then failed CI, because `test:mobile-layout` held a separate
+  contract on the same JSX. CI runs `npm run test:unit` (32 suites); anything
+  less than that locally is a guess, not a check.
+- **"Tests pass" is not "the feature works".** A Mirror change imported its
+  guard function into the component but never called it. `tsc` was clean and
+  every assertion passed, because the tests exercised the helper directly and
+  nothing asserted the component used it. When a fix is wiring, assert on the
+  wiring.
+- **When a test blocks a change, read why it exists before deleting it.** The
+  16:9 YouTube stage was a deliberate contract protecting landscape posts from
+  cropping, not stale cruft. The right move was to supersede it in place with
+  the reason and keep the original intent, not to quietly drop the assertion.
+- **Quote ratios, not one screen's pixels.** A comment explaining the Mirror
+  fix led with "447x251 inside 447x610" — measurements from one browser pane —
+  and read as a claim that Mirror renders at 447px. The source files are
+  1080x1920 and the defect was the SHAPE of the stage, which costs a vertical
+  post its height at any size or pixel density. State the ratio; the pixels are
+  an example, not the point.

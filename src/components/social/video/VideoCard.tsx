@@ -473,7 +473,21 @@ function VideoCardBase({
         // is never blank during a fast scroll.
         <div className="absolute inset-0 flex items-center justify-center bg-black">
           {isActive ? (
-            <div className="relative aspect-video max-h-full w-full">
+            // Mirror is a VERTICAL feed. This wrapper used to pin the player
+            // to a fixed 16:9 box inside a ~9:16 card, which cost a vertical
+            // post its height TWICE, at any screen size or pixel density:
+            //   1. the box takes card-width x 9/16  -> ~41% of the card height
+            //   2. YouTube then pillarboxes the 9:16 source inside that box
+            //      -> ~32% of the card width
+            // A 1080x1920 episode therefore landed on roughly a tenth of the
+            // card area regardless of how many device pixels were available.
+            // (Measured on a 447x610 CSS card: 447x251 box, 141x251 video.)
+            //
+            // Filling the card means the player applies exactly one fit: a
+            // vertical post fills it, and a landscape post still letterboxes
+            // to the same card-width x 9/16 it already occupied, so 16:9
+            // uploads are unchanged and nothing is ever cropped.
+            <div className="relative h-full w-full">
               <iframe
                 ref={youtubeFrameRef}
                 // Remount per card so the src is applied cleanly on activation.

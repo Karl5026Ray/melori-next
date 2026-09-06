@@ -345,8 +345,13 @@ assert(
   !youtubeBlock.includes("aspect-video max-h-full"),
 );
 assert(
-  "the YouTube player wrapper fills the whole vertical card",
-  youtubeBlock.includes('<div className="relative h-full w-full">'),
+  "a portrait YouTube post gets the same 9:16 stage as a native upload",
+  youtubeBlock.includes("video.is_vertical") &&
+    youtubeBlock.includes('? "relative aspect-[9/16] h-full max-w-full"'),
+);
+assert(
+  "a landscape YouTube post still fills the card and lets the player fit",
+  youtubeBlock.includes(': "relative h-full w-full"'),
 );
 assert(
   "the inactive poster is still centered and fit, not stretched",

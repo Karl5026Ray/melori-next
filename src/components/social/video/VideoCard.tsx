@@ -473,21 +473,30 @@ function VideoCardBase({
         // is never blank during a fast scroll.
         <div className="absolute inset-0 flex items-center justify-center bg-black">
           {isActive ? (
-            // Mirror is a VERTICAL feed. This wrapper used to pin the player
-            // to a fixed 16:9 box inside a ~9:16 card, which cost a vertical
-            // post its height TWICE, at any screen size or pixel density:
-            //   1. the box takes card-width x 9/16  -> ~41% of the card height
-            //   2. YouTube then pillarboxes the 9:16 source inside that box
-            //      -> ~32% of the card width
-            // A 1080x1920 episode therefore landed on roughly a tenth of the
-            // card area regardless of how many device pixels were available.
-            // (Measured on a 447x610 CSS card: 447x251 box, 141x251 video.)
+            // Mirror is a VERTICAL feed, so the stage is chosen from the
+            // post's own orientation (social_videos.is_vertical, migration
+            // 075) rather than left to whatever fit YouTube's player picks.
             //
-            // Filling the card means the player applies exactly one fit: a
-            // vertical post fills it, and a landscape post still letterboxes
-            // to the same card-width x 9/16 it already occupied, so 16:9
-            // uploads are unchanged and nothing is ever cropped.
-            <div className="relative h-full w-full">
+            // This wrapper used to be a fixed 16:9 box for EVERY YouTube post.
+            // Inside a ~9:16 card that cost a portrait post its height twice:
+            // the box took card-width x 9/16 (~41% of the height), then the
+            // player pillarboxed the 9:16 source inside that (~32% of the
+            // width), so a 1080x1920 episode landed on roughly a tenth of the
+            // card at any size or pixel density.
+            //
+            //   portrait -> the same 9:16 stage the native branch uses, so a
+            //               REFLECT episode fills the card edge to edge;
+            //   otherwise -> fill the card and let the player fit. A 16:9
+            //               video letterboxes to card-width x 9/16, exactly
+            //               the box it already had, so landscape posts are
+            //               unchanged and nothing is ever cropped.
+            <div
+              className={
+                video.is_vertical
+                  ? "relative aspect-[9/16] h-full max-w-full"
+                  : "relative h-full w-full"
+              }
+            >
               <iframe
                 ref={youtubeFrameRef}
                 // Remount per card so the src is applied cleanly on activation.

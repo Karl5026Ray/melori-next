@@ -18,24 +18,38 @@ name: E2E (Playwright)
 # own track into localStorage and never reads the catalog, and the client
 # bundle only needs the NEXT_PUBLIC_* pair to be present and well-formed in
 # order to hydrate. Repo secrets override them when configured.
+#
+# ---------------------------------------------------------------------------
+# WHY THERE IS NO `paths-ignore` HERE ANY MORE  (2026-09-07)
+# ---------------------------------------------------------------------------
+# This workflow used to declare:
+#
+#   paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**", "public/**"]
+#
+# and "Mobile FloatingPlayer @ 390x844" is a REQUIRED status check on main.
+# Those two facts cannot both hold. On a docs-only PR the workflow never
+# triggered, so the required check never reported, so branch protection sat
+# forever on "Expected — Waiting for status to be reported" and the PR could
+# never be merged by anyone. GitHub does not distinguish "this check was
+# skipped on purpose" from "this check has not answered yet".
+#
+# That is not a theory. PRs #336, #347 and #359 — all documentation or image
+# only, all otherwise green — were stuck exactly there for up to eleven days,
+# and merging #336 returned:
+#
+#   405 Required status check "Mobile FloatingPlayer @ 390x844" is expected.
+#
+# The fix is that the JOB always runs and therefore always reports, and the
+# EXPENSIVE PART of it is what gets skipped. A docs-only PR now gets a green
+# check in roughly twenty seconds instead of a permanent block. Do not
+# reintroduce `paths-ignore` on this workflow while this check is required —
+# put the filter in the `scope` step below instead.
 
 on:
   pull_request:
     branches: [main]
-    # Skip runs when only docs / markdown / images change — the suite exercises
-    # runtime UI, so those never affect it.
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
-      - "public/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
-      - "public/**"
   # Manual trigger — handy for pointing the suite at a deployed URL ad hoc
   # (e.g. verifying production after a Vercel domain change). Leave blank to
   # test the checked-out commit, same as a PR run.
@@ -61,8 +75,66 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need both sides of the comparison below.
+          fetch-depth: 0
+
+      # The path filter that used to live in `on:`. Same list, but evaluated
+      # INSIDE a job that always reports, so a skip is a green check rather
+      # than a check that never answers.
+      - name: Decide whether this change can affect the player
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # A manual run is always deliberate — never filter it out.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run — testing regardless of paths."
+            exit 0
+          fi
+
+          if [ "$EVENT" = "pull_request" ]; then
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            # First push to a new branch reports the all-zero SHA.
+            if [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+              echo "No previous SHA to compare against — testing."
+              exit 0
+            fi
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+          CHANGED="$(git diff --name-only "$RANGE" || true)"
+          if [ -z "$CHANGED" ]; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No files changed — nothing for the player suite to test."
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED" | sed 's/^/  /'
+
+          # Anything NOT matching the ignore list makes this run relevant.
+          RELEVANT="$(printf '%s\n' "$CHANGED" \
+            | grep -vE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^public/)' || true)"
+
+          if [ -z "$RELEVANT" ]; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "Docs / images only — the player suite cannot be affected."
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Runtime files changed — running the suite."
+          fi
 
       - name: Setup Node
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-node@v4
         with:
           # GHA is deprecating Node 20 on its runners; 22 is the current LTS.
@@ -70,16 +142,18 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.scope.outputs.relevant == 'true'
         run: npm ci
 
       # Chromium only — the mobile-chromium project pins browserName=chromium,
       # so we skip the ~1GB WebKit / Firefox downloads.
       - name: Install Playwright browsers
+        if: steps.scope.outputs.relevant == 'true'
         run: npx playwright install --with-deps chromium
 
       # Skipped when a deployed URL was supplied via workflow_dispatch.
       - name: Build the app under test
-        if: github.event.inputs.base_url == ''
+        if: steps.scope.outputs.relevant == 'true' && github.event.inputs.base_url == ''
         env:
           # Placeholders keep the client bundle constructible; see the header
           # note. Real repo secrets take precedence wherever they are set.
@@ -94,6 +168,7 @@ jobs:
       # Playwright boots `npm run start` against the build above and tears it
       # down afterwards (see the webServer block in playwright.config.ts).
       - name: Run Playwright tests
+        if: steps.scope.outputs.relevant == 'true'
         env:
           BASE_URL: ${{ github.event.inputs.base_url }}
           CI: "true"
@@ -106,6 +181,10 @@ jobs:
         run: |
           echo "Testing: ${BASE_URL:-the checked-out commit at http://127.0.0.1:3000}"
           npm run test:e2e
+
+      - name: Skipped — no runtime files changed
+        if: steps.scope.outputs.relevant != 'true'
+        run: echo "Docs / image only change. The player suite has nothing to exercise, so this check passes without running it."
 
       # Uploads screenshots, videos, and traces on failure so we can diagnose
       # regressions without re-running locally.

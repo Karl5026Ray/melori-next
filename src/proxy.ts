@@ -18,21 +18,70 @@ import {
 const ADMIN_SECRET_KEY = getAdminSecretKey();
 
 // ---------------------------------------------------------------------------
-// melori.org — the front door.
+// The door.
 //
-// melori.org is a marketing/signup surface only. It is deliberately NOT a
-// second copy of the app: Supabase session cookies are host-scoped, so letting
-// people sign in on both domains would give every member two independent
-// sessions, and NEXT_PUBLIC_APP_URL (one value, melorimusic.org) would throw
-// them across domains mid-flow anyway.
+// A signed-out visitor gets /platform — the signup page — instead of the
+// catalog. This is not cosmetic: since #353 the stream routes answer 401 to an
+// unauthenticated caller, so every play button on the catalog is a dead end for
+// someone who is not signed in. Showing them the catalog first is showing them
+// a product they cannot use.
 //
-// So: the root serves the door, and everything else is handed to the app.
+// WHY THIS LIVES HERE AND NOT IN app/page.tsx
+// -------------------------------------------
+// The home page is ISR (`export const revalidate = 60`) and that is
+// load-bearing. Branching on auth state inside the page makes the route dynamic
+// again, and Next.js stamps every dynamic response with `no-store` — the exact
+// directive that makes iOS WKWebView wrappers discard a healthy 200 and show
+// "This page couldn't load". Issue #280 and PRs #282/#284 were spent getting rid
+// of it. The proxy runs before the page and does not touch its caching.
+//
+// WHY A COOKIE CHECK IS ENOUGH HERE (AND WHY IT ISN'T ALONE)
+// ----------------------------------------------------------
+// supabaseCookieStorage.ts makes cookies the primary session store, so the
+// presence of an `sb-<ref>-auth-token` cookie is an accurate signal for almost
+// every visitor. It is a PRESENCE test, not verification — deliberately. A
+// stale cookie means someone sees the app instead of the door, which is the
+// harmless direction; the reverse would lock a real member out of their own
+// site.
+//
+// The gap it cannot close: WebKit's ITP caps script-written cookies at 7 days
+// regardless of Max-Age, so an iOS member can hold a live session in the
+// localStorage mirror with no cookie left. /platform handles that itself — it
+// calls supabase.auth.getSession() on mount and forwards a real session to
+// /music. So an evicted cookie costs one redirect, never a login.
+const DOOR_PATH = "/platform";
+
+/**
+ * Does this request carry a Supabase session cookie?
+ *
+ * Matches `sb-<project-ref>-auth-token` and its chunked forms (`.0`, `.1`, …),
+ * which supabaseCookieStorage writes once the session JSON exceeds a single
+ * cookie. Pattern-matched rather than built from NEXT_PUBLIC_SUPABASE_URL so a
+ * project-ref change can never silently turn the door on for everyone.
+ */
+function hasSupabaseSession(request: NextRequest): boolean {
+  return request.cookies
+    .getAll()
+    .some(
+      (cookie) =>
+        /^sb-.+-auth-token(\.\d+)?$/.test(cookie.name) &&
+        cookie.value.length > 0,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// melori.org — the front door as its own domain.
+//
+// melori.org is a signup surface only. It is deliberately NOT a second copy of
+// the app: Supabase session cookies are host-scoped, so letting people sign in
+// on both domains would give every member two independent sessions, and
+// NEXT_PUBLIC_APP_URL (one value, melorimusic.org) would throw them across
+// domains mid-flow anyway.
 //
 // NOTE: melori.org is NOT in mobile/capacitor.config.json allowNavigation.
 // Nothing reachable inside the native wrapper may link here.
 const PLATFORM_HOSTS = new Set(["melori.org", "www.melori.org"]);
 const APP_ORIGIN = "https://melorimusic.org";
-const DOOR_PATH = "/platform";
 
 // ---------------------------------------------------------------------------
 // Cache-Control override for HTML document navigations.
@@ -65,6 +114,12 @@ const FRIENDLY_HTML_CACHE_CONTROL = "private, no-cache, must-revalidate";
 function applyHtmlCacheControl(res: NextResponse): NextResponse {
   res.headers.set("Cache-Control", FRIENDLY_HTML_CACHE_CONTROL);
   return res;
+}
+
+function rewriteToDoor(request: NextRequest): NextResponse {
+  const url = request.nextUrl.clone();
+  url.pathname = DOOR_PATH;
+  return applyHtmlCacheControl(NextResponse.rewrite(url));
 }
 
 // ---------------------------------------------------------------------------
@@ -137,11 +192,7 @@ function routePlatformHost(
   const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
   if (!PLATFORM_HOSTS.has(host)) return null;
 
-  if (pathname === "/") {
-    const url = request.nextUrl.clone();
-    url.pathname = DOOR_PATH;
-    return applyHtmlCacheControl(NextResponse.rewrite(url));
-  }
+  if (pathname === "/") return rewriteToDoor(request);
 
   return NextResponse.redirect(
     new URL(`${pathname}${request.nextUrl.search}`, APP_ORIGIN),
@@ -161,6 +212,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const platformRoute = routePlatformHost(request, pathname);
   if (platformRoute) return platformRoute;
+
+  // The door: a signed-out visitor meets the signup page, not a catalog whose
+  // every play button answers 401. Root only — deep links are left alone so a
+  // shared track or profile URL still resolves.
+  if (pathname === "/" && !hasSupabaseSession(request)) {
+    return rewriteToDoor(request);
+  }
 
   // Admin dashboard gate runs first — its redirects should not carry the
   // HTML cache-control override (they're 307/308 redirects, not documents).

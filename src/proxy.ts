@@ -18,6 +18,23 @@ import {
 const ADMIN_SECRET_KEY = getAdminSecretKey();
 
 // ---------------------------------------------------------------------------
+// melori.org — the front door.
+//
+// melori.org is a marketing/signup surface only. It is deliberately NOT a
+// second copy of the app: Supabase session cookies are host-scoped, so letting
+// people sign in on both domains would give every member two independent
+// sessions, and NEXT_PUBLIC_APP_URL (one value, melorimusic.org) would throw
+// them across domains mid-flow anyway.
+//
+// So: the root serves the door, and everything else is handed to the app.
+//
+// NOTE: melori.org is NOT in mobile/capacitor.config.json allowNavigation.
+// Nothing reachable inside the native wrapper may link here.
+const PLATFORM_HOSTS = new Set(["melori.org", "www.melori.org"]);
+const APP_ORIGIN = "https://melorimusic.org";
+const DOOR_PATH = "/platform";
+
+// ---------------------------------------------------------------------------
 // Cache-Control override for HTML document navigations.
 //
 // WHY: Pages using `export const dynamic = 'force-dynamic'` cause Next.js to
@@ -106,6 +123,32 @@ function guardNativeCommerce(
   return null;
 }
 
+/**
+ * melori.org routing. Returns null for every other host.
+ *
+ * Runs AFTER guardNativeCommerce so a wrapper request arriving here — which
+ * should never happen, since melori.org is not in allowNavigation — can never
+ * skip the App Store commerce guard by being redirected first.
+ */
+function routePlatformHost(
+  request: NextRequest,
+  pathname: string,
+): NextResponse | null {
+  const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
+  if (!PLATFORM_HOSTS.has(host)) return null;
+
+  if (pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = DOOR_PATH;
+    return applyHtmlCacheControl(NextResponse.rewrite(url));
+  }
+
+  return NextResponse.redirect(
+    new URL(`${pathname}${request.nextUrl.search}`, APP_ORIGIN),
+    308,
+  );
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
@@ -115,6 +158,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (isBlockedNativeApi(pathname)) {
     return NextResponse.next();
   }
+
+  const platformRoute = routePlatformHost(request, pathname);
+  if (platformRoute) return platformRoute;
 
   // Admin dashboard gate runs first — its redirects should not carry the
   // HTML cache-control override (they're 307/308 redirects, not documents).

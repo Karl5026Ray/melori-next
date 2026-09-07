@@ -151,7 +151,7 @@ function DesktopBar() {
       style={{ transform: "translate3d(0,0,0)", willChange: "transform" }}
     >
       {/* The free-preview upgrade banner used to live here. It announced a
-          30-second preview and a $2.99/mo Superfan tier, and it was the most
+          30-second preview and a monthly Superfan tier, and it was the most
           exposed purchase call to action in the product — which is why it
           carried data-native-hide for App Review.
 

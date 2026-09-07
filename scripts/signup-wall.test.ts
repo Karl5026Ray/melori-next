@@ -22,7 +22,7 @@
 //
 // Run:  npx tsx scripts/signup-wall.test.ts
 
-import { isPublicPath } from "@/proxy";
+import { isPublicPath, teaserFor } from "@/proxy";
 
 let checks = 0;
 let failures = 0;
@@ -38,6 +38,13 @@ const PUBLIC: [string, string][] = [
   ["/gallery/some-client-shoot", "an individual delivered gallery"],
   ["/photography", "the legacy path clients already hold (redirects to /gallery)"],
   ["/about", "Karl's introduction — the other half of the advertising"],
+
+  // 1b. The live surfaces, described rather than shown. These pages carry no
+  //     member data at all — see src/components/marketing/FeatureTeaser.tsx.
+  ["/faces", "the MM Faces teaser"],
+  ["/spaces", "the MM Spaces teaser"],
+  ["/cinema", "the MM Cinema teaser"],
+  ["/radio", "the Radio teaser"],
 
   // 2. The artists. Gating these would hide Kaiel R and Gloria Joy Rivers from
   //    search, which is backwards for a platform that needs traffic.
@@ -132,6 +139,40 @@ if (isPublicPath("/social/auth") && !isPublicPath("/social/spaces")) {
   ok("/social/auth is public WITHOUT opening the rest of /social");
 } else {
   bad("the /social/auth exception has leaked into the rest of /social");
+}
+
+// ---------------------------------------------------------------------------
+// Teaser routing: a signed-out visitor who clicked a shared room link should
+// land on the page describing that room, not on a bare signup form.
+
+const TEASERS: [string, string][] = [
+  ["/social/live", "/faces"],
+  ["/social/live/abc123", "/faces"],
+  ["/social/spaces", "/spaces"],
+  ["/social/spaces/abc123", "/spaces"],
+  ["/social/spaces/create", "/spaces"],
+  ["/social/cinema", "/cinema"],
+  ["/social/cinema/abc123", "/cinema"],
+  ["/social/radio", "/radio"],
+];
+
+for (const [from, to] of TEASERS) {
+  const got = teaserFor(from);
+  if (got === to) ok(`${from} sends a stranger to ${to}`);
+  else bad(`${from} should send a stranger to ${to}, got ${String(got)}`);
+}
+
+// Everything else falls through to the door rather than guessing.
+for (const path of ["/social/messages", "/dashboard", "/music", "/settings"]) {
+  if (teaserFor(path) === null) ok(`${path} has no teaser — it meets the door`);
+  else bad(`${path} unexpectedly has a teaser`);
+}
+
+// The prefix must not swallow a sibling: /social/livestream is not Faces.
+if (teaserFor("/social/livestream") === null) {
+  ok("/social/livestream is not treated as a Faces room");
+} else {
+  bad("the /social/live prefix swallowed a sibling route");
 }
 
 // A prefix entry must not match a longer sibling it was never meant to cover.

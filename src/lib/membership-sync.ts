@@ -7,7 +7,7 @@
 // means a Superfan/Artist buyer ends up in the same DB state whether the
 // webhook fires first or the /welcome form completes first.
 
-export type Tier = "superfan" | "artist" | null;
+export type Tier = "superfan" | "artist" | "snappd" | null;
 export type Interval = "month" | "year" | null;
 
 // Optional exact Stripe price-id -> tier map, configured via env so a coupon,
@@ -22,7 +22,9 @@ function priceIdTierMap(): Record<string, Tier> {
   for (const pair of raw.split(",")) {
     const [id, tier] = pair.split(":").map((s) => s?.trim());
     if (!id) continue;
-    if (tier === "superfan" || tier === "artist") map[id] = tier;
+    if (tier === "superfan" || tier === "artist" || tier === "snappd") {
+      map[id] = tier;
+    }
   }
   return map;
 }
@@ -72,6 +74,16 @@ export function classifyPrice(
       return { tier: "artist", interval: intervalHint ?? "month" };
     case 4999:
       return { tier: "artist", interval: intervalHint ?? "year" };
+    // Snappd — the photographer membership. It has had live Stripe payment
+    // links and a tile on /register since launch, but was never in this switch,
+    // so a $14.99/mo buyer fell through to the safety net below and was
+    // provisioned as a $2.99 Superfan. Verified against membership_events on
+    // 2 Sep 2026: nobody had bought it yet, so there is nothing to backfill —
+    // but the door was open.
+    case 1499:
+      return { tier: "snappd", interval: intervalHint ?? "month" };
+    case 14999:
+      return { tier: "snappd", interval: intervalHint ?? "year" };
     // Legacy pricing fallbacks (pre July 2026):
     case 999:
       return { tier: "artist", interval: intervalHint ?? "month" };

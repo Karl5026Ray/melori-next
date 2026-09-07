@@ -138,7 +138,7 @@ export default async function StudioTrackPage(
           {duration && (
             <p className="mt-1 text-sm text-text-secondary/80">{duration}</p>
           )}
-          <p className="mt-2 text-sm font-medium text-[#c9a96e]">
+          <p data-native-hide className="mt-2 text-sm font-medium text-[#c9a96e]">
             {formatPriceCents(priceCents)}
           </p>
 

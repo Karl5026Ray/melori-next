@@ -1,7 +1,8 @@
 // Shared membership model + gating helpers.
 //
 // Membership lives in Supabase `profiles`. `role` is the SOURCE OF TRUTH:
-//   - role: 'free' | 'superfan' | 'artist' | 'admin'  (artist is the TOP paid tier)
+//   - role: 'free' | 'superfan' | 'artist' | 'snappd' | 'admin'
+//     (snappd is the photographer membership and carries studio access)
 //   - membership_status: e.g. 'active'
 //   - membership_tier / membership_expires_at: derived Stripe fields; may be
 //     ABSENT (null) for members whose role was granted directly (e.g. by an admin
@@ -18,7 +19,7 @@
 // the client (UI gating / CTAs) and the server (route handlers). Server-side
 // request-profile resolution lives in `membership-server.ts`.
 
-export type MembershipTier = "free" | "superfan" | "artist";
+export type MembershipTier = "free" | "superfan" | "artist" | "snappd";
 
 export interface MembershipProfile {
   role?: string | null;
@@ -45,6 +46,7 @@ export function isAdmin(profile: MembershipProfile | null | undefined): boolean 
 export function tierOf(profile: MembershipProfile | null | undefined): MembershipTier {
   const t = effectiveTierString(profile);
   if (t === "admin") return "artist"; // admins treated as top tier
+  if (t === "snappd") return "snappd";
   if (t === "artist") return "artist";
   if (t === "superfan") return "superfan";
   return "free";
@@ -102,13 +104,20 @@ export function hasMembershipAccess(
 // users are excluded.
 export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
   const tier = tierOf(profile);
-  return tier === "superfan" || tier === "artist";
+  return tier === "superfan" || tier === "artist" || tier === "snappd";
 }
 
-// Studio access — role is 'artist' or 'admin'. Same role-first rationale as
-// isSuperfanOrBetter above.
+// Studio access — role is 'artist', 'snappd' or 'admin'. Same role-first
+// rationale as isSuperfanOrBetter above.
+//
+// Snappd qualifies because it IS the photographer membership, and everything it
+// is sold on — "profile, galleries, tethering, $1.99 instant prints (keep 80%)"
+// — lives behind the studio and gallery routes this predicate guards. It costs
+// $14.99/mo, three times Artist; a Snappd member getting less access than an
+// Artist member would be exactly backwards.
 export function isArtistSubscriber(profile: MembershipProfile | null | undefined): boolean {
-  return tierOf(profile) === "artist";
+  const tier = tierOf(profile);
+  return tier === "artist" || tier === "snappd";
 }
 
 // Seconds of a full track a non-superfan free listener may hear.

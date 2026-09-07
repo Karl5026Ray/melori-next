@@ -473,7 +473,30 @@ function VideoCardBase({
         // is never blank during a fast scroll.
         <div className="absolute inset-0 flex items-center justify-center bg-black">
           {isActive ? (
-            <div className="relative aspect-video max-h-full w-full">
+            // Mirror is a VERTICAL feed, so the stage is chosen from the
+            // post's own orientation (social_videos.is_vertical, migration
+            // 075) rather than left to whatever fit YouTube's player picks.
+            //
+            // This wrapper used to be a fixed 16:9 box for EVERY YouTube post.
+            // Inside a ~9:16 card that cost a portrait post its height twice:
+            // the box took card-width x 9/16 (~41% of the height), then the
+            // player pillarboxed the 9:16 source inside that (~32% of the
+            // width), so a 1080x1920 episode landed on roughly a tenth of the
+            // card at any size or pixel density.
+            //
+            //   portrait -> the same 9:16 stage the native branch uses, so a
+            //               REFLECT episode fills the card edge to edge;
+            //   otherwise -> fill the card and let the player fit. A 16:9
+            //               video letterboxes to card-width x 9/16, exactly
+            //               the box it already had, so landscape posts are
+            //               unchanged and nothing is ever cropped.
+            <div
+              className={
+                video.is_vertical
+                  ? "relative aspect-[9/16] h-full max-w-full"
+                  : "relative h-full w-full"
+              }
+            >
               <iframe
                 ref={youtubeFrameRef}
                 // Remount per card so the src is applied cleanly on activation.

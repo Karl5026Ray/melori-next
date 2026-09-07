@@ -242,6 +242,11 @@ export interface SocialVideo {
   // any cached payload omit it, and absent means 'upload'.
   source?: "upload" | "youtube";
   youtube_id?: string | null;
+  // Orientation (migration 075). true = 9:16 portrait, false = 16:9 landscape,
+  // null/undefined = unknown. Mirror is a vertical feed, so a portrait post
+  // gets a 9:16 stage; anything else keeps the fill-the-card behaviour and
+  // lets the player pick its own fit. Sourced from videos.is_vertical.
+  is_vertical?: boolean | null;
   likes_count: number;
   comments_count: number;
   created_at: string;

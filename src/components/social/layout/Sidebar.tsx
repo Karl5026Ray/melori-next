@@ -11,7 +11,6 @@ import {
   User,
   LogOut,
   Plus,
-  Swords,
   Sparkles,
   Clapperboard,
   type LucideIcon,
@@ -65,16 +64,12 @@ export function Sidebar() {
           Go Live
         </Link>
 
-        {/* Concert has a dedicated creation surface while reusing the
-           server-authoritative live-room engine underneath. */}
-        <Link
-          href="/social/concert/create"
-          title="Concert"
-          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg mb-2 bg-teal-500 text-white transition-colors hover:bg-teal-400"
-        >
-          <Swords className="w-4 h-4" />
-          Concert
-        </Link>
+        {/* Concert (versus_battle) is NOT in this rail. Concert Battle is
+           still audio-only in production — decideRoomPublish in
+           roomMediaPolicy.ts grants camera to 'cinema' and 'live_*' only — so
+           a top-level button here sells a room that cannot do the one thing it
+           exists to do. /social/concert/create still works for anyone with the
+           link; it comes back to the rail when the camera path ships. */}
 
         <nav className="space-y-1">
           {navItems.map((item) => {

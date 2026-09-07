@@ -544,6 +544,7 @@ export default function RoomChat({
           </form>
         ) : (
           <button
+            data-native-hide
             type="button"
             onClick={() => router.push("/membership")}
             className="w-full rounded-2xl border border-melori-border bg-melori-elevated px-3 py-2.5 text-center text-sm text-melori-muted transition hover:text-melori-text"

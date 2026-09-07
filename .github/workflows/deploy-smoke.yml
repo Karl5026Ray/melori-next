@@ -1,0 +1,76 @@
+name: Deploy smoke
+
+# Signs in and opens a page against the deployed application, exercising the
+# browser cookie and edge proxy together.
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "URL to smoke test"
+        required: false
+        default: "https://melorimusic.org"
+
+concurrency:
+  group: deploy-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Sign in and open a gated page
+    # Vercel has used both "Production" and "production" environment labels.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       contains(github.event.deployment_status.environment, 'roduction'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Do not silently skip signed-in coverage when the repo is unconfigured.
+      - name: Require smoke credentials
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          if [ -z "$SMOKE_EMAIL" ] || [ -z "$SMOKE_PASSWORD" ]; then
+            echo "::error::SMOKE_EMAIL / SMOKE_PASSWORD are not configured."
+            echo "::error::Without them nobody signs in, and this check proves nothing."
+            echo "::error::Add them under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Smoke test the deployment
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://melorimusic.org' }}
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          CI: "true"
+        run: |
+          echo "Smoke testing: $BASE_URL"
+          npm run test:smoke
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-smoke-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

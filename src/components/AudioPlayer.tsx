@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
@@ -126,7 +125,6 @@ function DesktopBar() {
     volume,
     error,
     isSample,
-    sampleEnded,
     hasNext,
     hasPrev,
     radioMode,
@@ -152,30 +150,17 @@ function DesktopBar() {
       className="hidden md:block fixed bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur"
       style={{ transform: "translate3d(0,0,0)", willChange: "transform" }}
     >
-      {/* Free-preview upgrade prompt — shown when a 30s sample ends.
-          data-native-hide: this is the single most exposed purchase call to
-          action in the product. It fires the moment a 30-second preview ends,
-          which is exactly what an App Review tester does first in a music app,
-          and it carries both a plan name and a price ("Become a Superfan",
-          "Upgrade — $2.99/mo"). The CSS route selectors in native-app.css hide
-          the /membership anchor but not the sentence around it, so the whole
-          banner is marked. See docs/ios-app-store-compliance.md. */}
-      {current && sampleEnded && (
-        <div data-native-hide className="border-b border-brand-border bg-brand-primary/10 px-3 sm:px-6 py-2">
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-text-secondary">
-              You&apos;re hearing a 30-second preview. Become a Superfan to play
-              full songs.
-            </span>
-            <Link
-              href="/membership"
-              className="shrink-0 rounded-full bg-brand-primary px-4 py-1.5 font-semibold text-black transition-opacity hover:opacity-90"
-            >
-              Upgrade — $2.99/mo
-            </Link>
-          </div>
-        </div>
-      )}
+      {/* The free-preview upgrade banner used to live here. It announced a
+          30-second preview and a $2.99/mo Superfan tier, and it was the most
+          exposed purchase call to action in the product — which is why it
+          carried data-native-hide for App Review.
+
+          Both the preview and the tier are gone: #352 made every track play in
+          full for every member and #357 removed the last of the pricing copy.
+          The stream routes now return sample:false unconditionally, so
+          `sampleEnded` could never become true and this block was already
+          unreachable. Removed rather than left as dead code advertising a
+          product that does not exist. */}
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex flex-col gap-1.5">
         {/* Top row: track info + controls */}
         <div className="flex items-center gap-3">
@@ -366,10 +351,27 @@ const POS_KEY = "melori:player:pos";
 // DesktopBar directly; do not repurpose this constant, or you will silently
 // shift where the mobile pill parks, clamps, and snaps on expand (see PR #290).
 const PILL_MARGIN = 8;
-// Height of the fixed mobile tab bar (h-14). Reserved below the pill, on top
-// of whatever the home-indicator safe-area inset reports, so the pill can
-// never park behind the nav.
+// Height of the fixed mobile tab bar (h-14).
 const TAB_BAR = 56;
+// How far MobileTabBar's centre "M" launcher sticks up ABOVE that bar.
+//
+// The launcher is an h-16 (64px) circle carrying -mt-6 inside the h-14 (56px)
+// nav row, so its top edge sits 24px above the bar and it occupies roughly
+// 16px-80px measured up from the bottom of the screen.
+//
+// This is why reserving TAB_BAR alone was not enough. The pill's default dock
+// was PILL_MARGIN + TAB_BAR = 64px with a 56px height, i.e. 64px-120px — a 16px
+// overlap with the M. The nav is z-[70] and the collapsed pill is z-40, so the
+// nav won every tap in that band: the pill is right-anchored and the M is
+// centred, and at ordinary phone widths a full-width pill reaches across the
+// centre. That collision, not the spacing between the pill's own buttons, is
+// what made the transport feel like it was ignoring taps.
+const TAB_BAR_OVERHANG = 24;
+// The real vertical footprint of the bottom navigation: the bar plus whatever
+// protrudes from it. Every clearance below reserves THIS, not TAB_BAR.
+// TAB_BAR keeps its true value rather than being inflated to 80, so anything
+// that reads it later does not inherit a number that misdescribes its name.
+const BOTTOM_NAV_RESERVE = TAB_BAR + TAB_BAR_OVERHANG;
 // Footprint assumed before the element has been measured (first clamp on
 // mount, and any clamp while the ref is detached).
 const PILL_W = 240;
@@ -422,7 +424,7 @@ const DEFAULT_DOCK: Dock = {
   ax: "right",
   ay: "bottom",
   dx: PILL_MARGIN,
-  dy: PILL_MARGIN + TAB_BAR,
+  dy: PILL_MARGIN + BOTTOM_NAV_RESERVE,
 };
 
 // Persisted shape, versioned so an anchor is never mistaken for the legacy
@@ -592,7 +594,8 @@ function FloatingPlayer() {
 
   // Clamp a candidate position so the whole pill stays inside the visual
   // viewport (accurate on mobile Safari, where the URL bar changes innerHeight),
-  // clear of the notch/bezel insets and of the fixed mobile tab bar.
+  // clear of the notch/bezel insets and of the fixed mobile tab bar — including
+  // the centre M that protrudes above it (see BOTTOM_NAV_RESERVE).
   const clampPos = useCallback((x: number, y: number, width?: number, height?: number) => {
     const el = ref.current;
     const w = width || el?.offsetWidth || PILL_W;
@@ -602,7 +605,7 @@ function FloatingPlayer() {
     const minX = PILL_MARGIN + i.left;
     const minY = PILL_MARGIN + i.top;
     const maxX = Math.max(minX, vp.w - w - PILL_MARGIN - i.right);
-    const maxY = Math.max(minY, vp.h - h - PILL_MARGIN - TAB_BAR - i.bottom);
+    const maxY = Math.max(minY, vp.h - h - PILL_MARGIN - BOTTOM_NAV_RESERVE - i.bottom);
     return {
       x: Math.min(Math.max(minX, x), maxX),
       y: Math.min(Math.max(minY, y), maxY),
@@ -644,7 +647,7 @@ function FloatingPlayer() {
     const minX = PILL_MARGIN + i.left;
     const minY = PILL_MARGIN + i.top;
     const maxX = Math.max(minX, vp.w - r.width - PILL_MARGIN - i.right);
-    const maxY = Math.max(minY, vp.h - r.height - PILL_MARGIN - TAB_BAR - i.bottom);
+    const maxY = Math.max(minY, vp.h - r.height - PILL_MARGIN - BOTTOM_NAV_RESERVE - i.bottom);
     const x = Math.min(Math.max(minX, r.x), maxX);
     const y = Math.min(Math.max(minY, r.y), maxY);
     if (Math.abs(x - r.x) < 0.5 && Math.abs(y - r.y) < 0.5) return;

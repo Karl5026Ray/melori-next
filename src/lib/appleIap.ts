@@ -21,6 +21,10 @@
 // APPLE_IAP_BUNDLE_ID -- e.g. "org.melorimusic.app" (matches capacitor.config.json appId)
 // APPLE_IAP_APP_APPLE_ID -- numeric App Store id, once the app has one (Production only)
 // APPLE_IAP_ENVIRONMENT -- "Sandbox" while testing, "Production" once live
+//
+// The native client must also pass the signed-in Melori member's UUID as
+// StoreKit's appAccountToken. The verify route rejects transactions without a
+// matching token so another Melori account cannot claim a valid transaction.
 
 import { readFileSync } from "fs";
 import path from "path";
@@ -30,6 +34,7 @@ export interface VerifiedTransaction {
   transactionId: string;
   originalTransactionId: string;
   productId: string;
+  appAccountToken: string | null;
   purchaseDate: number | null;
   environment: "Sandbox" | "Production";
 }
@@ -100,6 +105,7 @@ return {
   transactionId: payload.transactionId,
   originalTransactionId: payload.originalTransactionId ?? payload.transactionId,
   productId: payload.productId,
+  appAccountToken: payload.appAccountToken ?? null,
   purchaseDate: payload.purchaseDate ?? null,
   environment: payload.environment === "Production" ? "Production" : "Sandbox",
 };

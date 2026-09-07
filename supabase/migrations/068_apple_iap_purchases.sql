@@ -66,8 +66,16 @@ COMMENT ON COLUMN public.music_purchases.artist_owed_cents IS
 ALTER TABLE public.split_payouts
 ADD COLUMN IF NOT EXISTS apple_transaction_id TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_split_payouts_apple_transaction
-ON public.split_payouts(apple_transaction_id)
+-- A transaction can create one payout row per collaborator. Match the
+-- existing Stripe idempotency key's per-payee shape rather than preventing
+-- a split sale from being recorded at all.
+DROP INDEX IF EXISTS public.uq_split_payouts_apple_transaction;
+CREATE UNIQUE INDEX uq_split_payouts_apple_transaction_payee
+ON public.split_payouts(
+  apple_transaction_id,
+  COALESCE(payee_profile_id::text, ''),
+  COALESCE(payee_email, '')
+)
 WHERE apple_transaction_id IS NOT NULL;
 
 -- Verification (run manually after applying):

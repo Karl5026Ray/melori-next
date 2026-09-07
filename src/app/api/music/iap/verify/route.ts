@@ -17,9 +17,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
-import { isResolveFailure, resolveMusicItem } from "@/lib/music-items";
+import {
+  getSplitsForItem,
+  isResolveFailure,
+  resolveMusicItem,
+} from "@/lib/music-items";
 import { resolveIapTier } from "@/lib/iap-products";
 import { verifySignedTransaction } from "@/lib/appleIap";
+import { planTransfers } from "@/lib/revenue-splits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,16 +83,33 @@ let verified;
     return NextResponse.json({ error: "Could not verify this purchase with Apple." }, { status: 400 });
   }
 
+  // The native client must pass the signed-in member's UUID as StoreKit's
+  // appAccountToken. A valid Apple transaction alone must not let a different
+  // Melori account claim someone else's purchase.
+  if (verified.appAccountToken !== membership.userId) {
+    console.error("iap/verify: appAccountToken does not match the buyer");
+    return NextResponse.json(
+      { error: "This purchase is not associated with the signed-in account." },
+      { status: 403 },
+    );
+  }
+
 const supabase = getSupabaseAdmin();
 
 // Idempotent: StoreKit redelivers unfinished transactions on relaunch, so
 // this route WILL be called more than once for the same purchase.
 const { data: existing } = await supabase
   .from("music_purchases")
-  .select("id")
+  .select("id, buyer_user_id")
   .eq("apple_transaction_id", verified.transactionId)
   .maybeSingle();
   if (existing) {
+    if (existing.buyer_user_id !== membership.userId) {
+      return NextResponse.json(
+        { error: "This purchase belongs to a different account." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ ok: true, alreadyFulfilled: true });
   }
 
@@ -125,7 +147,38 @@ let payeeName = "Artist";
       "Artist";
   }
 
-const { error: insertErr } = await supabase.from("music_purchases").insert({
+  const collaborators = await getSplitsForItem(item.kind, item.id, supabase);
+  let payouts: ReturnType<typeof planTransfers>;
+  try {
+    payouts = planTransfers(
+      resolution.artistOwedCents,
+      {
+        profileId: item.ownerProfileId,
+        email: null,
+        name: payeeName,
+        connectedAccountId: null,
+      },
+      collaborators.map((collaborator) => ({
+        key: collaborator.id,
+        basisPoints: collaborator.basisPoints,
+        profileId: collaborator.payeeProfileId,
+        email: collaborator.payeeEmail,
+        name: collaborator.payeeName,
+        connectedAccountId: null,
+      })),
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "allocation failed";
+    console.error("iap/verify: payout allocation failed:", msg);
+    return NextResponse.json(
+      { error: "Could not allocate this purchase. Please contact support." },
+      { status: 500 },
+    );
+  }
+
+const { data: purchase, error: insertErr } = await supabase
+  .from("music_purchases")
+  .insert({
   buyer_user_id: membership.userId,
   buyer_email: membership.email ?? null,
   release_id: item.kind === "release" ? Number(item.id) : null,
@@ -144,33 +197,58 @@ const { error: insertErr } = await supabase.from("music_purchases").insert({
   apple_product_id: verified.productId,
   apple_environment: verified.environment,
   artist_owed_cents: resolution.artistOwedCents,
-});
+  })
+  .select("id")
+  .single();
 
 if (insertErr) {
+  if (insertErr.code === "23505") {
+    const { data: racedPurchase } = await supabase
+      .from("music_purchases")
+      .select("buyer_user_id")
+      .eq("apple_transaction_id", verified.transactionId)
+      .maybeSingle();
+    if (racedPurchase?.buyer_user_id === membership.userId) {
+      return NextResponse.json({ ok: true, alreadyFulfilled: true });
+    }
+    return NextResponse.json(
+      { error: "This purchase belongs to a different account." },
+      { status: 409 },
+    );
+  }
   console.error("iap/verify: music_purchases insert failed:", insertErr.message);
   return NextResponse.json({ error: "Could not record this purchase. Please contact support." }, { status: 500 });
 }
 
-if (item.ownerProfileId) {
-  const { error: payoutErr } = await supabase.from("split_payouts").insert({
+if (!purchase) {
+  console.error("iap/verify: music_purchases insert returned no purchase");
+  return NextResponse.json(
+    { error: "Could not record this purchase. Please contact support." },
+    { status: 500 },
+  );
+}
+
+const { error: payoutErr } = await supabase.from("split_payouts").insert(
+  payouts.map((payout) => ({
+    purchase_id: purchase.id,
     apple_transaction_id: verified.transactionId,
     item_kind: item.kind,
     item_id: item.id,
     item_name: item.name.slice(0, 200),
-    payee_profile_id: item.ownerProfileId,
-    payee_name: payeeName,
-    basis_points: 10000,
-    amount_cents: resolution.artistOwedCents,
+    payee_profile_id: payout.profileId,
+    payee_email: payout.email,
+    payee_name: payout.name,
+    basis_points: payout.basisPoints,
+    amount_cents: payout.amountCents,
     currency: item.currency || "usd",
     status: "owed",
-  });
+  })),
+);
   if (payoutErr) {
     // The purchase itself already succeeded and access is granted; log
   // loudly so this can be reconciled by hand rather than failing the
   // buyer's purchase over a bookkeeping write.
   console.error("iap/verify: split_payouts insert failed:", payoutErr.message);
-  }
-}
 
 return NextResponse.json({ ok: true });
 }

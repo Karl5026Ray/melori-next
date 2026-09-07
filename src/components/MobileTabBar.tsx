@@ -16,7 +16,6 @@ import {
   Heart,
   X,
   ChevronDown,
-  Image as ImageIcon,
   UserPlus,
   Camera,
   Target,
@@ -35,9 +34,9 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Artists, Radio, Melori Connect (direct), then navigation categories:
+ *       Artists, Radio, Melori Connect (direct), then navigation categories,
+ *       then Photography and Mission as direct tiles:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
- *         • Photo        — Photography, Gallery (both open the galleries)
  *         • Signup       — Free, Artist, Superfan, Snappd (photographer)
  *         • Mission      — Why Melori (direct)
  *
@@ -205,17 +204,6 @@ export default function MobileTabBar() {
       ],
     },
     {
-      label: "Photo",
-      icon: <Camera className="h-5 w-5" />,
-      items: [
-        // Pricing and Book came out with the rest of commerce (the top bar
-        // dropped them in #357; this menu was missed). Photography opens the
-        // galleries directly rather than a hub that advertised session rates.
-        { label: "Photography", href: "/gallery", icon: <Camera className="h-5 w-5" />, desc: "Karl Ray Photography" },
-        { label: "Gallery", href: "/gallery", icon: <ImageIcon className="h-5 w-5" />, desc: "Photo galleries" },
-      ],
-    },
-    {
       label: "Signup",
       icon: <UserPlus className="h-5 w-5" />,
       items: [
@@ -226,6 +214,17 @@ export default function MobileTabBar() {
       ],
     },
   ];
+
+  // Photography was a category holding two tiles that both opened the
+  // galleries. It is a destination, not a category, so it is a direct tile —
+  // one press from the menu to Karl's work, which is the one surface
+  // deliberately left public.
+  const photographyLink: LaunchItem = {
+    label: "Photography",
+    href: "/gallery",
+    icon: <Camera className="h-5 w-5" />,
+    desc: "Karl Ray Photography",
+  };
 
   const missionLink: LaunchItem = {
     label: "Mission",
@@ -403,6 +402,7 @@ export default function MobileTabBar() {
                         {/* Category buttons and the direct Mission link */}
                         <div className="mt-3 grid grid-cols-4 gap-2">
                           {categories.map(renderCatTile)}
+                          {renderTile(photographyLink)}
                           {renderTile(missionLink)}
                         </div>
                       </>

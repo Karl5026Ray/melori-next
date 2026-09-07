@@ -41,8 +41,26 @@ export const dynamic = "force-dynamic";
 const APP_ORIGIN = "https://melorimusic.org";
 const AFTER_SIGNUP = "/social/discover";
 
-const HEADER_IMAGE = "/melori-header.jpg";
-const HEADER_IMAGE_MOBILE = "/melori-header-mobile.jpg";
+// The hero lives in Supabase Storage, not /public.
+//
+// It used to be two files under /public that were never actually committed, so
+// `/melori-header.jpg` and `/melori-header-mobile.jpg` had always 404'd and the
+// door rendered its alt text as broken-image text. Since the proxy started
+// sending every signed-out visitor here, that was the first thing anyone saw of
+// Melori.
+//
+// Storage rather than /public so the hero can be swapped from the Supabase
+// dashboard without a commit and a redeploy — this page is the front of the
+// funnel, and changing its photo should not require shipping code. The `images`
+// bucket is public and already holds the release covers; site chrome goes under
+// a `site/` prefix so it never collides with an artist slug.
+const SITE_ASSET_BASE = `${(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "")}/storage/v1/object/public/images/site`;
+const hasSupabaseUrl = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+
+const HEADER_IMAGE = hasSupabaseUrl ? `${SITE_ASSET_BASE}/melori-header.jpg` : "";
+const HEADER_IMAGE_MOBILE = hasSupabaseUrl
+  ? `${SITE_ASSET_BASE}/melori-header-mobile.jpg`
+  : "";
 const LOGO = "/logo/logo.png";
 
 type Phase = "form" | "verify" | "confirm" | "ready";
@@ -68,6 +86,9 @@ export default function MeloriDoorPage() {
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
   const [resending, setResending] = useState(false);
+  // A missing or slow-to-upload hero must never render as broken alt text
+  // again; it falls back to the brand gradient below.
+  const [heroFailed, setHeroFailed] = useState(false);
 
   // A member who is already signed in has no business on the door.
   //
@@ -227,17 +248,38 @@ export default function MeloriDoorPage() {
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       {/* Header image — full bleed, faded into the page */}
       <div className="relative w-full overflow-hidden">
-        <picture>
-          <source media="(max-width: 639px)" srcSet={HEADER_IMAGE_MOBILE} />
-          <img
-            src={HEADER_IMAGE}
-            alt="Melori creators in a studio session"
-            /* Faces sit high in the frame — bias the crop upward so a short
-               viewport never cuts them off at the chin. */
-            style={{ objectPosition: "center 34%" }}
-            className="h-[40vh] max-h-[440px] min-h-[240px] w-full object-cover"
+        {HEADER_IMAGE && !heroFailed ? (
+          <picture>
+            <source media="(max-width: 639px)" srcSet={HEADER_IMAGE_MOBILE} />
+            <img
+              src={HEADER_IMAGE}
+              alt="Melori creators in a studio session"
+              /* Faces sit high in the frame — bias the crop upward so a short
+                 viewport never cuts them off at the chin. */
+              style={{ objectPosition: "center 34%" }}
+              /* Two paths, because one is not enough. `onError` catches a
+                 failure that happens after React is listening. But this page is
+                 server-rendered, so the browser starts fetching the hero long
+                 before hydration — a 404 usually lands in that gap and its
+                 error event is gone by the time React attaches. The ref catches
+                 exactly that case: an <img> that has finished ("complete") with
+                 nothing decoded (naturalWidth 0) has already failed. */
+              ref={(el) => {
+                if (el && el.complete && el.naturalWidth === 0) setHeroFailed(true);
+              }}
+              onError={() => setHeroFailed(true)}
+              className="h-[40vh] max-h-[440px] min-h-[240px] w-full object-cover"
+            />
+          </picture>
+        ) : (
+          /* No photo yet, or it failed to load. Hold the exact same box so the
+             masthead below stays put, and fill it with the brand gradient
+             rather than a broken-image icon. */
+          <div
+            aria-hidden="true"
+            className="h-[40vh] max-h-[440px] min-h-[240px] w-full bg-[radial-gradient(ellipse_at_50%_20%,#2a2113_0%,#141210_45%,#0a0a0a_100%)]"
           />
-        </picture>
+        )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/70 to-transparent" />
 

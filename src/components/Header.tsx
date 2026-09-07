@@ -9,29 +9,20 @@ import { supabase } from "@/lib/supabase";
 import { signOutThisDevice } from "@/lib/authSession";
 import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
 import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
-import { useIsNativeApp } from "@/components/NativeAppProvider";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string; items: NavItem[] };
 
 // Left hamburger drawer = MINIMAL. All section nav (Social Tools, Photography,
-// Signup, About) lives in the center "M" button menu (see MobileTabBar); music
-// discovery lives in the explore/search surface. The hamburger surfaces a
-// single high-intent action for new visitors: Become a Member.
+// About) lives in the center "M" button menu (see MobileTabBar); music
+// discovery lives in the explore/search surface.
 //
-// The old "Discover Music" and "For Artists" groups were removed as redundant:
-// "Become an Artist" is reachable via M-menu → Signup → Artist, and "Artist
-// Studio" is in the account menu for artist/admin accounts.
+// "Become a Member" used to live here as the one high-intent action for new
+// visitors. It pointed at /membership, which sold a paid tier that no longer
+// exists — music is free to every member — so it is gone. Signing up is the
+// "Create a Profile" button already in the bar and in the drawer.
 const navGroups: NavGroup[] = [];
-
-// Standalone links surfaced in the hamburger. "Become a Member" is the one
-// high-intent action for new visitors. We deliberately do NOT repeat
-// "Photography" here — it already lives in the desktop top nav and in the full
-// M-menu "Photo" category, so listing it in the hamburger too was showing the
-// same thing twice (noticeable once you're a member).
-const standaloneLinks: NavItem[] = [
-  { label: "Become a Member", href: "/membership" },
-];
+const standaloneLinks: NavItem[] = [];
 
 // Desktop top-bar dropdown menus. Karl's ask: surface the same apps that live
 // in the center "M" menu (MobileTabBar) as top-bar dropdowns on desktop —
@@ -40,16 +31,16 @@ const standaloneLinks: NavItem[] = [
 // the M-menu categories as dropdowns. The Social list is the shared
 // SOCIAL_NAV_ITEMS so the top bar, the profile action row and the M menu can't
 // drift apart.
+//
+// Pricing and Book were removed with the rest of commerce: Photography is a
+// portfolio of Karl's own work now, not a booking funnel.
 const PHOTO_ITEMS: NavItem[] = [
   { label: "Photography", href: "/photography" },
   { label: "Gallery", href: "/gallery" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "Book", href: "/book" },
 ];
 
 export default function Header() {
   const pathname = usePathname() ?? "";
-  const isNativeApp = useIsNativeApp();
   // DISABLED 2026-07-26: the unread-DM badge from #221 is the only part of that
   // PR that runs on every page for a signed-in member, and it was what broke
   // sign-in on iOS wrapper browsers — Header and MobileTabBar are BOTH mounted
@@ -260,11 +251,8 @@ export default function Header() {
           </Link>
         </div>
 
-        {/* Desktop bar: single hamburger (below) drives ALL section nav on
-           every screen size, matching the simpler menu Karl preferred. Here we
-           keep only the account menu + primary CTAs visible so signing in /
-           donating stays one click away. All section nav lives inside the
-           hamburger drawer (now just "Become a Member") and the center M menu. */}
+        {/* Desktop bar: the account menu + primary CTAs stay visible; all section
+           nav lives in the dropdowns below and the center M menu. */}
         <nav
           ref={navRef}
           className="hidden md:flex items-center gap-2 lg:gap-4 text-sm"
@@ -311,13 +299,6 @@ export default function Header() {
                       </Link>
                     </>
                   )}
-                  <Link
-                    href="/membership"
-                    onClick={() => setAccountOpen(false)}
-                    className="block px-4 py-2.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-brand-primary"
-                  >
-                    Membership
-                  </Link>
                   <Link
                     href="/settings"
                     onClick={() => setAccountOpen(false)}
@@ -463,15 +444,6 @@ export default function Header() {
           >
             Profile
           </Link>
-
-          {!isNativeApp && (
-          <Link
-            href="/donate"
-            className="ml-1 rounded-md bg-brand-primary px-4 py-1.5 font-semibold text-black transition-opacity hover:opacity-90"
-          >
-            Donate
-          </Link>
-          )}
         </nav>
         {/* Hamburger toggle moved to the LEFT cluster (top of file), next to
            the brand mark, since the drawer opens from the left. */}
@@ -555,13 +527,6 @@ export default function Header() {
                     </Link>
                   </>
                 )}
-                <Link
-                  href="/membership"
-                  onClick={() => setOpen(false)}
-                  className="block py-2.5 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  Membership
-                </Link>
                 <Link
                   href="/social/profile"
                   onClick={() => setOpen(false)}
@@ -700,29 +665,16 @@ export default function Header() {
               );
             })}
 
-            {standaloneLinks
-              // Don't show "Become a Member" to someone who's already a member.
-              .filter((link) => !(user && link.href === "/membership"))
-              .map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
-                >
-                  {link.label}
-                </Link>
-              ))}
-
-          {!isNativeApp && (
-          <Link
-              href="/donate"
-              onClick={() => setOpen(false)}
-              className="my-3 rounded-md bg-brand-primary px-4 py-2.5 text-center font-semibold text-black transition-opacity hover:opacity-90"
-            >
-              Donate
-            </Link>
-          )}
+            {standaloneLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className="py-3 text-text-secondary transition-colors hover:text-brand-primary"
+              >
+                {link.label}
+              </Link>
+            ))}
         </div>
       </nav>
 

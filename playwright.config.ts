@@ -47,6 +47,27 @@ const LOCAL_SUPABASE_ENV = {
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaW5lbWEtdGVzdHMiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMH0.cGxheXdyaWdodC1hbm9uLWtleQ",
 };
 
+// e2e/deploy-smoke.spec.ts is the post-deploy check: it signs in with a REAL
+// account against a REAL deployment. It cannot run in the ordinary suite,
+// where CI serves a local build against placeholder Supabase credentials and
+// no sign-in is possible — it would fail for a reason that has nothing to do
+// with the code under test.
+//
+// So it is excluded from every normal run and is the ONLY thing that runs when
+// PW_SMOKE=1 (see `npm run test:smoke`). Splitting it by env rather than by
+// project keeps `npm run test:e2e` meaning exactly what it meant before.
+const SMOKE = process.env.PW_SMOKE === "1";
+const SMOKE_SPEC = /deploy-smoke\.spec\.ts/;
+
+// Playwright resolves testIgnore PER PROJECT: a project that sets its own
+// replaces the top-level value rather than adding to it. A single global
+// testIgnore therefore did nothing for desktop-chromium, which has one. The
+// exclusion is spelled out per project below for that reason — verified with
+// `npx playwright test --list`, which is the only way to see it.
+const DESKTOP_IGNORE = SMOKE
+  ? /(floating-player|player-tabbar-collision)\.spec\.ts/
+  : /(floating-player|player-tabbar-collision|deploy-smoke)\.spec\.ts/;
+
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
 // redirected to the vercel.com login gate. Absent the token this is a no-op.
@@ -60,6 +81,7 @@ const extraHTTPHeaders = BYPASS
 
 export default defineConfig({
   testDir: "./e2e",
+  ...(SMOKE ? { testMatch: SMOKE_SPEC } : {}),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   // One retry. The generous retry budget existed for cold Vercel serverless
@@ -89,6 +111,9 @@ export default defineConfig({
       // Force chromium: the iPhone descriptor otherwise pins WebKit, which
       // pulls in extra browser binaries we don't need for a UI regression
       // that only cares about pointer-event semantics and z-index.
+      // The post-deploy smoke spec is desktop-only — running it twice would
+      // double the sign-ins against production for no extra coverage.
+      testIgnore: SMOKE_SPEC,
       use: {
         ...devices["iPhone 13"],
         defaultBrowserType: "chromium",
@@ -107,7 +132,7 @@ export default defineConfig({
       // player-tabbar-collision.spec.ts is ignored for the same reason: it
       // measures the pill against the mobile tab bar's centre M, and neither
       // element renders at 1440px.
-      testIgnore: /(floating-player|player-tabbar-collision)\.spec\.ts/,
+      testIgnore: DESKTOP_IGNORE,
       use: {
         browserName: "chromium",
         viewport: { width: 1440, height: 900 },

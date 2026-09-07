@@ -51,7 +51,8 @@
     "verify:concert": "tsx scripts/verify-concert-config.ts",
     "test:native-affordances": "tsx scripts/native-commerce-affordances.test.ts",
     "test:membership-tiers": "tsx scripts/membership-tiers.test.ts",
-    "test:auth-cookie": "tsx scripts/auth-cookie-name.test.ts"
+    "test:auth-cookie": "tsx scripts/auth-cookie-name.test.ts",
+    "test:smoke": "PW_SMOKE=1 playwright test --project=desktop-chromium"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

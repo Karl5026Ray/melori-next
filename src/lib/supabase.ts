@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { AUTH_STORAGE_KEY } from "@/lib/authStorageKey";
 import { cookieStorageAdapter } from "@/lib/supabaseCookieStorage";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -19,18 +20,18 @@ function migrateLegacyLocalStorageSession(): void {
 try {
 if (typeof window === "undefined" || !window.localStorage) return;
 // Already migrated? (cookie present) then do nothing.
-if (cookieStorageAdapter.getItem("melori-auth") !== null) return;
+if (cookieStorageAdapter.getItem(AUTH_STORAGE_KEY) !== null) return;
 const ref = new URL(supabaseUrl).hostname.split(".")[0];
 if (!ref) return;
 const legacyKey = `sb-${ref}-auth-token`;
 const legacyValue = window.localStorage.getItem(legacyKey);
 if (legacyValue) {
-cookieStorageAdapter.setItem("melori-auth", legacyValue);
+cookieStorageAdapter.setItem(AUTH_STORAGE_KEY, legacyValue);
 // Drop the old key only once the new representation reads back. The adapter
-// mirrors into localStorage under "melori-auth", so the session still lives in
+// mirrors into localStorage under AUTH_STORAGE_KEY, so the session still lives in
 // two places afterwards — deleting unconditionally used to leave it in the
 // cookie alone, which iOS ITP expires after 7 days.
-if (cookieStorageAdapter.getItem("melori-auth") !== null) {
+if (cookieStorageAdapter.getItem(AUTH_STORAGE_KEY) !== null) {
 window.localStorage.removeItem(legacyKey);
 }
 }
@@ -58,7 +59,7 @@ detectSessionInUrl: true,
 // Guarded to the browser: on the server there is no `document`, and this
 // client is only ever used client-side anyway.
 ...(typeof document !== "undefined"
-? { storage: cookieStorageAdapter, storageKey: "melori-auth" }
+? { storage: cookieStorageAdapter, storageKey: AUTH_STORAGE_KEY }
 : {}),
 },
 });

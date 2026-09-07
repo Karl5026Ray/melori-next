@@ -1,8 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
 
 const SPACE_ID = "00000000-0000-4000-8000-000000000301";
 const INITIATOR_ID = "00000000-0000-4000-8000-000000000302";
 const RECIPIENT_ID = "00000000-0000-4000-8000-000000000303";
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await bypassDoor(context, baseURL);
+});
 
 const initiator = {
   id: INITIATOR_ID,

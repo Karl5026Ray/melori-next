@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Camera, Lock, Download, ShoppingBag } from "lucide-react";
+import { Camera, Lock, Download } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import ManageGalleriesLink from "./ManageGalleriesLink";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Gallery | Melori Music",
   description:
-    "Photo galleries by Melori Music — view, download, and purchase prints from your shoot.",
+    "Photo galleries by Melori Music — view and download the frames from your shoot.",
 };
 
 interface GalleryCard {
@@ -155,12 +155,12 @@ export default async function GalleryIndexPage() {
 
         <p className="mt-14 max-w-2xl text-text-secondary">
           Browse delivered photo galleries. Open your gallery to view every
-          frame, download your favorites, and purchase high-resolution digital
-          copies. You can also reach this page any time from the M-menu under{" "}
+          frame and download your favorites. You can also reach this page any
+          time from the M-menu under{" "}
           <span className="text-text-primary">Photography &rarr; Gallery</span>.
         </p>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
           <Feature
             icon={<Lock className="h-5 w-5" />}
             title="Private & secure"
@@ -171,16 +171,6 @@ export default async function GalleryIndexPage() {
             title="Instant downloads"
             body="Grab clean, full-resolution files the moment they're ready."
           />
-          {/* Names a purchase and an external payment processor by name —
-              exactly what guideline 3.1.1 treats as an alternative payment
-              mechanism. Hidden inside the wrapper before first paint. */}
-          <div data-native-hide className="contents">
-            <Feature
-              icon={<ShoppingBag className="h-5 w-5" />}
-              title="Buy digital copies"
-              body="Purchase watermark-free digital downloads securely via Stripe."
-            />
-          </div>
         </div>
       </section>
     </main>

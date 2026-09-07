@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useIsNativeApp } from "@/components/NativeAppProvider";
@@ -13,29 +13,62 @@ import {
 } from "@/lib/mediaSetupMarker";
 
 // /register — the canonical signup surface.
-//   • Free Fan  → create the Supabase account immediately (role "free").
-//   • Superfan / Artist → route into the existing Stripe flow on /membership;
-//     the account + paid role are granted after payment via the /welcome flow
-//     (post-payment) and the members Stripe webhook. We never grant a paid role
-//     client-side without payment.
-// One auth system (Supabase). Google sign-in offered for the free path.
+//
+// ACCOUNT FIRST. NOTHING ELSE.
+// ----------------------------
+// This page used to open with a four-card membership grid (Free / Superfan /
+// Artist / Snappd) and only reveal the email + password fields underneath it.
+// That made "create an account" look like "choose what to buy", which is the
+// wrong first impression for a platform whose whole value is the community —
+// and it put a price table in front of a visitor before they had any reason to
+// care. Signing up is now one thing: email, password, phone. Every account is
+// created as role "free".
+//
+// Upgrades did not disappear, they moved AFTER the account exists. The M-button
+// menu can still deep-link `?tier=artist|superfan|snappd`; that param no longer
+// draws anything on the page — it is simply remembered and, once the account is
+// live, the browser is handed to the matching checkout. Nobody is ever asked to
+// pay before they have somewhere to log into. We never grant a paid role
+// client-side; the role lands via /welcome + the Stripe webhook after payment.
+//
+// PHONE IS REQUIRED, AND THE VERIFY STEP IS SELF-CONFIGURING
+// ----------------------------------------------------------
+// Melori is a live-participation community — people appear on camera in Faces,
+// Mirror, Spaces and Cinema. Accounts are free, so a phone number is the only
+// thing standing between the rooms and a bot farm: one real number, one
+// account.
+//
+// There is no feature flag. The page asks /api/auth/phone/start and reads the
+// answer: 503 { configured: false } means Telnyx is not wired up or A2P 10DLC
+// has not cleared, so the number is stored and signup completes without a code;
+// 200 means a code went out and the verify step appears. The door tightens by
+// itself the moment verification starts working. This mirrors /platform (the
+// melori.org door) deliberately — two front doors, one rule.
+//
+// NATIVE: no prices, no web checkout, ever. The wrapper has been rejected over
+// exactly that. Natively this page is email + password + phone and nothing more.
+// One auth system (Supabase). Google sign-in offered for the web path.
 
-type Tier = "free" | "superfan" | "artist" | "snappd";
-
-const TIERS: { id: Tier; name: string; price: string; blurb: string }[] = [
-  { id: "free", name: "Free Fan", price: "$0", blurb: "Free 30-second previews, playlists, community." },
-  { id: "superfan", name: "Superfan", price: "$2.99/mo", blurb: "Full-length playback, early access, exclusives, HD audio." },
-  { id: "artist", name: "Artist", price: "$4.99/mo", blurb: "Upload, analytics, payouts, studio, no platform cut on sales." },
-  { id: "snappd", name: "Snappd", price: "$14.99/mo", blurb: "Photographer membership: profile, galleries, tethering, $1.99 instant prints (keep 80%)." },
-];
+type PaidTier = "superfan" | "artist" | "snappd";
 
 // Snappd is sold through its own live Stripe Payment Link, whose completion
-// redirects to /welcome?tier=snappd to auto-provision the photographer account
-// and grant the studio role. Sending the buyer straight here (rather than via
-// /membership) makes signup one click. Public hosted-checkout URL — safe to
-// ship to the client.
+// redirects to /welcome?tier=snappd to grant the studio role. Public hosted
+// checkout URL — safe to ship to the client.
 const SNAPPD_PAYMENT_LINK =
   "https://buy.stripe.com/cNiaER1gQgKTbVfexI7Zu0b";
+
+/** Normalise to E.164. A bare 10-digit input is assumed US/Canada. */
+function toE164(raw: string): string | null {
+  const trimmed = raw.trim();
+  const hasPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
+  if (!hasPlus && digits.length === 10) return `+1${digits}`;
+  if (!hasPlus && digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (hasPlus && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+
+type Phase = "form" | "verify" | "confirm";
 
 function RegisterInner() {
   const router = useRouter();
@@ -46,41 +79,56 @@ function RegisterInner() {
   // not be allowed to drift, so there is only one implementation now.
   const next = safeNextPath(params.get("next"));
 
-  // Preselect the signup tier from ?tier= (deep-linked from the M-button Signup
-  // menu). Falls back to "free" for any unknown value.
+  // Remembered, never rendered. Decides where the finished account is sent.
   const tierParam = params.get("tier");
-  const initialTier: Tier =
-    tierParam === "artist" ||
-    tierParam === "superfan" ||
-    tierParam === "snappd"
+  const upgradeTo: PaidTier | null =
+    tierParam === "artist" || tierParam === "superfan" || tierParam === "snappd"
       ? tierParam
-      : "free";
-  const [tier, setTier] = useState<Tier>(initialTier);
+      : null;
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-    const [loading, setLoading] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [phase, setPhase] = useState<Phase>("form");
   // When email confirmation is required, we hold the address here so the user
   // can resend the confirmation link without retyping / re-submitting.
   const [pendingEmail, setPendingEmail] = useState("");
   const [resending, setResending] = useState(false);
 
-  useEffect(() => {
-    if (isNativeApp) setTier("free");
-  }, [isNativeApp]);
+  const emailRedirectTo =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+      : undefined;
 
-  const visibleTiers = isNativeApp ? TIERS.filter((tier) => tier.id === "free") : TIERS;
+  /**
+   * Where a finished account goes. A paid deep-link hands off to checkout on the
+   * web; natively it is ignored outright, because a native build may not send a
+   * user to a web payment page.
+   */
+  const finishSignup = () => {
+    if (upgradeTo && !isNativeApp) {
+      if (upgradeTo === "snappd") {
+        window.location.href = SNAPPD_PAYMENT_LINK;
+      } else {
+        router.push("/membership");
+      }
+      return;
+    }
+    // Newly created free account → offer the one-time camera/microphone setup
+    // step before the page they were heading to. Once this device has been
+    // through it, this is a no-op and they go straight to `next`.
+    router.push(postSignupDestination(next, hasSeenMediaSetup()));
+  };
 
   const handleResendConfirmation = async () => {
     if (!pendingEmail) return;
     setResending(true);
     setError("");
     try {
-      const emailRedirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined;
       const { error: resendError } = await supabase.auth.resend({
         type: "signup",
         email: pendingEmail,
@@ -108,45 +156,53 @@ function RegisterInner() {
     }
   };
 
+  /**
+   * Ask for an SMS code. Returns true when a code was actually sent, false when
+   * verification is not available yet — the caller then completes signup with
+   * the number stored but unverified.
+   */
+  const startPhoneVerification = async (accessToken: string, e164: string) => {
+    const res = await fetch("/api/auth/phone/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ phone: e164 }),
+    });
+
+    if (res.status === 503) return false; // Telnyx not configured / 10DLC pending
+    if (res.ok) return true;
+
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Could not send a verification code.");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setNotice("");
 
-    if (isNativeApp && tier !== "free") {
-      setTier("free");
+    const e164 = toE164(phone);
+    if (!e164) {
+      setError(
+        "Enter a valid mobile number. US and Canada can use 10 digits; otherwise include your country code.",
+      );
       return;
     }
-
-    // Snappd goes straight to its own live Payment Link (hosted Stripe
-    // Checkout). On completion Stripe redirects to /welcome?tier=snappd, which
-    // auto-provisions the photographer account + studio role — no separate
-    // signup form step needed here.
-    if (tier === "snappd") {
-      window.location.href = SNAPPD_PAYMENT_LINK;
-      return;
-    }
-
-    // Other paid tiers go through Stripe — send the user to /membership where
-    // the live Payment Links start Checkout → /welcome grants the role after pay.
-    if (tier !== "free") {
-      router.push("/membership");
-      return;
-    }
-
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
     }
-        setLoading(true);
+
+    setLoading(true);
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: {
-            role: "free",
-          },
+          data: { role: "free", phone: e164 },
+          emailRedirectTo,
         },
       });
       if (signUpError) throw signUpError;
@@ -165,10 +221,12 @@ function RegisterInner() {
         session = signInData.session ?? null;
       }
 
-      // Still no session → email confirmation is genuinely required. Show a
-      // clear message and surface a "resend" action instead of a dead end.
+      // Still no session → email confirmation is genuinely required. The phone
+      // routes need an authenticated caller, so verification waits until they
+      // are signed in. The number is already on the account metadata.
       if (!session) {
         setPendingEmail(email);
+        setPhase("confirm");
         setNotice(
           "Almost there — we sent a confirmation link to " +
             email +
@@ -179,34 +237,66 @@ function RegisterInner() {
       }
 
       // Best-effort seed of the profiles row (service-role endpoint). Never
-      // block the redirect on it — it can be seeded on the next auth'd request.
+      // block on it — it can be seeded on the next auth'd request.
       try {
-        const accessToken = session?.access_token;
-        if (accessToken) {
-          await fetch("/api/social/profile/init", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({ role: "free" }),
-          });
-        }
+        await fetch("/api/social/profile/init", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ role: "free" }),
+        });
       } catch {
         /* seeded later */
       }
 
-      // Newly created free account → offer the one-time camera/microphone
-      // setup step before the page they were heading to. Once this device has
-      // been through it, this is a no-op and they go straight to `next`.
-      router.push(postSignupDestination(next, hasSeenMediaSetup()));
+      const codeSent = await startPhoneVerification(session.access_token, e164);
+      if (!codeSent) {
+        // Verification is not live yet — the number is on the account, and the
+        // account is real. Let them in.
+        finishSignup();
+        return;
+      }
+      setPhase("verify");
+      setLoading(false);
     } catch (err: any) {
       setError(err?.message ?? "Could not create your account.");
       setLoading(false);
     }
   };
 
-  const paid = tier !== "free" && !isNativeApp;
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your session expired. Sign in to finish verifying.");
+
+      const res = await fetch("/api/auth/phone/check", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "That code didn't match.");
+
+      finishSignup();
+    } catch (err: any) {
+      setError(err?.message ?? "Could not verify that code.");
+      setLoading(false);
+    }
+  };
+
+  const inputClass =
+    "w-full rounded-xl border border-white/10 bg-black/60 px-4 py-3 text-sm transition focus:border-[#c9a96e] focus:outline-none";
+  const ctaClass =
+    "w-full rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] py-3 text-sm font-semibold text-[#0a0a0a] transition disabled:opacity-50";
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -215,38 +305,10 @@ function RegisterInner() {
           <p className="text-xs uppercase tracking-widest text-[#c9a96e]">Join Melori</p>
           <h1 className="text-3xl font-bold mt-1">Create your account</h1>
           <p className="text-sm text-[#888] mt-1">
-            {isNativeApp ? "Set up your free account." : "Pick a plan to get started."}
+            {phase === "verify"
+              ? "Enter the code we texted you."
+              : "Email, password, and a mobile number. That's it."}
           </p>
-        </div>
-
-        {/* Tier picker */}
-        <div className="grid gap-3 mb-6">
-          {visibleTiers.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              data-native-hide={t.id === "free" ? undefined : ""}
-              onClick={() => setTier(t.id)}
-              className={`text-left rounded-2xl border p-4 transition ${
-                tier === t.id
-                  ? "border-[#c9a96e] bg-[#c9a96e]/10"
-                  : "border-white/10 bg-white/[0.02] hover:border-[#c9a96e]/40"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{t.name}</span>
-                {/* The paid cards are already hidden natively, which left the
-                    free tier's "$0" as the only price rendering in the wrapper.
-                    $0 is not a purchase, but it is an amount in a pricing
-                    table, and this app has been rejected three times over this
-                    class of thing. The wrapper shows plan names, not amounts. */}
-                <span data-native-hide className="text-sm text-[#c9a96e]">
-                  {t.price}
-                </span>
-              </div>
-              <p className="text-xs text-[#888] mt-1">{t.blurb}</p>
-            </button>
-          ))}
         </div>
 
         {notice && (
@@ -270,52 +332,37 @@ function RegisterInner() {
           </p>
         )}
 
-        {paid ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center" data-native-hide>
-            <p className="text-sm text-[#bbb]">
-              {tier === "artist"
-                ? "Artist"
-                : tier === "snappd"
-                  ? "Snappd photographer"
-                  : "Superfan"}{" "}
-              membership is set up through secure Stripe checkout. After payment
-              you&apos;ll finish creating your account.
-            </p>
-            {(tier === "artist" || tier === "snappd") && (
-  <div data-native-hide className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left">
-    <p className="text-sm font-medium text-[#f0d99c]">
-      After you join, set up payouts to get paid
-    </p>
-    <p className="mt-1 text-xs text-[#888]">
-      {tier === "snappd"
-        ? "Snappd photographers keep 80% of every $1.99 instant print sale (Melori keeps 20%). Once your account is created, head to Artist Studio → Payouts to connect Stripe. Have these ready:"
-        : "No platform cut on music sales — you keep every dollar after Stripe's payment processing fee. Once your account is created, head to Artist Studio → Payouts to connect Stripe. Have these ready:"}
-    </p>
-    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#bbb]">
-      <li>A government-issued photo ID to verify your identity.</li>
-      <li>Your date of birth and home address.</li>
-      <li>Your bank account and routing numbers (or a debit card).</li>
-      <li>For US taxes: your SSN (or EIN for a business).</li>
-    </ul>
-    <p className="mt-2 text-xs text-[#7a8a80]">
-      You enter this on Stripe&apos;s secure page &mdash; Melori never sees
-      or stores your ID or bank details.
-    </p>
-  </div>
-)}
-            <button
-              type="button"
-              onClick={() =>
-                tier === "snappd"
-                  ? (window.location.href = SNAPPD_PAYMENT_LINK)
-                  : router.push("/membership")
-              }
-              className="mt-4 w-full py-3 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm"
-            >
-              Continue to checkout
+        {phase === "verify" ? (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="6-digit code"
+              className={inputClass}
+            />
+            <button type="submit" disabled={loading} className={ctaClass}>
+              {loading ? "Verifying…" : "Verify and continue"}
             </button>
-          </div>
-        ) : (
+            <p className="text-center text-xs text-[#888]">
+              Texted to {phone}.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPhase("form");
+                  setCode("");
+                  setError("");
+                }}
+                className="text-[#c9a96e] hover:underline"
+              >
+                Wrong number?
+              </button>
+            </p>
+          </form>
+        ) : phase === "confirm" ? null : (
           <>
             <button
               type="button"
@@ -330,28 +377,39 @@ function RegisterInner() {
               <span className="h-px flex-1 bg-white/10" />
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
-  <input
+              <input
                 type="email"
                 required
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
-                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+                className={inputClass}
               />
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password (min 6 chars)"
-                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c9a96e] transition"
+                className={inputClass}
               />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-full bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? "Creating…" : "Create free account"}
+              <input
+                type="tel"
+                required
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Mobile number"
+                className={inputClass}
+              />
+              <p className="text-xs text-[#7a8a80]">
+                Melori is live video and audio. Your number keeps the rooms real —
+                one person, one account. We never show it and never sell it.
+              </p>
+              <button type="submit" disabled={loading} className={ctaClass}>
+                {loading ? "Creating…" : "Create account"}
               </button>
             </form>
           </>
@@ -363,6 +421,17 @@ function RegisterInner() {
             Sign In
           </Link>
         </p>
+
+        {/* Plans live on their own page, after the account exists. Never in the
+            native wrapper — no prices, no web checkout. */}
+        {!isNativeApp && phase === "form" && (
+          <p data-native-hide className="text-center text-xs text-[#666] mt-3">
+            Accounts are free.{" "}
+            <Link href="/membership" className="text-[#8a7550] hover:underline">
+              See Superfan, Artist and Snappd plans
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );

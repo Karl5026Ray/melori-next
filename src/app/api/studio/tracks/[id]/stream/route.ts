@@ -12,17 +12,27 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 // GET /api/studio/tracks/[id]/stream — signed URL for a `studio_tracks` row.
 //
-// MUSIC IS FREE. Mirrors the legacy `/api/tracks/[id]/stream` contract: every
-// listener gets the full-length master, there is no membership gate and no
-// sample window. See that route for the reasoning.
+// MUSIC IS FREE, BUT NOT ANONYMOUS. Mirrors the legacy
+// `/api/tracks/[id]/stream` contract: every signed-in account gets the
+// full-length master, there is no membership tier and no sample window, and an
+// unauthenticated request gets 401. See that route for the reasoning.
 //
-// Listen logging fires for any authenticated listener and still excludes
-// self-listens by the owning artist.
+// Listen logging still excludes self-listens by the owning artist.
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
     if (!UUID_RE.test(params.id)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Resolve the caller FIRST — an anonymous request never reaches the
+    // database.
+    const { userId: listenerId } = await getRequestMembership(request);
+    if (!listenerId) {
+      return NextResponse.json(
+        { error: "Create a free account to listen", requiresAuth: true },
+        { status: 401 },
+      );
     }
 
     const supabaseAdmin = getSupabaseAdmin();
@@ -38,8 +48,6 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     if (!track) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    const { userId: listenerId } = await getRequestMembership(request);
 
     // Prefer `file_path` (a bare Storage object key) for signing. Fall back to
     // `file_url` — historically a full public URL, which toObjectKey() reduces
@@ -61,9 +69,8 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       throw new Error("Could not resolve a playable URL for the track audio");
     }
 
-    // Listen logging: any authenticated listener, exclude self-listens,
-    // fire-and-forget.
-    if (listenerId && track.profile_id && listenerId !== track.profile_id) {
+    // Listen logging: exclude self-listens, fire-and-forget.
+    if (track.profile_id && listenerId !== track.profile_id) {
       void supabaseAdmin
         .from("track_listens")
         .insert({
@@ -84,8 +91,8 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json({
       url: playbackUrl,
       expiresIn: EXPIRES_IN,
-      // Retained for client compatibility. Music is free, so playback is never
-      // sampled or windowed.
+      // Retained for client compatibility. Music is free to members, so
+      // playback is never sampled or windowed.
       sample: false,
       sampleSeconds: null,
       previewStart: null,

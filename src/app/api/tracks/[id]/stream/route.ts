@@ -11,9 +11,10 @@ const EXPIRES_IN = 3600;
 
 // GET /api/tracks/[id]/stream — a short-lived signed URL for the track's audio.
 //
-// MUSIC IS FREE. Every listener, signed in or not, gets the full-length master.
-// There is no membership gate, no 30-second sample and no preview window here
-// any more.
+// MUSIC IS FREE, BUT NOT ANONYMOUS. Every signed-in account — free or any other
+// role — gets the full-length master. There is no membership tier, no 30-second
+// sample and no preview window. An unauthenticated request gets 401: the
+// catalog opens at first sign in, not before it.
 //
 // The previous design gated on isSuperfanOrBetter() and, for free listeners,
 // either signed a dedicated `preview_url` clip or — far more commonly, because
@@ -27,11 +28,22 @@ const EXPIRES_IN = 3600;
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabaseAdmin = getSupabaseAdmin();
     const id = Number(params.id);
     if (!Number.isInteger(id)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Resolve the caller FIRST. An anonymous request never reaches the
+    // database — it costs nothing and leaks nothing about the catalog.
+    const { userId: listenerId } = await getRequestMembership(request);
+    if (!listenerId) {
+      return NextResponse.json(
+        { error: "Create a free account to listen", requiresAuth: true },
+        { status: 401 },
+      );
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
 
     // Join to releases -> artists to resolve the owning artist's profile_id;
     // needed so a listen event can be attributed to the correct artist. Kept
@@ -50,8 +62,6 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     if (!track) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    const { userId: listenerId } = await getRequestMembership(request);
 
     // Resolve the owning artist's profile_id from the embed. Supabase returns
     // embedded relations as either an object or a single-item array depending
@@ -79,14 +89,12 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       throw new Error("Could not resolve a playable URL for the track audio");
     }
 
-    // Fire-and-forget: log a listen for any authenticated listener. We DO NOT
-    // block the response on this insert — playback should start even if
-    // analytics logging fails. Anonymous plays are still excluded because a
-    // listen row needs a listener_id.
+    // Fire-and-forget: log the listen. We DO NOT block the response on this
+    // insert — playback should start even if analytics logging fails.
     //
     // Self-listens (artist streaming their own track) are excluded, so artists
     // can't inflate their own leaderboard by hitting refresh.
-    if (listenerId && artistOwnerId && listenerId !== artistOwnerId) {
+    if (artistOwnerId && listenerId !== artistOwnerId) {
       void supabaseAdmin
         .from("track_listens")
         .insert({
@@ -105,8 +113,8 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json({
       url: playbackUrl,
       expiresIn: EXPIRES_IN,
-      // Retained for client compatibility. Music is free, so playback is never
-      // sampled or windowed.
+      // Retained for client compatibility. Music is free to members, so
+      // playback is never sampled or windowed.
       sample: false,
       sampleSeconds: null,
       previewStart: null,

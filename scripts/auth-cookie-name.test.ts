@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AUTH_STORAGE_KEY,
+  hasSessionCookie,
   isAuthCookieName,
   isLegacySupabaseAuthCookieName,
 } from "@/lib/authStorageKey";
@@ -96,6 +97,60 @@ check(
 check(
   "the proxy no longer hard-codes the supabase-js default cookie name inline",
   !proxy.includes("/^sb-.+-auth-token"),
+);
+
+
+// ---------------------------------------------------------------------------
+// THE CLIENT SIDE OF THE SAME QUESTION.
+//
+// The proxy asks "does this REQUEST carry a session?" of the edge. The
+// transport asks "does this BROWSER carry one?" of document.cookie, because
+// since #365 the proxy REWRITES "/" to the door for a stranger — the signup
+// form renders while usePathname() still reports "/". Testing the route alone
+// put a playback bar and a draggable pill on top of the signup form for every
+// visitor who reached melorimusic.org. Both questions now go through the
+// matchers above, so they cannot answer differently.
+console.log("\nSession presence in a document.cookie string\n");
+
+const SIGNED_IN_COOKIE_STRING =
+  `melori-theme=dark; ${AUTH_STORAGE_KEY}.0=eyJhY2Nl; ${AUTH_STORAGE_KEY}.1=c3NfdG9r; ` +
+  `${AUTH_STORAGE_KEY}.2=ZW4ifQ; _vercel_jwt=xyz`;
+
+check(
+  "a real signed-in browser's cookie string reads as a session",
+  hasSessionCookie(SIGNED_IN_COOKIE_STRING),
+);
+check(
+  "the unchunked cookie alone reads as a session",
+  hasSessionCookie(`${AUTH_STORAGE_KEY}=eyJhY2Nl`),
+);
+check(
+  "a legacy supabase-js cookie still reads as a session",
+  hasSessionCookie("sb-ouvovhwizsuhjxxmccex-auth-token=eyJhY2Nl"),
+);
+// e2e/support/door.ts plants exactly this to get the player specs past the
+// door. If this stops counting, the required FloatingPlayer suite goes red.
+check(
+  "the e2e door-bypass cookie counts, so the player specs still reach the pill",
+  hasSessionCookie("sb-e2e-auth-token=e2e-door-bypass-not-a-session"),
+);
+
+// THE CASE THE BUG WAS: a stranger on the door.
+check(
+  "a signed-out visitor's cookie string is NOT a session",
+  !hasSessionCookie("melori-theme=dark; _vercel_jwt=xyz"),
+);
+check("an empty cookie string is not a session", !hasSessionCookie(""));
+check("a missing cookie string is not a session", !hasSessionCookie(null));
+// Mirrors hasSupabaseSession() in the proxy: the value has to be non-empty.
+// A name with no value is a cookie that has been cleared.
+check(
+  "a cleared session cookie (name, empty value) is not a session",
+  !hasSessionCookie(`${AUTH_STORAGE_KEY}.0=`),
+);
+check(
+  "a near-miss name in a cookie string is not a session",
+  !hasSessionCookie(`${AUTH_STORAGE_KEY}-code-verifier=abc; not-${AUTH_STORAGE_KEY}=abc`),
 );
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);

@@ -6,7 +6,7 @@ import CoverImage from "@/components/CoverImage";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
 import { isMediaRoomRoute } from "@/lib/mediaRoomRoute";
-import { isTransportRoute } from "@/lib/transportRoute";
+import { useTransportVisible } from "@/components/player/useTransportVisible";
 
 function PlayPauseIcon({ playing }: { playing: boolean }) {
   if (playing) {
@@ -79,10 +79,10 @@ function ChevronIcon({ down }: { down: boolean }) {
 export default function AudioPlayer() {
   const { pause } = usePlayer();
   const pathname = usePathname();
-  // The transport is a main-page control only (see lib/transportRoute.ts).
-  // Every other space — music, store, social, studio, checkout, account,
-  // photography, admin — renders no playback bar at all.
-  const onMainPage = isTransportRoute(pathname);
+  // The transport is a main-page control AND a members-only one. Both halves
+  // live in useTransportVisible, which MainContent also calls for the bottom
+  // clearance, so the bar and the space reserved for it cannot disagree.
+  const showTransport = useTransportVisible();
   const inRoom = isMediaRoomRoute(pathname);
   // Mirror is a video feed that plays its own audio on every card, so the
   // background music track would fight the card's soundtrack. Treat Mirror
@@ -97,11 +97,11 @@ export default function AudioPlayer() {
     if (inRoom || onMirror) pause();
   }, [inRoom, onMirror, pause]);
 
-  // Everywhere except the main page renders no transport. The <audio> element
-  // lives in PlayerProvider (mounted at the layout root), so a track started
-  // on the main page keeps playing as the listener browses — only the UI is
-  // route-scoped. Pages that need controls (Radio) render their own.
-  if (!onMainPage) return null;
+  // Anywhere the transport does not belong renders nothing at all. The <audio>
+  // element lives in PlayerProvider (mounted at the layout root), so a track
+  // started on the home page keeps playing as the member browses — only the UI
+  // is scoped. Pages that need controls (Radio) render their own.
+  if (!showTransport) return null;
 
   return (
     <>

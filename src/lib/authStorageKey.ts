@@ -49,3 +49,35 @@ export function isAuthCookieName(name: string): boolean {
 export function isLegacySupabaseAuthCookieName(name: string): boolean {
   return /^sb-.+-auth-token(\.\d+)?$/.test(name);
 }
+
+/**
+ * Presence test over a `document.cookie`-style string, for CLIENT code.
+ *
+ * src/proxy.ts asks the same question of the request on the edge; this asks it
+ * of the browser. Both go through the matchers above, deliberately, so the two
+ * halves of "is this visitor signed in?" cannot answer differently — which is
+ * the failure mode that locked every member out on 2026-09-07.
+ *
+ * Mirrors hasSupabaseSession() in the proxy exactly: the NAME must match and
+ * the VALUE must be non-empty. A name with no value is a cleared cookie.
+ */
+export function hasSessionCookie(cookieString: string | null | undefined): boolean {
+  if (!cookieString) return false;
+  return cookieString.split(";").some((part) => {
+    const eq = part.indexOf("=");
+    if (eq < 0) return false;
+    const rawName = part.slice(0, eq).trim();
+    const rawValue = part.slice(eq + 1).trim();
+    if (!rawName || !rawValue) return false;
+    // Cookies are written through encodeURIComponent (see
+    // src/lib/supabaseCookieStorage.ts). Nothing in the current names needs
+    // escaping, but decode anyway rather than depend on that staying true.
+    let name = rawName;
+    try {
+      name = decodeURIComponent(rawName);
+    } catch {
+      /* not valid percent-encoding — match the raw name instead */
+    }
+    return isAuthCookieName(name) || isLegacySupabaseAuthCookieName(name);
+  });
+}

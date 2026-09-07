@@ -23,6 +23,7 @@ const layout = read("src/app/layout.tsx");
 const globals = read("src/app/globals.css");
 const video = read("src/components/social/video/VideoCard.tsx");
 const mainContent = read("src/components/MainContent.tsx");
+const transportVisible = read("src/components/player/useTransportVisible.ts");
 const player = read("src/components/AudioPlayer.tsx");
 
 check(
@@ -70,10 +71,33 @@ check(
     !isTransportRoute(null),
 );
 check(
-  "AudioPlayer renders nothing off the main page",
-  player.includes('from "@/lib/transportRoute"') &&
-    player.includes("const onMainPage = isTransportRoute(pathname)") &&
-    player.includes("if (!onMainPage) return null;"),
+  "AudioPlayer renders nothing unless the transport belongs on screen",
+  player.includes('from "@/components/player/useTransportVisible"') &&
+    player.includes("const showTransport = useTransportVisible()") &&
+    player.includes("if (!showTransport) return null;"),
+);
+// THE DOOR CASE. "/" is not always the home page: since #365 the proxy REWRITES
+// "/" to the signup form for anyone without a session, and usePathname() still
+// reports "/". The route test alone therefore drew a playback bar and a
+// draggable pill on top of the signup form for every stranger who reached the
+// site — with a track title read out of localStorage. Verified on production,
+// signed out, 2026-09-07.
+//
+// These pin that the fix cannot be undone by "simplifying" the hook back to a
+// route check, and that the two callers keep asking the SAME question: if
+// AudioPlayer hides the bar while MainContent still reserves its space, the
+// signup form gets a strip of dead air under it instead.
+check(
+  "the transport is members-only, not merely route-scoped",
+  transportVisible.includes('from "@/lib/authStorageKey"') &&
+    transportVisible.includes("hasSessionCookie(document.cookie)") &&
+    transportVisible.includes("return onTransportRoute && signedIn;"),
+);
+check(
+  "the bar and the space reserved for it are decided by one shared hook",
+  player.includes("useTransportVisible()") &&
+    mainContent.includes("useTransportVisible()") &&
+    !mainContent.includes("isTransportRoute("),
 );
 check(
   "root content clearance is route-aware, not a global transport reserve",

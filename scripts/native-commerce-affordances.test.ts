@@ -111,7 +111,6 @@ const PINNED: [string, string][] = [
   ["components/CatalogCard.tsx", "the price on every catalog card"],
   ["app/music/[id]/page.tsx", "the single-track price"],
   ["app/music/album/[slug]/page.tsx", "the album price"],
-  ["app/gallery/page.tsx", "the 'Buy digital copies ... via Stripe' feature"],
   ["components/social/rooms/RoomChat.tsx", "the Go Superfan button in room chat"],
   ["components/social/faces/FacesLiveChat.tsx", "the Go Superfan button in Faces chat"],
   ["app/register/page.tsx", "the paid signup tiers"],
@@ -120,6 +119,28 @@ for (const [rel, what] of PINNED) {
   const src = readFileSync(join(SRC, rel), "utf8");
   if (src.includes("data-native-hide")) pass(`${what} is marked data-native-hide`);
   else fail(`${what} lost its data-native-hide marker (${rel})`);
+}
+
+// app/gallery/page.tsx was pinned here too: it carried a "Buy digital copies …
+// via Stripe" feature card behind data-native-hide. Gallery print sales are off
+// entirely now (src/lib/gallerySales.ts) and the card is GONE rather than
+// hidden, which is the stronger guarantee — there is no marker left to pin.
+//
+// So the assertion inverts. Pinning the absence keeps the guard: putting a
+// purchase CTA back on this page has to come past this test and decide, again,
+// whether the native wrapper is allowed to see it.
+{
+  const rel = "app/gallery/page.tsx";
+  const src = readFileSync(join(SRC, rel), "utf8");
+  // Named apart from the module-level CTA above: this one is deliberately
+  // broader, because on this page there is no longer any legitimate reason to
+  // mention Stripe or a purchase at all.
+  const GALLERY_CTA = /ShoppingBag|Stripe|purchase|Buy digital/i;
+  if (GALLERY_CTA.test(src)) {
+    fail(`${rel} has a purchase CTA again — gate it or mark it data-native-hide`);
+  } else {
+    pass("the gallery page carries no purchase CTA at all (print sales are off)");
+  }
 }
 
 // The /register tier grid gates by tier id rather than a plain marker, so pin

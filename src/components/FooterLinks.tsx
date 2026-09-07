@@ -10,7 +10,7 @@ type FooterLink = { label: string; href: string };
 // only to keep commerce away from App Review, and there is no commerce here.
 const FOOTER_LINKS: FooterLink[] = [
   { label: "Music", href: "/music" },
-  { label: "Photography", href: "/photography" },
+  { label: "Photography", href: "/gallery" },
   { label: "Mission", href: "/mission" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },

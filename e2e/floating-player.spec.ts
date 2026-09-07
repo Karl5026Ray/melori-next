@@ -577,3 +577,67 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     ).toBeGreaterThan(tabBarZ);
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE DOOR. No bypassDoor here, deliberately — this block is a stranger.
+//
+// "/" is not always the home page. Since #365 the proxy REWRITES "/" to the
+// signup form for anyone without a session, and the URL stays "/", so
+// usePathname() reports "/" either way. The transport used to test the route
+// alone, which meant every stranger who reached melorimusic.org got a full
+// playback bar pinned to the bottom of the signup screen and a draggable pill
+// on top of the form — captioned with whatever track title was left in
+// localStorage. Confirmed on production, signed out, on 2026-09-07:
+//
+//   { path: "/", doorShowing: true, authCookieNames: [],
+//     floatingPlayerVisible: true, rect: 235x56 at y=534 }
+//
+// The blocks above can only ever prove the pill IS there, because they let
+// themselves in first. This is the half that proves it is NOT there for
+// everyone else — and it is the half that was missing.
+// ---------------------------------------------------------------------------
+test.describe("The door carries no transport (signed out)", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("a stranger at the site root gets the signup form and no player", async ({
+    page,
+  }) => {
+    // Seed a track the way a returning visitor would have one. This is the
+    // exact condition that made the bug visible rather than empty: the pill
+    // rendered with a real title read out of storage.
+    await page.addInitScript((track) => {
+      try {
+        localStorage.setItem("melori:lastTrack", JSON.stringify(track));
+      } catch {
+        /* storage unavailable — the assertion below still stands */
+      }
+    }, SEEDED_TRACK);
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+
+    // The door is what renders. If this fails the wall is broken, not the
+    // transport, and the rest of this test would be meaningless.
+    await expect(
+      page.getByRole("heading", { name: /create your account/i }),
+      "the site root should show the door to a visitor with no session",
+    ).toBeVisible({ timeout: 20_000 });
+
+    // Give hydration room to do the wrong thing. The transport was never in
+    // the server HTML — it appeared a tick after hydration — so asserting
+    // straight after load would have passed even while the bug was live.
+    await page.waitForTimeout(3_000);
+
+    await expect(
+      page.getByTestId("floating-player"),
+      "the floating pill must not render over the signup form",
+    ).toHaveCount(0);
+
+    // The desktop bar is hidden by a media query at this width, so count it in
+    // the DOM rather than asking whether it is visible. It was present here
+    // too, and on a desktop viewport a stranger could actually see it.
+    await expect(
+      page.locator("div.hidden.md\\:block.fixed.bottom-0"),
+      "the desktop transport bar must not be mounted over the signup form",
+    ).toHaveCount(0);
+  });
+});

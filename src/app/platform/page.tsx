@@ -1,8 +1,11 @@
 "use client";
 
-// melori.org — the door. The first thing anyone sees.
+// The door — the first thing a signed-out visitor sees.
 //
-// Served at melori.org/ via the host rewrite in src/proxy.ts.
+// Served at melorimusic.org/ (signed out) and melori.org/ via the rewrites in
+// src/proxy.ts. A signed-in visitor never reaches it: the proxy sends them
+// straight to the app, and the session check below catches the one case the
+// proxy cannot see.
 //
 // WHY THE HAND-OFF EXISTS
 // -----------------------
@@ -29,7 +32,8 @@
 // Nothing here may link into the native app's world — melori.org is not in
 // mobile/capacitor.config.json allowNavigation.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +59,7 @@ function toE164(raw: string): string | null {
 }
 
 export default function MeloriDoorPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -63,6 +68,25 @@ export default function MeloriDoorPage() {
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
   const [resending, setResending] = useState(false);
+
+  // A member who is already signed in has no business on the door.
+  //
+  // The proxy decides who lands here from an `sb-*-auth-token` COOKIE. WebKit's
+  // ITP caps script-written cookies at 7 days regardless of the Max-Age we ask
+  // for (see supabaseCookieStorage.ts), so an iOS member can hold a perfectly
+  // live session in the localStorage mirror with no cookie left — and the proxy
+  // would send them here. getSession() reads the mirror too, so this catches
+  // exactly that case and forwards them on. Cost of an evicted cookie: one
+  // redirect, not a login.
+  useEffect(() => {
+    let active = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active && data.session) router.replace("/music");
+    });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const emailRedirectTo = `${APP_ORIGIN}/auth/callback?next=${encodeURIComponent(AFTER_SIGNUP)}`;
 

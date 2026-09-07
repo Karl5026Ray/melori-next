@@ -51,6 +51,70 @@ const ADMIN_SECRET_KEY = getAdminSecretKey();
 // /music. So an evicted cookie costs one redirect, never a login.
 const DOOR_PATH = "/platform";
 
+// ---------------------------------------------------------------------------
+// What stays public.
+//
+// Karl, 2026-09-07: "All of my social links work without an account as of now
+// ... hide everything until an account is made. I am only leaving the
+// photography exposed because I am a photographer and I could use this as a way
+// to advertise."
+//
+// Until now the door covered exactly one path — `/`. Every one of the 22 routes
+// under /social was reachable signed out, as were /dashboard, /settings and
+// /upload, several of which only checked the session in a useEffect AFTER the
+// page had already rendered and shipped its content.
+//
+// This is an ALLOWLIST, not a blocklist, and that is the whole point: a
+// blocklist silently fails open every time someone adds a route. Anything not
+// named here meets the door.
+//
+// The four groups, and why each is public:
+//   1. The advertising  — the photography gallery and Karl's own introduction.
+//      This is the surface that has to be findable by a stranger.
+//   2. The artists      — read-only profile pages. Gating these would hide
+//      Kaiel R and Gloria Joy Rivers from Google, which is the opposite of what
+//      a platform short on traffic needs.
+//   3. The way in       — the door itself, sign-in, registration and password
+//      recovery. Gating the signup page behind signup is the classic own goal.
+//   4. The obligations  — privacy, terms, support, mission, and the native
+//      account-info page. App Review requires these reachable without an
+//      account, and hiding a privacy policy behind a login is indefensible
+//      regardless.
+//
+// /admin is here because it runs its own JWT gate below; adding it to the door
+// would lock Karl out of his own dashboard.
+const PUBLIC_EXACT = new Set([
+  "/about",
+  "/account-info",
+  "/admin",
+  "/artists",
+  "/forgot-password",
+  "/gallery",
+  "/login",
+  "/mission",
+  "/photography",
+  "/platform",
+  "/privacy",
+  "/register",
+  "/reset-password",
+  "/support",
+  "/terms",
+  "/welcome",
+]);
+
+const PUBLIC_PREFIXES = [
+  "/artists/",
+  "/auth/",
+  "/gallery/",
+  "/reset-password/",
+  "/social/auth",
+];
+
+export function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.has(pathname)) return true;
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 /**
  * Does this request carry a Supabase session cookie?
  *
@@ -213,11 +277,24 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const platformRoute = routePlatformHost(request, pathname);
   if (platformRoute) return platformRoute;
 
-  // The door: a signed-out visitor meets the signup page, not a catalog whose
-  // every play button answers 401. Root only — deep links are left alone so a
-  // shared track or profile URL still resolves.
-  if (pathname === "/" && !hasSupabaseSession(request)) {
-    return rewriteToDoor(request);
+  // The door. Everything that is not on the public allowlist above requires a
+  // session.
+  //
+  // `/` is REWRITTEN rather than redirected — the URL stays `/` and the door
+  // renders in place, which is the behaviour melorimusic.org has had since the
+  // door shipped, and it keeps the home page's ISR caching intact.
+  //
+  // Every other gated path REDIRECTS. A rewrite there would leave the address
+  // bar reading /social/messages while showing a signup form, which looks like
+  // a bug rather than a wall.
+  //
+  // This is a cookie PRESENCE test, deliberately (see hasSupabaseSession). It is
+  // the optimistic pre-filter, not the security boundary: pages, route handlers
+  // and RLS still have to verify the caller. Supabase's own guidance is explicit
+  // that a session read in proxy code is not trustworthy on its own.
+  if (!isPublicPath(pathname) && !hasSupabaseSession(request)) {
+    if (pathname === "/") return rewriteToDoor(request);
+    return NextResponse.redirect(new URL(DOOR_PATH, request.url));
   }
 
   // Admin dashboard gate runs first — its redirects should not carry the

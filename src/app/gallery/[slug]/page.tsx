@@ -6,6 +6,7 @@ import { galleryCookieName } from "@/lib/gallery-auth";
 import PasswordGate from "./PasswordGate";
 import GalleryViewer, { type ViewerFolder, type ViewerImage } from "./GalleryViewer";
 import { folderShareKeys, FOLDER_QUERY_PARAM } from "./share";
+import { GALLERY_SALES_ENABLED } from "@/lib/gallerySales";
 
 export const dynamic = "force-dynamic";
 
@@ -184,8 +185,11 @@ export default async function GalleryViewerPage(props: {
     blurHash: img.blur_hash,
     caption: img.caption,
     filename: img.filename,
-    forSale: img.for_sale,
-    priceCents: img.price_cents,
+    // Sales are off (src/lib/gallerySales.ts). The columns are still read and
+    // still written by the studio — they just do not cross to the client, so
+    // no price exists in the page for anyone to find.
+    forSale: GALLERY_SALES_ENABLED ? img.for_sale : false,
+    priceCents: GALLERY_SALES_ENABLED ? img.price_cents : null,
   }));
 
   const viewerFolders: ViewerFolder[] = (folders ?? []).map((f) => ({

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { resolveAudioUrl } from "@/lib/supabase/storagePath";
 import { getRequestMembership } from "@/lib/membership-server";
-import { isSuperfanOrBetter, FREE_SAMPLE_SECONDS } from "@/lib/membership";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,15 +12,12 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 // GET /api/studio/tracks/[id]/stream — signed URL for a `studio_tracks` row.
 //
-// This mirrors the legacy `/api/tracks/[id]/stream` contract (integer ids)
-// so the client audio pipeline can be unified against a single response
-// shape. Membership gating is the same:
-//   - Superfan-or-better: full-length audio.
-//   - Everyone else: dedicated `preview_url` clip if present, otherwise
-//     the full file with a client-side 30s cap.
+// MUSIC IS FREE. Mirrors the legacy `/api/tracks/[id]/stream` contract: every
+// listener gets the full-length master, there is no membership gate and no
+// sample window. See that route for the reasoning.
 //
-// Listen logging fires only for authenticated superfans+ and excludes
-// self-listens by the owning artist, matching the legacy route.
+// Listen logging fires for any authenticated listener and still excludes
+// self-listens by the owning artist.
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
@@ -32,7 +28,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     const supabaseAdmin = getSupabaseAdmin();
     const { data: track, error } = await supabaseAdmin
       .from("studio_tracks")
-      .select("id, file_url, file_path, preview_url, preview_start, preview_end, status, profile_id")
+      .select("id, file_url, file_path, preview_url, status, profile_id")
       .eq("id", params.id)
       .eq("status", "published")
       .eq("moderation_status", "clean")
@@ -43,27 +39,16 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const { profile, userId: listenerId } = await getRequestMembership(request);
-    const fullAccess = isSuperfanOrBetter(profile);
+    const { userId: listenerId } = await getRequestMembership(request);
 
-    // Prefer `file_path` (Supabase Storage object key) for signing. Fall back
-    // to `file_url` if that's what was populated. Preview mirrors the same
-    // logic for free listeners.
-    const fullPath = track.file_path ?? track.file_url;
-    const sourcePath = fullAccess
-      ? fullPath ?? track.preview_url
-      : track.preview_url ?? fullPath;
+    // Prefer `file_path` (a bare Storage object key) for signing. Fall back to
+    // `file_url` — historically a full public URL, which toObjectKey() reduces
+    // to a key before signing — and finally to `preview_url` for rows where no
+    // master was ever attached.
+    const sourcePath = track.file_path ?? track.file_url ?? track.preview_url;
 
     if (!sourcePath) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    const sample = !fullAccess;
-    const dedicatedPreview = !fullAccess && Boolean(track.preview_url);
-    if (sample && !dedicatedPreview) {
-      console.warn(
-        `studio/tracks/${params.id}/stream: serving full audio to free listener — no preview_url; 30s cap is client-side only.`,
-      );
     }
 
     const playbackUrl = await resolveAudioUrl(
@@ -76,23 +61,9 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       throw new Error("Could not resolve a playable URL for the track audio");
     }
 
-    // Free listeners without a dedicated preview clip get a windowed sample.
-    // Use the track's own preview_start/preview_end if set, else default to
-    // [0, FREE_SAMPLE_SECONDS] — same behavior as the legacy route.
-    const previewStart = Number(track.preview_start ?? 0) || 0;
-    const previewEnd =
-      Number(track.preview_end ?? 0) > previewStart
-        ? Number(track.preview_end)
-        : previewStart + FREE_SAMPLE_SECONDS;
-    const windowed = sample && !dedicatedPreview;
-
-    // Listen logging: superfan+ only, exclude self-listens, fire-and-forget.
-    if (
-      fullAccess &&
-      listenerId &&
-      track.profile_id &&
-      listenerId !== track.profile_id
-    ) {
+    // Listen logging: any authenticated listener, exclude self-listens,
+    // fire-and-forget.
+    if (listenerId && track.profile_id && listenerId !== track.profile_id) {
       void supabaseAdmin
         .from("track_listens")
         .insert({
@@ -113,11 +84,13 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json({
       url: playbackUrl,
       expiresIn: EXPIRES_IN,
-      sample,
-      sampleSeconds: windowed ? previewEnd - previewStart : null,
-      previewStart: windowed ? previewStart : null,
-      previewEnd: windowed ? previewEnd : null,
-      dedicatedPreview,
+      // Retained for client compatibility. Music is free, so playback is never
+      // sampled or windowed.
+      sample: false,
+      sampleSeconds: null,
+      previewStart: null,
+      previewEnd: null,
+      dedicatedPreview: false,
     });
   } catch (err) {
     console.error(`GET /api/studio/tracks/${params.id}/stream failed:`, err);

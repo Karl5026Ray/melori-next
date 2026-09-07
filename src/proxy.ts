@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  isAuthCookieName,
+  isLegacySupabaseAuthCookieName,
+} from "@/lib/authStorageKey";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAdminSecretKey } from "@/lib/admin-secret";
@@ -38,8 +42,13 @@ const ADMIN_SECRET_KEY = getAdminSecretKey();
 // WHY A COOKIE CHECK IS ENOUGH HERE (AND WHY IT ISN'T ALONE)
 // ----------------------------------------------------------
 // supabaseCookieStorage.ts makes cookies the primary session store, so the
-// presence of an `sb-<ref>-auth-token` cookie is an accurate signal for almost
-// every visitor. It is a PRESENCE test, not verification — deliberately. A
+// presence of the session cookie is an accurate signal for almost every
+// visitor. WHICH cookie is not obvious and this comment used to name the wrong
+// one: supabase-js's default `sb-<ref>-auth-token`, when Melori overrides
+// storageKey to AUTH_STORAGE_KEY ("melori-auth"). The gate below therefore
+// matched nothing and bounced every signed-in member to the door, which sent
+// them back — a login loop for everyone. Both names now come from
+// src/lib/authStorageKey.ts. It is a PRESENCE test, not verification — a
 // stale cookie means someone sees the app instead of the door, which is the
 // harmless direction; the reverse would lock a real member out of their own
 // site.
@@ -149,19 +158,31 @@ export function teaserFor(pathname: string): string | null {
 }
 
 /**
- * Does this request carry a Supabase session cookie?
+ * Does this request carry a session cookie?
  *
- * Matches `sb-<project-ref>-auth-token` and its chunked forms (`.0`, `.1`, …),
- * which supabaseCookieStorage writes once the session JSON exceeds a single
- * cookie. Pattern-matched rather than built from NEXT_PUBLIC_SUPABASE_URL so a
- * project-ref change can never silently turn the door on for everyone.
+ * READ THE COMMENT IN src/lib/authStorageKey.ts BEFORE CHANGING THIS.
+ *
+ * This function used to hard-code `sb-<project-ref>-auth-token`, the name
+ * supabase-js uses when `storageKey` is left at its default. Melori overrides
+ * `storageKey` to "melori-auth" (src/lib/supabase.ts), and the cookie adapter
+ * writes it chunked as `melori-auth.0`, `melori-auth.1`, … So the pattern
+ * matched NOTHING on a real signed-in browser: the gate concluded "no session"
+ * for every member on every gated route and redirected them to the door, which
+ * saw a valid session client-side and sent them back. A closed loop, shipped to
+ * production, locking out everyone who had an account.
+ *
+ * Both names are now derived from one exported constant, so the writer and the
+ * reader cannot drift apart again. The legacy supabase-js format is still
+ * accepted: members who signed in before the cookie adapter shipped hold a real
+ * session in that shape, and deploy day should not sign them out.
  */
 function hasSupabaseSession(request: NextRequest): boolean {
   return request.cookies
     .getAll()
     .some(
       (cookie) =>
-        /^sb-.+-auth-token(\.\d+)?$/.test(cookie.name) &&
+        (isAuthCookieName(cookie.name) ||
+          isLegacySupabaseAuthCookieName(cookie.name)) &&
         cookie.value.length > 0,
     );
 }

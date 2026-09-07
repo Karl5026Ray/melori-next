@@ -8,12 +8,10 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 import {
-  User as UserIcon,
   Radio,
   RadioTower,
   Video,
   Sparkles,
-  Heart,
   X,
   ChevronDown,
   UserPlus,
@@ -21,7 +19,6 @@ import {
   Target,
   Users,
   ShoppingBag,
-  Swords,
   Clapperboard,
   HeartHandshake,
 } from "lucide-react";
@@ -34,11 +31,13 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Artists, Radio, Melori Connect (direct), then navigation categories,
- *       then Photography and Mission as direct tiles:
+ *       Artists, Radio, Melori Connect, Store (direct), then the one
+ *       navigation category:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
- *         • Signup       — Free, Artist, Superfan, Snappd (photographer)
- *         • Mission      — Why Melori (direct)
+ *       then Photography, Sign up and Mission as direct tiles.
+ *
+ *     Signup was itself a category of four tier deep-links until /register
+ *     stopped picking plans; it is now one tile to /register.
  *
  * - App Router: uses `usePathname()` from next/navigation.
  * - Brand colors only: active = brand-primary (#ff5500), inactive =
@@ -203,17 +202,20 @@ export default function MobileTabBar() {
         { label: "MM Cinema", href: "/social/cinema", icon: <Clapperboard className="h-5 w-5" />, desc: "Premieres & screenings" },
       ],
     },
-    {
-      label: "Signup",
-      icon: <UserPlus className="h-5 w-5" />,
-      items: [
-        { label: "Free", href: "/register?tier=free", icon: <UserIcon className="h-5 w-5" />, desc: "Free Fan" },
-        { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
-        { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
-        { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer" },
-      ],
-    },
   ];
+
+  // Signup used to be a category of four tier deep-links (Free / Artist /
+  // Superfan / Snappd) feeding a plan picker on /register. /register no longer
+  // picks plans — it creates the account — so the fan-out had nothing left to
+  // fan out to, and four buttons that all landed on the same form read as a
+  // paywall on the way in. One tile, one destination. Plans are offered from
+  // /membership once an account exists.
+  const signupLink: LaunchItem = {
+    label: "Sign up",
+    href: "/register",
+    icon: <UserPlus className="h-5 w-5" />,
+    desc: "Create an account",
+  };
 
   // Photography was a category holding two tiles that both opened the
   // galleries. It is a destination, not a category, so it is a direct tile —
@@ -403,6 +405,7 @@ export default function MobileTabBar() {
                         <div className="mt-3 grid grid-cols-4 gap-2">
                           {categories.map(renderCatTile)}
                           {renderTile(photographyLink)}
+                          {renderTile(signupLink)}
                           {renderTile(missionLink)}
                         </div>
                       </>
@@ -411,26 +414,22 @@ export default function MobileTabBar() {
 
                   {/* Primary actions (shown on the top-level screen only) */}
                   {!activeCat && (
-                    <div className="mt-5 grid grid-cols-2 gap-3">
+                    /* Concert (versus_battle) is deliberately NOT offered here.
+                       Concert Battle is still audio-only in production, so a
+                       launcher button would promise a video battle the room
+                       cannot run. /social/concert/create stays reachable by
+                       link; it returns to the launcher when camera publishing
+                       ships for versus_battle. Go Live is on its own now. */
+                    <div className="mt-5">
                       <button
                         onClick={() => {
                           setLauncherOpen(false);
                           router.push("/social/live");
                         }}
-                        className="flex items-center justify-center gap-2 rounded-full bg-brand-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark"
                       >
                         <Video className="h-4 w-4" />
                         Go Live
-                      </button>
-                      {/* Concert has its own creation surface and then uses the
-                         shared room engine for the live battle. */}
-                      <button
-                        type="button"
-                        onClick={() => router.push("/social/concert/create")}
-                        className="flex items-center justify-center gap-2 rounded-full bg-teal-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-teal-400"
-                      >
-                        <Swords className="h-4 w-4" />
-                        Concert
                       </button>
                     </div>
                   )}

@@ -78,8 +78,9 @@ const DOOR_PATH = "/platform";
 // named here meets the door.
 //
 // The four groups, and why each is public:
-//   1. The advertising  — the photography gallery and Karl's own introduction.
-//      This is the surface that has to be findable by a stranger.
+//   1. The advertising  — the photography gallery and Karl's own introduction,
+//      plus a page for each live room describing what happens inside it. This
+//      is the surface that has to be findable by a stranger.
 //   2. The artists      — read-only profile pages. Gating these would hide
 //      Kaiel R and Gloria Joy Rivers from Google, which is the opposite of what
 //      a platform short on traffic needs.
@@ -97,6 +98,8 @@ const PUBLIC_EXACT = new Set([
   "/account-info",
   "/admin",
   "/artists",
+  "/cinema",
+  "/faces",
   "/forgot-password",
   "/gallery",
   "/login",
@@ -104,8 +107,10 @@ const PUBLIC_EXACT = new Set([
   "/photography",
   "/platform",
   "/privacy",
+  "/radio",
   "/register",
   "/reset-password",
+  "/spaces",
   "/support",
   "/terms",
   "/welcome",
@@ -122,6 +127,34 @@ const PUBLIC_PREFIXES = [
 export function isPublicPath(pathname: string): boolean {
   if (PUBLIC_EXACT.has(pathname)) return true;
   return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// ---------------------------------------------------------------------------
+// Where a signed-out visitor lands instead of the bare door.
+//
+// Karl: "Faces should have a page telling people to join etc.... MM space, MM
+// cinema, radio."
+//
+// Sending every stranger to /platform threw away the reason they clicked. A
+// link to a Cinema screening and a link to a Spaces room are different
+// invitations, and both were being answered with the same signup form.
+//
+// So each live surface has a public page describing it (src/app/faces,
+// /spaces, /cinema, /radio) and the gate sends people there. A shared room link
+// still lands somewhere that makes sense, and the four features finally have
+// something Google can index — they were previously invisible behind /social.
+const TEASER_FOR: [prefix: string, teaser: string][] = [
+  ["/social/live", "/faces"],
+  ["/social/spaces", "/spaces"],
+  ["/social/cinema", "/cinema"],
+  ["/social/radio", "/radio"],
+];
+
+export function teaserFor(pathname: string): string | null {
+  const hit = TEASER_FOR.find(
+    ([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  return hit ? hit[1] : null;
 }
 
 /**
@@ -305,9 +338,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // renders in place, which is the behaviour melorimusic.org has had since the
   // door shipped, and it keeps the home page's ISR caching intact.
   //
-  // Every other gated path REDIRECTS. A rewrite there would leave the address
-  // bar reading /social/messages while showing a signup form, which looks like
-  // a bug rather than a wall.
+  // Every other gated path REDIRECTS — to the page describing that room when
+  // there is one, otherwise to the door. A rewrite would leave the address bar
+  // reading /social/messages while showing a signup form, which looks like a
+  // bug rather than a wall.
   //
   // This is a cookie PRESENCE test, deliberately (see hasSupabaseSession). It is
   // the optimistic pre-filter, not the security boundary: pages, route handlers
@@ -315,7 +349,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // that a session read in proxy code is not trustworthy on its own.
   if (!isPublicPath(pathname) && !hasSupabaseSession(request)) {
     if (pathname === "/") return rewriteToDoor(request);
-    return NextResponse.redirect(new URL(DOOR_PATH, request.url));
+    const teaser = teaserFor(pathname);
+    return NextResponse.redirect(new URL(teaser ?? DOOR_PATH, request.url));
   }
 
   // Admin dashboard gate runs first — its redirects should not carry the

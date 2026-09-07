@@ -1,4 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await bypassDoor(context, baseURL);
+});
 
 // Mobile coverage for the one-time post-signup camera/microphone setup step
 // (/onboarding/media, rendered by src/components/onboarding/MediaSetupCard.tsx).

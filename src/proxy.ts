@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  isAuthCookieName,
+  isLegacySupabaseAuthCookieName,
+} from "@/lib/authStorageKey";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAdminSecretKey } from "@/lib/admin-secret";
@@ -38,8 +42,13 @@ const ADMIN_SECRET_KEY = getAdminSecretKey();
 // WHY A COOKIE CHECK IS ENOUGH HERE (AND WHY IT ISN'T ALONE)
 // ----------------------------------------------------------
 // supabaseCookieStorage.ts makes cookies the primary session store, so the
-// presence of an `sb-<ref>-auth-token` cookie is an accurate signal for almost
-// every visitor. It is a PRESENCE test, not verification — deliberately. A
+// presence of the session cookie is an accurate signal for almost every
+// visitor. WHICH cookie is not obvious and this comment used to name the wrong
+// one: supabase-js's default `sb-<ref>-auth-token`, when Melori overrides
+// storageKey to AUTH_STORAGE_KEY ("melori-auth"). The gate below therefore
+// matched nothing and bounced every signed-in member to the door, which sent
+// them back — a login loop for everyone. Both names now come from
+// src/lib/authStorageKey.ts. It is a PRESENCE test, not verification — a
 // stale cookie means someone sees the app instead of the door, which is the
 // harmless direction; the reverse would lock a real member out of their own
 // site.
@@ -51,20 +60,129 @@ const ADMIN_SECRET_KEY = getAdminSecretKey();
 // /music. So an evicted cookie costs one redirect, never a login.
 const DOOR_PATH = "/platform";
 
+// ---------------------------------------------------------------------------
+// What stays public.
+//
+// Karl, 2026-09-07: "All of my social links work without an account as of now
+// ... hide everything until an account is made. I am only leaving the
+// photography exposed because I am a photographer and I could use this as a way
+// to advertise."
+//
+// Until now the door covered exactly one path — `/`. Every one of the 22 routes
+// under /social was reachable signed out, as were /dashboard, /settings and
+// /upload, several of which only checked the session in a useEffect AFTER the
+// page had already rendered and shipped its content.
+//
+// This is an ALLOWLIST, not a blocklist, and that is the whole point: a
+// blocklist silently fails open every time someone adds a route. Anything not
+// named here meets the door.
+//
+// The four groups, and why each is public:
+//   1. The advertising  — the photography gallery and Karl's own introduction,
+//      plus a page for each live room describing what happens inside it. This
+//      is the surface that has to be findable by a stranger.
+//   2. The artists      — read-only profile pages. Gating these would hide
+//      Kaiel R and Gloria Joy Rivers from Google, which is the opposite of what
+//      a platform short on traffic needs.
+//   3. The way in       — the door itself, sign-in, registration and password
+//      recovery. Gating the signup page behind signup is the classic own goal.
+//   4. The obligations  — privacy, terms, support, mission, and the native
+//      account-info page. App Review requires these reachable without an
+//      account, and hiding a privacy policy behind a login is indefensible
+//      regardless.
+//
+// /admin is here because it runs its own JWT gate below; adding it to the door
+// would lock Karl out of his own dashboard.
+const PUBLIC_EXACT = new Set([
+  "/about",
+  "/account-info",
+  "/admin",
+  "/artists",
+  "/cinema",
+  "/faces",
+  "/forgot-password",
+  "/gallery",
+  "/login",
+  "/mission",
+  "/photography",
+  "/platform",
+  "/privacy",
+  "/radio",
+  "/register",
+  "/reset-password",
+  "/spaces",
+  "/support",
+  "/terms",
+  "/welcome",
+]);
+
+const PUBLIC_PREFIXES = [
+  "/artists/",
+  "/auth/",
+  "/gallery/",
+  "/reset-password/",
+  "/social/auth",
+];
+
+export function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.has(pathname)) return true;
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// ---------------------------------------------------------------------------
+// Where a signed-out visitor lands instead of the bare door.
+//
+// Karl: "Faces should have a page telling people to join etc.... MM space, MM
+// cinema, radio."
+//
+// Sending every stranger to /platform threw away the reason they clicked. A
+// link to a Cinema screening and a link to a Spaces room are different
+// invitations, and both were being answered with the same signup form.
+//
+// So each live surface has a public page describing it (src/app/faces,
+// /spaces, /cinema, /radio) and the gate sends people there. A shared room link
+// still lands somewhere that makes sense, and the four features finally have
+// something Google can index — they were previously invisible behind /social.
+const TEASER_FOR: [prefix: string, teaser: string][] = [
+  ["/social/live", "/faces"],
+  ["/social/spaces", "/spaces"],
+  ["/social/cinema", "/cinema"],
+  ["/social/radio", "/radio"],
+];
+
+export function teaserFor(pathname: string): string | null {
+  const hit = TEASER_FOR.find(
+    ([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  return hit ? hit[1] : null;
+}
+
 /**
- * Does this request carry a Supabase session cookie?
+ * Does this request carry a session cookie?
  *
- * Matches `sb-<project-ref>-auth-token` and its chunked forms (`.0`, `.1`, …),
- * which supabaseCookieStorage writes once the session JSON exceeds a single
- * cookie. Pattern-matched rather than built from NEXT_PUBLIC_SUPABASE_URL so a
- * project-ref change can never silently turn the door on for everyone.
+ * READ THE COMMENT IN src/lib/authStorageKey.ts BEFORE CHANGING THIS.
+ *
+ * This function used to hard-code `sb-<project-ref>-auth-token`, the name
+ * supabase-js uses when `storageKey` is left at its default. Melori overrides
+ * `storageKey` to "melori-auth" (src/lib/supabase.ts), and the cookie adapter
+ * writes it chunked as `melori-auth.0`, `melori-auth.1`, … So the pattern
+ * matched NOTHING on a real signed-in browser: the gate concluded "no session"
+ * for every member on every gated route and redirected them to the door, which
+ * saw a valid session client-side and sent them back. A closed loop, shipped to
+ * production, locking out everyone who had an account.
+ *
+ * Both names are now derived from one exported constant, so the writer and the
+ * reader cannot drift apart again. The legacy supabase-js format is still
+ * accepted: members who signed in before the cookie adapter shipped hold a real
+ * session in that shape, and deploy day should not sign them out.
  */
 function hasSupabaseSession(request: NextRequest): boolean {
   return request.cookies
     .getAll()
     .some(
       (cookie) =>
-        /^sb-.+-auth-token(\.\d+)?$/.test(cookie.name) &&
+        (isAuthCookieName(cookie.name) ||
+          isLegacySupabaseAuthCookieName(cookie.name)) &&
         cookie.value.length > 0,
     );
 }
@@ -213,11 +331,26 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const platformRoute = routePlatformHost(request, pathname);
   if (platformRoute) return platformRoute;
 
-  // The door: a signed-out visitor meets the signup page, not a catalog whose
-  // every play button answers 401. Root only — deep links are left alone so a
-  // shared track or profile URL still resolves.
-  if (pathname === "/" && !hasSupabaseSession(request)) {
-    return rewriteToDoor(request);
+  // The door. Everything that is not on the public allowlist above requires a
+  // session.
+  //
+  // `/` is REWRITTEN rather than redirected — the URL stays `/` and the door
+  // renders in place, which is the behaviour melorimusic.org has had since the
+  // door shipped, and it keeps the home page's ISR caching intact.
+  //
+  // Every other gated path REDIRECTS — to the page describing that room when
+  // there is one, otherwise to the door. A rewrite would leave the address bar
+  // reading /social/messages while showing a signup form, which looks like a
+  // bug rather than a wall.
+  //
+  // This is a cookie PRESENCE test, deliberately (see hasSupabaseSession). It is
+  // the optimistic pre-filter, not the security boundary: pages, route handlers
+  // and RLS still have to verify the caller. Supabase's own guidance is explicit
+  // that a session read in proxy code is not trustworthy on its own.
+  if (!isPublicPath(pathname) && !hasSupabaseSession(request)) {
+    if (pathname === "/") return rewriteToDoor(request);
+    const teaser = teaserFor(pathname);
+    return NextResponse.redirect(new URL(teaser ?? DOOR_PATH, request.url));
   }
 
   // Admin dashboard gate runs first — its redirects should not carry the

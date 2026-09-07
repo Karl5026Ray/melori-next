@@ -33,11 +33,10 @@ const standaloneLinks: NavItem[] = [];
 // drift apart.
 //
 // Pricing and Book were removed with the rest of commerce: Photography is a
-// portfolio of Karl's own work now, not a booking funnel.
-const PHOTO_ITEMS: NavItem[] = [
-  { label: "Photography", href: "/photography" },
-  { label: "Gallery", href: "/gallery" },
-];
+// portfolio of Karl's own work now, not a booking funnel. With those gone it
+// was a dropdown whose two entries went to the same place, so Photography is a
+// plain link straight to the galleries — one click, no menu. It renders beside
+// Radio below rather than in the dropdown group map.
 
 export default function Header() {
   const pathname = usePathname() ?? "";
@@ -358,7 +357,6 @@ export default function Header() {
              Social ▾, Radio, Photography ▾, Profile. */}
           {([
             { key: "Social", items: SOCIAL_NAV_ITEMS },
-            { key: "Photography", items: PHOTO_ITEMS },
           ] as const).map(({ key, items }) => {
             const isOpen = openGroup === key;
             const groupCurrent = items.some((item) =>
@@ -420,6 +418,21 @@ export default function Header() {
               </div>
             );
           })}
+
+          {/* Photography is the one surface deliberately left public: it is
+             Karl's own advertising. Straight to the work, no intermediate
+             menu. */}
+          <Link
+            href="/gallery"
+            aria-current={pathname.startsWith("/gallery") ? "page" : undefined}
+            className={`rounded-md px-3 py-1.5 transition-colors hover:text-brand-primary ${
+              pathname.startsWith("/gallery")
+                ? "text-brand-primary"
+                : "text-text-secondary"
+            }`}
+          >
+            Photography
+          </Link>
 
           <Link
             href="/social/radio"

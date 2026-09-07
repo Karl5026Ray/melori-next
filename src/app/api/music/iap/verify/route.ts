@@ -249,6 +249,7 @@ const { error: payoutErr } = await supabase.from("split_payouts").insert(
   // loudly so this can be reconciled by hand rather than failing the
   // buyer's purchase over a bookkeeping write.
   console.error("iap/verify: split_payouts insert failed:", payoutErr.message);
+}
 
 return NextResponse.json({ ok: true });
 }

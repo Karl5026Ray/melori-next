@@ -98,9 +98,23 @@ check(
   video.includes('className="relative aspect-[9/16] h-full max-w-full"') &&
     video.includes("object-contain object-center"),
 );
+// Superseded 2026-09-06. This first asserted the YouTube stage was always
+// `aspect-video max-h-full w-full`, a contract written when the only YouTube
+// post was a landscape music video. Inside a ~9:16 card that fixed 16:9 box
+// cost a portrait post its height twice (the box took card-width x 9/16, then
+// the player pillarboxed the 9:16 source inside it), so a 1080x1920 episode
+// landed on roughly a tenth of the card at any size.
+//
+// The stage is now chosen from the post's own orientation (migration 075).
+// The ORIGINAL intent -- never crop a landscape post -- is preserved: a 16:9
+// post still fills the card and lets the player letterbox to card-width x 9/16,
+// exactly the box it always had.
 check(
-  "YouTube Mirror cards remain 16:9 and contained",
-  video.includes('className="relative aspect-video max-h-full w-full"'),
+  "YouTube Mirror cards pick their stage from the post's own orientation",
+  video.includes("video.is_vertical") &&
+    video.includes('? "relative aspect-[9/16] h-full max-w-full"') &&
+    video.includes(': "relative h-full w-full"') &&
+    !video.includes('className="relative aspect-video max-h-full w-full"'),
 );
 check(
   "Cinema hides mobile navigation only for an actual room id",

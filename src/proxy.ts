@@ -18,6 +18,136 @@ import {
 const ADMIN_SECRET_KEY = getAdminSecretKey();
 
 // ---------------------------------------------------------------------------
+// The door.
+//
+// A signed-out visitor gets /platform — the signup page — instead of the
+// catalog. This is not cosmetic: since #353 the stream routes answer 401 to an
+// unauthenticated caller, so every play button on the catalog is a dead end for
+// someone who is not signed in. Showing them the catalog first is showing them
+// a product they cannot use.
+//
+// WHY THIS LIVES HERE AND NOT IN app/page.tsx
+// -------------------------------------------
+// The home page is ISR (`export const revalidate = 60`) and that is
+// load-bearing. Branching on auth state inside the page makes the route dynamic
+// again, and Next.js stamps every dynamic response with `no-store` — the exact
+// directive that makes iOS WKWebView wrappers discard a healthy 200 and show
+// "This page couldn't load". Issue #280 and PRs #282/#284 were spent getting rid
+// of it. The proxy runs before the page and does not touch its caching.
+//
+// WHY A COOKIE CHECK IS ENOUGH HERE (AND WHY IT ISN'T ALONE)
+// ----------------------------------------------------------
+// supabaseCookieStorage.ts makes cookies the primary session store, so the
+// presence of an `sb-<ref>-auth-token` cookie is an accurate signal for almost
+// every visitor. It is a PRESENCE test, not verification — deliberately. A
+// stale cookie means someone sees the app instead of the door, which is the
+// harmless direction; the reverse would lock a real member out of their own
+// site.
+//
+// The gap it cannot close: WebKit's ITP caps script-written cookies at 7 days
+// regardless of Max-Age, so an iOS member can hold a live session in the
+// localStorage mirror with no cookie left. /platform handles that itself — it
+// calls supabase.auth.getSession() on mount and forwards a real session to
+// /music. So an evicted cookie costs one redirect, never a login.
+const DOOR_PATH = "/platform";
+
+// ---------------------------------------------------------------------------
+// What stays public.
+//
+// Karl, 2026-09-07: "All of my social links work without an account as of now
+// ... hide everything until an account is made. I am only leaving the
+// photography exposed because I am a photographer and I could use this as a way
+// to advertise."
+//
+// Until now the door covered exactly one path — `/`. Every one of the 22 routes
+// under /social was reachable signed out, as were /dashboard, /settings and
+// /upload, several of which only checked the session in a useEffect AFTER the
+// page had already rendered and shipped its content.
+//
+// This is an ALLOWLIST, not a blocklist, and that is the whole point: a
+// blocklist silently fails open every time someone adds a route. Anything not
+// named here meets the door.
+//
+// The four groups, and why each is public:
+//   1. The advertising  — the photography gallery and Karl's own introduction.
+//      This is the surface that has to be findable by a stranger.
+//   2. The artists      — read-only profile pages. Gating these would hide
+//      Kaiel R and Gloria Joy Rivers from Google, which is the opposite of what
+//      a platform short on traffic needs.
+//   3. The way in       — the door itself, sign-in, registration and password
+//      recovery. Gating the signup page behind signup is the classic own goal.
+//   4. The obligations  — privacy, terms, support, mission, and the native
+//      account-info page. App Review requires these reachable without an
+//      account, and hiding a privacy policy behind a login is indefensible
+//      regardless.
+//
+// /admin is here because it runs its own JWT gate below; adding it to the door
+// would lock Karl out of his own dashboard.
+const PUBLIC_EXACT = new Set([
+  "/about",
+  "/account-info",
+  "/admin",
+  "/artists",
+  "/forgot-password",
+  "/gallery",
+  "/login",
+  "/mission",
+  "/photography",
+  "/platform",
+  "/privacy",
+  "/register",
+  "/reset-password",
+  "/support",
+  "/terms",
+  "/welcome",
+]);
+
+const PUBLIC_PREFIXES = [
+  "/artists/",
+  "/auth/",
+  "/gallery/",
+  "/reset-password/",
+  "/social/auth",
+];
+
+export function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.has(pathname)) return true;
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+/**
+ * Does this request carry a Supabase session cookie?
+ *
+ * Matches `sb-<project-ref>-auth-token` and its chunked forms (`.0`, `.1`, …),
+ * which supabaseCookieStorage writes once the session JSON exceeds a single
+ * cookie. Pattern-matched rather than built from NEXT_PUBLIC_SUPABASE_URL so a
+ * project-ref change can never silently turn the door on for everyone.
+ */
+function hasSupabaseSession(request: NextRequest): boolean {
+  return request.cookies
+    .getAll()
+    .some(
+      (cookie) =>
+        /^sb-.+-auth-token(\.\d+)?$/.test(cookie.name) &&
+        cookie.value.length > 0,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// melori.org — the front door as its own domain.
+//
+// melori.org is a signup surface only. It is deliberately NOT a second copy of
+// the app: Supabase session cookies are host-scoped, so letting people sign in
+// on both domains would give every member two independent sessions, and
+// NEXT_PUBLIC_APP_URL (one value, melorimusic.org) would throw them across
+// domains mid-flow anyway.
+//
+// NOTE: melori.org is NOT in mobile/capacitor.config.json allowNavigation.
+// Nothing reachable inside the native wrapper may link here.
+const PLATFORM_HOSTS = new Set(["melori.org", "www.melori.org"]);
+const APP_ORIGIN = "https://melorimusic.org";
+
+// ---------------------------------------------------------------------------
 // Cache-Control override for HTML document navigations.
 //
 // WHY: Pages using `export const dynamic = 'force-dynamic'` cause Next.js to
@@ -48,6 +178,12 @@ const FRIENDLY_HTML_CACHE_CONTROL = "private, no-cache, must-revalidate";
 function applyHtmlCacheControl(res: NextResponse): NextResponse {
   res.headers.set("Cache-Control", FRIENDLY_HTML_CACHE_CONTROL);
   return res;
+}
+
+function rewriteToDoor(request: NextRequest): NextResponse {
+  const url = request.nextUrl.clone();
+  url.pathname = DOOR_PATH;
+  return applyHtmlCacheControl(NextResponse.rewrite(url));
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +242,28 @@ function guardNativeCommerce(
   return null;
 }
 
+/**
+ * melori.org routing. Returns null for every other host.
+ *
+ * Runs AFTER guardNativeCommerce so a wrapper request arriving here — which
+ * should never happen, since melori.org is not in allowNavigation — can never
+ * skip the App Store commerce guard by being redirected first.
+ */
+function routePlatformHost(
+  request: NextRequest,
+  pathname: string,
+): NextResponse | null {
+  const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
+  if (!PLATFORM_HOSTS.has(host)) return null;
+
+  if (pathname === "/") return rewriteToDoor(request);
+
+  return NextResponse.redirect(
+    new URL(`${pathname}${request.nextUrl.search}`, APP_ORIGIN),
+    308,
+  );
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
@@ -114,6 +272,29 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   if (isBlockedNativeApi(pathname)) {
     return NextResponse.next();
+  }
+
+  const platformRoute = routePlatformHost(request, pathname);
+  if (platformRoute) return platformRoute;
+
+  // The door. Everything that is not on the public allowlist above requires a
+  // session.
+  //
+  // `/` is REWRITTEN rather than redirected — the URL stays `/` and the door
+  // renders in place, which is the behaviour melorimusic.org has had since the
+  // door shipped, and it keeps the home page's ISR caching intact.
+  //
+  // Every other gated path REDIRECTS. A rewrite there would leave the address
+  // bar reading /social/messages while showing a signup form, which looks like
+  // a bug rather than a wall.
+  //
+  // This is a cookie PRESENCE test, deliberately (see hasSupabaseSession). It is
+  // the optimistic pre-filter, not the security boundary: pages, route handlers
+  // and RLS still have to verify the caller. Supabase's own guidance is explicit
+  // that a session read in proxy code is not trustworthy on its own.
+  if (!isPublicPath(pathname) && !hasSupabaseSession(request)) {
+    if (pathname === "/") return rewriteToDoor(request);
+    return NextResponse.redirect(new URL(DOOR_PATH, request.url));
   }
 
   // Admin dashboard gate runs first — its redirects should not carry the

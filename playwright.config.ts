@@ -103,7 +103,11 @@ export default defineConfig({
       // the region it asserts and was the source of three false CI failures
       // before the suite reached the Cinema coverage. The mobile project
       // above still runs every floating-player interaction assertion.
-      testIgnore: /floating-player\.spec\.ts/,
+      //
+      // player-tabbar-collision.spec.ts is ignored for the same reason: it
+      // measures the pill against the mobile tab bar's centre M, and neither
+      // element renders at 1440px.
+      testIgnore: /(floating-player|player-tabbar-collision)\.spec\.ts/,
       use: {
         browserName: "chromium",
         viewport: { width: 1440, height: 900 },

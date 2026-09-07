@@ -131,13 +131,24 @@ const concertFormSource = readFileSync(
   "utf8",
 );
 
+// Concert is OFF the navigation, by product decision.
+//
+// Concert Battle is still audio-only in production — decideRoomPublish in
+// src/lib/roomMediaPolicy.ts grants camera publishing to 'cinema' and 'live_*'
+// only, and 'versus_battle' is not in that set — so a Concert button in the
+// desktop rail or the mobile launcher advertises a video battle the room
+// cannot run. /social/concert/create is unchanged and still reachable by link;
+// these two assertions flip back the day camera publishing ships for
+// versus_battle and the button returns.
 check(
-  "desktop Concert opens the dedicated Concert creator",
+  "desktop nav does not advertise Concert while it is audio-only",
   sidebarSource.includes('href="/social/concert/create"'),
+  false,
 );
 check(
-  "mobile Concert opens the dedicated Concert creator",
+  "mobile nav does not advertise Concert while it is audio-only",
   mobileNavSource.includes('router.push("/social/concert/create")'),
+  false,
 );
 check(
   "desktop Concert does not fall back to the Spaces creator",

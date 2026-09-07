@@ -169,7 +169,8 @@ interface PlayerContextValue {
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 const LAST_TRACK_KEY = "melori:lastTrack";
-const VOLUME_KEY = "melori:volume";
+const VOLUME_KEY = "melori:volume:v2";
+const DEFAULT_VOLUME = 0.4;
 
 // A 1-sample, digitally-silent WAV used to "unlock" the shared <audio> element
 // inside a real user gesture. iOS Safari (and, increasingly, Chrome) only grant
@@ -262,7 +263,7 @@ export default function PlayerProvider({
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolumeState] = useState(1);
+  const [volume, setVolumeState] = useState(DEFAULT_VOLUME);
   const [muted, setMutedState] = useState(false);
   // Mirror `muted` into a ref so loadAndPlay can apply it synchronously before
   // calling audio.play() (state updates lag a render behind).

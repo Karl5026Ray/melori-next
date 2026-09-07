@@ -42,9 +42,9 @@ const BLOCKED_ROUTE_DIRS = [
 const ALLOWED = new Map<string, string>([
   ["app/studio", "Seller-side tooling: an artist setting the price of their own release, not a purchase affordance offered to a buyer."],
   ["app/admin", "Admin-only surface behind a role check; not reachable by a reviewer's test account."],
-  ["components/MobileTabBar.tsx", "Prices live in `desc` strings on <Link> tiles whose hrefs (/pricing, /book, /register?tier=) are already covered by the route selectors in native-app.css, so the tile and its text are hidden together."],
+  ["components/MobileTabBar.tsx", "Prices live in `desc` strings on <Link> tiles whose hrefs (/pricing, /book) are already covered by the route selectors in native-app.css, so the tile and its text are hidden together. The /register?tier= signup tiles are gone — one plain Sign up tile remains."],
   ["lib/pricing.ts", "Server-side price floors, never rendered."],
-  ["app/register/page.tsx", "The tier list is a data constant; the grid that renders it carries data-native-hide on every paid tier, pinned by name in PINNED below."],
+  ["app/register/page.tsx", "Signup has no tiers and no prices; the only commerce trace is a text link to /membership, which carries data-native-hide and is additionally suppressed by the !isNativeApp guard around it."],
 ]);
 
 // Route prefixes the proxy redirects and native-app.css hides anchors to. A CTA
@@ -111,11 +111,9 @@ const PINNED: [string, string][] = [
   ["components/CatalogCard.tsx", "the price on every catalog card"],
   ["app/music/[id]/page.tsx", "the single-track price"],
   ["app/music/album/[slug]/page.tsx", "the album price"],
-  ["app/gallery/page.tsx", "the 'Buy digital copies ... via Stripe' feature"],
-  ["app/page.tsx", "the home value-prop cards about buying and selling"],
   ["components/social/rooms/RoomChat.tsx", "the Go Superfan button in room chat"],
   ["components/social/faces/FacesLiveChat.tsx", "the Go Superfan button in Faces chat"],
-  ["app/register/page.tsx", "the paid signup tiers"],
+  ["app/register/page.tsx", "the /membership link under the signup form"],
 ];
 for (const [rel, what] of PINNED) {
   const src = readFileSync(join(SRC, rel), "utf8");
@@ -123,13 +121,43 @@ for (const [rel, what] of PINNED) {
   else fail(`${what} lost its data-native-hide marker (${rel})`);
 }
 
-// The /register tier grid gates by tier id rather than a plain marker, so pin
-// the exact expression.
+// app/gallery/page.tsx was pinned here too: it carried a "Buy digital copies …
+// via Stripe" feature card behind data-native-hide. Gallery print sales are off
+// entirely now (src/lib/gallerySales.ts) and the card is GONE rather than
+// hidden, which is the stronger guarantee — there is no marker left to pin.
+//
+// So the assertion inverts. Pinning the absence keeps the guard: putting a
+// purchase CTA back on this page has to come past this test and decide, again,
+// whether the native wrapper is allowed to see it.
+{
+  const rel = "app/gallery/page.tsx";
+  const src = readFileSync(join(SRC, rel), "utf8");
+  // Named apart from the module-level CTA above: this one is deliberately
+  // broader, because on this page there is no longer any legitimate reason to
+  // mention Stripe or a purchase at all.
+  const GALLERY_CTA = /ShoppingBag|Stripe|purchase|Buy digital/i;
+  if (GALLERY_CTA.test(src)) {
+    fail(`${rel} has a purchase CTA again — gate it or mark it data-native-hide`);
+  } else {
+    pass("the gallery page carries no purchase CTA at all (print sales are off)");
+  }
+}
+
+// /register used to render a four-card tier grid and hide the paid cards
+// natively with data-native-hide={t.id === "free" ? undefined : ""}. The grid
+// is GONE — signup is email + password + phone, every account is created free,
+// and paid plans are reached from /membership after the account exists.
+//
+// So, as with the gallery above, the assertion inverts: absence is the stronger
+// guarantee than a marker, and pinning the absence means putting a price or a
+// tier card back on the signup page has to come past this test and decide,
+// again, whether the native wrapper may see it.
 const registerSrc = readFileSync(join(SRC, "app/register/page.tsx"), "utf8");
-if (registerSrc.includes('data-native-hide={t.id === "free" ? undefined : ""}')) {
-  pass("the /register grid still hides every paid tier natively");
+const REGISTER_PRICE = /\$\d|\/mo\b|price:/i;
+if (REGISTER_PRICE.test(registerSrc)) {
+  fail("/register shows a price or tier card again — gate it or mark it data-native-hide");
 } else {
-  fail("the /register grid no longer hides paid tiers natively");
+  pass("/register carries no tier grid and no prices (plans live on /membership)");
 }
 
 // The CSS hook the markers depend on must exist.

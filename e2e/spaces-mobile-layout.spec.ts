@@ -1,4 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await bypassDoor(context, baseURL);
+});
 
 // Regression tests for the two mobile layout defects reported against MM
 // Spaces on iOS (Capacitor app, WKWebView loading https://melorimusic.org):

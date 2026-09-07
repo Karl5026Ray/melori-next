@@ -17,8 +17,6 @@ import {
   X,
   ChevronDown,
   Image as ImageIcon,
-  Tag,
-  CalendarClock,
   UserPlus,
   Camera,
   Target,
@@ -39,8 +37,8 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Artists, Radio, Melori Connect (direct), then navigation categories:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
- *         • Photo        — Gallery, Calendar, Pricing, Scheduling (coming soon)
- *         • Signup       — Free, Artist, Superfan, Snappd (photographer, $14.99/mo)
+ *         • Photo        — Photography, Gallery (both open the galleries)
+ *         • Signup       — Free, Artist, Superfan, Snappd (photographer)
  *         • Mission      — Why Melori (direct)
  *
  * - App Router: uses `usePathname()` from next/navigation.
@@ -210,10 +208,11 @@ export default function MobileTabBar() {
       label: "Photo",
       icon: <Camera className="h-5 w-5" />,
       items: [
-        { label: "Photography", href: "/photography", icon: <Camera className="h-5 w-5" />, desc: "Karl Ray Photography" },
+        // Pricing and Book came out with the rest of commerce (the top bar
+        // dropped them in #357; this menu was missed). Photography opens the
+        // galleries directly rather than a hub that advertised session rates.
+        { label: "Photography", href: "/gallery", icon: <Camera className="h-5 w-5" />, desc: "Karl Ray Photography" },
         { label: "Gallery", href: "/gallery", icon: <ImageIcon className="h-5 w-5" />, desc: "Photo galleries" },
-        { label: "Pricing", href: "/pricing", icon: <Tag className="h-5 w-5" />, desc: "Session pricing" },
-        { label: "Book", href: "/book", icon: <CalendarClock className="h-5 w-5" />, desc: "Schedule a session" },
       ],
     },
     {
@@ -223,7 +222,7 @@ export default function MobileTabBar() {
         { label: "Free", href: "/register?tier=free", icon: <UserIcon className="h-5 w-5" />, desc: "Free Fan" },
         { label: "Artist", href: "/register?tier=artist", icon: <Sparkles className="h-5 w-5" />, desc: "Upload & earn" },
         { label: "Superfan", href: "/register?tier=superfan", icon: <Heart className="h-5 w-5" />, desc: "Exclusives" },
-        { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer — $14.99/mo" },
+        { label: "Snappd", href: "/register?tier=snappd", icon: <Camera className="h-5 w-5" />, desc: "Photographer" },
       ],
     },
   ];

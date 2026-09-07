@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
 
 // Regression tests for the mobile floating transport pill
 // (FloatingPlayer in src/components/AudioPlayer.tsx).
@@ -35,6 +36,13 @@ const START_URL = "/";
 
 // Height of the fixed mobile tab bar (h-14), mirrored from AudioPlayer.tsx.
 const TAB_BAR = 56;
+// How far the nav's centre "M" launcher protrudes above that bar (h-16 circle
+// with -mt-6 inside the h-14 row). Mirrored from AudioPlayer.tsx.
+const TAB_BAR_OVERHANG = 24;
+// The real footprint of the bottom navigation. The pill clamps against THIS,
+// not TAB_BAR — see e2e/player-tabbar-collision.spec.ts for the bug this
+// number exists to prevent.
+const BOTTOM_NAV_RESERVE = TAB_BAR + TAB_BAR_OVERHANG;
 
 // A track seeded into the player's "last track" storage. PlayerProvider
 // restores it on mount WITHOUT autoplaying, which gives every test a loaded
@@ -164,7 +172,10 @@ async function openPlayer(page: Page): Promise<Locator> {
 const handleOf = (page: Page) => page.getByTestId("player-handle");
 
 test.describe("Mobile FloatingPlayer (390x844)", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context, baseURL }) => {
+    // src/proxy.ts sends a cookie-less visitor to the signup page, so without
+    // this the suite never reaches the home page the pill lives on.
+    await bypassDoor(context, baseURL);
     await page.addInitScript((track) => {
       try {
         // Force the default bottom-right dock so position assertions start
@@ -199,7 +210,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     // …and it stays inside the viewport, clear of the tab bar.
     expect(pill.x).toBeGreaterThanOrEqual(0);
     expect(pill.x + pill.width).toBeLessThanOrEqual(vp.width);
-    expect(pill.y + pill.height).toBeLessThanOrEqual(vp.height - TAB_BAR);
+    expect(pill.y + pill.height).toBeLessThanOrEqual(vp.height - BOTTOM_NAV_RESERVE);
 
     // Left: a WHITE CIRCLE.
     const handle = handleOf(page);
@@ -418,7 +429,7 @@ test.describe("Mobile FloatingPlayer (390x844)", () => {
     expect(
       box.y + box.height,
       "pill must never park behind the mobile tab bar",
-    ).toBeLessThanOrEqual(vp.height - TAB_BAR);
+    ).toBeLessThanOrEqual(vp.height - BOTTOM_NAV_RESERVE);
 
     // …and far past the top-left corner.
     await firePointerDrag(handleOf(page), -900, -900, 450);

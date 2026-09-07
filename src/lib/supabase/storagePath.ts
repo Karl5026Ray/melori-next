@@ -30,12 +30,19 @@ export function toObjectKey(value: string, bucket: string): string {
   }
 }
 
-// Resolve a stored audio reference into a playable URL. Tries a short-lived
-// signed URL first (works for a private bucket); if that fails, falls back to
-// the public URL (works for a public bucket); as a last resort returns the
-// stored value when it was already an absolute URL. Returns null only when no
-// usable URL can be produced. Logs every fallback so unprotected/misconfigured
-// tracks are visible in server logs.
+// Resolve a stored audio reference into a playable URL — ALWAYS a short-lived
+// signed URL, never anything else.
+//
+// This function used to fall back to `getPublicUrl()` when signing failed, and
+// then to the raw stored string. That was unsafe in a way that was invisible in
+// the logs: `getPublicUrl()` is pure string construction and never errors, so
+// the fallback always produced a URL. Any signing hiccup silently handed out a
+// permanent, unsigned, freely shareable link to a master recording — defeating
+// the private-bucket assumption documented in the upload routes.
+//
+// It now fails closed. A signing failure returns null, the caller turns that
+// into a play error, and the incident is visible instead of silently degrading
+// into an open file server.
 export async function resolveAudioUrl(
   admin: SupabaseClient,
   bucket: string,
@@ -47,17 +54,14 @@ export async function resolveAudioUrl(
   const { data: signed, error } = await admin.storage
     .from(bucket)
     .createSignedUrl(key, expiresIn);
+
   if (!error && signed?.signedUrl) return signed.signedUrl;
 
-  console.warn(
-    `resolveAudioUrl: sign failed for key="${key}" (from "${stored}"): ${
-      error?.message ?? "no signed url"
-    } — falling back to public URL`,
+  console.error(
+    `resolveAudioUrl: refusing to serve unsigned audio. Signing failed for key="${key}" (from "${stored}") in bucket "${bucket}": ${
+      error?.message ?? "no signed url returned"
+    }`,
   );
 
-  const publicUrl = admin.storage.from(bucket).getPublicUrl(key).data.publicUrl;
-  if (publicUrl) return publicUrl;
-
-  if (/^https?:\/\//i.test(stored)) return stored;
   return null;
 }

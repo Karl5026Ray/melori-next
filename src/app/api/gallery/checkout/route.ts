@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
 import { approvedOrigin } from "@/lib/approved-origin";
+import { GALLERY_SALES_ENABLED } from "@/lib/gallerySales";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,14 @@ const SNAPPD_PLATFORM_FEE_PERCENT = (() => {
 //     Melori platform account (standard charge) so a purchase is never blocked;
 //     earnings are reconciled once they onboard.
 export async function POST(req: NextRequest) {
+  // Sales are off (src/lib/gallerySales.ts). Nothing in the UI can reach this
+  // any more, which is not the same as it being closed — so it is closed here
+  // too. 404 rather than 503: while sales are off this route does not exist as
+  // far as a caller is concerned, and 503 would invite a retry.
+  if (!GALLERY_SALES_ENABLED) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const secret = process.env.STRIPE_SECRET_KEY;
   if (!secret) {
     return NextResponse.json(

@@ -84,7 +84,7 @@ export default async function StudioAlbumPage(props: {
 
           <p className="mt-3 text-sm text-text-secondary">
             {album.tracks.length} track{album.tracks.length === 1 ? "" : "s"} ·{" "}
-            <span className="font-medium text-brand-primary">
+            <span data-native-hide className="font-medium text-brand-primary">
               {formatPriceCents(album.priceCents)}
             </span>
           </p>

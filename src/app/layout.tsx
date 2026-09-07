@@ -1,16 +1,23 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import "./native-app.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
 import MainContent from "@/components/MainContent";
 import MobileTabBar from "@/components/MobileTabBar";
+import NativeAppProvider from "@/components/NativeAppProvider";
 import NativeAuthListener from "@/components/NativeAuthListener";
 import PlayerProvider from "@/components/player/PlayerProvider";
+import { NATIVE_UA_TOKEN } from "@/lib/nativePlatform";
 import { SITE_URL } from "@/lib/site";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+
+// Runs before first paint and before hydration, so the App Store compliance
+// CSS in native-app.css applies to the very first frame the reviewer can see.
+const NATIVE_BOOTSTRAP = `try{var c=window.Capacitor;var n=(c&&typeof c.isNativePlatform==="function"&&c.isNativePlatform())||navigator.userAgent.indexOf("${NATIVE_UA_TOKEN}")>-1;if(n){document.documentElement.dataset.nativeApp="1"}}catch(e){}`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -75,23 +82,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
-        <PlayerProvider>
-          {/* Native-only: catches the OAuth deep link back from the system
-              browser. Renders nothing and does nothing on the web. */}
-          <NativeAuthListener />
-          <Header />
-          {/* Bottom clearance is route-aware: the main page clears the tab bar
-             AND the transport, every other space only clears the tab bar. */}
-          <MainContent>{children}</MainContent>
-          <Footer />
-          {/* The transport renders on the main page ONLY. It stays mounted here
-             so it can read the route; it returns null everywhere else, while
-             PlayerProvider keeps the audio itself playing platform-wide. */}
-          <AudioPlayer />
-          <MobileTabBar />
-        </PlayerProvider>
+        <script dangerouslySetInnerHTML={{ __html: NATIVE_BOOTSTRAP }} />
+        <NativeAppProvider>
+          <PlayerProvider>
+            {/* Native-only: catches the OAuth deep link back from the system
+                browser. Renders nothing and does nothing on the web. */}
+            <NativeAuthListener />
+            <Header />
+            {/* Bottom clearance is route-aware: the main page clears the tab bar
+               AND the transport, every other space only clears the tab bar. */}
+            <MainContent>{children}</MainContent>
+            <Footer />
+            {/* The transport renders on the main page ONLY. It stays mounted here
+               so it can read the route; it returns null everywhere else, while
+               PlayerProvider keeps the audio itself playing platform-wide. */}
+            <AudioPlayer />
+            <MobileTabBar />
+          </PlayerProvider>
+        </NativeAppProvider>
       </body>
     </html>
   );

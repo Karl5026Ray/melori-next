@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
 
 // The Concert battle stage on a real mobile viewport, with every network
 // dependency intercepted. LiveKit and PubNub are NOT mocked: both fail to
@@ -11,6 +12,10 @@ const SPACE_ID = "00000000-0000-4000-8000-000000000401";
 const INITIATOR_ID = "00000000-0000-4000-8000-000000000402";
 const OPPONENT_ID = "00000000-0000-4000-8000-000000000403";
 const VIEWER_ID = "00000000-0000-4000-8000-000000000404";
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await bypassDoor(context, baseURL);
+});
 
 const initiator = {
   id: INITIATOR_ID,

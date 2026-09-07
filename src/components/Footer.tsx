@@ -1,18 +1,8 @@
 import type { ReactElement } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import FooterLinks from "@/components/FooterLinks";
 import { getSocialLinks, type SocialPlatform } from "@/lib/socialLinks";
-
-const footerLinks = [
-  { label: "Music", href: "/music" },
-  { label: "Photography", href: "/photography" },
-  { label: "Mission", href: "/mission" },
-  { label: "Membership", href: "/membership" },
-  { label: "Donate", href: "/donate" },
-  { label: "Privacy", href: "/privacy" },
-  { label: "Terms", href: "/terms" },
-  { label: "Support", href: "/support" },
-];
 
 // Social icons. The destinations themselves live in src/lib/socialLinks.ts and
 // render only when a real profile exists — bare platform home pages ("https://
@@ -53,21 +43,7 @@ export default function Footer() {
         </div>
 
         {/* Links */}
-        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          {footerLinks.map((link, i) => (
-<span key={link.label} className="flex items-center gap-x-2">
-{i > 0 && (
-<span aria-hidden="true" className="text-text-secondary/40 select-none">·</span>
-)}
-<Link
-href={link.href}
-className="text-text-secondary transition-colors hover:text-brand-primary"
->
-{link.label}
-</Link>
-</span>
-))}
-        </nav>
+        <FooterLinks />
 
         {/* Social — rendered only for profiles that actually exist. */}
         {socialLinks.length > 0 && (

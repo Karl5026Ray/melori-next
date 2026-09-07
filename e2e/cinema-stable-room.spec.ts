@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { bypassDoor } from "./support/door";
 
 const SPACE_ID = "00000000-0000-4000-8000-000000000101";
 const USER_ID = "00000000-0000-4000-8000-000000000102";
@@ -16,6 +17,10 @@ const SEEDED_TRACK = {
   queue: [],
   index: 0,
 };
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await bypassDoor(context, baseURL);
+});
 
 const profile = {
   id: USER_ID,

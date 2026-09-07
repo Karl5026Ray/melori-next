@@ -112,7 +112,6 @@ const PINNED: [string, string][] = [
   ["app/music/[id]/page.tsx", "the single-track price"],
   ["app/music/album/[slug]/page.tsx", "the album price"],
   ["app/gallery/page.tsx", "the 'Buy digital copies ... via Stripe' feature"],
-  ["app/page.tsx", "the home value-prop cards about buying and selling"],
   ["components/social/rooms/RoomChat.tsx", "the Go Superfan button in room chat"],
   ["components/social/faces/FacesLiveChat.tsx", "the Go Superfan button in Faces chat"],
   ["app/register/page.tsx", "the paid signup tiers"],

@@ -212,7 +212,7 @@ export default function MobileTabBar() {
   ];
 
   // Signup used to be a category of four tier deep-links (Free / Artist /
-  // Superfan / Snappd) feeding a plan picker on /register. /register no longer
+// Superfan) feeding a plan picker on /register. /register no longer
   // picks plans — it creates the account — so the fan-out had nothing left to
   // fan out to, and four buttons that all landed on the same form read as a
   // paywall on the way in. One tile, one destination. Plans are offered from

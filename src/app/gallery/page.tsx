@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Camera, Lock, Download } from "lucide-react";
+import { Camera, Lock } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import ManageGalleriesLink from "./ManageGalleriesLink";
 
@@ -159,40 +159,7 @@ export default async function GalleryIndexPage() {
           time from the M-menu under{" "}
           <span className="text-text-primary">Photography &rarr; Gallery</span>.
         </p>
-
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <Feature
-            icon={<Lock className="h-5 w-5" />}
-            title="Private & secure"
-            body="Password-protected galleries keep client work private."
-          />
-          <Feature
-            icon={<Download className="h-5 w-5" />}
-            title="Instant downloads"
-            body="Grab clean, full-resolution files the moment they're ready."
-          />
-        </div>
       </section>
     </main>
-  );
-}
-
-function Feature({
-  icon,
-  title,
-  body,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="rounded-xl border border-brand-border bg-brand-surface p-4">
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-brand-primary">
-        {icon}
-      </span>
-      <p className="mt-3 font-semibold">{title}</p>
-      <p className="mt-1 text-sm text-text-secondary">{body}</p>
-    </div>
   );
 }

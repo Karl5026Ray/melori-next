@@ -19,7 +19,7 @@ export interface ChatComment {
 }
 
 export function authorName(c: ChatComment): string {
-  return c.author_display || c.author_name || "Superfan";
+  return c.author_display || c.author_name || "Member";
 }
 
 export type SendResult = { ok: true } | { ok: false; error: string };
@@ -134,11 +134,7 @@ export function useRoomComments(spaceId: string, enabled = true) {
           );
           return { ok: true };
         }
-        // Membership and auth walls are redirects, not inline errors.
-        if (res.status === 403) {
-          router.push("/membership");
-          return { ok: false, error: "" };
-        }
+        // The auth wall is a redirect, not an inline error.
         if (res.status === 401) {
           router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
           return { ok: false, error: "" };

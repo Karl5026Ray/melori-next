@@ -69,7 +69,7 @@ export default function CommentSection({
     setIsSubmitting(true);
     setError("");
 
-    // Server independently enforces Superfan+ on this endpoint (403 otherwise).
+    // Server independently enforces a signed-in caller on this endpoint.
     const res = await authFetch("/api/community/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -84,8 +84,10 @@ export default function CommentSection({
       return;
     }
 
+    // /membership redirects home now, so sending an unauthenticated caller
+    // there dumped them on the homepage instead of a sign-in form.
     if (res.status === 403 || res.status === 401) {
-      router.push("/membership");
+      router.push("/social/auth");
       return;
     }
 
@@ -106,7 +108,7 @@ export default function CommentSection({
         <p className="text-sm text-melori-muted mb-8">
           {canParticipate
             ? "Share updates, questions, and shout-outs with the Melori community."
-            : "Anyone can read the conversation. Posting is a Superfan feature."}
+            : "Anyone can read the conversation. Sign in to post."}
         </p>
 
         {/* Composer / gate */}
@@ -161,7 +163,7 @@ export default function CommentSection({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-semibold text-sm">
-                    {c.author_name || "Superfan"}
+                    {c.author_name || "Member"}
                   </span>
                   {isMine && (
                     <span className="rounded-full bg-melori-purple/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-melori-purple">

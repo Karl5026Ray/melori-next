@@ -435,8 +435,8 @@ export function ConcertLiveStage({
         .filter((row) => liveIdentities.length === 0 || liveIdentities.includes(row.user_id))
         .map((row) => ({
           userId: row.user_id,
-          name: row.user?.display_name || row.user?.username || "Superfan",
-          handle: row.user?.username || "superfan",
+          name: row.user?.display_name || row.user?.username || "Member",
+          handle: row.user?.username || "member",
           avatarUrl: row.user?.avatar_url ?? null,
           badge: row.badge ?? null,
           isCompetitor:

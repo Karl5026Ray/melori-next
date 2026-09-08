@@ -40,13 +40,13 @@ export default function UploadPage() {
         router.replace("/social/auth?next=/upload");
         return;
       }
-      // Cheap membership probe: hit the same guarded endpoint the dashboard uses.
+      // Cheap auth probe: hit the same guarded endpoint the dashboard uses.
+      // The session check above already sent signed-out visitors to the door,
+      // so anything non-OK here is a real failure, not a permission gate.
       const res = await authFetch("/api/artist/stats");
       if (cancelled) return;
-      if (res.status === 403) {
-        setGateError("Artist membership required to upload. Upgrade at /membership.");
-      } else if (!res.ok) {
-        setGateError("Couldn't verify your membership. Try refreshing.");
+      if (!res.ok) {
+        setGateError("Couldn't verify your account. Try refreshing.");
       }
       setReady(true);
     })();
@@ -114,9 +114,9 @@ export default function UploadPage() {
 
       // Publish straight into the collection — no review queue. The row lands
       // in studio_tracks with status "published", so it shows on /music (and
-      // the home feed) on the next request. Free listeners automatically get a
-      // 30-second sample from the stream endpoint; supporters hear the full
-      // track. `type` mirrors the release type the artist picked.
+      // the home feed) on the next request. Every signed-in listener hears the
+      // full track — there are no samples or tiers. `type` mirrors the release
+      // type the artist picked.
       setProgress("Publishing to the collection…");
       const res = await authFetch("/api/studio/tracks", {
         method: "POST",
@@ -157,14 +157,8 @@ export default function UploadPage() {
   if (gateError) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-3">Upload locked</h1>
-        <p className="text-text-secondary mb-6">{gateError}</p>
-        <Link
-          href="/membership"
-          className="inline-block px-6 py-3 bg-brand-primary text-black font-semibold rounded-lg"
-        >
-          View membership
-        </Link>
+        <h1 className="text-2xl font-bold mb-3">Something went wrong</h1>
+        <p className="text-text-secondary">{gateError}</p>
       </div>
     );
   }
@@ -175,7 +169,7 @@ export default function UploadPage() {
         <h1 className="text-2xl font-bold mb-2">You're live 🎉</h1>
         <p className="text-text-secondary mb-6">
           Your track is published to the music collection right now — no approval needed. It’s
-          filed alphabetically and free listeners hear a 30-second sample automatically.
+          filed alphabetically and plays in full for every listener.
         </p>
         <div className="flex justify-center gap-3">
           <Link
@@ -207,7 +201,7 @@ export default function UploadPage() {
       <h1 className="text-3xl font-bold">Add a track to the collection</h1>
       <p className="text-text-secondary mt-1 mb-8">
         Your upload goes live in the music collection instantly — no review queue. It’s filed
-        alphabetically, and free listeners automatically hear a 30-second sample.
+        alphabetically, and it plays in full for every listener.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6">

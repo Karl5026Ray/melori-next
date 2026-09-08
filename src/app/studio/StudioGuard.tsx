@@ -8,9 +8,10 @@ import { authFetch } from "@/lib/authClient";
 
 // Client-side gate for the Artist Studio. Supabase auth here is localStorage-based
 // (no cookies), so a true server redirect can't see the session — instead we block
-// rendering until we've confirmed the caller is an active artist-tier subscriber,
-// and redirect everyone else to /membership. The studio's own API routes are
-// independently protected server-side (requireArtist → 401/403).
+// rendering until we've confirmed the caller is signed in with a loadable profile,
+// and send everyone else to the sign-in screen. Paid tiers were removed from
+// Melori, so this is an auth check, not a subscription check. The studio's own API
+// routes are independently protected server-side (requireArtist → requireAuth → 401).
 export default function StudioGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "allowed">("checking");
@@ -24,7 +25,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
       } = await supabase.auth.getSession();
 
       if (!session?.user) {
-        router.replace("/membership");
+        router.replace(`/social/auth?next=${encodeURIComponent("/studio")}`);
         return;
       }
 
@@ -55,7 +56,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
           () => {},
         );
       } else {
-        router.replace("/membership");
+        router.replace(`/social/auth?next=${encodeURIComponent("/studio")}`);
       }
     })();
 

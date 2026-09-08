@@ -93,11 +93,10 @@ export default function NameMeaning({
             now and pass on to somebody else.
           </p>
           <p>
-            It is also why the economics here are built the way they are. If a
-            song is meant to stay with a listener for a lifetime, the person who
-            wrote it should be paid like that matters — which is why music sales
-            on Melori carry no platform cut, and artists keep every dollar after
-            payment processing.
+            It is also why the platform is built the way it is. If a song is
+            meant to stay with a listener for a lifetime, it should be easy to
+            find and free to hear — which is why every track on Melori plays in
+            full for every account, with nothing to buy and nothing in the way.
           </p>
         </div>
 

@@ -18,7 +18,7 @@
 //
 // Persistence reuses the EXISTING space chat system: reads come from
 // /api/social/spaces/[id]/comments and Supabase Realtime INSERTs on
-// space_comments; posting goes through the Superfan-gated POST on the same
+// space_comments; posting goes through the auth-gated POST on the same
 // route. System messages are ephemeral (passed in by the parent) and are never
 // persisted.
 
@@ -545,10 +545,14 @@ export default function RoomChat({
         ) : (
           <button
             type="button"
-            disabled
+            onClick={() =>
+              router.push(
+                `/social/auth?next=${encodeURIComponent(authReturnPath())}`,
+              )
+            }
             className="w-full rounded-2xl border border-melori-border bg-melori-elevated px-3 py-2.5 text-center text-sm text-melori-muted transition hover:text-melori-text"
           >
-            Chat is limited to Superfan members.
+            Sign in to chat
           </button>
         )}
         {error && (

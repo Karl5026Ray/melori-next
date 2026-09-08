@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       (profile?.display_name as string) ||
       (profile?.full_name as string) ||
       (profile?.username as string) ||
-      "Superfan";
+      "Member";
 
     // --- Content moderation: refuse pornographic text, flag other harms ----
     const mod = await moderateText(text);

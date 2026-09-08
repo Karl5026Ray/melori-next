@@ -171,8 +171,6 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
           const { comment } = await res.json();
           pushMessage(comment as ChatComment);
           setBody("");
-        } else if (res.status === 403) {
-          router.push("/membership");
         } else if (res.status === 401) {
           router.push(`/social/auth?next=${encodeURIComponent(authReturnPath())}`);
         }
@@ -222,10 +220,14 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
         ) : (
           <button
             type="button"
-            disabled
-            className="w-full rounded-full border border-white/25 bg-black/30 px-4 py-2 text-center text-sm font-medium text-white/90 backdrop-blur-md"
+            onClick={() =>
+              router.push(
+                `/social/auth?next=${encodeURIComponent(authReturnPath())}`,
+              )
+            }
+            className="w-full rounded-full border border-white/25 bg-black/30 px-4 py-2 text-center text-sm font-medium text-white/90 backdrop-blur-md transition hover:bg-black/45"
           >
-            Comments are limited to Superfan members.
+            Sign in to comment
           </button>
         )}
       </div>

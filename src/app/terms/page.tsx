@@ -30,9 +30,9 @@ export default function TermsPage() {
               For fans
             </h2>
             <p>
-              Digital purchases are final. Downloads are for personal use only
-                              &mdash; no redistribution. Memberships auto-renew
-              unless canceled.
+              Melori is free. There is nothing to buy and no membership to
+              renew or cancel. Music you play or download is for personal use
+              only &mdash; no redistribution.
             </p>
           </section>
 
@@ -41,10 +41,10 @@ export default function TermsPage() {
               For artists
             </h2>
             <p>
-              You keep ownership of your music. Melori takes no platform cut on
-              music sales — you receive the sale price minus Stripe&apos;s
-              standard payment processing fee. Payouts are processed via Stripe
-              Connect.
+              You keep ownership of your music. Melori does not sell music and
+              takes no commission: there is nothing here to buy, so there are no
+              sales, no fees and no payouts. Your work stays yours, and you can
+              remove it at any time.
             </p>
           </section>
 

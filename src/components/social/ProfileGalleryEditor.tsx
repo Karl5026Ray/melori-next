@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { ImagePlus, Loader2, Trash2, Play, X, GripVertical } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 
@@ -79,7 +78,7 @@ export default function ProfileGalleryEditor({
       return;
     }
     if (items.length >= max) {
-      setError(`You've used all ${max} slots on your plan.`);
+      setError(`You've used all ${max} slots.`);
       return;
     }
 
@@ -336,11 +335,6 @@ export default function ProfileGalleryEditor({
             </p>
           )}
 
-          {isFull && max === 4 && (
-            <p className="mt-3 text-sm text-melori-muted">
-                          Superfan members get up to 20 slots
-            </p>
-          )}
         </>
       )}
 

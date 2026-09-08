@@ -40,10 +40,6 @@ export function ConcertCreateForm() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (response.status === 403) {
-          router.push("/membership");
-          return;
-        }
         setError(data.error ?? "Could not create the Concert. Please try again.");
         return;
       }

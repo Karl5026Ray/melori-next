@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
       body: "Welcome to Melori Community. This is where fans and artists connect between spaces. Drop a hello 👋",
     },
     {
-      body: "Reminder: your Superfan membership unlocks posting in spaces, priority access to listening parties, and early drops.",
+      body: "Reminder: a free Melori account lets you post in spaces, join listening parties, and hear early drops.",
     },
     {
       body: "Artists — heads up: /dashboard is live. You can now submit tracks and see your streams in one place.",

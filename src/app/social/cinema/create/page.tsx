@@ -74,7 +74,7 @@ export default function CreateCinemaPage() {
       scheduled_at = t.toISOString();
     }
 
-    // Server independently enforces Superfan+ on this endpoint (403 otherwise).
+    // Server independently enforces sign-in on this endpoint (401 otherwise).
     const res = await authFetch("/api/social/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -101,11 +101,6 @@ export default function CreateCinemaPage() {
           ? "/social/cinema"
           : roomHref({ id: space.id, room_format: CINEMA_ROOM_FORMAT }),
       );
-      return;
-    }
-
-    if (res.status === 403) {
-      router.push("/membership");
       return;
     }
 

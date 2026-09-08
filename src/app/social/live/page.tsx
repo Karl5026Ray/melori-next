@@ -2,10 +2,10 @@
 
 // MM Faces — the LIVE VIDEO landing page.
 //
-// From here a Superfan can Go Live (creating a room and becoming the host) and
-// anyone can browse the rooms that are live right now. Going live is a single,
-// unified TikTok-style experience: the host starts solo and the room grows as
-// guests are invited/join, up to the member tier's cap.
+// From here any signed-in member can Go Live (creating a room and becoming the
+// host) and anyone can browse the rooms that are live right now. Going live is a
+// single, unified TikTok-style experience: the host starts solo and the room
+// grows as guests are invited/join, up to the room's capacity.
 //
 // The room UI lives at /social/live/[roomId].
 
@@ -151,12 +151,6 @@ export default function LivePage() {
         );
         return;
       }
-      if (res.status === 403) {
-        // Authenticated but lacks the required tier — a PERMISSION problem, not
-        // a sign-in problem. Route to the upgrade page, never the auth screen.
-        router.push(data?.upgrade ?? "/membership");
-        return;
-      }
       if (!res.ok) {
         setCreateError(data?.error ?? "Could not start your live.");
         setCreating(false);
@@ -173,7 +167,7 @@ export default function LivePage() {
     if (user) {
       // Profile loaded: use the local gate for instant feedback.
       if (!canParticipate) {
-        router.push("/membership");
+        router.push("/social/auth?next=/social/live");
         return;
       }
       setShowCreate(true);
@@ -189,8 +183,8 @@ export default function LivePage() {
       return;
     }
     // Authenticated but profile not yet in context: open the modal and let the
-    // server (requireSuperfan) be the source of truth — goLive handles a 403
-    // by routing to the upgrade page, not the sign-in screen.
+    // server be the source of truth — goLive handles a 401 by routing to the
+    // sign-in screen with a return path.
     setShowCreate(true);
   }, [user, canParticipate, router]);
 
@@ -291,7 +285,7 @@ export default function LivePage() {
             <p className="mt-3 max-w-2xl text-lg leading-relaxed text-text-secondary">
               Melori&apos;s live video side — where artists and fans meet on
               camera. Go live and bring people on — your room grows as guests
-              join, up to your tier&apos;s limit.
+              join.
             </p>
           </div>
           <button
@@ -377,8 +371,7 @@ export default function LivePage() {
               </button>
             </div>
             <p className="mt-2 text-sm text-text-secondary">
-              Start solo and bring people on as you go — your room grows up to
-              your tier&apos;s limit.
+              Start solo and bring people on as you go.
             </p>
             <div className="mt-4 space-y-4">
               <div>

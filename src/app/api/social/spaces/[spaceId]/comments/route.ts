@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ spaceId:
   }
 }
 
-// POST /api/social/spaces/[spaceId]/comments — Superfan+ only. Author is
+// POST /api/social/spaces/[spaceId]/comments — signed-in only. Author is
 // resolved from the verified bearer token; the request body only carries the
 // message text.
 export async function POST(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
       (profile?.display_name as string) ||
       (profile?.full_name as string) ||
       (profile?.username as string) ||
-      "Superfan";
+      "Member";
 
     const { data, error } = await supabase
       .from("space_comments")

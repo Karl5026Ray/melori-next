@@ -7,24 +7,16 @@ export const metadata: Metadata = {
 
 const faqs = [
   {
-    q: "I didn't receive my download email",
-    a: "Check your spam or promotions folder. If it's still missing, email us with the address you used at checkout and we'll resend.",
+    q: "I can't sign in",
+    a: "Sign in with the email address you registered with, not your username. If that still doesn't work, email us and we'll sort it out.",
   },
   {
-    q: "My download link expired",
-    a: "Links allow multiple downloads and don't expire by time. If you hit the limit, email us and we'll reissue.",
+    q: "Does Melori cost anything?",
+    a: "No. Melori is free. There are no subscriptions, no paid tiers and nothing to buy — every feature is open to every account.",
   },
   {
-    q: "I want a refund",
-    a: "Digital purchases are final, but contact us within 48 hours if there's a genuine issue and we'll make it right.",
-  },
-  {
-    q: "How do I cancel my membership?",
-    a: "You can cancel anytime from your account settings, or by emailing us. Cancellations take effect at the end of the current billing period.",
-  },
-  {
-    q: "I'm an artist — how do I get paid?",
-    a: "Artists receive payouts monthly via Stripe Connect. Add your payout details in your artist dashboard to start receiving payments.",
+    q: "How do I delete my account?",
+    a: "Open your account settings and choose Delete account, or email us and we'll take care of it.",
   },
 ];
 

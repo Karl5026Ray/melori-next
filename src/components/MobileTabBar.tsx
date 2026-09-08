@@ -18,7 +18,6 @@ import {
   Camera,
   Target,
   Users,
-  Home,
   Music,
   Clapperboard,
   HeartHandshake,
@@ -32,7 +31,7 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Home, Music, Artists, Radio, Melori Connect (direct), then the one
+ *       Music, Artists, Radio, Melori Connect (direct), then the one
  *       navigation category:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
  *       then Photography, Sign up and Mission as direct tiles.
@@ -171,17 +170,11 @@ export default function MobileTabBar() {
   // PR #347), so an app user who pressed it was bounced to an unrelated page.
   // Merch is still reachable on the web from the footer and direct links.
   //
-  // Home and Music take the freed space. Both also exist in the bottom tab bar
-  // (as Home and Explore) — deliberate: the M menu covers the screen, and
-  // getting back to the music from inside it should not require closing it
-  // first.
+  // Music took the freed space. A Home tile went in beside it and came straight
+  // back out (Karl: "I want to remove HOME from the M menu... it is the same as
+  // the music tab") — the bottom tab bar already has Home one thumb-press away,
+  // and a second one inside a menu that covers the screen bought nothing.
   const quickLinks: LaunchItem[] = [
-    {
-      label: "Home",
-      href: "/",
-      icon: <Home className="h-5 w-5" />,
-      desc: "All the music",
-    },
     {
       label: "Music",
       href: "/music",
@@ -422,12 +415,11 @@ export default function MobileTabBar() {
                     ) : (
                       // Top-level screen.
                       <>
-                        {/* Five destinations, one full row. grid-cols-5 rather
-                            than 4: with Store gone and Home + Music added this
-                            group is five, and at four columns the fifth tile
-                            sat alone on a second row. The tile is an icon and
-                            an 11px label, so it still has room at 390px. */}
-                        <div className="grid grid-cols-5 gap-2">
+                        {/* Four destinations, one full row. This was briefly
+                            grid-cols-5 while a Home tile sat here; Home came
+                            back out, so the row is four again and matches the
+                            category row below it. */}
+                        <div className="grid grid-cols-4 gap-2">
                           {quickLinks.map(renderTile)}
                         </div>
                         {/* Category buttons and the direct Mission link */}

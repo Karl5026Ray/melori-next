@@ -370,12 +370,7 @@ export default function RadioClient() {
                     </p>
                   )}
                   {tuned && isSample && (
-                    <p className="mt-1 text-xs text-brand-primary">
-                      Preview ·{" "}
-                      <Link href="/membership" className="underline">
-                        upgrade for full tracks
-                      </Link>
-                    </p>
+                              <p className="mt-1 text-xs text-brand-primary">Preview</p>
                   )}
                 </div>
 

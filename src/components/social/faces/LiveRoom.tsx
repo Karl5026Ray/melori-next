@@ -1773,7 +1773,7 @@ export default function LiveRoom({
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
           >
             <Hand className="h-5 w-5" />
-          </div>d
+          </div>
         )}
         {/* Share — native share sheet where available, else copy link. */}
         <button

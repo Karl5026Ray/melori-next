@@ -60,7 +60,7 @@ export default function ArtistDashboardPage() {
       try {
         const res = await authFetch("/api/artist/stats");
         if (res.status === 403) {
-          setError("Artist membership required. Upgrade at /membership to unlock the dashboard.");
+          setError("Sign in to open your artist dashboard.");
           setLoading(false);
           return;
         }
@@ -99,10 +99,10 @@ export default function ArtistDashboardPage() {
         <h1 className="text-2xl font-bold mb-3">Dashboard unavailable</h1>
         <p className="text-text-secondary mb-6">{error}</p>
         <Link
-          href="/membership"
+          href="/social/auth?next=/dashboard"
           className="inline-block px-6 py-3 bg-brand-primary text-black font-semibold rounded-lg"
         >
-          View membership options
+          Sign in
         </Link>
       </div>
     );

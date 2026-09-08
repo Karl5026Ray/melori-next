@@ -12,7 +12,6 @@ import { authFetch } from "@/lib/authClient";
 // Sections:
 //   • Profile (reuses fields + PATCH /api/social/profile + upload-url pattern from EditProfileModal)
 //   • Notifications (email opt-in — stored on profiles.notifications_email; falls back gracefully if column missing)
-//   • Membership (read-only summary from profiles.membership_tier / status / expires_at)
 //   • Account (email + sign-out)
 //
 // Auth: client-side redirect to /social/auth?next=/settings when no session.
@@ -41,8 +40,6 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [email, setEmail] = useState<string>("");
-  const [tier, setTier] = useState<string>("free");
-  const [role, setRole] = useState<string>("free");
 
   // Editable fields
   const [displayName, setDisplayName] = useState("");
@@ -59,12 +56,12 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Password change (superfan/artist only)
+  // Password change
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
 
-  // Photo gallery (superfan/artist only)
+  // Photo gallery
   const [gallery, setGallery] = useState<GalleryPhoto[]>([]);
   const [galleryBusy, setGalleryBusy] = useState(false);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -101,21 +98,12 @@ export default function SettingsPage() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Could not load your settings.");
       }
-      const {
-        profile: p,
-        email: apiEmail,
-        role: apiRole,
-        tier: apiTier,
-      } = (await res.json()) as {
+      const { profile: p, email: apiEmail } = (await res.json()) as {
         profile: ProfileRow;
         email: string | null;
-        role?: string | null;
-        tier?: string | null;
       };
       setProfile(p ?? null);
       setEmail(apiEmail ?? session.user.email ?? "");
-      setRole((apiRole ?? p?.membership_tier ?? "free").toString());
-      setTier((apiTier ?? "free").toString());
       setDisplayName(p?.display_name ?? "");
       setUsername(p?.username ?? "");
       setBio(p?.bio ?? "");
@@ -123,10 +111,8 @@ export default function SettingsPage() {
       setNotifEmail(p?.notifications_email !== false); // default true
       setState("ready");
 
-      // Gallery is gated to superfan/artist; only fetch when eligible.
-      if (apiTier === "superfan" || apiTier === "artist") {
-        void loadGallery();
-      }
+      // Gallery is available to every signed-in account now that tiers are gone.
+      void loadGallery();
       // Banner is available to every signed-in user (profiles.banner_url).
       void loadBanner();
     } catch (err: any) {
@@ -476,11 +462,11 @@ export default function SettingsPage() {
     );
   }
 
-  const membershipTier = profile?.membership_tier ?? "free";
-  const status = profile?.membership_status ?? "inactive";
-  // Password + Gallery sections are for paid tiers only: superfan tier OR
-  // artist role (admins resolve to the 'artist' tier and also qualify).
-  const canManage = tier === "superfan" || tier === "artist" || role === "artist";
+  // Password + Gallery are available to every signed-in account. These used to
+  // be gated on `tier === "superfan" || "artist"`, but paid tiers were removed
+  // from Melori, so every profile now resolves to "free" — which silently hid
+  // password changes from ALL users. You cannot reach this page signed out.
+  const canManage = true;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -491,7 +477,7 @@ export default function SettingsPage() {
           </p>
           <h1 className="text-3xl font-bold mt-1">Settings</h1>
           <p className="text-sm text-[#888] mt-1">
-            Manage your profile, notifications, and membership.
+            Manage your profile, photos, and account.
           </p>
         </div>
 
@@ -674,7 +660,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Password — superfan/artist only */}
+        {/* Password */}
         {canManage && (
           <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
             <h2 className="text-lg font-semibold mb-5">Password</h2>
@@ -719,7 +705,7 @@ export default function SettingsPage() {
           </section>
         )}
 
-        {/* Photo Gallery — superfan/artist only */}
+        {/* Photo Gallery */}
         {canManage && (
           <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
             <div className="mb-5 flex items-center justify-between">
@@ -774,45 +760,6 @@ export default function SettingsPage() {
             />
           </section>
         )}
-
-        {/* Membership */}
-        <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-5">Membership</h2>
-          <div className="grid sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[#888]">
-                Tier
-              </p>
-              <p className="text-xl font-bold capitalize text-[#c9a96e] mt-1">
-                {membershipTier}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[#888]">
-                Status
-              </p>
-              <p className="text-xl font-bold capitalize mt-1">{status}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[#888]">
-                Renews / expires
-              </p>
-              <p className="text-xl font-bold mt-1">
-                {profile?.membership_expires_at
-                  ? new Date(
-                      profile.membership_expires_at,
-                    ).toLocaleDateString()
-                  : "—"}
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/membership"
-            className="inline-block px-5 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition"
-          >
-            Manage membership
-          </Link>
-        </section>
 
         {/* Account */}
         <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">

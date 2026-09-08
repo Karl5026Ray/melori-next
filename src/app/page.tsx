@@ -1,8 +1,6 @@
-import { Suspense } from "react";
 import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import CatalogCard from "@/components/CatalogCard";
-import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import HomeHero from "@/components/HomeHero";
 import NameMeaning from "@/components/NameMeaning";
@@ -27,10 +25,8 @@ import { sortMeloriFavorites } from "@/lib/releaseSort";
 //
 // WHY ISR IS SAFE HERE: this page renders identically for every visitor. All of
 // its data comes from `getSupabaseAdmin()` (a service-role client — no cookies,
-// no per-user session), and the only request-specific piece is <SuccessBanner>,
-// a client component reading useSearchParams inside its own <Suspense>
-// boundary. Nothing user-specific is rendered on the server, so a shared cache
-// entry cannot leak between accounts.
+// no per-user session). Nothing user-specific is rendered on the server, so a
+// shared cache entry cannot leak between accounts.
 //
 // THIS ALSO MEANS THE PAGE CANNOT BRANCH ON AUTH STATE. Rendering a different
 // homepage for signed-out visitors would make the route dynamic again and bring
@@ -92,10 +88,6 @@ export default async function HomePage() {
 
   return (
     <div>
-      <Suspense fallback={null}>
-        <SuccessBanner />
-      </Suspense>
-
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />

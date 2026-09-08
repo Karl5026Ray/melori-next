@@ -105,6 +105,17 @@ export default function MobileTabBar() {
     !!pathname && /^\/social\/live\/[^/]+/.test(pathname);
   const isCinemaRoomRoute = isCinemaLiveRoomRoute(pathname);
 
+  // The auth doors — create account, sign in, password reset and the OAuth
+  // callback — are not the app. A signed-out visitor was being handed
+  // Home / Explore / Chat / You and the M launcher underneath the signup form:
+  // destinations they cannot reach, each one a tap that abandons the signup.
+  const isAuthDoorRoute =
+    !!pathname &&
+    (pathname === "/register" ||
+      pathname.startsWith("/social/auth") ||
+      pathname.startsWith("/auth/") ||
+      pathname.startsWith("/reset-password"));
+
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -211,12 +222,11 @@ export default function MobileTabBar() {
     },
   ];
 
-  // Signup used to be a category of four tier deep-links (Free / Artist /
-// Superfan) feeding a plan picker on /register. /register no longer
-  // picks plans — it creates the account — so the fan-out had nothing left to
-  // fan out to, and four buttons that all landed on the same form read as a
-  // paywall on the way in. One tile, one destination. Plans are offered from
-  // /membership once an account exists.
+  // Signup used to be a category of four tier deep-links feeding a plan picker
+  // on /register. /register no longer picks plans — it creates the account — so
+  // the fan-out had nothing left to fan out to, and four buttons that all
+  // landed on the same form read as a paywall on the way in. One tile, one
+  // destination. There are no plans now; every account is the same account.
   const signupLink: LaunchItem = {
     label: "Sign up",
     href: "/register",
@@ -254,7 +264,7 @@ export default function MobileTabBar() {
 
   // Suppress the tab bar only for opened, fullscreen room routes. Cinema's
   // listing and creation pages keep normal navigation.
-  if (isLiveRoomRoute || isCinemaRoomRoute) return null;
+  if (isLiveRoomRoute || isCinemaRoomRoute || isAuthDoorRoute) return null;
 
   return (
     <>

@@ -18,12 +18,12 @@ export const dynamic = "force-dynamic";
 // /connect. We exchange the code for tokens, upsert calendar_connections,
 // and redirect back into Studio.
 //
-// Redirect target: /studio/booking?calendar=connected|error. Phase 4 added
-// /studio/booking, which is now the primary home for the Connect Google
+// Redirect target: /studio?calendar=connected|error. Artist Studio is the
+// primary home for the Connect Google
 // Calendar card (CalendarConnectCard is still also mounted on
 // /studio/services from Phase 3, but the booking page is the more natural
 // landing spot now that availability + booking exist).
-const REDIRECT_PATH = "/studio/booking";
+const REDIRECT_PATH = "/studio";
 
 export async function GET(req: NextRequest) {
   const origin = approvedOrigin(req);

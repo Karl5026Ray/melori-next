@@ -3,18 +3,18 @@
 // melori-next/next.config.js
 //
 // PURPOSE: Bridge the public Vercel front (melorimusic.org) to the VPS Express
-// API for the routes that only exist on the VPS (members, purchases, downloads).
+// API for the routes that only exist on the VPS (members and authentication).
 //
 // IMPORTANT: We do NOT proxy ALL /api/* — melori-next has its own route handlers
 // for /api/releases, /api/artists, /api/tracks that read Supabase. Those must
-// stay local. Only the VPS-owned auth & commerce surfaces get rewritten.
+// stay local. Only the VPS-owned authentication surfaces get rewritten.
 //
 // This is the minimum-viable bridge to:
 //   1. Close Gate #28 (password reset deliverability test)
-//   2. Unblock Stripe Checkout from the public site
+//   2. Unblock the remaining VPS-backed authentication routes
 //
 // Longer-term: migrate members → Supabase Auth so melori-next owns everything.
-// Tracked separately. For now, VPS remains source of truth for users + purchases.
+// Tracked separately. For now, VPS remains source of truth for users.
 
 const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 
@@ -26,14 +26,14 @@ const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
 // key is now "Content-Security-Policy" (enforcing) so violations are blocked.
 //
 // Sources reflect Melori's real providers:
-//   supabase.co (auth/db/storage/realtime), stripe.com/js.stripe.com (checkout),
+//   supabase.co (auth/db/storage/realtime),
 //   *.livekit.cloud + wss (audio/video),
 //   *.pubnub.com (presence), google/gstatic (OAuth + fonts),
 //   static.cloudflareinsights.com (Cloudflare Web Analytics beacon).
 const CSP_ENFORCED = [
   "default-src 'self'",
-  // Next.js requires 'unsafe-inline'/'unsafe-eval' for its runtime; Stripe.js
-  // and Google OAuth load from their own hosts; Cloudflare Web Analytics beacon.
+  // Next.js requires 'unsafe-inline'/'unsafe-eval' for its runtime; Google OAuth
+  // and Cloudflare Web Analytics load from their own hosts.
   //
   // youtube.com + s.ytimg.com are the IFrame Player API. Cinema rooms load
   // https://www.youtube.com/iframe_api, which then pulls www-widgetapi.js from
@@ -42,22 +42,22 @@ const CSP_ENFORCED = [
   // silently: the script was blocked, onYouTubeIframeAPIReady never fired, and
   // the room showed a black rectangle with no console error (CSP violations
   // report to /api/csp-report, not the console API).
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com https://www.youtube.com https://s.ytimg.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  // XHR/WebSocket egress: Supabase, Stripe, LiveKit, PubNub + generic wss.
+  // XHR/WebSocket egress: Supabase, LiveKit, PubNub + generic wss.
   // blob: is required by the shared audio player: it fetches the unlock clip and
   // streamed track data as blob URLs, and XHR/fetch to a blob: URL is governed by
   // connect-src (not media-src). Without it the homepage radio fails to start.
-  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.livekit.cloud wss://*.livekit.cloud https://*.pubnub.com wss://*.pubnub.com",
+  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://*.livekit.cloud wss://*.livekit.cloud https://*.pubnub.com wss://*.pubnub.com",
   // data: covers the tiny inline silent clip the player uses to unlock autoplay
   // on iOS, which was being blocked on / and /music.
   "media-src 'self' data: blob: https:",
-  // Stripe Checkout + Google OAuth render in iframes, and both /video and the
-  // Melori Mirror feed embed YouTube players (artist-submitted links; we never
-  // re-host the media). Nothing else may embed us.
-  "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
+  // Google OAuth renders in an iframe, and both /video and the Melori Mirror
+  // feed embed YouTube players (artist-submitted links; we never re-host the
+  // media). Nothing else may embed us.
+  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
   // Was 'none'. Loosened to 'self' so wrapper browsers on iOS (Comet, Chrome iOS,
   // Perplexity, in-app WebViews) that render the top-level page inside their own
   // frame chrome don't get a hard "This page couldn't load" bounce. Safari native
@@ -106,7 +106,7 @@ const SECURITY_HEADERS = [
   {
     key: "Permissions-Policy",
     value:
-      "camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(), interest-cohort=()",
+      "camera=(self), microphone=(self), geolocation=(), usb=(), interest-cohort=()",
   },
 ];
 
@@ -225,37 +225,10 @@ const nextConfig = {
   },
   async rewrites() {
     return [
-      // ── Stripe success_url backwards-compat: VPS still sends Stripe a
-      // success_url ending in .html (download-success.html, membership-success.html).
-      // Next.js routes are extensionless. Rewrite the .html variants to the
-      // real routes so old Stripe sessions keep working without a VPS change.
-      {
-        source: '/download-success.html',
-        destination: '/download-success',
-      },
-      {
-        source: '/membership-success.html',
-        destination: '/membership-success',
-      },
       // ── Members / auth (sign-in, sign-up, sessions, password reset, profile)
-      // NOTE: /api/members/stripe-webhook is now owned by a LOCAL Next.js route
-      // handler (src/app/api/members/stripe-webhook/route.ts) — migrated off the
-      // VPS because the VPS handler had a raw-body bug that failed every Stripe
-      // signature check. Default rewrites are `afterFiles`, so the filesystem
-      // route already wins over this catch-all; we intentionally do NOT proxy it.
       {
-        source: '/api/members/:path((?!stripe-webhook$).*)',
+        source: '/api/members/:path*',
         destination: `${VPS_ORIGIN}/api/members/:path`,
-      },
-      // ── Purchases: REMOVED. Music commerce migrated off the VPS to Vercel-
-      // native routes (/api/music/checkout -> /music/success, fulfilled via the
-      // Stripe webhook + music_purchases table, downloads signed by
-      // /api/music/download). Nothing calls /api/purchase/* anymore, so we no
-      // longer proxy it to the VPS (whose Stripe key was expired anyway).
-      // ── Downloads (post-purchase secure file delivery)
-      {
-        source: '/api/download/:path*',
-        destination: `${VPS_ORIGIN}/api/download/:path*`,
       },
       // ── Artist tools (uploads, dashboards) — VPS-only
       {

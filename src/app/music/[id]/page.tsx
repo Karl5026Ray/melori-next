@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import BuyButton from "@/components/BuyButton";
 import { getArtistRefsByProfileId } from "@/lib/catalog";
-import { formatPriceCents } from "@/lib/format";
 import StudioTrackPlayButton from "./StudioTrackPlayButton";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +23,6 @@ interface StudioTrackDetail {
   cover_url: string | null;
   preview_url: string | null;
   duration: number | null;
-  price_cents: number | null;
   status: string;
   created_at: string;
   profile_id: string | null;
@@ -48,7 +45,7 @@ async function getPublishedStudioTrack(
   const { data, error } = await supabase
     .from("studio_tracks")
     .select(
-      "id, title, artist, album, genre, cover_url, preview_url, duration, price_cents, status, created_at, profile_id, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
+      "id, title, artist, album, genre, cover_url, preview_url, duration, status, created_at, profile_id, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
     )
     .eq("id", id)
     .eq("status", "published")
@@ -91,8 +88,6 @@ export default async function StudioTrackPage(
     ? await getArtistRefsByProfileId([track.profile_id]).catch(() => new Map())
     : new Map();
   const artistRef = track.profile_id ? artistRefs.get(track.profile_id) : null;
-  const priceCents = track.price_cents;
-
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
       <Link
@@ -138,10 +133,6 @@ export default async function StudioTrackPage(
           {duration && (
             <p className="mt-1 text-sm text-text-secondary/80">{duration}</p>
           )}
-          <p data-native-hide className="mt-2 text-sm font-medium text-[#c9a96e]">
-            {formatPriceCents(priceCents)}
-          </p>
-
           {/* Route playback through PlayerProvider so listens get logged and
               superfan gating works. The old bare <audio> element skipped both. */}
           <StudioTrackPlayButton
@@ -153,13 +144,6 @@ export default async function StudioTrackPage(
             }}
           />
 
-          {priceCents != null && priceCents > 0 && (
-            <BuyButton
-              title={track.title}
-              priceCents={priceCents}
-              studioTrackId={track.id}
-            />
-          )}
         </div>
       </div>
     </div>

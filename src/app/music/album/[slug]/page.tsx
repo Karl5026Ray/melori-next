@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
-import BuyButton from "@/components/BuyButton";
 import { getStudioAlbumBySlug } from "@/lib/catalog";
-import { formatPriceCents } from "@/lib/format";
 import StudioAlbumTracks from "./StudioAlbumTracks";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +37,6 @@ export default async function StudioAlbumPage(props: {
   const params = await props.params;
   const album = await getStudioAlbumBySlug(params.slug).catch(() => null);
   if (!album) notFound();
-
-  const isFree = album.priceCents === 0;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
@@ -83,23 +79,9 @@ export default async function StudioAlbumPage(props: {
           )}
 
           <p className="mt-3 text-sm text-text-secondary">
-            {album.tracks.length} track{album.tracks.length === 1 ? "" : "s"} ·{" "}
-            <span data-native-hide className="font-medium text-brand-primary">
-              {formatPriceCents(album.priceCents)}
-            </span>
+            {album.tracks.length} track{album.tracks.length === 1 ? "" : "s"} ·
+            {" "}Free to play
           </p>
-
-          {isFree ? (
-            <p className="mt-4 text-sm text-text-secondary">
-              This album is free — press play on any track below.
-            </p>
-          ) : (
-            <BuyButton
-              title={album.title}
-              priceCents={album.priceCents}
-              studioAlbumId={album.id}
-            />
-          )}
         </div>
       </div>
 

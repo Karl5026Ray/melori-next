@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
-  ShoppingBag,
   Download,
   Camera,
   ChevronLeft,
@@ -22,18 +21,12 @@ export interface ViewerImage {
   blurHash: string | null;
   caption: string | null;
   filename: string | null;
-  forSale: boolean;
-  priceCents: number | null;
 }
 
 export interface ViewerFolder {
   id: string;
   name: string;
   coverPhotoId: string | null;
-}
-
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
 }
 
 // Last-resort copy for browsers without the async clipboard API (older iOS
@@ -72,7 +65,6 @@ export default function GalleryViewer({
   initialFolder: string | null;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [buyingId, setBuyingId] = useState<string | null>(null);
   const [shareState, setShareState] = useState<{
     key: string;
     copied: boolean;
@@ -223,27 +215,6 @@ export default function GalleryViewer({
     }
 
     flashShareResult(group.key, legacyCopy(url));
-  }
-
-  async function buy(imageId: string) {
-    setBuyingId(imageId);
-    try {
-      const res = await fetch("/api/gallery/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        window.location.href = data.url as string;
-        return;
-      }
-      alert(data.error ?? "Could not start checkout.");
-    } catch {
-      alert("Could not start checkout. Please try again.");
-    } finally {
-      setBuyingId(null);
-    }
   }
 
   function showNext(dir: 1 | -1) {
@@ -415,19 +386,7 @@ export default function GalleryViewer({
                               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           </button>
-                          {img.forSale && img.priceCents ? (
-                            <button
-                              type="button"
-                              onClick={() => buy(img.id)}
-                              disabled={buyingId === img.id}
-                              className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
-                            >
-                              <ShoppingBag className="h-3.5 w-3.5" />
-                              {buyingId === img.id
-                                ? "…"
-                                : `Instant ${formatPrice(img.priceCents)}`}
-                            </button>
-                          ) : allowDownloads ? (
+                          {allowDownloads ? (
                             <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
                               <Download className="h-3 w-3" /> Download
                             </span>
@@ -490,8 +449,6 @@ export default function GalleryViewer({
             className="flex max-h-[90vh] max-w-[92vw] flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Watermarked preview only — the clean original is delivered after
-                purchase / via the download route. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={active.previewUrl}
@@ -502,19 +459,6 @@ export default function GalleryViewer({
               {active.caption && (
                 <p className="text-sm text-text-secondary">{active.caption}</p>
               )}
-              {active.forSale && active.priceCents ? (
-                <button
-                  type="button"
-                  onClick={() => buy(active.id)}
-                  disabled={buyingId === active.id}
-                  className="flex items-center gap-2 rounded-full bg-brand-primary px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-primary-dark disabled:opacity-60"
-                >
-                  <ShoppingBag className="h-4 w-4" />
-                  {buyingId === active.id
-                    ? "Starting checkout…"
-                    : `Snappd instant — ${formatPrice(active.priceCents)}`}
-                </button>
-              ) : null}
             </div>
           </div>
         </div>

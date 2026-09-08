@@ -106,7 +106,9 @@ export default async function HomePage() {
             <span className="whitespace-nowrap">Create endlessly.</span>
           </p>
           <p className="mt-4 max-w-2xl text-base text-text-secondary">
-          Melori is where independent creators share their work, go live, and connect with listeners who are actually there.          </p>
+            Melori is where independent creators share their work, go live, and
+            connect with listeners who are actually there.
+          </p>
 
           {/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
              unmutes on first interaction) using the shared site player. */}
@@ -156,6 +158,7 @@ export default async function HomePage() {
             <h3 className="text-lg font-semibold text-text-primary">Built for creators</h3>
             <p className="mt-2 text-sm text-text-secondary">Upload your music, build a profile, and reach an audience that is actually listening.</p>
           </div>
+        </div>
       </section>
     </div>
   );

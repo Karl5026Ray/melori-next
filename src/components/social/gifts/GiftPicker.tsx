@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Gift, LoaderCircle, Coins, X } from "lucide-react";
+import { Gift, LoaderCircle, X } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
-import { useIsNativeApp } from "@/components/NativeAppProvider";
 import {
   giftMediaKind,
   isEligibleGiftTarget,
@@ -19,14 +18,6 @@ import type { SpaceParticipant } from "@/types/social";
 // existing Concert callers are unaffected.
 export type GiftTargetCandidate = Pick<SpaceParticipant, "user_id" | "role"> & {
   user?: { display_name?: string | null } | null;
-};
-
-type CoinPack = {
-  id: string;
-  name: string;
-  coin_amount: number;
-  bonus_label: string | null;
-  price_usd_cents: number;
 };
 
 export function GiftPicker({
@@ -47,15 +38,12 @@ export function GiftPicker({
   roomLabel?: string;
   onSignal: (signal: GiftSignal) => void;
 }) {
-  const isNativeApp = useIsNativeApp();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [gifts, setGifts] = useState<GiftCatalogItem[]>([]);
-  const [packs, setPacks] = useState<CoinPack[]>([]);
   const [targetId, setTargetId] = useState("");
-  const [showCoins, setShowCoins] = useState(false);
   const [error, setError] = useState("");
 
   const targets = useMemo(
@@ -91,7 +79,6 @@ export function GiftPicker({
       const catalog = await catalogRes.json();
       const wallet = await walletRes.json();
       setGifts(catalog.gifts ?? []);
-      setPacks(isNativeApp ? [] : (catalog.packs ?? []));
       setBalance(wallet.balance ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load gifting");
@@ -124,25 +111,6 @@ export function GiftPicker({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send gift");
     } finally {
-      setSending(null);
-    }
-  }
-
-  async function checkout(packId: string) {
-    if (isNativeApp) return;
-    setSending(`pack:${packId}`);
-    setError("");
-    try {
-      const res = await authFetch("/api/gifts/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pack_id: packId, space_id: spaceId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start checkout");
-      window.location.assign(data.url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start checkout");
       setSending(null);
     }
   }
@@ -182,12 +150,8 @@ export function GiftPicker({
                 </label>
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="font-semibold">Choose a gift</h3>
-                  {!isNativeApp && (
-                    <button type="button" data-native-hide onClick={() => setShowCoins((v) => !v)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-amber-300/40 px-3 text-sm text-amber-200 hover:bg-amber-300/10" data-testid="gift-coins-action"><Coins className="h-4 w-4" /> Coins</button>
-                  )}
                 </div>
-                {!isNativeApp && showCoins && <div className="mb-4 grid gap-2 sm:grid-cols-2" data-native-hide>{packs.map((pack) => <button key={pack.id} type="button" onClick={() => checkout(pack.id)} disabled={!!sending} className="min-h-11 rounded-xl border border-melori-border p-3 text-left hover:border-amber-300 disabled:opacity-50" data-testid={`coin-pack-${pack.id}`}><b>{pack.name}</b><span className="block text-sm text-melori-muted">{pack.coin_amount.toLocaleString()} coins{pack.bonus_label ? ` · ${pack.bonus_label}` : ""} · ${(pack.price_usd_cents / 100).toFixed(2)}</span></button>)}</div>}
-                {isNativeApp && balance === 0 && <p className="mb-4 rounded-xl border border-melori-border p-3 text-sm text-melori-muted">You don&apos;t have any coins on your account yet. Coins you already have can be sent here.</p>}
+                {balance === 0 && <p className="mb-4 rounded-xl border border-melori-border p-3 text-sm text-melori-muted">You don&apos;t have any coins on your account yet.</p>}
                 {(["spark", "glow", "epic"] as const).map((tier) => {
                   const tierGifts = gifts.filter((g) => g.tier === tier);
                   if (!tierGifts.length) return null;

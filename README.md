@@ -3,7 +3,7 @@
 Phase 1 music-platform rebuild per **BUILD SPECIFICATION v1.1**. Parallel build: this is a NEW project on a Vercel preview URL. The live site at melorimusic.org (powered by the separate `Karl5026Ray/melori` repo) is **not touched**.
 
 ## Stack
-Next.js 14 (App Router, TS) · Supabase · Resend · Stripe · Cloudflare · Vercel · GitHub
+Next.js 14 (App Router, TS) · Supabase · Resend · Cloudflare · Vercel · GitHub
 
 ## Brand
 All colors, logo, and fonts are extracted from the live melorimusic.org site. See [`/docs/BRAND.md`](./docs/BRAND.md). Do not invent new branding.

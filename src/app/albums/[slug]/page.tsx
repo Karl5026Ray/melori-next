@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import BuyButton from "@/components/BuyButton";
 import CoverImage from "@/components/CoverImage";
 import PlayReleaseButton from "@/components/PlayReleaseButton";
 import TrackList from "@/components/TrackList";
 import { getReleaseBySlug } from "@/lib/data";
-import { formatPrice } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -70,32 +68,12 @@ export default async function AlbumDetailPage(
             <span className="uppercase tracking-wide text-text-secondary">
               {release.release_type}
             </span>
-            <span aria-hidden="true" className="text-text-secondary/40 select-none">·</span>
-            <span className="font-semibold text-brand-primary">
-              {formatPrice(release.price)}
-            </span>
           </div>
-          {/* Free streaming is the core promise — give it a prominent control
-             right beside Buy, not just the small per-track play circles. */}
           <PlayReleaseButton
             tracks={tracks}
             artistName={artist?.name ?? null}
             coverUrl={release.cover_art_url}
           />
-          {release.price != null && release.price > 0 && (
-            <BuyButton releaseId={release.id} price={release.price} />
-          )}
-          {/* Reassure the buyer at the point of decision: their money goes to
-             the artist, not the platform. This is Melori's key differentiator. */}
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-text-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5 shrink-0 text-brand-primary" aria-hidden>
-              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span>
-              No platform cut — {artist?.name ?? "the artist"} keeps every dollar after
-              payment processing.
-            </span>
-          </p>
           {release.description && (
             <p className="mt-4 text-sm text-text-secondary">
               {release.description}

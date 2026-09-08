@@ -246,14 +246,22 @@ a {
 .video-snap { scroll-snap-type: y mandatory; scroll-snap-stop: always; }
 .video-snap > * { scroll-snap-align: start; }
 
-/* One mobile clearance contract for content under the fixed tab bar and the
-   default 56px floating transport (which is parked 8px above it). A listener
-   can drag the transport elsewhere, but normal scrolling content never starts
-   under either fixed control. Desktop retains the 6rem full-width transport.
+/* Mobile clearance for content under the fixed tab bar. Desktop retains the
+   6rem full-width transport bar.
 
-   The transport is MAIN-PAGE ONLY (src/lib/transportRoute.ts), so the combined
-   `--mobile-content-clearance` applies on "/"; MainContent falls back to the
-   tab-bar-only clearance in every other space. */
+   `--mobile-content-clearance` was the tab bar PLUS the 56px floating transport
+   pill parked 8px above it. The pill was deleted on 2026-09-07 and the phone
+   transport moved into the HomeHero card, which is ordinary in-flow content, so
+   MainContent no longer uses this variable at all — on a phone the only fixed
+   thing left to clear is the tab bar, on every route.
+
+   It survives for ONE remaining consumer: `--mirror-bottom` below. That is a
+   deliberate hold, not an oversight. Mirror is a full-bleed video feed whose
+   card height is computed from it, and the transport was never on /social/mirror
+   in the first place (it is main-page only — src/lib/transportRoute.ts), so
+   Mirror has been reserving 4.5rem it never needed. Reclaiming it is a real
+   improvement and a real layout change to a surface Karl cares about, so it
+   belongs in its own change with its own before/after, not smuggled in here. */
 :root {
   --mobile-tabbar-clearance: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   --mobile-content-clearance: calc(var(--mobile-tabbar-clearance) + 4rem + 0.5rem);

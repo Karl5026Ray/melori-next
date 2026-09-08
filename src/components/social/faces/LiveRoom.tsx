@@ -11,7 +11,7 @@
 // request camera; the host approves (promote to "speaker" = publisher). This
 // reuses the SAME server model as audio MM Spaces: `space_participants.role`
 // + has_raised_hand, the host-only PATCH moderation endpoint, and the
-// Superfan-gated /api/livekit-token (publisher only for host/speaker).
+// Auth-gated /api/livekit-token (publisher only for host/speaker).
 //
 // Brand: Melori orange accents on dark — matches the rest of the app.
 
@@ -84,7 +84,7 @@ interface LiveRoomProps {
   durationMinutes: number | null;
   mode: LiveMode;
   maxOnCamera: number; // host + guests ceiling (1 for solo, 2 duo, up to 9 group)
-  canPublish: boolean; // may this viewer go on camera? (host or Superfan+)
+  canPublish: boolean; // may this viewer go on camera? (host or speaker)
 }
 
 interface FloatingHeart {
@@ -1756,7 +1756,7 @@ export default function LiveRoom({
             </button>
           </>
         )}
-        {/* Superfan viewer in duo/group can raise a hand to request camera */}
+        {/* Signed-in viewer in duo/group can raise a hand to request camera */}
         {!isHost && !onCamera && !isSolo && canPublish && (
           <button
             onClick={toggleHand}
@@ -1766,10 +1766,10 @@ export default function LiveRoom({
             <Hand className="h-5 w-5" />
           </button>
         )}
-        {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
+        {/* Signed-out viewer: gentle nudge instead of a button that 403s */}
         {!isHost && !onCamera && !isSolo && !canPublish && (
           <div
-            aria-label="Joining the camera requires Superfan"
+            aria-label="Sign in to join the camera"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
           >
             <Hand className="h-5 w-5" />

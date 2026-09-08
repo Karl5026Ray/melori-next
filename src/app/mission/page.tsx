@@ -31,13 +31,13 @@ export default function MissionPage() {
               full-stack career operating system. We believe artists are
               founders, not inventory: while the industry treats music as content
               to be extracted, we treat musicians as professionals building
-              sustainable livelihoods, combining fair monetization, live audio
-              community, and direct artist-fan relationships into one sovereign
-              ecosystem. No intermediaries siphoning the majority of your
-              revenue, no opaque algorithms dictating your visibility, no
-              platform lock-in holding your audience hostage &mdash; just
-              transparent economics, genuine social connection, and the tools to
-              turn listeners into a community, and a community into a career.
+              sustainable careers, combining a free platform, live audio community,
+              and direct artist-fan relationships into one sovereign ecosystem.
+              No paywalls between you and your listeners, no opaque algorithms
+              dictating your visibility, no platform lock-in holding your
+              audience hostage &mdash; just genuine social connection and the
+              tools to turn listeners into a community, and a community into a
+              career.
             </p>
             <p className="text-2xl md:text-3xl font-bold text-text-primary pt-2">
               Melori. Build your sound. Own your future.
@@ -55,8 +55,8 @@ export default function MissionPage() {
             {[
               {
                 num: "01",
-                title: "Transparent Monetization",
-                desc: "No platform cut — artists keep every dollar after payment processing. Melori adds no revenue share on top of Stripe's standard card fee, so what reaches you is the sale price minus processing and nothing else. No opaque distribution algorithms, no intermediary gatekeeping determining your compensation.",
+                title: "Free to Everyone",
+                desc: "Melori sells nothing. No subscriptions, no tiers, no upgrades, no checkout — every feature is open to every account. No opaque distribution algorithms and no intermediary gatekeeping standing between artists and the people who listen.",
               },
               {
                 num: "02",
@@ -66,7 +66,7 @@ export default function MissionPage() {
               {
                 num: "03",
                 title: "Artist-Fan Authenticity",
-                desc: "Supporters are not aggregated data points. Direct messaging, exclusive access tiers, and unmediated engagement restore the human relationship at the center of the creative economy.",
+                desc: "Supporters are not aggregated data points. Direct messaging and unmediated engagement restore the human relationship at the center of the creative economy.",
               },
               {
                 num: "04",
@@ -104,10 +104,10 @@ export default function MissionPage() {
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              href="/membership"
+              href="/register"
               className="px-6 py-3 rounded-full font-semibold bg-brand-primary hover:bg-brand-primary-dark transition-colors text-white"
             >
-              Become a Member
+              Create a Free Account
             </Link>
             <Link
               href="/music"

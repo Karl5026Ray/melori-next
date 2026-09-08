@@ -79,7 +79,7 @@ const FEATURES = [
   {
     icon: Shield,
     title: "Safer by design",
-    body: "Connect is 18+ and Superfan-gated, so members have skin in the game. Block and report are built into every profile.",
+    body: "Connect is 18+ and open to any Melori account. Block and report are built into every profile.",
   },
 ];
 
@@ -117,16 +117,10 @@ export default function ConnectLandingPage() {
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-4">
               <ConnectLandingCTA />
-              <Link
-                href="/membership"
-                className="rounded-full border border-brand-border bg-brand-surface px-6 py-3.5 text-base font-semibold text-text-primary transition-colors hover:border-melori-pink/50 hover:text-white"
-              >
-                Become a member
-              </Link>
             </div>
             <p className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
               <Lock className="h-4 w-4" />
-              18+ · Superfan membership required to match
+              18+ · Free Melori account required
             </p>
           </div>
 
@@ -277,11 +271,11 @@ export default function ConnectLandingPage() {
           </div>
           <h2 className="text-3xl font-bold sm:text-4xl">Safer by design</h2>
           <p className="mt-5 text-lg leading-relaxed text-text-secondary">
-            Connect is 18+ and gated behind a Superfan membership, so members
-            have skin in the game. We never share your precise location, you can
-            block anyone at any time, and every profile carries a one-tap
-            report. Your listening taste is the only signal we use to find your
-            matches — never your contacts or your DMs.
+            Connect is 18+ and open to any Melori account. We never share your
+            precise location, you can block anyone at any time, and every
+            profile carries a one-tap report. Your listening taste is the only
+            signal we use to find your matches — never your contacts or your
+            DMs.
           </p>
         </div>
       </section>

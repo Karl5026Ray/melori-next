@@ -130,7 +130,7 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
       scheduled_at = t.toISOString();
     }
 
-    // Server independently enforces Superfan+ on this endpoint (403 otherwise).
+    // Server independently enforces sign-in on this endpoint (401 otherwise).
     const res = await authFetch("/api/social/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -153,11 +153,6 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
           ? roomScheduledHref(selectedFormat)
           : roomHref({ id: space.id, room_format: selectedFormat }),
       );
-      return;
-    }
-
-    if (res.status === 403) {
-      router.push("/membership");
       return;
     }
 

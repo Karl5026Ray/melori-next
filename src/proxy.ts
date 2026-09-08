@@ -107,7 +107,6 @@ const PUBLIC_EXACT = new Set([
   "/spaces",
   "/support",
   "/terms",
-  "/welcome",
 ]);
 
 const PUBLIC_PREFIXES = [

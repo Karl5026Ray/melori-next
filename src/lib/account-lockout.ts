@@ -8,7 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 // and moved the subscription to canceled / unpaid / incomplete_expired), we ban
 // the Supabase auth user so they cannot sign in at all — not merely a role
 // downgrade. This is deliberately stricter than the tier-gate (`requireArtist`
-// etc.) revocation, per product decision for the Snappd photography membership.
+// etc.) revocation, per product decision for lapsed paid memberships.
 //
 // IMPORTANT — grace window: we do NOT ban on `past_due`. Stripe keeps retrying
 // a failed renewal for its dunning window; during that time membership_status

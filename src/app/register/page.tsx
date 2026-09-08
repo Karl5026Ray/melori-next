@@ -17,7 +17,7 @@ import {
 // ACCOUNT FIRST. NOTHING ELSE.
 // ----------------------------
 // This page used to open with a four-card membership grid (Free / Superfan /
-// Artist / Snappd) and only reveal the email + password fields underneath it.
+// Artist) and only reveal the email + password fields underneath it.
 // That made "create an account" look like "choose what to buy", which is the
 // wrong first impression for a platform whose whole value is the community —
 // and it put a price table in front of a visitor before they had any reason to

@@ -158,17 +158,11 @@ export default function ConnectApp() {
       <Centered>
         <Heart className="mb-3 h-8 w-8 text-melori-pink" />
         <h2 className="text-xl font-bold">Connect is a Superfan feature</h2>
-        <p className="mt-1 max-w-sm text-sm text-melori-muted">
-          Upgrade your membership to meet members who share your music taste,
-          see who likes you, and start conversations.
+                            <p className="mt-1 max-w-sm text-sm text-melori-muted">
+                            Connect is available to Superfan members to meet others who share
+                  your music taste, see who likes you, and start conversations.
         </p>
-        <Link
-          href="/membership"
-          className="mt-4 rounded-full bg-brand-primary px-6 py-2 font-semibold text-white"
-        >
-          Upgrade membership
-        </Link>
-      </Centered>
+        </Centered>
     );
   }
 

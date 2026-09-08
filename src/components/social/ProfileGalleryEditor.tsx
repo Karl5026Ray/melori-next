@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { ImagePlus, Loader2, Trash2, Play, X, GripVertical } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 

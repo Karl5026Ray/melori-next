@@ -17,19 +17,12 @@ import {
 // ACCOUNT FIRST. NOTHING ELSE.
 // ----------------------------
 // This page used to open with a four-card membership grid (Free / Superfan /
-// Artist / Snappd) and only reveal the email + password fields underneath it.
+// Artist) and only reveal the email + password fields underneath it.
 // That made "create an account" look like "choose what to buy", which is the
 // wrong first impression for a platform whose whole value is the community —
 // and it put a price table in front of a visitor before they had any reason to
 // care. Signing up is now one thing: email, password, phone. Every account is
 // created as role "free".
-//
-// Upgrades did not disappear, they moved AFTER the account exists. The M-button
-// menu can still deep-link `?tier=artist|superfan|snappd`; that param no longer
-// draws anything on the page — it is simply remembered and, once the account is
-// live, the browser is handed to the matching checkout. Nobody is ever asked to
-// pay before they have somewhere to log into. We never grant a paid role
-// client-side; the role lands via /welcome + the Stripe webhook after payment.
 //
 // PHONE IS REQUIRED, AND THE VERIFY STEP IS SELF-CONFIGURING
 // ----------------------------------------------------------
@@ -45,17 +38,7 @@ import {
 // itself the moment verification starts working. This mirrors /platform (the
 // melori.org door) deliberately — two front doors, one rule.
 //
-// NATIVE: no prices, no web checkout, ever. The wrapper has been rejected over
-// exactly that. Natively this page is email + password + phone and nothing more.
-// One auth system (Supabase). Google sign-in offered for the web path.
-
-type PaidTier = "superfan" | "artist" | "snappd";
-
-// Snappd is sold through its own live Stripe Payment Link, whose completion
-// redirects to /welcome?tier=snappd to grant the studio role. Public hosted
-// checkout URL — safe to ship to the client.
-const SNAPPD_PAYMENT_LINK =
-  "https://buy.stripe.com/cNiaER1gQgKTbVfexI7Zu0b";
+// One auth system (Supabase). Google sign-in is offered for the web path.
 
 /** Normalise to E.164. A bare 10-digit input is assumed US/Canada. */
 function toE164(raw: string): string | null {
@@ -79,13 +62,6 @@ function RegisterInner() {
   // not be allowed to drift, so there is only one implementation now.
   const next = safeNextPath(params.get("next"));
 
-  // Remembered, never rendered. Decides where the finished account is sent.
-  const tierParam = params.get("tier");
-  const upgradeTo: PaidTier | null =
-    tierParam === "artist" || tierParam === "superfan" || tierParam === "snappd"
-      ? tierParam
-      : null;
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -104,20 +80,7 @@ function RegisterInner() {
       ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
       : undefined;
 
-  /**
-   * Where a finished account goes. A paid deep-link hands off to checkout on the
-   * web; natively it is ignored outright, because a native build may not send a
-   * user to a web payment page.
-   */
   const finishSignup = () => {
-    if (upgradeTo && !isNativeApp) {
-      if (upgradeTo === "snappd") {
-        window.location.href = SNAPPD_PAYMENT_LINK;
-      } else {
-        router.push("/membership");
-      }
-      return;
-    }
     // Newly created free account → offer the one-time camera/microphone setup
     // step before the page they were heading to. Once this device has been
     // through it, this is a no-op and they go straight to `next`.
@@ -422,16 +385,6 @@ function RegisterInner() {
           </Link>
         </p>
 
-        {/* Plans live on their own page, after the account exists. Never in the
-            native wrapper — no prices, no web checkout. */}
-        {!isNativeApp && phase === "form" && (
-          <p data-native-hide className="text-center text-xs text-[#666] mt-3">
-            Accounts are free.{" "}
-            <Link href="/membership" className="text-[#8a7550] hover:underline">
-              See Superfan, Artist and Snappd plans
-            </Link>
-          </p>
-        )}
       </div>
     </div>
   );

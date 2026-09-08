@@ -19,7 +19,6 @@ function getStateSecret(): string {
   return (
     process.env.CALENDAR_TOKEN_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.STRIPE_SECRET_KEY ||
     "melori-calendar-state-fallback"
   );
 }

@@ -1,8 +1,6 @@
-import { Suspense } from "react";
 import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import CatalogCard from "@/components/CatalogCard";
-import SuccessBanner from "@/components/SuccessBanner";
 import ShareButton from "@/components/ShareButton";
 import HomeHero from "@/components/HomeHero";
 import NameMeaning from "@/components/NameMeaning";
@@ -27,10 +25,8 @@ import { sortMeloriFavorites } from "@/lib/releaseSort";
 //
 // WHY ISR IS SAFE HERE: this page renders identically for every visitor. All of
 // its data comes from `getSupabaseAdmin()` (a service-role client — no cookies,
-// no per-user session), and the only request-specific piece is <SuccessBanner>,
-// a client component reading useSearchParams inside its own <Suspense>
-// boundary. Nothing user-specific is rendered on the server, so a shared cache
-// entry cannot leak between accounts.
+// no per-user session). Nothing user-specific is rendered on the server, so a
+// shared cache entry cannot leak between accounts.
 //
 // THIS ALSO MEANS THE PAGE CANNOT BRANCH ON AUTH STATE. Rendering a different
 // homepage for signed-out visitors would make the route dynamic again and bring
@@ -92,10 +88,6 @@ export default async function HomePage() {
 
   return (
     <div>
-      <Suspense fallback={null}>
-        <SuccessBanner />
-      </Suspense>
-
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="hero-glow absolute inset-0 -z-10" aria-hidden />
@@ -106,7 +98,8 @@ export default async function HomePage() {
             <span className="whitespace-nowrap">Create endlessly.</span>
           </p>
           <p className="mt-4 max-w-2xl text-base text-text-secondary">
-            Melori is where independent creators share their work, go live, and earn — you keep what you make.
+            Melori is where independent creators share their work, go live, and
+            connect with listeners who are actually there.
           </p>
 
           {/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
@@ -155,7 +148,7 @@ export default async function HomePage() {
           </div>
           <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
             <h3 className="text-lg font-semibold text-text-primary">Built for creators</h3>
-            <p className="mt-2 text-sm text-text-secondary">Upload your music, build a profile, and reach an audience that is actually listening — you keep what you make.</p>
+            <p className="mt-2 text-sm text-text-secondary">Upload your music, build a profile, and reach an audience that is actually listening.</p>
           </div>
         </div>
       </section>

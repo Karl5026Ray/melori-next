@@ -15,7 +15,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Melori Music",
     short_name: "Melori",
     description:
-      "Preview freely. Support directly. Create endlessly. Independent music from Melori artists — free previews, full playback for members, and downloads you own.",
+      "Listen freely. Create endlessly. Independent music from Melori artists — every track, free to every account.",
     id: "/",
     start_url: "/",
     scope: "/",

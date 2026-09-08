@@ -7,11 +7,6 @@ import {
   isOwnedStudioPath,
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
-import {
-  DEFAULT_SINGLE_PRICE_CENTS,
-  PRICE_RANGE_MESSAGE,
-  parsePriceCents,
-} from "@/lib/pricing";
 import { ensureStudioAlbum } from "@/lib/studio-albums";
 
 // GET /api/studio/tracks — List all studio tracks
@@ -87,17 +82,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // The artist sets their own price. Omitting it takes the $1.99 default;
-    // an explicitly bad value is rejected rather than silently coerced, so a
-    // typo can't publish a track at the wrong price.
-    const priceCents =
-      body.price_cents === undefined
-        ? DEFAULT_SINGLE_PRICE_CENTS
-        : parsePriceCents(body.price_cents);
-    if (priceCents === null) {
-      return NextResponse.json({ error: PRICE_RANGE_MESSAGE }, { status: 400 });
-    }
-
     // Assign the next sort_order within this (owner_id, album) partition so a
     // newly created track lands at the end of its album, not somewhere
     // arbitrary. Two concurrent inserts to the same album could collide on
@@ -137,7 +121,6 @@ export async function POST(req: NextRequest) {
         file_path: body.file_path,
         cover_url: body.cover_url,
         type: body.type,
-        price_cents: priceCents,
         sort_order: nextSortOrder,
         status: body.status || "draft",
         // Both ownership columns must be the caller's uid: profile_id

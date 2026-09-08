@@ -3,12 +3,6 @@
 import { useState, useCallback } from "react";
 import { authFetch } from "@/lib/authClient";
 import { putWithProgress, validateAudioFile } from "./uploadHelpers";
-import {
-  DEFAULT_SINGLE_PRICE_CENTS,
-  PRICE_RANGE_MESSAGE,
-  centsToDollarsInput,
-  dollarsToCentsInput,
-} from "@/lib/pricing";
 
 interface UploadState {
   file: File | null;
@@ -17,7 +11,6 @@ interface UploadState {
   album: string;
   genre: string;
   releaseDate: string;
-  price: string;
   coverArt: File | null;
   uploading: boolean;
   progress: number;
@@ -31,7 +24,6 @@ export default function TrackUploader() {
     album: "",
     genre: "",
     releaseDate: "",
-    price: centsToDollarsInput(DEFAULT_SINGLE_PRICE_CENTS),
     coverArt: null,
     uploading: false,
     progress: 0,
@@ -81,12 +73,6 @@ export default function TrackUploader() {
   const handleUpload = async () => {
     if (!state.file || !state.title) {
       setError("Please select an audio file and enter a title.");
-      return;
-    }
-
-    const priceCents = dollarsToCentsInput(state.price);
-    if (priceCents === null) {
-      setError(PRICE_RANGE_MESSAGE);
       return;
     }
 
@@ -150,7 +136,7 @@ export default function TrackUploader() {
           file_url: audioPublicUrl,
           file_path: audioPath,
           cover_url: coverPublicUrl,
-          price_cents: priceCents,
+          price_cents: 0,
           type: state.album ? "album_track" : "single",
           status: "draft",
         }),
@@ -246,7 +232,7 @@ export default function TrackUploader() {
           <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6 space-y-4">
             <h3 className="font-semibold text-[#c9a96e]">Track Details</h3>
 
-            <div className="grid md:grid-cols-2 gap-4">
+            <div>
               <div>
                 <label className="text-sm text-[#888] block mb-1">Title *</label>
                 <input
@@ -304,29 +290,6 @@ export default function TrackUploader() {
                   onChange={(e) => setState((p) => ({ ...p, releaseDate: e.target.value }))}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
                 />
-              </div>
-              <div>
-                <label htmlFor="track-price" className="text-sm text-[#888] block mb-1">
-                  Price (USD)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#888]">$</span>
-                  <input
-                    id="track-price"
-                    type="text"
-                    inputMode="decimal"
-                    value={state.price}
-                    onChange={(e) => setState((p) => ({ ...p, price: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
-                    placeholder="1.99"
-                  />
-                </div>
-                <p className="text-xs text-[#666] mt-1">
-                  No platform cut — you keep every dollar after Stripe&apos;s processing
-                  fee. Prices at or above $1.99 keep more of each sale in your pocket,
-                  because the flat per-transaction fee hurts small tickets. Enter 0.00
-                  to give it away free.
-                </p>
               </div>
             </div>
 

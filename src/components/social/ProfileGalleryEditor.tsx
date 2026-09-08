@@ -338,14 +338,7 @@ export default function ProfileGalleryEditor({
 
           {isFull && max === 4 && (
             <p className="mt-3 text-sm text-melori-muted">
-              You&apos;ve filled all 4 free slots.{" "}
-              <Link
-                href="/membership"
-                className="font-semibold text-brand-primary hover:underline"
-              >
-                Go Superfan
-              </Link>{" "}
-              for 20 slots.
+                          Superfan members get up to 20 slots
             </p>
           )}
         </>

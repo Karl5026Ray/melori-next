@@ -6,12 +6,6 @@ import {
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAdminSecretKey } from "@/lib/admin-secret";
-import {
-  NATIVE_INFO_PATH,
-  isBlockedNativeApi,
-  isBlockedNativePage,
-  isNativeUserAgent,
-} from "@/lib/nativePlatform";
 
 // Do NOT fall back to a hard-coded secret — the previous fallback string was
 // public in this repo, so a misconfigured production env would let anyone
@@ -273,35 +267,11 @@ async function guardAdmin(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-function guardNativeCommerce(
-  request: NextRequest,
-  pathname: string,
-): NextResponse | null {
-  if (!isNativeUserAgent(request.headers.get("user-agent"))) return null;
-
-  if (isBlockedNativeApi(pathname)) {
-    return NextResponse.json(
-      {
-        error:
-          "Purchases and donations are not available in the Melori Music app.",
-      },
-      { status: 403 },
-    );
-  }
-
-  if (isBlockedNativePage(pathname, request.nextUrl.searchParams.get("tier"))) {
-    return NextResponse.redirect(new URL(NATIVE_INFO_PATH, request.url));
-  }
-
-  return null;
-}
-
 /**
  * melori.org routing. Returns null for every other host.
  *
- * Runs AFTER guardNativeCommerce so a wrapper request arriving here — which
- * should never happen, since melori.org is not in allowNavigation — can never
- * skip the App Store commerce guard by being redirected first.
+ * A wrapper request should never arrive here because melori.org is not in
+ * allowNavigation.
  */
 function routePlatformHost(
   request: NextRequest,
@@ -320,13 +290,6 @@ function routePlatformHost(
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
-
-  const nativeBlock = guardNativeCommerce(request, pathname);
-  if (nativeBlock) return nativeBlock;
-
-  if (isBlockedNativeApi(pathname)) {
-    return NextResponse.next();
-  }
 
   const platformRoute = routePlatformHost(request, pathname);
   if (platformRoute) return platformRoute;
@@ -372,14 +335,6 @@ export const config = {
   //     keep their existing long-lived cache headers).
   matcher: [
     "/admin/:path*",
-    "/api/donate/checkout",
-    "/api/music/checkout",
-    "/api/store/checkout",
-    "/api/gallery/checkout",
-    "/api/gifts/checkout",
-    "/api/booking/create",
-    "/api/music/download",
-    "/api/gallery/download",
     "/((?!api/|_next/|favicon.ico|.*\\..*).*)",
   ],
 };

@@ -81,14 +81,12 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       items: [
         { label: "Dashboard", href: "/dashboard" },
         { label: "Membership", href: "/membership" },
-        { label: "Superfan", href: "/superfan" },
         { label: "Settings", href: "/settings" },
       ],
     },
     test: (p) =>
       p.startsWith("/dashboard") ||
       p.startsWith("/membership") ||
-      p.startsWith("/superfan") ||
       p.startsWith("/settings") ||
       p.startsWith("/admin"),
   },
@@ -136,17 +134,13 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         { label: "Singles", href: "/music?type=single" },
         { label: "Videos", href: "/video" },
         { label: "Featured Artist", href: "/featured-artist" },
-        { label: "Store", href: "/store" },
       ],
     },
     test: (p) =>
       p.startsWith("/music") ||
       p.startsWith("/albums") ||
       p.startsWith("/video") ||
-      p.startsWith("/featured-artist") ||
-      p.startsWith("/store") ||
-      p.startsWith("/cart") ||
-      p.startsWith("/checkout"),
+      p.startsWith("/featured-artist"),
   },
 ];
 

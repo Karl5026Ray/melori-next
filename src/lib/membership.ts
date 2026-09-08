@@ -1,8 +1,7 @@
 // Shared membership model + gating helpers.
 //
 // Membership lives in Supabase `profiles`. `role` is the SOURCE OF TRUTH:
-//   - role: 'free' | 'superfan' | 'artist' | 'snappd' | 'admin'
-//     (snappd is the photographer membership and carries studio access)
+//   - role: 'free' | 'superfan' | 'artist' | 'admin'
 //   - membership_status: e.g. 'active'
 //   - membership_tier / membership_expires_at: derived Stripe fields; may be
 //     ABSENT (null) for members whose role was granted directly (e.g. by an admin
@@ -19,7 +18,7 @@
 // the client (UI gating / CTAs) and the server (route handlers). Server-side
 // request-profile resolution lives in `membership-server.ts`.
 
-export type MembershipTier = "free" | "superfan" | "artist" | "snappd";
+export type MembershipTier = "free" | "superfan" | "artist";
 
 export interface MembershipProfile {
   role?: string | null;
@@ -46,7 +45,6 @@ export function isAdmin(profile: MembershipProfile | null | undefined): boolean 
 export function tierOf(profile: MembershipProfile | null | undefined): MembershipTier {
   const t = effectiveTierString(profile);
   if (t === "admin") return "artist"; // admins treated as top tier
-  if (t === "snappd") return "snappd";
   if (t === "artist") return "artist";
   if (t === "superfan") return "superfan";
   return "free";
@@ -94,30 +92,22 @@ export function hasMembershipAccess(
   return ts >= Date.now();
 }
 
-// Canonical "superfan-or-above" predicate — the SINGLE definition shared by the
-// client gate (UpgradePrompt / useCanParticipate) and the server gate
-// (membership-server.requireSuperfan). Qualifies when role is in
-// {superfan, artist, admin}. We do NOT require an active subscription status
-// here: role is the source of truth and is reset to 'free' on cancellation, so
-// an admin-granted artist (whose membership_status may still be the default
-// 'inactive') correctly counts as a paying-tier member. Only `free`/logged-out
-// users are excluded.
+// Paid tiers were removed from Melori. There is no Superfan or Artist tier to
+// buy, so both predicates now mean "is there a signed-in account" — anyone with
+// an account gets the feature, and only logged-out visitors are excluded.
+//
+// The names are kept because they are the SINGLE definition shared by the client
+// gate (UpgradePrompt / useCanParticipate) and the server gate
+// (membership-server). Renaming them is a separate mechanical change.
 export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
-  const tier = tierOf(profile);
-  return tier === "superfan" || tier === "artist" || tier === "snappd";
+  return profile != null;
 }
 
-// Studio access — role is 'artist', 'snappd' or 'admin'. Same role-first
-// rationale as isSuperfanOrBetter above.
-//
-// Snappd qualifies because it IS the photographer membership, and everything it
-// is sold on — "profile, galleries, tethering, $1.99 instant prints (keep 80%)"
-// — lives behind the studio and gallery routes this predicate guards. It costs
-// $14.99/mo, three times Artist; a Snappd member getting less access than an
-// Artist member would be exactly backwards.
+// Studio access. Also account-only now: uploading music no longer requires a
+// paid Artist tier. NOTE: this means any signed-in account can upload audio, so
+// moderation and a takedown path are the only remaining controls.
 export function isArtistSubscriber(profile: MembershipProfile | null | undefined): boolean {
-  const tier = tierOf(profile);
-  return tier === "artist" || tier === "snappd";
+  return profile != null;
 }
 
 // Seconds of a full track a non-superfan free listener may hear.

@@ -1,15 +1,13 @@
 "use client";
 
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
-import BuyButton from "@/components/BuyButton";
-import { formatDuration, formatPriceCents } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 
 interface AlbumTrack {
   id: string;
   title: string;
   duration: number | null;
   coverUrl: string | null;
-  priceCents: number | null;
 }
 
 // Track list for a studio album. Clicking any row plays the whole album from
@@ -61,18 +59,6 @@ export default function StudioAlbumTracks({
             {duration && (
               <span className="shrink-0 text-xs text-text-secondary">
                 {duration}
-              </span>
-            )}
-            {track.priceCents != null && track.priceCents > 0 ? (
-              <BuyButton
-                variant="compact"
-                title={track.title}
-                priceCents={track.priceCents}
-                studioTrackId={track.id}
-              />
-            ) : (
-              <span className="shrink-0 text-xs font-medium text-brand-primary">
-                {formatPriceCents(track.priceCents)}
               </span>
             )}
           </li>

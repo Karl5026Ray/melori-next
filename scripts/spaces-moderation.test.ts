@@ -181,14 +181,27 @@ group("hand-raise eligibility (signed-out vs free vs superfan)", () => {
   assertEq("signed-out user cannot raise a hand", canRaiseHand({ signedIn: false }), false);
   assertEq("signed-in free member CAN raise a hand", canRaiseHand({ signedIn: true }), true);
 
-  // isSuperfanOrBetter is irrelevant to canRaiseHand — assert both a free and
-  // a superfan profile land on the identical (signed-in) answer, proving the
-  // hand-raise gate does not key off tier at all.
+  // isSuperfanOrBetter is irrelevant to canRaiseHand — assert every profile
+  // lands on the identical (signed-in) answer, proving the hand-raise gate does
+  // not key off tier at all.
+  //
+  // Paid tiers were removed from Melori, so isSuperfanOrBetter now means "is
+  // there a signed-in account" and can no longer tell free from superfan from
+  // artist. That is exactly why canRaiseHand must not consult it. Logged out is
+  // the only remaining false.
   const freeProfile = { role: "free" };
   const superfanProfile = { role: "superfan" };
   const artistProfile = { role: "artist" };
-  assertEq("free member is not superfan-or-better (sanity)", isSuperfanOrBetter(freeProfile), false);
-  assertEq("superfan member is superfan-or-better (sanity)", isSuperfanOrBetter(superfanProfile), true);
+  assertEq(
+    "every signed-in profile is superfan-or-better now that tiers are gone",
+    [
+      isSuperfanOrBetter(freeProfile),
+      isSuperfanOrBetter(superfanProfile),
+      isSuperfanOrBetter(artistProfile),
+    ],
+    [true, true, true],
+  );
+  assertEq("logged-out is still excluded", isSuperfanOrBetter(null), false);
   assertEq(
     "free AND superfan both pass canRaiseHand once signed in",
     [canRaiseHand({ signedIn: true }), canRaiseHand({ signedIn: true })],
@@ -199,7 +212,6 @@ group("hand-raise eligibility (signed-out vs free vs superfan)", () => {
     canRaiseHand.length,
     1, // takes only the StageIdentity arg — no profile/tier parameter exists
   );
-  void artistProfile; // referenced for documentation parity with the other two
 });
 
 // ---------------------------------------------------------------------------

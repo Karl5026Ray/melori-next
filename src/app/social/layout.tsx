@@ -6,7 +6,7 @@ import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 export const metadata: Metadata = {
   title: "MM Social",
   description:
-    "Audio rooms, direct messaging, and video for independent artists and superfans on Melori Music.",
+    "Audio rooms, direct messaging, and video for independent artists and listeners on Melori Music.",
 };
 
 export default function SocialLayout({

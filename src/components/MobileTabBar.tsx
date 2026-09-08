@@ -163,12 +163,7 @@ export default function MobileTabBar() {
   // Direct quick-press buttons: Messages stays in the large bottom tab. This
   // tile is intentionally Melori Connect, moved out of More per mobile IA.
   //
-  // Store used to hold the last slot and was removed on 2026-09-07 (Karl:
-  // "the store is still in the M menu, place home there with all of the
-  // music"). It had stopped being a link inside the native app: /store 307s to
-  // /account-info in the wrapper for App Review (see mobile/APPLE_REVIEW.md and
-  // PR #347), so an app user who pressed it was bounced to an unrelated page.
-  // Merch is still reachable on the web from the footer and direct links.
+  // Home occupies the final slot, alongside Music and Connect.
   //
   // Music took the freed space. A Home tile went in beside it and came straight
   // back out (Karl: "I want to remove HOME from the M menu... it is the same as
@@ -217,7 +212,7 @@ export default function MobileTabBar() {
   ];
 
   // Signup used to be a category of four tier deep-links (Free / Artist /
-  // Superfan / Snappd) feeding a plan picker on /register. /register no longer
+// Superfan) feeding a plan picker on /register. /register no longer
   // picks plans — it creates the account — so the fan-out had nothing left to
   // fan out to, and four buttons that all landed on the same form read as a
   // paywall on the way in. One tile, one destination. Plans are offered from

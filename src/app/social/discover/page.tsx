@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Discover Members · Melori",
   description:
-    "Swipe through Melori members — artists, superfans, and friends. Follow, message, or open a profile in one tap.",
+    "Swipe through Melori members — artists, listeners, and friends. Follow, message, or open a profile in one tap.",
 };
 
 // Full-viewport, TikTok-style profile scroller. Given a DEFINITE height (the

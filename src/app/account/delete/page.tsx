@@ -29,10 +29,10 @@ export default function DeleteAccountPage() {
         <h2 className="text-lg font-semibold mb-3">What gets deleted</h2>
         <ul className="list-disc pl-5 space-y-1 text-sm text-[#ccc]">
           <li>Your profile, username, display name, bio, and avatar</li>
-          <li>Your membership record and account login</li>
+          <li>Your account login and profile record</li>
           <li>Your comments, messages, and community activity</li>
           <li>Content you uploaded (tracks, videos, gallery photos)</li>
-          <li>Your listening history and Superfan stats</li>
+          <li>Your listening history and activity stats</li>
         </ul>
         <h2 className="text-lg font-semibold mt-6 mb-3">What is retained</h2>
         <p className="text-sm text-[#ccc]">

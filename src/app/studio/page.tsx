@@ -8,11 +8,8 @@ import VideoList from "./components/VideoList";
 import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
 import TrackList from "./components/TrackList";
 import WaveformEditor from "./components/WaveformEditor";
-import AnalyticsPanel from "./components/AnalyticsPanel";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
-import PayoutsPanel from "./components/PayoutsPanel";
-import PricingPanel from "./components/PricingPanel";
 import SuperfansPanel from "./components/SuperfansPanel";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
@@ -23,12 +20,9 @@ type Tab =
   | "tracks"
   | "clip"
   | "humanizer"
-  | "analytics"
   | "superfans"
   | "schedule"
-  | "profile"
-  | "pricing"
-  | "payouts";
+  | "profile";
 
 export default function StudioPage() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
@@ -94,16 +88,6 @@ export default function StudioPage() {
   const handleEditWaveform = useCallback((trackId: string) => {
     setSelectedTrackId(trackId);
     setActiveTab("clip");
-  }, []);
-
-  // Returning from the Stripe account link lands on /studio?connect=return|refresh
-  // (or /studio?purchase=...) — open the Payouts tab so the artist sees status.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("connect") || params.has("purchase")) {
-      setActiveTab("payouts");
-    }
   }, []);
 
   // Preload current profile photos when the Profile tab opens so the
@@ -191,12 +175,9 @@ export default function StudioPage() {
     { id: "tracks", label: "My Tracks", icon: "🎵" },
     { id: "clip", label: "Clip Maker", icon: "✂️" },
     { id: "humanizer", label: "Humanizer", icon: "🎛️" },
-    { id: "analytics", label: "Analytics", icon: "📊" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
     { id: "profile", label: "Profile", icon: "\u{1F5BC}\uFE0F" },
-    { id: "pricing", label: "Pricing & Splits", icon: "\uD83C\uDFF7\uFE0F" },
-    { id: "payouts", label: "Payouts", icon: "\uD83D\uDCB8" },
   ];
 
   return (
@@ -214,7 +195,7 @@ export default function StudioPage() {
                 </p>
               )}
               <p className="text-[#888] text-sm mt-1">
-                Upload, edit, and release your music — no platform cut on sales.
+                Upload, edit, and release your music.
               </p>
             </div>
             <Link
@@ -245,12 +226,11 @@ export default function StudioPage() {
                 {tab.label}
               </button>
             ))}
-            {/* Photography group — Galleries, Services & Pricing, Booking &
-               Calendar all live under /studio but are their own routes (not
+            {/* Photography group — Galleries live under /studio as their own route (not
                in-page tabs, since each needs real list→detail navigation).
                Grouped visually with a label + divider so they read as one
                coherent "Photography" area of the Studio nav rather than
-               three loose links. */}
+               a loose link. */}
             <span
               aria-hidden
               className="my-2 ml-1 h-6 w-px shrink-0 self-center bg-white/10"
@@ -265,20 +245,6 @@ export default function StudioPage() {
             >
               <span>{"\uD83D\uDCF7"}</span>
               Galleries
-            </Link>
-            <Link
-              href="/studio/services"
-              className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
-            >
-              <span>{"\uD83D\uDCB2"}</span>
-              Services &amp; Pricing
-            </Link>
-            <Link
-              href="/studio/booking"
-              className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
-            >
-              <span>{"\uD83D\uDCC5"}</span>
-              Booking &amp; Calendar
             </Link>
           </nav>
         </div>
@@ -304,11 +270,8 @@ export default function StudioPage() {
         {activeTab === "humanizer" && (
           <HumanizerWorkspace canForensic={canForensic} />
         )}
-        {activeTab === "analytics" && <AnalyticsPanel />}
         {activeTab === "superfans" && <SuperfansPanel />}
         {activeTab === "schedule" && <ReleaseScheduler />}
-        {activeTab === "pricing" && <PricingPanel />}
-        {activeTab === "payouts" && <PayoutsPanel />}
         {activeTab === "profile" && (
       <div className="space-y-8 max-w-xl">
         <div className="space-y-4">

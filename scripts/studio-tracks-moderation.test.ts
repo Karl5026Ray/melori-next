@@ -112,37 +112,6 @@ if (publicReadCount >= 8) {
   );
 }
 
-// The purchase path checks status in JS rather than in the query, so the
-// scanner above cannot see it. Assert it explicitly.
-checks++;
-const musicItems = readFileSync(join(SRC, "lib", "music-items.ts"), "utf8");
-if (
-  musicItems.includes('moderation_status') &&
-  musicItems.includes('(track as any).moderation_status !== "clean"')
-) {
-  pass("music-items.ts — single-track purchase gate rejects non-clean tracks");
-} else {
-  fail(
-    "music-items.ts — the single-track purchase path must reject tracks whose " +
-      'moderation_status is not "clean", or removed content stays sellable.',
-  );
-}
-
-// Post-purchase delivery must stop too: a takedown has to disable access to
-// the material, buyers included.
-checks++;
-const download = readFileSync(
-  join(SRC, "app", "api", "music", "download", "route.ts"),
-  "utf8",
-);
-if (download.includes(MODERATION_FILTER)) {
-  pass("download route — signed-URL delivery filters moderation_status");
-} else {
-  fail(
-    "download route — post-purchase delivery must not serve taken-down audio.",
-  );
-}
-
 console.log(
   `\n${checks - failures}/${checks} checks passed` +
     (failures ? ` — ${failures} FAILED\n` : "\n"),

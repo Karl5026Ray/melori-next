@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useNativeApp } from "@/hooks/useNativeApp";
 
 export interface Tier {
   id: number;
@@ -33,6 +34,7 @@ export default function TierGrid({ tiers }: { tiers: Tier[] }) {
   // and the webhook links by customer email afterward.
   // null = still checking; string = logged-in email; "" = logged out.
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { hidePurchaseUI } = useNativeApp();
 
   useEffect(() => {
     let active = true;
@@ -196,6 +198,16 @@ export default function TierGrid({ tiers }: { tiers: Tier[] }) {
                   >
                     Start Listening
                   </Link>
+                ) : hidePurchaseUI ? (
+                  // Apple App Store rule 3.1.1 — digital-goods purchases must
+                  // use Apple IAP inside the iOS shell. We use the Reader App
+                  // exception: subscriptions are available on the web only.
+                  <a
+                    href="https://melorimusic.org/membership"
+                    className="block w-full text-center px-6 py-3 rounded-full font-semibold border border-brand-primary text-brand-primary hover:bg-brand-primary/10 transition-colors"
+                  >
+                    Subscribe at melorimusic.org
+                  </a>
                 ) : link ? (
                   // Same-tab redirect to Stripe — consistent with the donate,
                   // store, and music buy flows (no new tab, no interstitial).

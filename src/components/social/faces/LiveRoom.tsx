@@ -1768,13 +1768,12 @@ export default function LiveRoom({
         )}
         {/* Free viewer: gentle upgrade nudge instead of a button that 403s */}
         {!isHost && !onCamera && !isSolo && !canPublish && (
-          <Link
-            href="/membership"
-            aria-label="Go Superfan to join on camera"
+          <div
+            aria-label="Joining the camera requires Superfan"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
           >
             <Hand className="h-5 w-5" />
-          </Link>
+          </div>d
         )}
         {/* Share — native share sheet where available, else copy link. */}
         <button

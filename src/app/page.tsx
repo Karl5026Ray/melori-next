@@ -154,8 +154,8 @@ export default async function HomePage() {
           </div>
           <div className="rounded-2xl border border-brand-border bg-white/5 p-6">
             <h3 className="text-lg font-semibold text-text-primary">Built for creators</h3>
-            <p className="mt-2 text-sm text-text-secondary">Upload your music, build a profile, and reach an audience that is actually listening.</p>p></p>          </div>
-        </div>
+            <p className="mt-2 text-sm text-text-secondary">Upload your music, build a profile, and reach an audience that is actually listening.</p>
+          </div>
       </section>
     </div>
   );

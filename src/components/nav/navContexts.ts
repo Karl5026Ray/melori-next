@@ -81,14 +81,12 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       items: [
         { label: "Dashboard", href: "/dashboard" },
         { label: "Membership", href: "/membership" },
-        { label: "Superfan", href: "/superfan" },
         { label: "Settings", href: "/settings" },
       ],
     },
     test: (p) =>
       p.startsWith("/dashboard") ||
       p.startsWith("/membership") ||
-      p.startsWith("/superfan") ||
       p.startsWith("/settings") ||
       p.startsWith("/admin"),
   },

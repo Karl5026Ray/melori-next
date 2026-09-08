@@ -3,7 +3,6 @@ import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
 import { requireArtist, isGuardFailure } from "@/lib/membership-server";
 import { OWNER_COLUMN } from "@/lib/studio-ownership";
-import { PRICE_RANGE_MESSAGE, parsePriceCents } from "@/lib/pricing";
 import { ensureStudioAlbum, normalizeAlbumTitle } from "@/lib/studio-albums";
 
 export const dynamic = "force-dynamic";
@@ -95,13 +94,6 @@ export async function PATCH(req: NextRequest) {
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-  if (body.price_cents !== undefined) {
-    const priceCents = parsePriceCents(body.price_cents);
-    if (priceCents === null) {
-      return NextResponse.json({ error: PRICE_RANGE_MESSAGE }, { status: 400 });
-    }
-    update.price_cents = priceCents;
-  }
   if (typeof body.description === "string") {
     update.description = body.description.trim() || null;
   }

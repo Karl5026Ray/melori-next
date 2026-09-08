@@ -9,7 +9,6 @@ import {
   isOwnedStudioPath,
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
-import { PRICE_RANGE_MESSAGE, parsePriceCents } from "@/lib/pricing";
 import { ensureStudioAlbum } from "@/lib/studio-albums";
 
 // Bust the public-site caches that surface studio_tracks (music catalog, home
@@ -151,16 +150,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (typeof body.artist === "string") update.artist = body.artist.trim();
     if (typeof body.album === "string") update.album = body.album.trim() || null;
     if (typeof body.genre === "string") update.genre = body.genre.trim() || null;
-
-    // Price edits go through the same validator as creation, so an artist
-    // cannot PATCH a negative or absurd price past the form's own checks.
-    if (body.price_cents !== undefined) {
-      const priceCents = parsePriceCents(body.price_cents);
-      if (priceCents === null) {
-        return NextResponse.json({ error: PRICE_RANGE_MESSAGE }, { status: 400 });
-      }
-      update.price_cents = priceCents;
-    }
 
     // If album is changing, the track's existing sort_order refers to the OLD
     // album's ordering and would now collide with (or leave a gap in) the

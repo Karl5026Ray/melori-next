@@ -92,24 +92,22 @@ export function hasMembershipAccess(
   return ts >= Date.now();
 }
 
-// Canonical "superfan-or-above" predicate — the SINGLE definition shared by the
-// client gate (UpgradePrompt / useCanParticipate) and the server gate
-// (membership-server.requireSuperfan). Qualifies when role is in
-// {superfan, artist, admin}. We do NOT require an active subscription status
-// here: role is the source of truth and is reset to 'free' on cancellation, so
-// an admin-granted artist (whose membership_status may still be the default
-// 'inactive') correctly counts as a paying-tier member. Only `free`/logged-out
-// users are excluded.
+// Paid tiers were removed from Melori. There is no Superfan or Artist tier to
+// buy, so both predicates now mean "is there a signed-in account" — anyone with
+// an account gets the feature, and only logged-out visitors are excluded.
+//
+// The names are kept because they are the SINGLE definition shared by the client
+// gate (UpgradePrompt / useCanParticipate) and the server gate
+// (membership-server). Renaming them is a separate mechanical change.
 export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
-  const tier = tierOf(profile);
-  return tier === "superfan" || tier === "artist";
+  return profile != null;
 }
 
-// Studio access — role is 'artist' or 'admin'. Same role-first
-// rationale as isSuperfanOrBetter above.
+// Studio access. Also account-only now: uploading music no longer requires a
+// paid Artist tier. NOTE: this means any signed-in account can upload audio, so
+// moderation and a takedown path are the only remaining controls.
 export function isArtistSubscriber(profile: MembershipProfile | null | undefined): boolean {
-  const tier = tierOf(profile);
-  return tier === "artist";
+  return profile != null;
 }
 
 // Seconds of a full track a non-superfan free listener may hear.

@@ -1,13 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import {
-  hasMembershipAccess,
-  isAdmin,
-  isArtistSubscriber,
-  isSuperfanOrBetter,
-  type MembershipProfile,
-} from "@/lib/membership";
+import { type MembershipProfile } from "@/lib/membership";
 
 // Server-only membership resolution for route handlers.
 //
@@ -98,55 +92,27 @@ export async function requireAuth(
   return { membership };
 }
 
+// Paid tiers were removed from Melori, so there is no tier left to check and
+// no /membership page to send anyone to. Both guards below are now exactly
+// requireAuth: signed in passes, logged out gets a 401. They keep their names so
+// the ~25 call sites are untouched by this change; renaming them (and the
+// isSuperfanOrBetter / isArtistSubscriber predicates they used to call) is a
+// separate mechanical pass.
+//
+// This deliberately removes the subscription-expiry enforcement that used to
+// live here — there are no subscriptions left to expire.
 export async function requireSuperfan(
   request: Request,
 ): Promise<{ membership: RequestMembership } | NextResponse> {
-  const membership = await getRequestMembership(request);
-  if (!membership.userId) {
-    return NextResponse.json(
-      { error: "Sign in required" },
-      { status: 401 },
-    );
-  }
-  if (!paidAccessAllowed(membership.profile, isSuperfanOrBetter)) {
-    return NextResponse.json(
-      { error: "Superfan membership required", upgrade: "/membership" },
-      { status: 403 },
-    );
-  }
-  return { membership };
+  return requireAuth(request);
 }
 
+// Studio/upload guard. NOTE: this now admits ANY signed-in account, so nothing
+// gates who can publish audio to the platform except moderation after the fact.
 export async function requireArtist(
   request: Request,
 ): Promise<{ membership: RequestMembership } | NextResponse> {
-  const membership = await getRequestMembership(request);
-  if (!membership.userId) {
-    return NextResponse.json(
-      { error: "Sign in required" },
-      { status: 401 },
-    );
-  }
-  if (!paidAccessAllowed(membership.profile, isArtistSubscriber)) {
-    return NextResponse.json(
-      { error: "Artist membership required", upgrade: "/membership" },
-      { status: 403 },
-    );
-  }
-  return { membership };
-}
-
-// A paid guard passes when the caller holds the required tier AND their
-// membership is currently accessible (active, in past_due grace, or admin-
-// granted with no expiry). Admins always pass. This is what wires expiry/status
-// enforcement into the gates: previously they keyed off role alone, so a lapsed
-// subscriber kept access until Stripe fired subscription.deleted.
-function paidAccessAllowed(
-  profile: MembershipProfile | null,
-  tierCheck: (p: MembershipProfile | null | undefined) => boolean,
-): boolean {
-  if (isAdmin(profile)) return true;
-  return tierCheck(profile) && hasMembershipAccess(profile);
+  return requireAuth(request);
 }
 
 export function isGuardFailure(

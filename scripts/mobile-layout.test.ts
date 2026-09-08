@@ -39,8 +39,12 @@ check(
   "the quick launcher no longer duplicates Messages",
   !nav.includes('label: "Messages"'),
 );
+// Was "Artists replaces Profile as the first M Menu quick tile". Artists is no
+// longer first — Home and Music now lead the row — but the thing this was
+// really guarding is that Profile does not come back as a tile, since "You" in
+// the bottom tab bar already goes there.
 check(
-  "Artists replaces Profile as the first M Menu quick tile",
+  "Artists is an M Menu quick tile and Profile has not come back",
   nav.includes(
     'label: "Artists",\n      href: "/artists",\n      icon: <Users className="h-5 w-5" />,\n      desc: "Browse artists"',
   ) && !nav.includes('label: "Profile"'),
@@ -53,6 +57,37 @@ check(
     nav.includes("{renderTile(missionLink)}") &&
     !nav.includes('label: "More"') &&
     nav.match(/label: "Artists"/g)?.length === 1,
+);
+// THE M MENU. Karl, 2026-09-07: "the store is still in the M menu, place home
+// there with all of the music."
+//
+// Store was not just clutter. Inside the native wrapper /store 307s to
+// /account-info for App Review (PR #347), so the tile was a dead link that
+// bounced app users to an unrelated page. It is gone from the menu; merch is
+// still reachable on the web from the footer and direct links.
+//
+// The last check is the one that would have shipped a visible bug: renderTile
+// decided "active" with pathname.startsWith(href), and startsWith("/") is true
+// on every page — so a Home tile would have been permanently highlighted, next
+// to whichever tile was genuinely active.
+check(
+  "Store is gone from the M menu, and its icon with it",
+  !nav.includes('label: "Store"') &&
+    !nav.includes('href: "/store"') &&
+    !nav.includes("ShoppingBag"),
+);
+check(
+  "Home and Music took the freed quick-tile slots",
+  nav.includes('label: "Home",\n      href: "/",') &&
+    nav.includes('label: "Music",\n      href: "/music",'),
+);
+check(
+  "the five quick tiles get five columns, so none is orphaned on its own row",
+  nav.includes('<div className="grid grid-cols-5 gap-2">\n                          {quickLinks.map(renderTile)}'),
+);
+check(
+  "a tile pointing at / is active only ON /, never on every page",
+  nav.includes('target === "/" ? pathname === "/" : pathname.startsWith(target)'),
 );
 check(
   "the transport is scoped to the main page and nowhere else",

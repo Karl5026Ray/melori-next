@@ -18,7 +18,8 @@ import {
   Camera,
   Target,
   Users,
-  ShoppingBag,
+  Home,
+  Music,
   Clapperboard,
   HeartHandshake,
 } from "lucide-react";
@@ -31,7 +32,7 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  * Split of responsibilities (per Karl):
  *   - Left hamburger (Header) = MUSIC only.
  *   - Center M button (here)  = everything else, as fast button presses:
- *       Artists, Radio, Melori Connect, Store (direct), then the one
+ *       Home, Music, Artists, Radio, Melori Connect (direct), then the one
  *       navigation category:
  *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
  *       then Photography, Sign up and Mission as direct tiles.
@@ -162,7 +163,31 @@ export default function MobileTabBar() {
 
   // Direct quick-press buttons: Messages stays in the large bottom tab. This
   // tile is intentionally Melori Connect, moved out of More per mobile IA.
+  //
+  // Store used to hold the last slot and was removed on 2026-09-07 (Karl:
+  // "the store is still in the M menu, place home there with all of the
+  // music"). It had stopped being a link inside the native app: /store 307s to
+  // /account-info in the wrapper for App Review (see mobile/APPLE_REVIEW.md and
+  // PR #347), so an app user who pressed it was bounced to an unrelated page.
+  // Merch is still reachable on the web from the footer and direct links.
+  //
+  // Home and Music take the freed space. Both also exist in the bottom tab bar
+  // (as Home and Explore) — deliberate: the M menu covers the screen, and
+  // getting back to the music from inside it should not require closing it
+  // first.
   const quickLinks: LaunchItem[] = [
+    {
+      label: "Home",
+      href: "/",
+      icon: <Home className="h-5 w-5" />,
+      desc: "All the music",
+    },
+    {
+      label: "Music",
+      href: "/music",
+      icon: <Music className="h-5 w-5" />,
+      desc: "The full catalog",
+    },
     {
       label: "Artists",
       href: "/artists",
@@ -180,12 +205,6 @@ export default function MobileTabBar() {
       href: CONNECT_NAV_ITEM.href,
       icon: <HeartHandshake className="h-5 w-5" />,
       desc: "Match on music",
-    },
-    {
-      label: "Store",
-      href: "/store",
-      icon: <ShoppingBag className="h-5 w-5" />,
-      desc: "Merch & music",
     },
   ];
 
@@ -272,10 +291,16 @@ export default function MobileTabBar() {
               // Renders one tile button (shared by every screen so all buttons
               // look identical to Profile/Radio).
               const renderTile = (l: LaunchItem) => {
+                // "/" needs an exact match. startsWith("/") is true for every
+                // path, so a prefix test would light the Home tile up on every
+                // page in the app — and light it up alongside whichever tile is
+                // genuinely active. isActive() below already special-cases the
+                // root for the bottom tabs; this is the same rule for tiles.
+                const target = l.href.split("?")[0];
                 const active =
                   !l.soon &&
                   l.href !== "#" &&
-                  pathname.startsWith(l.href.split("?")[0]);
+                  (target === "/" ? pathname === "/" : pathname.startsWith(target));
                 const inner = (
                   <>
                     <span
@@ -397,8 +422,12 @@ export default function MobileTabBar() {
                     ) : (
                       // Top-level screen.
                       <>
-                        {/* Profile + Radio (own row) */}
-                        <div className="grid grid-cols-4 gap-2">
+                        {/* Five destinations, one full row. grid-cols-5 rather
+                            than 4: with Store gone and Home + Music added this
+                            group is five, and at four columns the fifth tile
+                            sat alone on a second row. The tile is an icon and
+                            an 11px label, so it still has room at 390px. */}
+                        <div className="grid grid-cols-5 gap-2">
                           {quickLinks.map(renderTile)}
                         </div>
                         {/* Category buttons and the direct Mission link */}

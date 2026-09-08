@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugify } from "@/lib/slug";
-import { DEFAULT_ALBUM_PRICE_CENTS } from "@/lib/pricing";
 
 // `studio_albums` is a side-car over the free-text `studio_tracks.album`
 // column: it gives an album a stable id, a public slug and — the point of this
@@ -99,7 +98,6 @@ export async function ensureStudioAlbum(
       title,
       slug,
       cover_url: coverUrl ?? null,
-      price_cents: DEFAULT_ALBUM_PRICE_CENTS,
     })
     .select(columns)
     .maybeSingle();

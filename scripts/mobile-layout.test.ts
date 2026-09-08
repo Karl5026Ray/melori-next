@@ -25,6 +25,7 @@ const video = read("src/components/social/video/VideoCard.tsx");
 const mainContent = read("src/components/MainContent.tsx");
 const transportVisible = read("src/components/player/useTransportVisible.ts");
 const player = read("src/components/AudioPlayer.tsx");
+const hero = read("src/components/HomeHero.tsx");
 
 check(
   "Chat remains the primary bottom-tab destination",
@@ -40,7 +41,7 @@ check(
   !nav.includes('label: "Messages"'),
 );
 // Was "Artists replaces Profile as the first M Menu quick tile". Artists is no
-// longer first — Home and Music now lead the row — but the thing this was
+// longer first — Music leads the row now — but the thing this was
 // really guarding is that Profile does not come back as a tile, since "You" in
 // the bottom tab bar already goes there.
 check(
@@ -77,13 +78,13 @@ check(
     !nav.includes("ShoppingBag"),
 );
 check(
-  "Home and Music took the freed quick-tile slots",
-  nav.includes('label: "Home",\n      href: "/",') &&
-    nav.includes('label: "Music",\n      href: "/music",'),
+  "Music holds the freed quick-tile slot and Home is not duplicated there",
+  nav.includes('label: "Music",\n      href: "/music",') &&
+    !nav.includes('label: "Home",\n      href: "/",'),
 );
 check(
-  "the five quick tiles get five columns, so none is orphaned on its own row",
-  nav.includes('<div className="grid grid-cols-5 gap-2">\n                          {quickLinks.map(renderTile)}'),
+  "the four quick tiles get four columns, matching the category row below",
+  nav.includes('<div className="grid grid-cols-4 gap-2">\n                          {quickLinks.map(renderTile)}'),
 );
 check(
   "a tile pointing at / is active only ON /, never on every page",
@@ -104,6 +105,44 @@ check(
     !isTransportRoute("/photography") &&
     !isTransportRoute("/artists/karl-ray") &&
     !isTransportRoute(null),
+);
+// THE PILL IS GONE (2026-09-07). Karl: "I think I want to remove the floating
+// pill all together... add transport controls right under the spectrum analyzer
+// and song progress bar on mobile."
+//
+// ~900 lines of edge anchoring, pointer-drag, hold-to-grab and position
+// persistence existed because the mobile transport had nowhere to live. It has
+// somewhere now: inside the HomeHero card, under the waveform and the progress
+// bar, as ordinary in-flow content. These checks stop it coming back by
+// accident and stop the hero controls being quietly removed.
+check(
+  "the floating pill is gone, along with its drag and position machinery",
+  !player.includes("FloatingPlayer") &&
+    !player.includes("floating-player") &&
+    !player.includes("player-handle") &&
+    !player.includes("melori:player:pos"),
+);
+check(
+  "AudioPlayer renders the desktop bar and nothing else",
+  player.includes("return <DesktopBar />;"),
+);
+check(
+  "the hero carries the transport the pill used to: prev, play, next",
+  hero.includes('data-testid="hero-prev"') &&
+    hero.includes('data-testid="hero-play"') &&
+    hero.includes('data-testid="hero-next"'),
+);
+check(
+  "the hero progress bar is seekable, not decoration",
+  hero.includes('data-testid="hero-seek"') && hero.includes("seek(value)"),
+);
+// Every hero control must opt out of the page-wide first-interaction unmute, or
+// that handler and the button's own onClick run against different renders of the
+// same state and can disagree — start here, pause there.
+check(
+  "every hero transport control is marked data-hero-audio-control",
+  (hero.match(/data-testid="hero-(prev|play|next|seek)"/g) ?? []).length === 4 &&
+    (hero.match(/data-hero-audio-control/g) ?? []).length >= 6,
 );
 check(
   "AudioPlayer renders nothing unless the transport belongs on screen",
@@ -139,14 +178,24 @@ check(
   layout.includes("<MainContent>{children}</MainContent>") &&
     !layout.includes("pb-[var(--mobile-content-clearance)]"),
 );
+// With no pill, a phone has nothing fixed to clear but the tab bar — on every
+// route, "/" included. Only the DESKTOP half is still route-aware, because the
+// desktop bottom bar is real and fixed.
 check(
-  "the main page clears the transport, other spaces clear only the tab bar",
-  mainContent.includes("pb-[var(--mobile-content-clearance)] md:pb-24") &&
-    mainContent.includes("pb-[var(--mobile-tabbar-clearance)] md:pb-8"),
+  "mobile clears only the tab bar now; desktop still clears its transport bar",
+  mainContent.includes("pb-[var(--mobile-tabbar-clearance)] md:pb-24") &&
+    mainContent.includes("pb-[var(--mobile-tabbar-clearance)] md:pb-8") &&
+    // The class, not the name: the doc comment above it legitimately explains
+    // what the variable used to be for, and should keep doing so.
+    !mainContent.includes("pb-[var(--mobile-content-clearance)]"),
 );
+// The variable survives for --mirror-bottom alone. Mirror has been reserving
+// 4.5rem for a transport that was never on that route; reclaiming it is its own
+// change. This pins that MainContent is not a consumer any more.
 check(
-  "mobile clearance includes both tab bar and floating transport",
-  globals.includes("--mobile-content-clearance: calc(var(--mobile-tabbar-clearance) + 4rem + 0.5rem)"),
+  "--mobile-content-clearance is kept only for Mirror's bottom inset",
+  globals.includes("--mobile-content-clearance: calc(var(--mobile-tabbar-clearance) + 4rem + 0.5rem)") &&
+    globals.includes("--mirror-bottom: var(--mobile-content-clearance)"),
 );
 check(
   "Mirror height uses dynamic viewport and shared bottom clearance",

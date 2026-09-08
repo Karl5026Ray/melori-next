@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import CoverImage from "@/components/CoverImage";
 import PlayCount from "@/components/PlayCount";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
+import { formatTime } from "@/lib/format";
 
 // The homepage "instant listening" hero. On load it tunes the SHARED player
 // (same <audio> element and context as the persistent bottom bar, the floating
@@ -22,10 +23,15 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     duration,
     error,
     radioMode,
+    hasNext,
+    hasPrev,
     playAudible,
     pause,
     setMuted,
     startRadio,
+    next,
+    prev,
+    seek,
   } = usePlayer();
 
   // Guard so we only kick off autoplay once, and only auto-unmute once.
@@ -105,6 +111,34 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
 
   const fraction = duration > 0 ? currentTime / duration : 0;
   const showSoundPrompt = muted && !error;
+
+  // Play/pause, matching the cover-art button exactly: while still muted this
+  // is "give me sound", not a pause control — the visitor has not heard
+  // anything yet, so pausing would be answering a question they did not ask.
+  const togglePlayback = () => {
+    unmutedRef.current = true;
+    if (isPlaying && !muted) pause();
+    else playAudible();
+  };
+
+  // Skipping while muted has to unmute FIRST. next()/prev() load and play the
+  // new track themselves, so the order is: stop the page-wide handler from also
+  // firing, drop the mute (which is all startAudible() does), then move. It
+  // deliberately does NOT call playAudible() — that re-resolves the CURRENT
+  // track from React state, which is the one we are leaving.
+  const skip = (go: () => void) => {
+    unmutedRef.current = true;
+    if (muted) setMuted(false);
+    go();
+  };
+
+  // Scrubbing counts as wanting to hear it. seek() takes a FRACTION, not
+  // seconds, and no-ops when the element has no finite duration yet.
+  const scrub = (value: number) => {
+    unmutedRef.current = true;
+    if (muted) setMuted(false);
+    seek(value);
+  };
   const animate = isPlaying && !reducedMotion && !muted;
 
   return (
@@ -185,12 +219,98 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             ))}
           </div>
 
-          {/* Progress */}
-          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-brand-muted">
-            <div
-              className="h-full rounded-full bg-brand-primary transition-[width] duration-300"
-              style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+          {/* Progress — seekable. The bar used to be a decorative div; it is
+              a range input now so a listener can scrub, and so the control is
+              reachable by keyboard and announced by a screen reader without any
+              of the pointer-event handling the old floating pill needed. The
+              visible track and fill are drawn underneath it; the input itself is
+              transparent and sits on top as the hit target, two rows tall so it
+              is comfortable with a thumb. */}
+          <div className="relative mt-3 w-full">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-brand-muted">
+              <div
+                className="h-full rounded-full bg-brand-primary transition-[width] duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+              />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1000}
+              step={1}
+              value={Math.round(Math.min(1, Math.max(0, fraction)) * 1000)}
+              onChange={(e) => scrub(Number(e.target.value) / 1000)}
+              data-hero-audio-control
+              data-testid="hero-seek"
+              aria-label="Seek"
+              disabled={!duration}
+              className="absolute inset-x-0 top-1/2 h-8 w-full -translate-y-1/2 cursor-pointer appearance-none bg-transparent disabled:cursor-default [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-brand-primary [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-primary"
             />
+          </div>
+
+          {/* Elapsed / remaining */}
+          <div className="mt-1.5 flex w-full items-center justify-between text-[11px] tabular-nums text-text-secondary">
+            <span>{formatTime(currentTime)}</span>
+            <span>{duration ? `-${formatTime(Math.max(0, duration - currentTime))}` : "--:--"}</span>
+          </div>
+
+          {/* Transport. This is the whole reason the floating pill could go:
+              the controls it carried now sit in the card, under the waveform
+              and the progress bar, where they cannot cover the page. Every
+              button carries data-hero-audio-control so the page-wide
+              first-interaction unmute handler leaves it alone and the button's
+              own onClick decides what happens — otherwise the two run against
+              different renders of the same state and can disagree. */}
+          <div className="mt-3 flex w-full items-center justify-center gap-2 sm:justify-start">
+            <button
+              type="button"
+              data-hero-audio-control
+              data-testid="hero-prev"
+              onClick={() => skip(prev)}
+              disabled={!hasPrev}
+              aria-label="Previous track"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary disabled:opacity-40 disabled:hover:text-text-secondary"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                <path d="M7 6h2v12H7zM19 6v12l-9-6z" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              data-hero-audio-control
+              data-testid="hero-play"
+              onClick={togglePlayback}
+              aria-label={isPlaying && !muted ? "Pause" : "Play"}
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg transition-transform hover:scale-105"
+            >
+              {isLoading ? (
+                <span className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : isPlaying && !muted ? (
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
+                  <rect x="6" y="5" width="4" height="14" rx="1" />
+                  <rect x="14" y="5" width="4" height="14" rx="1" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              type="button"
+              data-hero-audio-control
+              data-testid="hero-next"
+              onClick={() => skip(next)}
+              disabled={!hasNext && !radioMode}
+              aria-label="Next track"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary disabled:opacity-40 disabled:hover:text-text-secondary"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                <path d="M15 6h2v12h-2zM5 6l9 6-9 6z" />
+              </svg>
+            </button>
           </div>
 
           {error && (

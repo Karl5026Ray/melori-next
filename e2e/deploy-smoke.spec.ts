@@ -136,6 +136,69 @@ test.describe("Deploy smoke — signed in", () => {
     ).not.toHaveLength(0);
   });
 
+  test("the hero transport is on the home page and works", async ({ page }) => {
+    // THE ONLY PLACE THIS CAN BE ASKED HONESTLY.
+    //
+    // The mobile transport moved out of a floating pill and into the HomeHero
+    // card on 2026-09-07. HomeHero renders only when the server resolved a
+    // featured track — `{featuredTrack && <HomeHero .../>}` in src/app/page.tsx
+    // — and the PR suite builds against placeholder Supabase credentials where
+    // getFeaturedTrack() returns null. So in CI the hero does not exist, and a
+    // test there would be asserting nothing. Here there is a real catalog.
+    await signIn(page);
+    await page.goto("/");
+
+    const play = page.getByTestId("hero-play");
+    await expect(
+      play,
+      "no hero transport on the home page — the mobile controls are gone and nothing replaced them",
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("hero-prev")).toBeVisible();
+    await expect(page.getByTestId("hero-next")).toBeVisible();
+
+    // Seekable, not decoration. The bar was a display-only div for its whole
+    // life before this; if it silently goes back to one, scrubbing is lost and
+    // nothing else would notice.
+    const seek = page.getByTestId("hero-seek");
+    await expect(seek).toBeVisible();
+    await expect(seek).toHaveAttribute("type", "range");
+
+    // The label is the state. Pressing it has to change what it says, which is
+    // the cheapest end-to-end proof that the button is wired to the one shared
+    // player rather than rendering a static icon.
+    const before = await play.getAttribute("aria-label");
+    await play.click();
+    await expect
+      .poll(async () => play.getAttribute("aria-label"), {
+        timeout: 15_000,
+        message: `the hero play button still reads "${before}" after being pressed`,
+      })
+      .not.toBe(before);
+  });
+
+  test("the transport is in the card, not floating over the page", async ({ page }) => {
+    // The pill was `position: fixed` and hovered above everything. The whole
+    // point of the change is that these controls scroll away with their card.
+    await signIn(page);
+    await page.goto("/");
+    const play = page.getByTestId("hero-play");
+    await expect(play).toBeVisible({ timeout: 30_000 });
+
+    const positions = await play.evaluate((el) => {
+      const chain: string[] = [];
+      let node: HTMLElement | null = el as HTMLElement;
+      while (node && node !== document.body) {
+        chain.push(getComputedStyle(node).position);
+        node = node.parentElement;
+      }
+      return chain;
+    });
+    expect(
+      positions.includes("fixed"),
+      "a hero control sits inside a fixed ancestor — it is floating over the page again",
+    ).toBe(false);
+  });
+
   test("signing in from the door lands inside the app, not back at the door", async ({ page }) => {
     // The loop itself, reproduced as an assertion. During the outage this path
     // never terminated: the door forwarded a valid session to /music, the wall

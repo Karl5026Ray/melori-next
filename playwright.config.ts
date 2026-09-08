@@ -64,9 +64,13 @@ const SMOKE_SPEC = /deploy-smoke\.spec\.ts/;
 // testIgnore therefore did nothing for desktop-chromium, which has one. The
 // exclusion is spelled out per project below for that reason — verified with
 // `npx playwright test --list`, which is the only way to see it.
-const DESKTOP_IGNORE = SMOKE
-  ? /(floating-player|player-tabbar-collision)\.spec\.ts/
-  : /(floating-player|player-tabbar-collision|deploy-smoke)\.spec\.ts/;
+//
+// This used to also exclude floating-player and player-tabbar-collision, two
+// mobile-only suites about a draggable transport pill. The pill was deleted on
+// 2026-09-07 and both files went with it; the transport-scope spec that
+// replaced them is viewport-agnostic and runs in both projects on purpose —
+// "no pill anywhere" is a claim about desktop too.
+const DESKTOP_IGNORE = SMOKE ? undefined : /deploy-smoke\.spec\.ts/;
 
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
@@ -122,16 +126,12 @@ export default defineConfig({
     },
     {
       name: "desktop-chromium",
-      // FloatingPlayer is deliberately a mobile-only control (`md:hidden`);
-      // its regression spec exercises iPhone pointer semantics and the mobile
-      // tab-bar clearance. Running it in this desktop project cannot render
-      // the region it asserts and was the source of three false CI failures
-      // before the suite reached the Cinema coverage. The mobile project
-      // above still runs every floating-player interaction assertion.
-      //
-      // player-tabbar-collision.spec.ts is ignored for the same reason: it
-      // measures the pill against the mobile tab bar's centre M, and neither
-      // element renders at 1440px.
+      // This used to ignore two mobile-only pill suites as well. Both files are
+      // gone (the pill was deleted on 2026-09-07), and the transport-scope spec
+      // that replaced them is meant to run here: "no pill anywhere" and "the
+      // door carries no transport" are claims about desktop too, and the
+      // desktop transport bar only exists at this width. So the only exclusion
+      // left is the post-deploy smoke spec.
       testIgnore: DESKTOP_IGNORE,
       use: {
         browserName: "chromium",

@@ -62,7 +62,6 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       id: "artist",
       label: "For Artists",
       items: [
-        { label: "Become an Artist", href: "/register" },
         { label: "Current Artists", href: "/artists" },
         { label: "Artist Studio", href: "/studio" },
         { label: "Upload", href: "/upload" },
@@ -74,19 +73,19 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       p.startsWith("/upload"),
   },
   {
-    // ACCOUNT / MEMBERSHIP — profile, plans, settings, admin dashboards.
+    // ACCOUNT — dashboard, settings, admin. Membership was removed with the
+    // paid tiers on 2026-09-08; /membership only redirects home, so it is not
+    // listed (it sent members "searching for what is not there").
     ctx: {
       id: "account",
       label: "Account",
       items: [
         { label: "Dashboard", href: "/dashboard" },
-        { label: "Membership", href: "/membership" },
         { label: "Settings", href: "/settings" },
       ],
     },
     test: (p) =>
       p.startsWith("/dashboard") ||
-      p.startsWith("/membership") ||
       p.startsWith("/settings") ||
       p.startsWith("/admin"),
   },
@@ -103,9 +102,10 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         // reason someone opens More rather than the footer.
         CONNECT_NAV_ITEM,
         { label: "Mission", href: "/mission" },
-        { label: "Membership", href: "/membership" },
         { label: "Support", href: "/support" },
-        { label: "Become an Artist", href: "/register" },
+        // /studio, not /register: every account can upload now, so a member
+        // lands in the Studio, and a signed-out visitor is sent to the door.
+        { label: "Become an Artist", href: "/studio" },
       ],
     },
     // NOTE: /social/connect is NOT tested here — the community context above

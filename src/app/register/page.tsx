@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useIsNativeApp } from "@/components/NativeAppProvider";
 import { supabase } from "@/lib/supabase";
-import { startOAuthSignIn } from "@/lib/nativeAuth";
+import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import { safeNextPath } from "@/lib/mediaSetupMarker";
 
 // /register — the canonical signup surface.
@@ -28,7 +28,10 @@ import { safeNextPath } from "@/lib/mediaSetupMarker";
 // live, which is where the risk they protect against actually is. The phone
 // routes (/api/auth/phone/*) and the media setup card are kept for that step.
 //
-// One auth system (Supabase). Google sign-in is offered for the web path.
+// One auth system (Supabase). Continue with Google / Apple sits above the
+// form (SocialSignInButtons). ?start=google|apple begins that sign-in on load:
+// the melori.org door hands off here, because an OAuth sign-in has to start on
+// the app's own domain.
 
 type Phase = "form" | "confirm";
 
@@ -40,6 +43,8 @@ function RegisterInner() {
   // own weaker prefix check, which let `/\evil.example` through — the two must
   // not be allowed to drift, so there is only one implementation now.
   const next = safeNextPath(params.get("next"));
+  const startParam = params.get("start");
+  const autoStart = startParam === "google" || startParam === "apple" ? startParam : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,19 +84,6 @@ function RegisterInner() {
       setError(err?.message ?? "Could not resend the confirmation email.");
     } finally {
       setResending(false);
-    }
-  };
-
-  const handleGoogle = async () => {
-    setError("");
-    try {
-      // Route Google through the dedicated /auth/callback page, which runs
-      // exchangeCodeForSession client-side (same store that holds the PKCE code
-      // verifier). Redirecting straight to `next` skips the exchange and throws
-      // "PKCE code verifier not found in storage".
-      await startOAuthSignIn("google", `next=${encodeURIComponent(next)}`);
-    } catch (err: any) {
-      setError(err?.message ?? "Google sign-in failed.");
     }
   };
 
@@ -179,7 +171,7 @@ function RegisterInner() {
         <div className="text-center mb-8">
           <p className="text-xs uppercase tracking-widest text-[#c9a96e]">Join Melori</p>
           <h1 className="text-3xl font-bold mt-1">Create your account</h1>
-          <p className="text-sm text-[#888] mt-1">Email and password. That&apos;s it.</p>
+          <p className="text-sm text-[#888] mt-1">Google, Apple, or email. That&apos;s it.</p>
         </div>
 
         {notice && (
@@ -205,13 +197,9 @@ function RegisterInner() {
 
         {phase === "confirm" ? null : (
           <>
-            <button
-              type="button"
-              onClick={handleGoogle}
-              className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-3 text-sm font-medium transition hover:border-[#c9a96e]/40 mb-4"
-            >
-              Continue with Google
-            </button>
+            <div className="mb-4">
+              <SocialSignInButtons next={next} autoStart={autoStart} onError={setError} />
+            </div>
             <div className="flex items-center gap-3 mb-4">
               <span className="h-px flex-1 bg-white/10" />
               <span className="text-xs text-[#888]">or</span>

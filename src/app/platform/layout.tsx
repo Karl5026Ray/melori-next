@@ -1,4 +1,5 @@
 import "../auth-door.css";
+import SignupTheme from "@/components/signupTheme/SignupTheme";
 
 // Sign-up / sign-in door: the site menu is hidden while this page is open
 // (see src/app/auth-door.css). "/" for a signed-out visitor is rewritten to
@@ -8,6 +9,8 @@ export default function DoorLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="auth-door-shell" style={{ display: "contents" }}>
       {children}
+      {/* The Melori theme, looping quietly while people sign up. */}
+      <SignupTheme />
     </div>
   );
 }

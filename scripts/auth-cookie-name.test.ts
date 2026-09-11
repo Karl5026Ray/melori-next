@@ -128,10 +128,9 @@ check(
   "a legacy supabase-js cookie still reads as a session",
   hasSessionCookie("sb-ouvovhwizsuhjxxmccex-auth-token=eyJhY2Nl"),
 );
-// e2e/support/door.ts plants exactly this to get the player specs past the
-// door. If this stops counting, the required FloatingPlayer suite goes red.
+// e2e/support/door.ts plants exactly this to get browser specs past the door.
 check(
-  "the e2e door-bypass cookie counts, so the player specs still reach the pill",
+  "the e2e door-bypass cookie counts, so browser specs can reach gated pages",
   hasSessionCookie("sb-e2e-auth-token=e2e-door-bypass-not-a-session"),
 );
 

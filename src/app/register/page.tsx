@@ -52,6 +52,7 @@ function toE164(raw: string): string | null {
 }
 
 type Phase = "form" | "verify" | "confirm";
+type VerifyChannel = "sms" | "call";
 
 function RegisterInner() {
   const router = useRouter();
@@ -66,6 +67,7 @@ function RegisterInner() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [channel, setChannel] = useState<VerifyChannel>("call");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -120,11 +122,13 @@ function RegisterInner() {
   };
 
   /**
-   * Ask for an SMS code. Returns true when a code was actually sent, false when
-   * verification is not available yet — the caller then completes signup with
-   * the number stored but unverified.
+   * Returns the channel that delivered a code, or null when verification is
+   * not available yet and signup should continue with an unverified number.
    */
-  const startPhoneVerification = async (accessToken: string, e164: string) => {
+  const startPhoneVerification = async (
+    accessToken: string,
+    e164: string,
+  ): Promise<VerifyChannel | null> => {
     const res = await fetch("/api/auth/phone/start", {
       method: "POST",
       headers: {
@@ -134,8 +138,11 @@ function RegisterInner() {
       body: JSON.stringify({ phone: e164 }),
     });
 
-    if (res.status === 503) return false; // Telnyx not configured / 10DLC pending
-    if (res.ok) return true;
+    if (res.status === 503) return null; // Telnyx not configured
+    if (res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return body?.channel === "sms" ? "sms" : "call";
+    }
 
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? "Could not send a verification code.");
@@ -214,13 +221,14 @@ function RegisterInner() {
         /* seeded later */
       }
 
-      const codeSent = await startPhoneVerification(session.access_token, e164);
-      if (!codeSent) {
+      const verificationChannel = await startPhoneVerification(session.access_token, e164);
+      if (!verificationChannel) {
         // Verification is not live yet — the number is on the account, and the
         // account is real. Let them in.
         finishSignup();
         return;
       }
+      setChannel(verificationChannel);
       setPhase("verify");
       setLoading(false);
     } catch (err: any) {
@@ -269,7 +277,9 @@ function RegisterInner() {
           <h1 className="text-3xl font-bold mt-1">Create your account</h1>
           <p className="text-sm text-[#888] mt-1">
             {phase === "verify"
-              ? "Enter the code we texted you."
+              ? channel === "call"
+                ? "Answer the call and enter the 6-digit code it reads to you."
+                : "Enter the code we texted you."
               : "Email, password, and a mobile number. That's it."}
           </p>
         </div>
@@ -311,7 +321,7 @@ function RegisterInner() {
               {loading ? "Verifying…" : "Verify and continue"}
             </button>
             <p className="text-center text-xs text-[#888]">
-              Texted to {phone}.{" "}
+              {channel === "call" ? "Calling" : "Texted to"} {phone}.{" "}
               <button
                 type="button"
                 onClick={() => {

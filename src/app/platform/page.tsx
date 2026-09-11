@@ -64,6 +64,7 @@ const HEADER_IMAGE_MOBILE = hasSupabaseUrl
 const LOGO = "/logo/logo.png";
 
 type Phase = "form" | "verify" | "confirm" | "ready";
+type VerifyChannel = "sms" | "call";
 
 /** Normalise to E.164. A bare 10-digit input is assumed US/Canada. */
 function toE164(raw: string): string | null {
@@ -82,6 +83,7 @@ export default function MeloriDoorPage() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [channel, setChannel] = useState<VerifyChannel>("call");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
@@ -129,11 +131,13 @@ export default function MeloriDoorPage() {
   };
 
   /**
-   * Ask for an SMS code. Returns true when a code was actually sent, false when
-   * verification is not available yet — the caller then completes signup with
-   * the number stored but unverified.
+   * Returns the channel that delivered a code, or null when verification is
+   * not available yet and signup should continue with an unverified number.
    */
-  const startPhoneVerification = async (accessToken: string, e164: string) => {
+  const startPhoneVerification = async (
+    accessToken: string,
+    e164: string,
+  ): Promise<VerifyChannel | null> => {
     const res = await fetch("/api/auth/phone/start", {
       method: "POST",
       headers: {
@@ -143,8 +147,11 @@ export default function MeloriDoorPage() {
       body: JSON.stringify({ phone: e164 }),
     });
 
-    if (res.status === 503) return false; // Telnyx not configured / 10DLC pending
-    if (res.ok) return true;
+    if (res.status === 503) return null; // Telnyx not configured
+    if (res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return body?.channel === "sms" ? "sms" : "call";
+    }
 
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? "Could not send a verification code.");
@@ -202,8 +209,9 @@ export default function MeloriDoorPage() {
         /* seeded on the next authed request */
       }
 
-      const codeSent = await startPhoneVerification(session.access_token, e164);
-      setPhase(codeSent ? "verify" : "ready");
+      const verificationChannel = await startPhoneVerification(session.access_token, e164);
+      if (verificationChannel) setChannel(verificationChannel);
+      setPhase(verificationChannel ? "verify" : "ready");
       setLoading(false);
     } catch (err: any) {
       setError(err?.message ?? "Could not create your account.");
@@ -357,7 +365,16 @@ export default function MeloriDoorPage() {
         {phase === "verify" && (
           <form onSubmit={handleVerify} className="mt-8 space-y-4">
             <p className="text-center text-sm text-[#ddd]">
-              We texted a code to <span className="text-[#c9a96e]">{phone}</span>.
+              {channel === "call" ? (
+                <>
+                  We&apos;re calling <span className="text-[#c9a96e]">{phone}</span> now.
+                  Answer and a voice will read you a 6-digit code.
+                </>
+              ) : (
+                <>
+                  We texted a code to <span className="text-[#c9a96e]">{phone}</span>.
+                </>
+              )}
             </p>
             <input
               type="text"

@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic";
 // POST /api/auth/phone/start — send an SMS verification code.
 //
 // Body: { phone: string }
+// Called from the one-time go-live step (<GoLiveSetupHost>), not at signup.
 // Requires an authenticated caller: the number is attached to an account, so
 // there is no anonymous path and therefore no open SMS endpoint.
 //
@@ -28,12 +29,6 @@ export const dynamic = "force-dynamic";
 //   6. then, and only then, call Telnyx.
 export async function POST(request: Request) {
   const config = getTelnyxConfig();
-  if (!config) {
-    return NextResponse.json(
-      { error: "Phone verification is not configured.", configured: false },
-      { status: 503 },
-    );
-  }
 
   const { userId } = await getRequestMembership(request);
   if (!userId) {
@@ -58,6 +53,41 @@ export async function POST(request: Request) {
   }
 
   const admin = getSupabaseAdmin();
+
+  // SMS VERIFICATION NOT LIVE YET (Telnyx not configured / A2P 10DLC pending).
+  // The go-live step still collects the number: it is stored unverified, which
+  // is what the go-live gate accepts until verification is configured — then
+  // the gate tightens by itself and this branch stops being reached. Nothing is
+  // sent, so nothing here costs money. Still 503 { configured: false } so any
+  // older caller that reads the status keeps working; `stored` says it landed.
+  if (!config) {
+    const { data: claimed } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("phone", e164)
+      .not("phone_verified_at", "is", null)
+      .neq("id", userId)
+      .maybeSingle();
+    if (claimed) {
+      return NextResponse.json(
+        { error: "That number is already in use on another account." },
+        { status: 409 },
+      );
+    }
+    const { error: storeError } = await admin
+      .from("profiles")
+      .update({ phone: e164 })
+      .eq("id", userId);
+    return NextResponse.json(
+      {
+        error: "Phone verification is not configured.",
+        configured: false,
+        stored: !storeError,
+      },
+      { status: 503 },
+    );
+  }
+
   const ip = clientIp(request);
   const keys = { phone: e164, ip, profileId: userId };
 

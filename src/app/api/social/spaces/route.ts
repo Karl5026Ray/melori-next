@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireGoLiveReady } from "@/lib/goLiveGate.server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
@@ -13,6 +14,10 @@ export async function POST(req: NextRequest) {
   const guard = await requireSuperfan(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
+
+  // Going live puts the host on camera/mic: one-time phone step first.
+  const notReady = await requireGoLiveReady(membership.userId!);
+  if (notReady) return notReady;
 
   try {
     const body = await req.json();

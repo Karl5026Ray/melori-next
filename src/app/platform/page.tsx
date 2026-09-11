@@ -17,17 +17,15 @@
 //                              melorimusic.org/auth/callback and signs them in
 //   • email confirmation OFF → a "Continue to Melori" button to the app's login
 //
-// PHONE IS REQUIRED, AND THE VERIFY STEP IS SELF-CONFIGURING
-// ----------------------------------------------------------
-// Melori is a live-participation community — people appear on camera in Faces,
-// Mirror, Spaces and Cinema — so every account is tied to a real number.
+// EMAIL AND PASSWORD ONLY (Karl, 2026-09-10)
+// -------------------------------------------
+// "Hold off on the phone number addition until a person wants to go live."
+// The phone check and the one-time camera/microphone question move to the
+// moment someone goes live. Signing up is email + password, nothing else.
 //
-// There is no feature flag. The page asks /api/auth/phone/start and reads the
-// answer: 503 { configured: false } means Telnyx is not wired up or A2P 10DLC
-// has not cleared, so the number is stored and signup completes without a code;
-// 200 means a code went out and the verify step appears. The door tightens by
-// itself the moment verification starts working, with nothing to remember to
-// flip.
+// Signed up on melorimusic.org itself, the session is already on the right
+// host, so the new member goes straight in. Only melori.org still needs the
+// "Continue to Melori" hand-off described above.
 //
 // Nothing here may link into the native app's world — melori.org is not in
 // mobile/capacitor.config.json allowNavigation.
@@ -63,27 +61,19 @@ const HEADER_IMAGE_MOBILE = hasSupabaseUrl
   : "";
 const LOGO = "/logo/logo.png";
 
-type Phase = "form" | "verify" | "confirm" | "ready";
-type VerifyChannel = "sms" | "call";
+type Phase = "form" | "confirm" | "ready";
 
-/** Normalise to E.164. A bare 10-digit input is assumed US/Canada. */
-function toE164(raw: string): string | null {
-  const trimmed = raw.trim();
-  const hasPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D/g, "");
-  if (!hasPlus && digits.length === 10) return `+1${digits}`;
-  if (!hasPlus && digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (hasPlus && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
-  return null;
+/** True on melori.org, where a session made here cannot carry over. */
+function onDoorOnlyHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname.toLowerCase();
+  return host === "melori.org" || host === "www.melori.org";
 }
 
 export default function MeloriDoorPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [channel, setChannel] = useState<VerifyChannel>("call");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
@@ -130,46 +120,13 @@ export default function MeloriDoorPage() {
     }
   };
 
-  /**
-   * Returns the channel that delivered a code, or null when verification is
-   * not available yet and signup should continue with an unverified number.
-   */
-  const startPhoneVerification = async (
-    accessToken: string,
-    e164: string,
-  ): Promise<VerifyChannel | null> => {
-    const res = await fetch("/api/auth/phone/start", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ phone: e164 }),
-    });
-
-    if (res.status === 503) return null; // Telnyx not configured
-    if (res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return body?.channel === "sms" ? "sms" : "call";
-    }
-
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error ?? "Could not send a verification code.");
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const e164 = toE164(phone);
-    if (!e164) {
-      setError(
-        "Enter a valid mobile number. US and Canada can use 10 digits; otherwise include your country code.",
-      );
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    // 8 matches Settings → Change password and the reset-password page.
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -178,15 +135,13 @@ export default function MeloriDoorPage() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { role: "free", phone: e164 }, emailRedirectTo },
+        options: { data: { role: "free" }, emailRedirectTo },
       });
       if (signUpError) throw signUpError;
 
       const session = data.session;
 
-      // No session means email confirmation is required. The phone routes need
-      // an authenticated caller, so verification waits until they are signed in
-      // on the app domain. The number is already on the account metadata.
+      // No session means email confirmation is required.
       if (!session) {
         setPhase("confirm");
         setLoading(false);
@@ -209,40 +164,16 @@ export default function MeloriDoorPage() {
         /* seeded on the next authed request */
       }
 
-      const verificationChannel = await startPhoneVerification(session.access_token, e164);
-      if (verificationChannel) setChannel(verificationChannel);
-      setPhase(verificationChannel ? "verify" : "ready");
-      setLoading(false);
-    } catch (err: any) {
-      setError(err?.message ?? "Could not create your account.");
-      setLoading(false);
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Your session expired. Sign in on Melori to finish.");
-
-      const res = await fetch("/api/auth/phone/check", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ code }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? "That code didn't match.");
-
+      // On melorimusic.org the session is already live on this host: go in.
+      // On melori.org it cannot carry over, so show the hand-off button.
+      if (!onDoorOnlyHost()) {
+        router.replace(AFTER_SIGNUP);
+        return;
+      }
       setPhase("ready");
       setLoading(false);
     } catch (err: any) {
-      setError(err?.message ?? "Could not verify that code.");
+      setError(err?.message ?? "Could not create your account.");
       setLoading(false);
     }
   };
@@ -333,62 +264,16 @@ export default function MeloriDoorPage() {
               className={inputClass}
             />
             <input
-              type="tel"
-              required
-              autoComplete="tel"
-              inputMode="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Mobile number"
-              className={inputClass}
-            />
-            <p className="-mt-1 px-1 text-xs leading-relaxed text-[#7a7a7a]">
-              Required. Melori is a live community &mdash; people go on camera here,
-              so every account is tied to a real number. Yours is never shown on
-              your profile and never shared.
-            </p>
-            <input
               type="password"
               required
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password (min 6 characters)"
+              placeholder="Password (min 8 characters)"
               className={inputClass}
             />
             <button type="submit" disabled={loading} className={ctaClass}>
               {loading ? "Creating…" : "Create free account"}
-            </button>
-          </form>
-        )}
-
-        {phase === "verify" && (
-          <form onSubmit={handleVerify} className="mt-8 space-y-4">
-            <p className="text-center text-sm text-[#ddd]">
-              {channel === "call" ? (
-                <>
-                  We&apos;re calling <span className="text-[#c9a96e]">{phone}</span> now.
-                  Answer and a voice will read you a 6-digit code.
-                </>
-              ) : (
-                <>
-                  We texted a code to <span className="text-[#c9a96e]">{phone}</span>.
-                </>
-              )}
-            </p>
-            <input
-              type="text"
-              required
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={10}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Verification code"
-              className={`${inputClass} text-center text-lg tracking-[0.4em]`}
-            />
-            <button type="submit" disabled={loading} className={ctaClass}>
-              {loading ? "Verifying…" : "Verify and continue"}
             </button>
           </form>
         )}
@@ -435,6 +320,14 @@ export default function MeloriDoorPage() {
             className="font-medium text-[#c9a96e] hover:underline"
           >
             Sign In
+          </a>
+        </p>
+        <p className="mt-2 text-center text-xs text-[#666]">
+          <a
+            href={`${APP_ORIGIN}/forgot-password`}
+            className="hover:text-[#c9a96e] hover:underline"
+          >
+            Forgot your password?
           </a>
         </p>
 

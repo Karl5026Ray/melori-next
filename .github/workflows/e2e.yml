@@ -134,6 +134,9 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=6144"
         run: npm run build
 
+      # This required check is specifically the mobile regression suite named
+      # above. Keep it to that project so unrelated desktop coverage cannot
+      # delay this check until an external cancellation.
       # Playwright boots `npm run start` against the build above and tears it
       # down afterwards (see the webServer block in playwright.config.ts).
       - name: Run Playwright tests
@@ -149,7 +152,7 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           echo "Testing: ${BASE_URL:-the checked-out commit at http://127.0.0.1:3000}"
-          npm run test:e2e
+          npx playwright test --project=mobile-chromium
 
       - name: Skipped - no runtime files changed
         if: steps.scope.outputs.relevant != 'true'

@@ -12,7 +12,8 @@ import { checkRateLimit, recordAttempt, clientIp } from "@/lib/verifyRateLimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/auth/phone/start — send an SMS verification code.
+// POST /api/auth/phone/start — send a verification code (phone call until
+// texting is approved; see TELNYX_VERIFY_CHANNEL in src/lib/phoneVerify.ts).
 //
 // Body: { phone: string }
 // Called from the one-time go-live step (<GoLiveSetupHost>), not at signup.
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
 
   const admin = getSupabaseAdmin();
 
-  // SMS VERIFICATION NOT LIVE YET (Telnyx not configured / A2P 10DLC pending).
+  // VERIFICATION NOT LIVE YET (Telnyx keys not set in the environment).
   // The go-live step still collects the number: it is stored unverified, which
   // is what the go-live gate accepts until verification is configured — then
   // the gate tightens by itself and this branch stops being reached. Nothing is
@@ -126,5 +127,7 @@ export async function POST(request: Request) {
   // nothing until phone_verified_at is set.
   await admin.from("profiles").update({ phone: e164 }).eq("id", userId);
 
-  return NextResponse.json({ sent: true });
+  // `channel` tells the go-live sheet what to say: "we're calling you" or
+  // "we texted you".
+  return NextResponse.json({ sent: true, channel: config.channel });
 }

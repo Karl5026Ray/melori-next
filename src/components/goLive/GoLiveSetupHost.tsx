@@ -13,8 +13,9 @@ import { MediaSetupCard } from "@/components/onboarding/MediaSetupCard";
 // "add your number first" (see src/lib/goLiveGate.server.ts): the first time a
 // member starts a Faces live, starts a Space / Cinema, or raises a hand.
 //
-//   1. Mobile number. With SMS verification live, a code is texted and checked.
-//      While A2P 10DLC is still pending, the number is saved and they go on.
+//   1. Mobile number. With Telnyx configured, a 6-digit code is delivered by a
+//      phone call (or a text, once A2P 10DLC is approved) and checked here.
+//      With Telnyx not configured, the number is saved and they go on.
 //   2. Camera & microphone, asked once. This device remembers the answer; it is
 //      never asked again here. Settings → Camera & microphone changes it.
 //
@@ -28,6 +29,7 @@ export default function GoLiveSetupHost() {
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [channel, setChannel] = useState<"sms" | "call">("call");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const resolverRef = useRef<((finished: boolean) => void) | null>(null);
@@ -92,6 +94,7 @@ export default function GoLiveSetupHost() {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body?.sent) {
+        setChannel(body?.channel === "sms" ? "sms" : "call");
         setStep("code");
         setBusy(false);
         return;
@@ -181,7 +184,16 @@ export default function GoLiveSetupHost() {
           ) : (
             <form onSubmit={submitCode} className="mt-4 space-y-4">
               <p className="text-sm text-[#9a9a9a]">
-                We texted a code to <span className="text-[#c9a96e]">{phone}</span>.
+                {channel === "call" ? (
+                  <>
+                    We&apos;re calling <span className="text-[#c9a96e]">{phone}</span> now.
+                    Answer and a voice will read you a 6-digit code &mdash; type it here.
+                  </>
+                ) : (
+                  <>
+                    We texted a code to <span className="text-[#c9a96e]">{phone}</span>.
+                  </>
+                )}
               </p>
               <input
                 type="text"

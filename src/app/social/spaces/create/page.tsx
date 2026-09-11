@@ -79,10 +79,17 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
   // Concert uses the existing room form with ?format=versus_battle. Validate
   // against this form's selectable formats so unknown/dead query values always
   // land on the honest Release Party default.
+  // Concert is not ready (Karl, 2026-09-10). Versus Battle IS Concert under
+  // another name, so it only shows on /social/concert/create (concertOnly) —
+  // never in the MM Spaces picker, and a ?format=versus_battle link can't
+  // select it here either.
+  const visibleTypes = concertOnly
+    ? spaceTypes
+    : spaceTypes.filter((item) => item.format !== "versus_battle");
   const requestedFormat = searchParams.get("format");
   const requestedType = concertOnly
     ? "creation"
-    : spaceTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
+    : visibleTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
   const [type, setType] = useState(requestedType);
   useEffect(() => {
     setType(requestedType);
@@ -269,7 +276,7 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
             <div>
               <label className="block text-sm text-melori-muted mb-3">Room Format</label>
               <div className="grid grid-cols-2 gap-3">
-                {spaceTypes.map((t) => {
+                {visibleTypes.map((t) => {
                   const Icon = t.icon;
                   return (
                     <button

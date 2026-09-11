@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
 import MainContent from "@/components/MainContent";
 import MobileTabBar from "@/components/MobileTabBar";
+import GoLiveSetupHost from "@/components/goLive/GoLiveSetupHost";
 import NativeAppProvider from "@/components/NativeAppProvider";
 import NativeAuthListener from "@/components/NativeAuthListener";
 import PlayerProvider from "@/components/player/PlayerProvider";
@@ -100,6 +101,9 @@ export default function RootLayout({
                PlayerProvider keeps the audio itself playing platform-wide. */}
             <AudioPlayer />
             <MobileTabBar />
+            {/* The one-time go-live step. Renders nothing until a go-live
+                route asks for it (src/lib/goLiveGate.server.ts). */}
+            <GoLiveSetupHost />
           </PlayerProvider>
         </NativeAppProvider>
       </body>

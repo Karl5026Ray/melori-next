@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isUuid } from "@/lib/validators";
 import { handRaiseAllowed } from "@/lib/spacesStage";
+import { requireGoLiveReady } from "@/lib/goLiveGate.server";
 import type { HandRaiseMode } from "@/types/social";
 
 export const runtime = "nodejs";
@@ -49,6 +50,11 @@ export async function POST(
   const supabase = getSupabaseAdmin();
 
   if (raised) {
+    // Asking to go on stage is asking to go live: one-time phone step first.
+    // Lowering a hand is never gated.
+    const notReady = await requireGoLiveReady(userId);
+    if (notReady) return notReady;
+
     const { data: space } = await supabase
       .from("spaces")
       .select("hand_raise_mode")

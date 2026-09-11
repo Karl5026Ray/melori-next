@@ -7,6 +7,7 @@ import { Camera } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { signOutThisDevice } from "@/lib/authSession";
 import { authFetch } from "@/lib/authClient";
+import CameraMicSettings from "@/components/goLive/CameraMicSettings";
 
 // /settings — Signed-in user settings hub.
 // Sections:
@@ -704,6 +705,9 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        {/* Camera & microphone — asked once at go-live, changed here. */}
+        <CameraMicSettings />
 
         {/* Photo Gallery */}
         {canManage && (

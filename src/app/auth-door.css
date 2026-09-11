@@ -1,0 +1,26 @@
+/*
+ * The sign-up / sign-in doors hide the site menu.
+ *
+ * Karl: "The menu bar should be the blocker that keeps people from touching
+ * other things and getting lost without signing up."
+ *
+ * Every door route (/ for a signed-out visitor, /platform, /register, /login)
+ * has a layout.tsx that wraps the page in a .auth-door-shell marker.
+ * While that marker is on screen, the root layout's top bar, bottom M bar and
+ * footer are hidden. The doors carry their own Sign in / Create account /
+ * Terms / Privacy links, so nothing a visitor needs goes away.
+ *
+ * Same body:has() pattern Cinema uses in globals.css. A browser without :has()
+ * simply keeps showing the menu, which is the old behaviour. Signed-in pages,
+ * rooms and Mirror never render the marker, so they are untouched.
+ */
+@supports selector(body:has(.auth-door-shell)) {
+  body:has(.auth-door-shell) > header,
+  body:has(.auth-door-shell) > footer,
+  body:has(.auth-door-shell) > nav[aria-label="Primary"] {
+    display: none;
+  }
+  body:has(.auth-door-shell) > main {
+    padding-bottom: 0 !important;
+  }
+}

@@ -13,22 +13,40 @@
 // Not configured is not an error. When the env vars are absent every call
 // returns { configured: false } and the routes answer 503, matching the
 // convention the Google Calendar routes already use.
+//
+// CODE BY PHONE CALL UNTIL TEXTING IS APPROVED (Karl, 2026-09-10)
+// ---------------------------------------------------------------
+// US carriers block business texts from 10-digit numbers until A2P 10DLC
+// registration is approved. Voice calls are not text messaging, so 10DLC does
+// not apply to them. Telnyx Verify can deliver the same 6-digit code by a
+// phone call that reads it out, and the code is checked the same way.
+//
+//   TELNYX_VERIFY_CHANNEL = "call"  (default) — the code is read out by a call
+//   TELNYX_VERIFY_CHANNEL = "sms"             — the code is texted; switch to
+//                                               this once 10DLC is approved
+//
+// The Verify profile in Telnyx must have the matching channel enabled.
 
 const TELNYX_BASE = "https://api.telnyx.com/v2";
 
 /** Country prefixes we will send to at launch. Widen deliberately, not by accident. */
 const ALLOWED_PREFIXES = ["+1"];
 
+export type VerifyChannel = "sms" | "call";
+
 export interface TelnyxConfig {
   apiKey: string;
   verifyProfileId: string;
+  channel: VerifyChannel;
 }
 
 export function getTelnyxConfig(): TelnyxConfig | null {
   const apiKey = process.env.TELNYX_API_KEY;
   const verifyProfileId = process.env.TELNYX_VERIFY_PROFILE_ID;
   if (!apiKey || !verifyProfileId) return null;
-  return { apiKey, verifyProfileId };
+  const channel: VerifyChannel =
+    (process.env.TELNYX_VERIFY_CHANNEL ?? "").trim().toLowerCase() === "sms" ? "sms" : "call";
+  return { apiKey, verifyProfileId, channel };
 }
 
 /**
@@ -84,12 +102,12 @@ async function telnyx(
   return { ok: res.ok, status: res.status, json };
 }
 
-/** Send a verification code by SMS. */
+/** Send a verification code by the configured channel (phone call or text). */
 export async function sendVerification(
   config: TelnyxConfig,
   e164: string,
 ): Promise<{ sent: boolean; error?: string }> {
-  const { ok, status, json } = await telnyx(config, "/verifications/sms", {
+  const { ok, status, json } = await telnyx(config, `/verifications/${config.channel}`, {
     phone_number: e164,
     verify_profile_id: config.verifyProfileId,
   });
@@ -100,7 +118,13 @@ export async function sendVerification(
   // routing detail. Log it, return something a person can act on.
   const detail = json?.errors?.[0]?.detail ?? json?.errors?.[0]?.title ?? `HTTP ${status}`;
   console.error(`phoneVerify.sendVerification failed for ${e164}: ${detail}`);
-  return { sent: false, error: "Could not send a code to that number." };
+  return {
+    sent: false,
+    error:
+      config.channel === "call"
+        ? "Could not call that number. Check it and try again."
+        : "Could not send a code to that number.",
+  };
 }
 
 /** Check a code the user typed. */

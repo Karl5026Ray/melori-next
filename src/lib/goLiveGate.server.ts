@@ -17,9 +17,10 @@ import { GO_LIVE_SETUP_CODE } from "@/lib/goLiveSetupCode";
 // Ready means:
 //   • phone_verified_at is set (every account that predates migration 076 was
 //     backfilled, so no existing member is ever stopped here), OR
-//   • SMS verification is not live yet (Telnyx / A2P 10DLC pending) AND a
-//     number is on file. The moment verification is configured, this tightens
-//     by itself: a number on file is no longer enough, it must be verified.
+//   • Telnyx is not configured yet AND a number is on file. The moment the
+//     Telnyx keys are set, this tightens by itself: a number on file is no
+//     longer enough, it must be verified (by phone call until texting is
+//     approved — see TELNYX_VERIFY_CHANNEL in src/lib/phoneVerify.ts).
 //
 // Returns null when the caller may go live, otherwise the 403 to send back.
 export async function requireGoLiveReady(userId: string): Promise<NextResponse | null> {
@@ -38,14 +39,14 @@ export async function requireGoLiveReady(userId: string): Promise<NextResponse |
 
   if (data?.phone_verified_at) return null;
 
-  const smsLive = getTelnyxConfig() !== null;
-  if (!smsLive && data?.phone) return null;
+  const telnyx = getTelnyxConfig();
+  if (!telnyx && data?.phone) return null;
 
   return NextResponse.json(
     {
       error: "Add your mobile number to go live.",
       code: GO_LIVE_SETUP_CODE,
-      verification: smsLive ? "sms" : "pending",
+      verification: telnyx ? telnyx.channel : "pending",
     },
     { status: 403 },
   );

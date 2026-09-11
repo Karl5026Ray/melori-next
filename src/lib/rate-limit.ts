@@ -15,6 +15,8 @@
  * durable server-side auth + block checks.
  */
 
+import { clientIpFromHeaders } from "@/lib/clientIp";
+
 type Bucket = { tokens: number; updatedAt: number };
 const buckets = new Map<string, Bucket>();
 
@@ -79,14 +81,12 @@ export function rateLimit(
 }
 
 /**
- * Best-effort client IP derivation for anonymous endpoints. Vercel forwards
- * the caller's IP in `x-forwarded-for` and `x-real-ip`; both can be spoofed
- * from outside Vercel's edge, but on Vercel's platform the values are set
- * by the edge itself so they're trustworthy. In a local dev env with no
- * proxy, this returns "unknown" and every hit shares one bucket — fine.
+ * Best-effort client IP derivation for anonymous endpoints. See
+ * src/lib/clientIp.ts: behind Cloudflare's proxy, Vercel's own headers name a
+ * Cloudflare server, so the real visitor comes from `cf-connecting-ip` — but
+ * only when the connection provably came from Cloudflare. In a local dev env
+ * with no proxy, this returns "unknown" and every hit shares one bucket — fine.
  */
 export function clientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]?.trim() || "unknown";
-  return req.headers.get("x-real-ip") || "unknown";
+  return clientIpFromHeaders(req.headers) ?? "unknown";
 }

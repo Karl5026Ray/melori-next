@@ -18,6 +18,7 @@
 //   - profile stops one account cycling numbers from many sources
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clientIpFromHeaders } from "@/lib/clientIp";
 
 export type AttemptKind = "start" | "check";
 
@@ -132,9 +133,11 @@ export async function recordAttempt(
   }
 }
 
-/** Best-effort client IP from the proxy headers Vercel sets. */
+/**
+ * Best-effort client IP. Behind Cloudflare's proxy the headers Vercel sets name
+ * a Cloudflare server, which would put a whole city in one rate-limit bucket;
+ * src/lib/clientIp.ts recovers the real visitor safely.
+ */
 export function clientIp(request: Request): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return request.headers.get("x-real-ip");
+  return clientIpFromHeaders(request.headers);
 }

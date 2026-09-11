@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { SignJWT } from "jose";
 import { getAdminSecret } from "@/lib/admin-secret";
+import { clientIpFromHeaders } from "@/lib/clientIp";
 
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH;
 export async function POST(req: NextRequest) {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     if (!valid) {
       console.warn(
         `Failed admin login attempt from ${
-          req.headers.get("x-forwarded-for") || "unknown"
+          clientIpFromHeaders(req.headers) ?? "unknown"
         }`
       );
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });

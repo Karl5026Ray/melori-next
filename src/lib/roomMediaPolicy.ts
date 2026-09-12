@@ -9,7 +9,7 @@ import {
   getConcertBattleSlot,
   type ConcertBattleStatus,
 } from "@/lib/concertBattle";
-import canSpeakInTalkMode, type CinemaTalkMode } from "@/lib/cinemaTalkModes";
+import { canSpeakInTalkMode, type CinemaTalkMode } from "@/lib/cinemaTalkModes";
 
 export const CINEMA_CAMERA_SLOT_COUNT = 3 as const;
 

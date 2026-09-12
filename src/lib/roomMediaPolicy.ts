@@ -9,6 +9,7 @@ import {
   getConcertBattleSlot,
   type ConcertBattleStatus,
 } from "@/lib/concertBattle";
+import { canSpeakInTalkMode, type CinemaTalkMode } from "@/lib/cinemaTalkModes";
 
 export const CINEMA_CAMERA_SLOT_COUNT = 3 as const;
 
@@ -278,4 +279,33 @@ export function buildCinemaSlotAssignments(
       userId: reservations.find((reservation) => reservation.slot === slot)?.userId ?? null,
     };
   });
+}
+
+
+// --- Talk-mode / whisper mute helper (scaffolding) --------------------------
+// Additive only: nothing above this line calls into it yet. See
+// useCinemaTalkModeAndWhisper.ts and the pull request description for the
+// full picture of what's still needed to make this durable and real-time.
+
+export interface TalkModeMuteInput {
+    talkMode: CinemaTalkMode;
+    role: RoomMediaRole;
+    isWhispering: boolean;
+}
+
+/**
+ * Whether a participant's microphone should be muted in the MAIN room
+ * because of the room's talk mode, or because they are actively in a
+ * private whisper. Deliberately separate from decideRoomPublish/
+ * decideCinemaPublish: talk mode and whispering affect "can this open mic
+ * be heard in the main room right now", not "does this person get a
+ * camera tile". NOT yet called from either of those -- a caller still
+ * needs to thread the room's current talk mode and the participant's
+ * whisper status in from durable state before wiring this in for real.
+ */
+export function shouldMuteForTalkModeOrWhisper(
+    input: TalkModeMuteInput,
+  ): boolean {
+    if (input.isWhispering) return true;
+    return !canSpeakInTalkMode(input.talkMode, input.role);
 }

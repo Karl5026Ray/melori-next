@@ -55,7 +55,7 @@ import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
 import CinemaVoiceCircles from "@/components/social/cinema/CinemaVoiceCircles";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
-import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
+import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas"; import { CinemaTalkModeSwitcher } from "@/components/social/cinema/CinemaTalkModeSwitcher"; import { CinemaWhisperSidebar } from "@/components/social/cinema/CinemaWhisperSidebar"; import { useCinemaTalkModeAndWhisper } from "@/components/social/cinema/useCinemaTalkModeAndWhisper";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { buildCinemaSlotAssignments, type CinemaReservation } from "@/lib/roomMediaPolicy";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
@@ -232,6 +232,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   >({});
   // The participant whose per-person reaction picker is currently open (null =
   // closed).
+    const {
+          talkMode,
+          setTalkMode,
+          whisperTarget,
+          setWhisperTarget,
+          whisperMessages,
+          sendWhisperMessage,
+          closeWhisper,
+    } = useCinemaTalkModeAndWhisper();
   const [reactTarget, setReactTarget] = useState<SpaceParticipant | null>(null);
   // Members the viewer has followed from inside this room, so their tile flips
   // from "+" to a check without a refetch.
@@ -2207,6 +2216,18 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   }
                 />
               )}
+              {isCinema && (
+            <CinemaTalkModeSwitcher mode={talkMode} isHost={isHost} onChange={setTalkMode} />
+          )}
+              {isCinema && whisperTarget && (
+            <CinemaWhisperSidebar
+                  withUserId={whisperTarget.userId}
+                  withDisplayName={whisperTarget.displayName}
+                  messages={whisperMessages}
+                  onSend={sendWhisperMessage}
+                  onClose={closeWhisper}
+                />
+          )}
               {isCinema && selectedCinemaGuestSlot !== null && !isHost && (
                 <p className="sr-only" role="status" data-testid="cinema-selected-guest-readiness">
                   You have Live box {selectedCinemaGuestSlot + 1}. Turn on your camera when ready.

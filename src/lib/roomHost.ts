@@ -108,6 +108,7 @@ async function onPromoted(
       (avatarRow as { avatar_url?: string | null } | null)?.avatar_url ?? null;
 
     let reservations: CinemaReservation[] = [];
+    let talkMode: string | null = null;
     if (isCinema) {
       const { data: slotRows } = await supabase
         .from("cinema_camera_slots")
@@ -117,6 +118,14 @@ async function onPromoted(
         slot: Number(row.slot),
         userId: String(row.user_id),
       }));
+      // A new host inherits the room as it stands, silent mode included. The
+      // handoff must not quietly reopen a mic the room had closed.
+      const { data: talkRow } = await supabase
+        .from("room_talk_state")
+        .select("talk_mode")
+        .eq("space_id", spaceId)
+        .maybeSingle();
+      talkMode = (talkRow as { talk_mode?: string | null } | null)?.talk_mode ?? null;
     }
     const media = decideRoomPublish({
       roomFormat: space.room_format,
@@ -125,6 +134,7 @@ async function onPromoted(
       role: "host",
       hostMuted: false,
       reservations,
+      talkMode,
       requested: ["camera", "microphone"],
     });
 

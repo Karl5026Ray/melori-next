@@ -10,6 +10,7 @@ import {
   MediaCaptureUnavailableError,
   requestUserMedia,
 } from "@/lib/mediaCapture";
+import { isVerticalFromDimensions } from "@/lib/videoOrientation";
 
 type Mode = "video" | "audio" | "file" | "youtube";
 type MediaType = "video" | "audio";
@@ -22,12 +23,35 @@ const MAX_SECONDS: Record<MediaType, number> = { video: 60, audio: 120 };
 // "Upload File" path.
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
 
-// Grab the first visible frame of a video as a JPEG poster so the profile /
-// feed grids have something to show without downloading the whole file. Runs
-// entirely in the browser via <canvas>; returns null if the frame can't be
-// read (e.g. cross-origin or unsupported codec) so publishing still succeeds.
-async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
+// One decode, two answers: the first visible frame as a JPEG poster, and the
+// clip's real pixel dimensions.
+//
+// The dimensions matter as much as the poster. Recorded clips were being played
+// inside a fixed 9:16 portrait stage regardless of how they were actually shot,
+// so anything landscape shrank until its *width* fit and left thick black bars
+// above and below — the "why is my video so small" report. Measuring here lets
+// the feed give a landscape clip a landscape frame.
+//
+// Best-effort throughout: any failure returns nulls so publishing still
+// succeeds, just without a thumbnail or an orientation hint.
+type VideoProbe = {
+  poster: Blob | null;
+  width: number | null;
+  height: number | null;
+};
+
+async function probeVideo(source: Blob | File): Promise<VideoProbe> {
   return new Promise((resolve) => {
+    let width: number | null = null;
+    let height: number | null = null;
+    let settled = false;
+
+    const done = (poster: Blob | null) => {
+      if (settled) return;
+      settled = true;
+      resolve({ poster, width, height });
+    };
+
     try {
       const url = URL.createObjectURL(source);
       const video = document.createElement("video");
@@ -39,10 +63,19 @@ async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
       const cleanup = () => URL.revokeObjectURL(url);
       const fail = () => {
         cleanup();
-        resolve(null);
+        done(null);
+      };
+
+      // Dimensions land with metadata, before any frame is decodable, so
+      // orientation survives even when the poster draw later fails.
+      video.onloadedmetadata = () => {
+        width = video.videoWidth || null;
+        height = video.videoHeight || null;
       };
 
       video.onloadeddata = () => {
+        width = video.videoWidth || width;
+        height = video.videoHeight || height;
         // Seek slightly in so we don't grab a black leading frame.
         const target = Math.min(0.1, (video.duration || 1) / 2);
         const onSeeked = () => {
@@ -56,7 +89,7 @@ async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
             canvas.toBlob(
               (blob) => {
                 cleanup();
-                resolve(blob);
+                done(blob);
               },
               "image/jpeg",
               0.8,
@@ -76,7 +109,7 @@ async function captureVideoPoster(source: Blob | File): Promise<Blob | null> {
       // Safety timeout so a stuck decode never blocks publishing.
       setTimeout(fail, 8000);
     } catch {
-      resolve(null);
+      done(null);
     }
   });
 }
@@ -183,8 +216,24 @@ export default function CreatePostButton() {
       // Neither the file picker nor a YouTube link needs the camera/mic.
       if (m === "file" || m === "youtube") return;
       try {
-        const constraints =
-          m === "video" ? { video: true, audio: true } : { audio: true };
+        // Ask for a portrait HD frame explicitly. A bare `{ video: true }`
+        // takes the browser default — roughly 640x480 landscape — which then
+        // letterboxes into the feed's 9:16 stage and reads as a tiny strip of
+        // video. These are `ideal`, not `exact`, so a camera that cannot hit
+        // them (most laptop webcams are physically landscape) still opens; the
+        // orientation we measure at publish time is what corrects those.
+        const constraints: MediaStreamConstraints =
+          m === "video"
+            ? {
+                video: {
+                  facingMode: "user",
+                  width: { ideal: 1080 },
+                  height: { ideal: 1920 },
+                  aspectRatio: { ideal: 9 / 16 },
+                },
+                audio: true,
+              }
+            : { audio: true };
         const stream = await requestUserMedia(constraints);
         streamRef.current = stream;
         if (m === "video" && livePreviewRef.current) {
@@ -397,9 +446,13 @@ export default function CreatePostButton() {
       // grids can show a real thumbnail instead of trying to paint an .mp4 in
       // an <img>. Best-effort: any failure here just leaves thumbnail_url null.
       let thumbnailUrl: string | null = null;
+      // null = unknown, and the player falls back to its portrait stage exactly
+      // as it does for every post published before this measurement existed.
+      let isVertical: boolean | null = null;
       if (mediaType === "video") {
         try {
-          const poster = await captureVideoPoster(source);
+          const { poster, width, height } = await probeVideo(source);
+          isVertical = isVerticalFromDimensions(width, height);
           if (poster) {
             const thumbName = `${filename.replace(/\.[^.]+$/, "")}_poster.jpg`;
             const thumbUrlRes = await authFetch("/api/social/upload-url", {
@@ -431,6 +484,7 @@ export default function CreatePostButton() {
           video_url: publicUrl,
           media_type: mediaType,
           thumbnail_url: thumbnailUrl,
+          is_vertical: isVertical,
         }),
       });
       if (!saveRes.ok) {

@@ -6,6 +6,7 @@ import { SocialVideo } from "@/types/social";
 import { authFetch } from "@/lib/authClient";
 import { youtubeEmbedUrl } from "@/lib/youtube";
 import { shouldLoopVideoCardMedia } from "@/lib/mirrorFeedNavigation";
+import { stageClassName } from "@/lib/videoOrientation";
 import CommentSheet from "./CommentSheet";
 import PostActionsMenu from "./PostActionsMenu";
 import {
@@ -566,11 +567,20 @@ function VideoCardBase({
         </div>
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-black">
-          {/* A 9:16 native-upload stage reaches the full available height
-              without exceeding the viewport width. Landscape uploads are
-              contained inside the same stage, so they letterbox rather than
-              stretching or cropping. */}
-          <div className="relative aspect-[9/16] h-full max-w-full">
+          {/* The stage follows the clip's own orientation (social_videos
+              .is_vertical, measured in the browser at publish time), the same
+              way the YouTube branch above does.
+
+              A portrait clip gets the 9:16 stage: full available height, never
+              wider than the viewport. A landscape clip gets a 16:9 stage that
+              uses the full card width instead of being squeezed into a tall
+              box — that squeeze is what made recorded clips and posted lives
+              render as a thin strip with thick black bars.
+
+              Unknown (null) keeps the old portrait stage, so every post made
+              before the measurement existed looks exactly as it does today.
+              Nothing is ever cropped in either case. */}
+          <div className={stageClassName(video.is_vertical)}>
             <video
               ref={videoRef}
               src={mediaUrl}

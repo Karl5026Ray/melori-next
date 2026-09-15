@@ -56,6 +56,11 @@ export async function POST(req: NextRequest) {
         ? body.thumbnail_url
         : null;
     const mediaType = body.media_type === "audio" ? "audio" : "video";
+    // Orientation is measured in the browser at publish time. Anything other
+    // than a real boolean stays null, which the player reads as "unknown" and
+    // renders on its portrait stage — the behaviour every older post has.
+    const isVertical =
+      typeof body.is_vertical === "boolean" ? body.is_vertical : null;
 
     if (!title) {
       return NextResponse.json(
@@ -80,6 +85,7 @@ export async function POST(req: NextRequest) {
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         media_type: mediaType,
+        is_vertical: isVertical,
       })
       .select("*")
       .single();

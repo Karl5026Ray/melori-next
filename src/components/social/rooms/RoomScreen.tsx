@@ -55,7 +55,11 @@ import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
 import CinemaVoiceCircles from "@/components/social/cinema/CinemaVoiceCircles";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
-import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas"; import { CinemaTalkModeSwitcher } from "@/components/social/cinema/CinemaTalkModeSwitcher"; import { CinemaWhisperSidebar } from "@/components/social/cinema/CinemaWhisperSidebar"; import { useCinemaTalkModeAndWhisper } from "@/components/social/cinema/useCinemaTalkModeAndWhisper";
+import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
+import { CinemaTalkModeSwitcher } from "@/components/social/cinema/CinemaTalkModeSwitcher";
+import { CinemaWhisperSidebar } from "@/components/social/cinema/CinemaWhisperSidebar";
+import { useCinemaTalkMode } from "@/components/social/cinema/useCinemaTalkMode";
+import { useCinemaWhisper } from "@/components/social/cinema/useCinemaWhisper";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { buildCinemaSlotAssignments, type CinemaReservation } from "@/lib/roomMediaPolicy";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
@@ -232,15 +236,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   >({});
   // The participant whose per-person reaction picker is currently open (null =
   // closed).
-    const {
-          talkMode,
-          setTalkMode,
-          whisperTarget,
-          setWhisperTarget,
-          whisperMessages,
-          sendWhisperMessage,
-          closeWhisper,
-    } = useCinemaTalkModeAndWhisper();
   const [reactTarget, setReactTarget] = useState<SpaceParticipant | null>(null);
   // Members the viewer has followed from inside this room, so their tile flips
   // from "+" to a check without a refetch.
@@ -384,6 +379,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       return;
     }
     void refreshCinemaSlots();
+    // Slot changes refetch rather than patching from the payload, so the
+    // authoritative GET stays the only shape this component trusts.
+    //
+    // This subscription was silently dead from migration 057 until 079: the
+    // table had never been added to the supabase_realtime publication, so
+    // Postgres published nothing for it and a host assigning a live box only
+    // reached other people when they reloaded. If slot changes ever stop
+    // propagating again, check the publication before suspecting this code.
     const channel = supabase
       .channel(`cinema_slots:${spaceId}`)
       .on(
@@ -1547,6 +1550,31 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const selectedCinemaGuest =
     selectedCinemaGuestSlot !== null &&
     (canSpeakNow || myParticipant?.badge === "mod" || myParticipant?.badge === "cohost");
+
+  // Running the room: the host, plus anyone they have badged. Used for the
+  // talk-mode control and for opening a whisper. Convenience only — both
+  // routes re-check this server-side, and neither trusts the client.
+  const canRunRoom =
+    isHost ||
+    myParticipant?.badge === "mod" ||
+    myParticipant?.badge === "cohost";
+
+  const {
+    mode: talkMode,
+    setMode: setTalkMode,
+    pending: talkModePending,
+  } = useCinemaTalkMode(isCinema ? spaceId : null, canRunRoom);
+
+  const {
+    target: whisperTarget,
+    open: openWhisper,
+    close: closeWhisper,
+    messages: whisperMessages,
+    send: sendWhisperMessage,
+    opening: whisperOpening,
+    sending: whisperSending,
+    error: whisperError,
+  } = useCinemaWhisper(isCinema ? spaceId : null, user?.id ?? null);
   // Mirror the API's candidate eligibility so the host only sees participants
   // who can actually receive a camera source. The route re-checks this; the UI
   // is convenience, never authorization.
@@ -2217,17 +2245,26 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 />
               )}
               {isCinema && (
-            <CinemaTalkModeSwitcher mode={talkMode} isHost={isHost} onChange={setTalkMode} />
-          )}
+                <CinemaTalkModeSwitcher
+                  mode={talkMode}
+                  canControl={canRunRoom}
+                  pending={talkModePending}
+                  onChange={setTalkMode}
+                />
+              )}
               {isCinema && whisperTarget && (
-            <CinemaWhisperSidebar
+                <CinemaWhisperSidebar
                   withUserId={whisperTarget.userId}
                   withDisplayName={whisperTarget.displayName}
+                  selfId={user?.id ?? null}
                   messages={whisperMessages}
                   onSend={sendWhisperMessage}
                   onClose={closeWhisper}
+                  opening={whisperOpening}
+                  sending={whisperSending}
+                  error={whisperError}
                 />
-          )}
+              )}
               {isCinema && selectedCinemaGuestSlot !== null && !isHost && (
                 <p className="sr-only" role="status" data-testid="cinema-selected-guest-readiness">
                   You have Live box {selectedCinemaGuestSlot + 1}. Turn on your camera when ready.
@@ -2591,6 +2628,32 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 </button>
               ))}
             </div>
+
+            {/* Whisper: the room's private "a quiet word" channel. Only the
+                host and their moderators may open one, and never with
+                themselves. The route re-checks both — this only decides
+                whether to offer an action that would otherwise 403. */}
+            {isCinema &&
+              canRunRoom &&
+              (reactTarget.user?.id ?? reactTarget.user_id) !== user?.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetId = reactTarget.user?.id ?? reactTarget.user_id;
+                    if (!targetId) return;
+                    void openWhisper({
+                      userId: targetId,
+                      displayName:
+                        reactTarget.user?.display_name ?? "this person",
+                    });
+                    setReactTarget(null);
+                  }}
+                  className="mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-amber-400/60 bg-amber-400/10 px-4 text-sm font-medium text-amber-300 hover:bg-amber-400/20"
+                >
+                  Whisper to{" "}
+                  {reactTarget.user?.display_name ?? "this person"}
+                </button>
+              )}
           </div>
         </div>
       )}

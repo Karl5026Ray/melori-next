@@ -211,6 +211,16 @@ export async function PATCH(
       ? reservations.filter((reservation) => reservation.userId !== params.userId)
       : reservations;
     const removed = body.ban === true || body.remove === true || Boolean(updatedParticipant?.left_at);
+    // Promoting someone to speaker must not hand them a microphone the room's
+    // talk mode is currently silencing. A missing row coerces to the default.
+    const { data: talkRow } = isCinema
+      ? await supabase
+          .from("room_talk_state")
+          .select("talk_mode")
+          .eq("space_id", params.spaceId)
+          .maybeSingle()
+      : { data: null };
+
     const decision = decideRoomPublish({
       roomFormat: space.room_format,
       hostId: space.host_id,
@@ -218,6 +228,7 @@ export async function PATCH(
       role: removed ? "audience" : mediaRole(space, updatedParticipant, params.userId),
       hostMuted: Boolean(updatedParticipant?.host_muted),
       reservations: policyReservations,
+      talkMode: (talkRow as { talk_mode?: string | null } | null)?.talk_mode ?? null,
       requested: ["camera", "microphone"],
     });
 

@@ -67,6 +67,11 @@ export async function POST(req: NextRequest) {
       video_url: space.recording_url,
       thumbnail_url: null,
       media_type: "video",
+      // A live recording is a LiveKit RoomComposite, and that composite is
+      // rendered landscape (the default 720p preset is 1280x720). Saying so
+      // explicitly keeps the player from squeezing it into the portrait stage,
+      // which shrank every posted live to a thin letterboxed strip.
+      is_vertical: false,
     })
     .select("*")
     .single();

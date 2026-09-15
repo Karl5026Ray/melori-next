@@ -22,6 +22,7 @@ const nav = read("src/components/MobileTabBar.tsx");
 const layout = read("src/app/layout.tsx");
 const globals = read("src/app/globals.css");
 const video = read("src/components/social/video/VideoCard.tsx");
+const orientation = read("src/lib/videoOrientation.ts");
 const mainContent = read("src/components/MainContent.tsx");
 const transportVisible = read("src/components/player/useTransportVisible.ts");
 const player = read("src/components/AudioPlayer.tsx");
@@ -201,10 +202,27 @@ check(
   "Mirror height uses dynamic viewport and shared bottom clearance",
   globals.includes("height: calc(100dvh - var(--mirror-top) - var(--mirror-bottom))"),
 );
+// Superseded 2026-09-15, for the same reason the YouTube check below was.
+// This asserted the native stage was ALWAYS `aspect-[9/16] h-full max-w-full`.
+// That hardcoded portrait box is what made recorded clips and posted lives look
+// tiny: a landscape source fitted into it filled only the card's width and left
+// thick black bars top and bottom. Posted lives hit it every time, because a
+// LiveKit RoomComposite is rendered landscape (default preset 1280x720).
+//
+// The native stage is now chosen from the post's own orientation, exactly like
+// the YouTube stage. The ORIGINAL intent -- never crop -- is preserved:
+// object-contain still governs both stages, and an unmeasured post (is_vertical
+// null) still gets the portrait box it has always had.
 check(
-  "native Mirror uploads render in a 9:16 stage without crop",
-  video.includes('className="relative aspect-[9/16] h-full max-w-full"') &&
-    video.includes("object-contain object-center"),
+  "native Mirror uploads pick their stage from the post's own orientation",
+  video.includes("stageClassName(video.is_vertical)") &&
+    video.includes("object-contain object-center") &&
+    !video.includes('className="relative aspect-[9/16] h-full max-w-full"'),
+);
+check(
+  "the native stage never crops, in either orientation",
+  orientation.includes('PORTRAIT_STAGE = "relative aspect-[9/16] h-full max-w-full"') &&
+    orientation.includes('LANDSCAPE_STAGE = "relative aspect-video w-full max-h-full"'),
 );
 // Superseded 2026-09-06. This first asserted the YouTube stage was always
 // `aspect-video max-h-full w-full`, a contract written when the only YouTube

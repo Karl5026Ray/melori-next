@@ -40,14 +40,15 @@
     "test:webhook": "tsx scripts/pubnub-webhook-curl.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:unit": "npm run test:youtube && npm run test:cookies && npm run test:favorites && npm run test:import && npm run test:capture && npm run test:audio-output && npm run test:audio-profile && npm run test:spaces-moderation && npm run test:video-mirror && npm run test:mirror-loop && npm run test:end-room && npm run test:cinema && npm run test:stage-queue && npm run test:mobile-layout && npm run test:voice-circles && npm run test:gifting && npm run test:calling && npm run test:room-status && npm run test:concert-battle-domain && npm run test:concert-invitations && npm run test:concert-stage && npm run test:concert-readiness && npm run test:concert-rounds && npm run test:moderation-filter && npm run test:catalog-cache && npm run test:migration-prefix && npm run test:signup-wall && npm run test:client-ip && npm run test:auth-cookie",
+    "test:unit": "npm run test:youtube && npm run test:cookies && npm run test:favorites && npm run test:import && npm run test:capture && npm run test:audio-output && npm run test:audio-profile && npm run test:spaces-moderation && npm run test:video-mirror && npm run test:video-orientation && npm run test:mirror-loop && npm run test:end-room && npm run test:cinema && npm run test:stage-queue && npm run test:mobile-layout && npm run test:voice-circles && npm run test:gifting && npm run test:calling && npm run test:room-status && npm run test:concert-battle-domain && npm run test:concert-invitations && npm run test:concert-stage && npm run test:concert-readiness && npm run test:concert-rounds && npm run test:moderation-filter && npm run test:catalog-cache && npm run test:migration-prefix && npm run test:signup-wall && npm run test:client-ip && npm run test:auth-cookie",
     "test:voice-circles": "tsx scripts/voice-circles.test.ts",
     "test:concert-stage": "tsx scripts/concert-stage.test.ts",
     "test:concert-readiness": "tsx scripts/concert-readiness.test.ts",
     "test:concert-rounds": "tsx scripts/concert-rounds.test.ts",
     "verify:concert": "tsx scripts/verify-concert-config.ts",
     "test:auth-cookie": "tsx scripts/auth-cookie-name.test.ts",
-    "test:smoke": "PW_SMOKE=1 playwright test --project=desktop-chromium"
+    "test:smoke": "PW_SMOKE=1 playwright test --project=desktop-chromium",
+    "test:video-orientation": "tsx scripts/video-orientation.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

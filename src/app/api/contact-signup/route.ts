@@ -6,9 +6,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/contact-signup — Free-tier contact capture. Open to everyone (no
-// gating). Inserts into public.contact_signups. RLS is ON for that table, so the
-// insert must run with the service role key (getSupabaseAdmin), never the anon
+// gating). Writes to public.contact_signups. RLS is ON for that table, so the
+// write must run with the service role key (getSupabaseAdmin), never the anon
 // key. At least one of email/phone is required (also enforced by a table CHECK).
+//
+// Migration 081 put a unique index on contact_signups(email) so the Tally
+// webhook could upsert. That turned a repeat signup here — previously a silent
+// duplicate row — into SQLSTATE 23505. So an email signup now goes through
+// upsert_contact_signup(), the same merge the webhook uses: idempotent, and it
+// cannot blank a name or drop a consent we already hold.
+//
+// A phone-only signup still inserts directly. There is no unique index on
+// phone, so there is nothing to conflict with, and the merge function keys on
+// email and would no-op on a null one.
 export async function POST(req: NextRequest) {
   // Anonymous contact-capture, so use IP-based rate limiting to blunt bot
   // floods. 3 quick / ~1 per minute per IP.
@@ -61,25 +71,40 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("contact_signups").insert({
-      name: name || null,
-      email: email || null,
-      phone: phone || null,
-      consent_sms: consentSms,
-      consent_email: consentEmail,
-      source: "free_tier",
-    });
+
+    const { error } = email
+      ? await supabase.rpc("upsert_contact_signup", {
+          p_email: email,
+          p_name: name || null,
+          p_phone: phone || null,
+          p_consent: consentEmail,
+          p_source: "free_tier",
+          p_consent_sms: consentSms,
+        })
+      : await supabase.from("contact_signups").insert({
+          name: name || null,
+          email: null,
+          phone: phone || null,
+          consent_sms: consentSms,
+          consent_email: consentEmail,
+          source: "free_tier",
+        });
 
     if (error) {
-      console.error("Contact signup insert error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("Contact signup write error:", error);
+      // Never hand a raw Postgres message to the browser — it names tables,
+      // columns and index names to anyone who can POST this endpoint.
+      return NextResponse.json(
+        { error: "Could not save your info. Please try again." },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Contact signup exception:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Could not save your info. Please try again." },
+      { error: "Could not save your info. Please try again." },
       { status: 500 },
     );
   }

@@ -1,100 +1,116 @@
 "use client";
 
-/**
-* SCAFFOLD / DRAFT component introduced alongside the "Cinema Room" design
-* concept. Presentational only -- it renders CINEMA_TALK_MODES from
-* cinemaTalkModes.ts and calls back on selection, but does not persist the
-* chosen mode anywhere. Wiring this up for real needs:
-*
-*   1. A place to store the room's current talk mode (e.g. a column on the
-*      `spaces` row, alongside room_format -- see cinema.ts / migrations
-*      in supabase/migrations for the existing pattern).
-*   2. A realtime broadcast of that value to everyone in the room.
-*   3. Enforcement in the actual media/publish layer (roomMediaPolicy.ts),
-*      not just in this UI -- this component only decides what the picker
-*      shows, never who can actually publish audio.
-*
-* Written with React.createElement instead of JSX syntax.
-* This file has not been run through the project's type checker, linter,
-* or test suite.
-*/
-
-import { createElement as h, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CINEMA_TALK_MODES,
+  getTalkModeMeta,
   type CinemaTalkMode,
 } from "@/lib/cinemaTalkModes";
 
 export interface CinemaTalkModeSwitcherProps {
   mode: CinemaTalkMode;
-  isHost: boolean;
+  /** Host or moderator. Everyone else sees a read-only pill. */
+  canControl: boolean;
   onChange: (mode: CinemaTalkMode) => void;
+  /** A change is in flight; the control stays interactive but shows it. */
+  pending?: boolean;
 }
 
 /**
-* Host-only control for switching a live Cinema room between Silent,
-* Intermission, and Director's Commentary. Non-hosts see the current mode
-* as a read-only pill instead of a picker.
-*/
-export function CinemaTalkModeSwitcher(props: CinemaTalkModeSwitcherProps) {
-  const { mode, isHost, onChange } = props;
+ * The room's talk mode, and — for a host or moderator — the control that
+ * changes it.
+ *
+ * This is a label and a picker, nothing more. Whether anyone's microphone is
+ * actually live is decided server-side in roomMediaPolicy.ts and applied to
+ * LiveKit by the /talk-mode route. Non-controllers still see the mode, because
+ * "why can't I talk" should have a visible answer in the room.
+ */
+export function CinemaTalkModeSwitcher({
+  mode,
+  canControl,
+  onChange,
+  pending = false,
+}: CinemaTalkModeSwitcherProps) {
   const [open, setOpen] = useState(false);
-  const current = CINEMA_TALK_MODES.find((m) => m.value === mode) ?? CINEMA_TALK_MODES[0];
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const current = getTalkModeMeta(mode);
 
-if (!isHost) {
-  return h(
-    "div",
-    {
-      className:
-        "flex items-center gap-2 rounded-full border border-amber-400/40 bg-black/60 px-3 py-1 text-xs text-amber-300",
-    },
-    current.label,
+  // Close on outside click and on Escape, so the menu can't be left hanging
+  // over a live room.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!canControl) {
+    return (
+      <div
+        className="flex items-center gap-2 rounded-full border border-amber-400/40 bg-black/60 px-3 py-1 text-xs text-amber-300"
+        title={current.description}
+      >
+        {current.label}
+      </div>
     );
-}
+  }
 
-return h(
-  "div",
-  { className: "relative inline-block text-sm" },
-  h(
-    "button",
-    {
-      type: "button",
-      onClick: () => setOpen((v) => !v),
-      className:
-        "flex items-center gap-2 rounded-full border border-amber-400/60 bg-black/60 px-3 py-1.5 text-amber-300 hover:bg-black/80",
-    },
-    current.label,
-    h("span", { className: "text-amber-400/70" }, "\u203a"),
-    ),
-  open
-  ? h(
-    "ul",
-    {
-      className:
-        "absolute z-10 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-xl",
-    },
-    CINEMA_TALK_MODES.map((m) =>
-      h(
-        "li",
-        { key: m.value },
-        h(
-          "button",
-          {
-            type: "button",
-            onClick: () => {
-              onChange(m.value);
-              setOpen(false);
-            },
-            className:
-              "block w-full px-4 py-2 text-left hover:bg-white/10 " +
-              (m.value === mode ? "text-amber-400" : "text-white"),
-          },
-          h("span", { className: "block font-medium" }, m.label),
-          h("span", { className: "block text-xs text-white/40" }, m.description),
-          ),
-        ),
-                          ),
-    )
-  : null,
+  return (
+    <div ref={rootRef} className="relative inline-block text-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Talk mode: ${current.label}. Change it.`}
+        className="flex items-center gap-2 rounded-full border border-amber-400/60 bg-black/60 px-3 py-1.5 text-amber-300 hover:bg-black/80 disabled:opacity-60"
+        disabled={pending}
+      >
+        {current.label}
+        <span aria-hidden className="text-amber-400/70">
+          {pending ? "…" : "›"}
+        </span>
+      </button>
+
+      {open && (
+        <ul
+          role="menu"
+          className="absolute z-10 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-xl"
+        >
+          {CINEMA_TALK_MODES.map((m) => (
+            <li key={m.value} role="none">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={m.value === mode}
+                onClick={() => {
+                  onChange(m.value);
+                  setOpen(false);
+                }}
+                className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${
+                  m.value === mode ? "text-amber-400" : "text-white"
+                }`}
+              >
+                <span className="block font-medium">{m.label}</span>
+                <span className="block text-xs text-white/40">
+                  {m.description}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

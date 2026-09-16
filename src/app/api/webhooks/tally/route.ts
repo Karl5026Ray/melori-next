@@ -25,20 +25,40 @@ type FormType =
   | "casting"
   | "other";
 
+const FORM_TYPES = new Set<FormType>([
+  "woe_first_look",
+  "melori_waitlist",
+  "purchase",
+  "casting",
+  "other",
+]);
+
+function isFormType(value: unknown): value is FormType {
+  return typeof value === "string" && FORM_TYPES.has(value as FormType);
+}
+
 // Map Tally formId -> our funnel. e.g. { "wAbC12": "woe_first_look" }
 // Parsed defensively: a typo in the env var must not take the endpoint down at
 // module load, which would 500 every submission with an opaque error.
-const TALLY_FORM_MAP: Record<string, FormType> = (() => {
-  const raw = process.env.TALLY_FORM_MAP;
+export function parseTallyFormMap(raw: string | undefined): Record<string, FormType> {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const map: Record<string, FormType> = {};
+    for (const [formId, formType] of Object.entries(parsed)) {
+      if (formId.length > 0 && isFormType(formType)) {
+        map[formId] = formType;
+      }
+    }
+    return map;
   } catch {
     console.error("TALLY_FORM_MAP is not valid JSON; falling back to {}");
     return {};
   }
-})();
+}
+
+const TALLY_FORM_MAP: Record<string, FormType> = parseTallyFormMap(process.env.TALLY_FORM_MAP);
 
 type TallyField = {
   key: string;
@@ -63,6 +83,12 @@ type TallyPayload = {
     fields?: TallyField[];
   };
 };
+
+export function dedupeKeyFor(body: TallyPayload): string | null {
+  const data = body.data ?? {};
+  const key = data.submissionId ?? data.responseId ?? null;
+  return typeof key === "string" && key.trim() !== "" ? key : null;
+}
 
 // Tally sends choice answers as option IDs. Resolve them to the label text a
 // human actually picked, otherwise every dropdown lands in the DB as a uuid.
@@ -150,11 +176,16 @@ export async function POST(req: NextRequest) {
 
   const formType: FormType = TALLY_FORM_MAP[formId] ?? "other";
 
-  // Dedupe key. submissionId is the right one, but fall back rather than let a
-  // null key through: a null never conflicts, so a retry would insert a second
-  // row AND send a second follow-up email.
-  const dedupeKey =
-    data.submissionId ?? data.responseId ?? body.eventId ?? null;
+  // Dedupe key. submissionId is the right one; responseId is the only tolerated
+  // fallback. eventId is about the webhook delivery, not the submission itself,
+  // so using it would risk collapsing distinct submissions onto one key.
+  const dedupeKey = dedupeKeyFor(body);
+  if (!dedupeKey) {
+    return NextResponse.json(
+      { error: "Missing submission identifier" },
+      { status: 400 },
+    );
+  }
 
   // --- Person -------------------------------------------------------------
   const emailField = pickByType(fields, "INPUT_EMAIL");
@@ -243,32 +274,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Storage failed" }, { status: 500 });
   }
 
-  const isNewSubmission = (inserted?.length ?? 0) > 0;
+  const result = await afterSubmissionInsert({
+    inserted,
+    email,
+    formType,
+    name,
+    onNewSubmission: async () => {
+      // --- Keep one master contact list ------------------------------------
+      // Through the RPC, not a plain upsert: a plain upsert writes every column
+      // in the payload, so a returning contact who fills a form with no name
+      // field and no consent checkbox would have their name blanked and their
+      // email consent silently revoked. See migration 081.
+      if (email) {
+        const { error: contactError } = await supabase.rpc("upsert_contact_signup", {
+          p_email: email,
+          p_name: name || null,
+          p_phone: phone || null,
+          p_consent: consentEmail,
+          p_source: `tally:${formType}`,
+        });
+        if (contactError) {
+          // Non-fatal: the submission is already safely stored. Log and move on
+          // rather than making Tally retry a write that already succeeded.
+          console.error("Tally webhook: contact upsert failed", contactError);
+        }
+      }
+    },
+  });
+
+  return NextResponse.json(result.body, { status: result.status });
+}
+
+// ---------------------------------------------------------------------------
+
+type PostInsertResult =
+  | { status: 200; body: { ok: true } }
+  | { status: 200; body: { ok: true; duplicate: true } };
+
+export async function afterSubmissionInsert(opts: {
+  inserted: Array<{ id: string }> | null | undefined;
+  email: string;
+  formType: FormType;
+  name: string;
+  onNewSubmission: () => Promise<void>;
+  sendFollowUpImpl?: typeof sendFollowUp;
+}): Promise<PostInsertResult> {
+  const isNewSubmission = (opts.inserted?.length ?? 0) > 0;
 
   if (!isNewSubmission) {
     // A retry of something we already stored. Everything below has already run.
-    return NextResponse.json({ ok: true, duplicate: true });
+    return { status: 200, body: { ok: true, duplicate: true } };
   }
 
-  // --- Keep one master contact list --------------------------------------
-  // Through the RPC, not a plain upsert: a plain upsert writes every column in
-  // the payload, so a returning contact who fills a form with no name field and
-  // no consent checkbox would have their name blanked and their email consent
-  // silently revoked. See migration 081.
-  if (email) {
-    const { error: contactError } = await supabase.rpc("upsert_contact_signup", {
-      p_email: email,
-      p_name: name || null,
-      p_phone: phone || null,
-      p_consent: consentEmail,
-      p_source: `tally:${formType}`,
-    });
-    if (contactError) {
-      // Non-fatal: the submission is already safely stored. Log and move on
-      // rather than making Tally retry a write that already succeeded.
-      console.error("Tally webhook: contact upsert failed", contactError);
-    }
-  }
+  await opts.onNewSubmission();
 
   // --- Follow-up ----------------------------------------------------------
   // Awaited, NOT fire-and-forget. On Vercel the function is frozen as soon as
@@ -277,20 +335,20 @@ export async function POST(req: NextRequest) {
   //
   // Awaiting is safe here specifically because of the duplicate gate above: if
   // Resend is slow enough that Tally gives up and retries, the retry hits the
-  // `!isNewSubmission` early return and no second email goes out. A send is
+  // `duplicate: true` early return and no second email goes out. A send is
   // ~300ms against a 10s Tally timeout, so this is not a real latency risk.
   // If heavier post-processing ever lands here, move it to waitUntil() from
   // @vercel/functions rather than detaching the promise.
-  if (email) {
-    await sendFollowUp({ formType, email, name }).catch((err) =>
-      console.error("Tally webhook: follow-up email failed", err),
-    );
+  if (opts.email) {
+    await (opts.sendFollowUpImpl ?? sendFollowUp)({
+      formType: opts.formType,
+      email: opts.email,
+      name: opts.name,
+    }).catch((err) => console.error("Tally webhook: follow-up email failed", err));
   }
 
-  return NextResponse.json({ ok: true });
+  return { status: 200, body: { ok: true } };
 }
-
-// ---------------------------------------------------------------------------
 
 const FOLLOW_UPS: Record<
   FormType,

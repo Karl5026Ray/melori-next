@@ -35,6 +35,23 @@ function roleFor(space: SpaceRow, participant: ParticipantRow | null, userId: st
   return participant?.role === "speaker" ? "speaker" : "audience";
 }
 
+/**
+ * The room's current talk mode. A slot claim reapplies publish permission, so
+ * it has to carry the mode too — otherwise handing someone a camera would
+ * silently hand them a microphone the room is currently silencing. A missing
+ * row means the room has never changed its mode; the policy coerces that to
+ * the default.
+ */
+async function getTalkMode(spaceId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("room_talk_state")
+    .select("talk_mode")
+    .eq("space_id", spaceId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as { talk_mode?: string | null } | null)?.talk_mode ?? null;
+}
+
 async function getReservations(spaceId: string): Promise<CinemaReservation[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("cinema_camera_slots")
@@ -70,6 +87,7 @@ async function applyCurrentPolicy(
   targetId: string,
   participant: ParticipantRow | null,
   reservations: CinemaReservation[],
+  talkMode: string | null,
 ): Promise<{
   allowedSources: readonly ("camera" | "microphone")[];
   cameraSlot: number | null;
@@ -82,6 +100,7 @@ async function applyCurrentPolicy(
     role: roleFor(space, participant, targetId),
     hostMuted: Boolean(participant?.host_muted),
     reservations,
+    talkMode,
     requested: ["camera", "microphone"],
   });
 
@@ -219,7 +238,8 @@ export async function POST(
     // the same transaction as any concurrent mute/demotion/removal.
     const currentTarget = targetId === space.host_id ? null : await getParticipant(space.id, targetId);
     const reservations = await getReservations(space.id);
-    const media = await applyCurrentPolicy(space, targetId, currentTarget, reservations);
+    const claimTalkMode = await getTalkMode(space.id);
+    const media = await applyCurrentPolicy(space, targetId, currentTarget, reservations, claimTalkMode);
     if (
       !media.allowedSources.includes("camera") ||
       (livekitConfigured() && media.runtimeApplied !== true)
@@ -233,6 +253,7 @@ export async function POST(
     const verifiedTarget =
       targetId === space.host_id ? null : await getParticipant(space.id, targetId);
     const verifiedReservations = await getReservations(space.id);
+    const verifiedTalkMode = await getTalkMode(space.id);
     const verified = decideRoomPublish({
       roomFormat: space.room_format,
       hostId: space.host_id,
@@ -240,10 +261,11 @@ export async function POST(
       role: roleFor(space, verifiedTarget, targetId),
       hostMuted: Boolean(verifiedTarget?.host_muted),
       reservations: verifiedReservations,
+      talkMode: verifiedTalkMode,
       requested: ["camera", "microphone"],
     });
     if (!verified.allowedSources.includes("camera")) {
-      await applyCurrentPolicy(space, targetId, verifiedTarget, verifiedReservations);
+      await applyCurrentPolicy(space, targetId, verifiedTarget, verifiedReservations, verifiedTalkMode);
       if (livekitConfigured()) {
         await revokePublishedSources(deriveRoomName(space), targetId, ["camera"]);
       }
@@ -265,7 +287,13 @@ export async function POST(
         const cleanupReservations = (await getReservations(space.id)).filter(
           (reservation) => reservation.userId !== targetId,
         );
-        await applyCurrentPolicy(space, targetId, cleanupTarget, cleanupReservations);
+        await applyCurrentPolicy(
+          space,
+          targetId,
+          cleanupTarget,
+          cleanupReservations,
+          await getTalkMode(space.id),
+        );
         await revokePublishedSources(deriveRoomName(space), targetId, ["camera"]);
       } catch (cleanupError) {
         runtimeSafeToRelease = false;
@@ -337,7 +365,13 @@ export async function DELETE(
     // Fail closed: first remove runtime camera authorization and mute any
     // published camera track. Preserve microphone-only participation, and only
     // then free the durable slot for another guest.
-    await applyCurrentPolicy(space, targetId, target, policyWithoutTargetSlot);
+    await applyCurrentPolicy(
+      space,
+      targetId,
+      target,
+      policyWithoutTargetSlot,
+      await getTalkMode(space.id),
+    );
     if (livekitConfigured()) {
       await revokePublishedSources(deriveRoomName(space), targetId, ["camera"]);
     }

@@ -265,6 +265,29 @@ export async function POST(req: NextRequest) {
         : null;
     }
 
+    // A Cinema room's talk mode has to be honoured at JOIN time, not only when
+    // the host flips it. Without this, anyone who reconnects or refreshes gets
+    // a fresh token minting a microphone the room's current mode forbids —
+    // silencing a room would last exactly until someone hit reload.
+    //
+    // A missing row is the normal case for a room that has never changed its
+    // mode, so it coerces to the default rather than failing the join.
+    let talkMode: string | null = null;
+    if (isCinema) {
+      const { data: talkRow, error: talkError } = await supabase
+        .from("room_talk_state")
+        .select("talk_mode")
+        .eq("space_id", space.id)
+        .maybeSingle();
+      if (talkError) {
+        return NextResponse.json(
+          { error: "Cinema audio authorization is unavailable" },
+          { status: 503 },
+        );
+      }
+      talkMode = (talkRow as { talk_mode?: string | null } | null)?.talk_mode ?? null;
+    }
+
     const media = decideRoomPublish({
       roomFormat: space.room_format,
       hostId: space.host_id,
@@ -273,6 +296,7 @@ export async function POST(req: NextRequest) {
       hostMuted,
       reservations,
       concertBattle,
+      talkMode,
       requested: ["camera", "microphone"],
     });
 

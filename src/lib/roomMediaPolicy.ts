@@ -9,6 +9,11 @@ import {
   getConcertBattleSlot,
   type ConcertBattleStatus,
 } from "@/lib/concertBattle";
+import {
+  canSpeakInTalkMode,
+  toCinemaTalkMode,
+  type CinemaTalkMode,
+} from "@/lib/cinemaTalkModes";
 
 export const CINEMA_CAMERA_SLOT_COUNT = 3 as const;
 
@@ -52,12 +57,22 @@ export interface RoomMediaInput {
    * fails closed: no camera and no microphone.
    */
   concertBattle?: ConcertBattleIdentityInput | null;
+  /**
+   * The Cinema room's current talk mode. Governs the MICROPHONE only — a
+   * guest holding a camera slot keeps their video in every mode, they just
+   * may not be audible. Absent or unreadable coerces to the default mode
+   * rather than failing closed, because a room with no talk-state row yet is
+   * the normal case for every room created before migration 078, and those
+   * rooms must keep working exactly as they did.
+   */
+  talkMode?: CinemaTalkMode | string | null;
 }
 
 export type RoomMediaReason =
   | "not-cinema"
   | "not-on-stage"
   | "host-muted"
+  | "talk-mode-silenced"
   | "invalid-reservations"
   | "no-camera-slot"
   | "missing-battle"
@@ -148,9 +163,25 @@ function decideCinemaPublish(input: RoomMediaInput): RoomMediaDecision {
       ? (reservation.slot as CinemaSlot)
       : null;
 
+  // Talk mode gates the microphone and nothing else. Someone holding a camera
+  // slot stays on screen in every mode — Silent is a room where you can see
+  // each other and not talk, not a room where the picture goes away.
+  const maySpeak = canSpeakInTalkMode(
+    toCinemaTalkMode(input.talkMode),
+    input.role,
+  );
+
   const allowedSources: PublishSource[] = [];
-  if (requested.includes("microphone")) allowedSources.push("microphone");
+  if (requested.includes("microphone") && maySpeak) allowedSources.push("microphone");
   if (requested.includes("camera") && cameraSlot !== null) allowedSources.unshift("camera");
+
+  // Asked for a mic, is on stage, and the mode says no: report that plainly so
+  // the UI can explain the silence rather than looking broken. Only when there
+  // is nothing else to grant — a guest who still gets their camera is not
+  // "silenced", they are simply muted, and the camera grant is the headline.
+  if (requested.includes("microphone") && !maySpeak && allowedSources.length === 0) {
+    return { allowedSources: [], cameraSlot, reason: "talk-mode-silenced" };
+  }
 
   if (requested.includes("camera") && cameraSlot === null) {
     return {

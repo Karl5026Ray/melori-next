@@ -25,6 +25,18 @@ type FormType =
   | "casting"
   | "other";
 
+const FORM_TYPES = new Set<FormType>([
+  "woe_first_look",
+  "melori_waitlist",
+  "purchase",
+  "casting",
+  "other",
+]);
+
+function isFormType(value: unknown): value is FormType {
+  return typeof value === "string" && FORM_TYPES.has(value as FormType);
+}
+
 // Map Tally formId -> our funnel. e.g. { "wAbC12": "woe_first_look" }
 // Parsed defensively: a typo in the env var must not take the endpoint down at
 // module load, which would 500 every submission with an opaque error.
@@ -33,7 +45,14 @@ const TALLY_FORM_MAP: Record<string, FormType> = (() => {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const map: Record<string, FormType> = {};
+    for (const [formId, formType] of Object.entries(parsed)) {
+      if (formId.length > 0 && isFormType(formType)) {
+        map[formId] = formType;
+      }
+    }
+    return map;
   } catch {
     console.error("TALLY_FORM_MAP is not valid JSON; falling back to {}");
     return {};

@@ -1,3 +1,13 @@
+-- RECOVERED 078_cinema_talk_mode
+--
+-- This file was missing from supabase/migrations/ while the migration was
+-- already applied to production. The SQL below is the exact text recorded in
+-- supabase_migrations.schema_migrations for version 20260915122549, recovered
+-- verbatim -- it is not a reconstruction from the live schema.
+--
+-- Already applied. Do not re-apply. See scripts/migration-prefix.test.ts for
+-- the gap check that now makes this class of drift fail CI.
+
 -- MM Cinema: durable, host-authoritative talk mode.
 --
 -- Talk mode controls who can be HEARD in a Cinema room. It sits alongside the
@@ -41,7 +51,7 @@ create policy "room_talk_state_read"
 -- No client-side write policy on purpose. All writes go through the
 -- /talk-mode route on the service role, which verifies the caller is the
 -- room's host or a moderator. A permissive RLS write policy here would be a
--- second, weaker path to the same privilege — any guest could silence a room
+-- second, weaker path to the same privilege - any guest could silence a room
 -- or open every mic in it.
 
 comment on table public.room_talk_state is

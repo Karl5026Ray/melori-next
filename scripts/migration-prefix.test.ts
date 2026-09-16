@@ -27,6 +27,23 @@
 //     to production at all despite live code depending on it; see that file
 //     for details).
 //
+// SECOND GUARD: GAPS IN THE SEQUENCE
+//
+// The collision check above only sees files that exist. It is structurally
+// blind to the opposite failure, which turned out to be the one this repo
+// actually kept hitting: a migration APPLIED to production whose file was
+// never committed. When that happens the repo cannot rebuild the database,
+// and nothing notices, because the folder on its own looks fine.
+//
+// Found in September 2026: 068, 077, 078, 079 and 080 were all applied to
+// production with no file here. They were recovered verbatim from
+// supabase_migrations.schema_migrations, which stores the exact SQL that ran.
+//
+// A missing file leaves a hole in the numeric sequence, and a hole is
+// checkable with nothing but the filenames -- so this guard stays as cheap as
+// the rest of scripts/*.test.ts. If a number is ever skipped on purpose, add
+// it to KNOWN_GAPS with a reason rather than deleting this check.
+//
 // Pure file I/O, no DB and no network, matching the rest of scripts/*.test.ts.
 //
 // Run:  npx tsx scripts/migration-prefix.test.ts
@@ -45,6 +62,12 @@ const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
 // Empty as of issue #296 -- see the header comment above for the history of
 // what used to be here (021, 048, 054) and how each was resolved.
 const KNOWN_UNRESOLVED = new Set<string>([]);
+
+// Numeric prefixes deliberately skipped -- a number that will never have a
+// file. Each entry needs a reason on the line above it. Empty is the healthy
+// state: every number from the lowest to the highest should have exactly one
+// migration.
+const KNOWN_GAPS = new Set<number>([]);
 
 let checks = 0;
 let failures = 0;
@@ -118,6 +141,50 @@ if (staleAllowlist.length > 0) {
   }
 } else if (KNOWN_UNRESOLVED.size > 0) {
   pass("KNOWN_UNRESOLVED contains no stale (already-fixed) entries");
+}
+
+// --- gaps -----------------------------------------------------------------
+// A number between the lowest and highest migration with no file behind it.
+// Almost always means the migration was applied but never committed, which is
+// how the repo ends up unable to rebuild its own database.
+
+const numbers = [...byPrefix.keys()].map((p) => Number(p)).sort((a, b) => a - b);
+
+if (numbers.length === 0) {
+  fail("no numbered migrations found at all");
+} else {
+  const lowest = numbers[0];
+  const highest = numbers[numbers.length - 1];
+  const present = new Set(numbers);
+  const gaps: number[] = [];
+
+  for (let n = lowest; n <= highest; n += 1) {
+    if (!present.has(n) && !KNOWN_GAPS.has(n)) gaps.push(n);
+  }
+
+  if (gaps.length > 0) {
+    fail(
+      `${gaps.length} gap(s) in the migration sequence between ${lowest} and ` +
+        `${highest}: ${gaps.join(", ")}. A gap usually means the migration was ` +
+        `applied to production but its file was never committed -- recover it ` +
+        `from supabase_migrations.schema_migrations (the statements column ` +
+        `holds the exact SQL that ran) rather than rewriting it from the live ` +
+        `schema. If the number was skipped on purpose, add it to KNOWN_GAPS.`,
+    );
+  } else {
+    pass(
+      `no gaps in the migration sequence (${lowest}..${highest}, ` +
+        `${numbers.length} migrations, ${KNOWN_GAPS.size} allowed gap(s))`,
+    );
+  }
+
+  const staleGaps = [...KNOWN_GAPS].filter((n) => present.has(n));
+  for (const n of staleGaps) {
+    fail(
+      `KNOWN_GAPS still lists ${n}, but a migration with that prefix now ` +
+        `exists -- remove it from the allowlist`,
+    );
+  }
 }
 
 console.log(

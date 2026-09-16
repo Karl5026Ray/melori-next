@@ -1,3 +1,13 @@
+-- RECOVERED 079_cinema_camera_slots_realtime
+--
+-- This file was missing from supabase/migrations/ while the migration was
+-- already applied to production. The SQL below is the exact text recorded in
+-- supabase_migrations.schema_migrations for version 20260915122559, recovered
+-- verbatim -- it is not a reconstruction from the live schema.
+--
+-- Already applied. Do not re-apply. See scripts/migration-prefix.test.ts for
+-- the gap check that now makes this class of drift fail CI.
+
 -- Fix: Cinema camera-slot changes never reached other participants.
 --
 -- RoomScreen.tsx has subscribed to postgres_changes on public.cinema_camera_slots
@@ -5,7 +15,7 @@
 -- but that subscription has been silently dead the whole time: the table was
 -- never added to the supabase_realtime publication, so Postgres never published
 -- a single change for it. A read policy was added later
--- (cinema_camera_slots_rls_read_policy), which was necessary but not sufficient —
+-- (cinema_camera_slots_rls_read_policy), which was necessary but not sufficient -
 -- without publication membership there is nothing for RLS to filter.
 --
 -- The visible symptom: a host assigns someone a live box and nobody else in the
@@ -33,5 +43,5 @@ end $$;
 -- subscribers to know WHICH slot was freed. With the default identity a DELETE
 -- ships only the primary key, and while (space_id, slot) is enough to locate
 -- the tile, the user_id needed to clear that participant's camera state is not
--- in the key — every client would have to re-query on every release.
+-- in the key - every client would have to re-query on every release.
 alter table public.cinema_camera_slots replica identity full;

@@ -37,9 +37,10 @@ async function main() {
     "dedupeKeyFor falls back to responseId but never eventId",
     [
       dedupeKeyFor({ eventId: "evt-1", data: { responseId: "resp-1" } }),
+      dedupeKeyFor({ eventId: "evt-blank", data: { submissionId: "" } }),
       dedupeKeyFor({ eventId: "evt-2", data: {} }),
     ],
-    ["resp-1", null],
+    ["resp-1", null, null],
   );
 
   const newSubmissionCalls = { sideEffects: 0, followUps: 0 };

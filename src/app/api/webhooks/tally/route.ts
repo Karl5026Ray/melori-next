@@ -86,7 +86,8 @@ type TallyPayload = {
 
 export function dedupeKeyFor(body: TallyPayload): string | null {
   const data = body.data ?? {};
-  return data.submissionId ?? data.responseId ?? null;
+  const key = data.submissionId ?? data.responseId ?? null;
+  return typeof key === "string" && key.trim() !== "" ? key : null;
 }
 
 // Tally sends choice answers as option IDs. Resolve them to the label text a

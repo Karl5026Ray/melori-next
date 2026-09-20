@@ -2,21 +2,11 @@
 //
 // melori-next/next.config.js
 //
-// PURPOSE: Bridge the public Vercel front (melorimusic.org) to the VPS Express
-// API for the routes that only exist on the VPS (members and authentication).
-//
-// IMPORTANT: We do NOT proxy ALL /api/* — melori-next has its own route handlers
-// for /api/releases, /api/artists, /api/tracks that read Supabase. Those must
-// stay local. Only the VPS-owned authentication surfaces get rewritten.
-//
-// This is the minimum-viable bridge to:
-//   1. Close Gate #28 (password reset deliverability test)
-//   2. Unblock the remaining VPS-backed authentication routes
-//
-// Longer-term: migrate members → Supabase Auth so melori-next owns everything.
-// Tracked separately. For now, VPS remains source of truth for users.
-
-const VPS_ORIGIN = process.env.VPS_API_ORIGIN || 'http://160.153.186.249:5000';
+// Every /api/* route is a Next.js route handler in src/app/api/. There are NO
+// rewrites to the legacy VPS Express server: they used to catch any /api/members
+// or /api/artist path without a local handler, so deleting a route silently
+// handed its traffic to stale VPS code (the Sept 2026 Stripe webhook failures).
+// A deleted route must 404, not fall through to another server.
 
 // Enforcing Content-Security-Policy. This was shipped as *Report-Only* first and
 // validated against ~2,700 production violation reports over several days: the
@@ -221,24 +211,6 @@ const nextConfig = {
       // Releases live under /albums/[slug]; /releases/* previously 404'd.
       { source: '/releases/:slug', destination: '/albums/:slug', permanent: true },
       { source: '/releases',       destination: '/music',       permanent: true },
-    ];
-  },
-  async rewrites() {
-    return [
-      // ── Members / auth (sign-in, sign-up, sessions, password reset, profile)
-      {
-        source: '/api/members/:path*',
-        destination: `${VPS_ORIGIN}/api/members/:path`,
-      },
-      // ── Artist tools (uploads, dashboards) — VPS-only
-      {
-        source: '/api/artist/:path*',
-        destination: `${VPS_ORIGIN}/api/artist/:path*`,
-      },
-      // NOTE: /api/releases, /api/artists, /api/tracks are NOT rewritten —
-      // those are Next.js route handlers in src/app/api/ that read Supabase
-      // directly. Do not add a catch-all /api/:path* rewrite or those will
-      // break.
     ];
   },
 };

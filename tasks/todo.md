@@ -60,3 +60,32 @@ update. Land it with a normal `git push` after an `npm install`.
       purchase. Without it a consumable cannot be attributed to a wallet —
       Apple sends no email.
 - [ ] Sandbox end-to-end: purchase, renewal, refund, restore, replay.
+
+---
+
+# Click-to-replace cover art (studio_tracks) — branch `cover-click-to-replace`
+
+- [x] `src/lib/cover-url.ts` — pure helpers: parse a `covers` public URL to its
+      storage path; validate (project host, `covers` bucket, no traversal,
+      optional `studio/<ownerId>/` scope).
+- [x] `src/lib/studio-covers.ts` — best-effort delete of the old cover ONLY when
+      no studio_tracks / studio_albums / releases / artists row still points at
+      it (the Relaunch album shares one cover across 14 tracks).
+- [x] Studio: GET /api/studio/tracks selects `cover_url`; PATCH
+      /api/studio/track/[id] accepts an owner-scoped `cover_url`.
+- [x] Studio TrackList: real cover tile, click → pick image → upload → save.
+- [x] Admin: PATCH /api/admin/studio-tracks/[id] accepts any `covers` URL;
+      /admin/uploads cover tile is click-to-replace.
+- [x] Fix the misleading "owner or admin" comment in the studio PATCH route.
+- [x] `scripts/cover-url.test.ts` + `test:cover-url` in `test:unit`; run the
+      whole unit suite, `tsc --noEmit`, `next lint`.
+
+## Review
+- Unit suite green (all suites incl. new `test:cover-url`, 36 checks); `tsc --noEmit` clean.
+- `next build` could not run in the sandbox (Google Fonts fetch blocked) — the
+  Vercel preview build is the compile check. Manually test on the preview:
+  Studio → click a cover → pick image; /admin/uploads → same.
+- Shared covers (Relaunch album) are kept on replace AND on track delete
+  (both DELETE routes used to remove the cover unconditionally, which would
+  have wiped the album art for every other track); only unreferenced objects
+  are deleted.

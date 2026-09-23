@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import CoverImage from "@/components/CoverImage";
+import CoverReplaceButton from "@/components/CoverReplaceButton";
 
 // Admin management surface for the public uploads collection (studio_tracks).
 // Artists' uploads auto-publish into this collection alphabetically; here the
@@ -55,6 +55,39 @@ export default function AdminUploadsPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Upload through the admin signer (cookie-authed), then save on the track.
+  const replaceCover = async (trackId: string, file: File): Promise<string> => {
+    const signRes = await fetch("/api/admin/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, type: "cover" }),
+    });
+    if (signRes.status === 401) {
+      router.push("/admin");
+      throw new Error("Your admin session expired. Sign in again.");
+    }
+    const sign = await signRes.json().catch(() => ({}));
+    if (!signRes.ok || !sign?.signedUrl || !sign?.publicUrl) {
+      throw new Error(sign?.error ?? "Could not start the cover upload.");
+    }
+    const put = await fetch(sign.signedUrl, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!put.ok) throw new Error(`Cover upload failed (HTTP ${put.status}).`);
+    const saveRes = await fetch(`/api/admin/studio-tracks/${trackId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cover_url: sign.publicUrl }),
+    });
+    if (!saveRes.ok) {
+      const err = await saveRes.json().catch(() => ({}));
+      throw new Error(err?.error ?? "Could not save the new cover.");
+    }
+    return sign.publicUrl as string;
+  };
 
   const toggleStatus = async (t: StudioTrack) => {
     const next = t.status === "published" ? "draft" : "published";
@@ -186,15 +219,17 @@ export default function AdminUploadsPage() {
                 key={t.id}
                 className="flex items-start gap-4 p-4 bg-white/[0.02] border border-white/10 rounded-xl"
               >
-                <div className="w-16 h-16 shrink-0 overflow-hidden rounded-lg border border-white/10">
-                  <CoverImage
-                    src={t.cover_url}
-                    alt={t.title ?? "Upload"}
-                    name={t.title ?? "Upload"}
-                    rounded="rounded-lg"
-                    className="w-full h-full"
-                  />
-                </div>
+                <CoverReplaceButton
+                  src={t.cover_url}
+                  title={t.title ?? "Upload"}
+                  className="w-16 h-16"
+                  onReplace={(file) => replaceCover(t.id, file)}
+                  onReplaced={(url) =>
+                    setTracks((prev) =>
+                      prev.map((x) => (x.id === t.id ? { ...x, cover_url: url } : x)),
+                    )
+                  }
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-semibold truncate">

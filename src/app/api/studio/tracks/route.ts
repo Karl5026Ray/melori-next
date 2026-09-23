@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const { data: tracks, error } = await supabase
       .from("studio_tracks")
       .select(
-        "id, title, artist, album, genre, status, preview_url, created_at, duration, sort_order, price_cents"
+        "id, title, artist, album, genre, status, preview_url, cover_url, created_at, duration, sort_order, price_cents"
       )
       .eq(OWNER_COLUMN, guard.membership.userId)
       .order("album", { ascending: true, nullsFirst: false })

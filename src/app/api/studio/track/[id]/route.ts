@@ -10,6 +10,8 @@ import {
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
 import { ensureStudioAlbum } from "@/lib/studio-albums";
+import { isAllowedCoverUrl } from "@/lib/cover-url";
+import { removeCoverIfUnreferenced } from "@/lib/studio-covers";
 
 // Bust the public-site caches that surface studio_tracks (music catalog, home
 // feed, artist pages, and any per-track deep link) whenever a track changes
@@ -88,9 +90,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const ownership = await assertTrackOwnership(
       supabase,
       params.id,
-      guard.membership.userId
+      guard.membership.userId,
+      "cover_url",
     );
     if (isOwnershipFailure(ownership)) return ownership;
+    const previousCoverUrl: string | null = ownership.row.cover_url ?? null;
 
     const body = await req.json().catch(() => ({}));
 
@@ -129,10 +133,33 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       if (Number.isFinite(d) && d >= 0) update.duration = d;
     }
 
+    // Cover art replacement. The new image must already be uploaded through
+    // /api/studio/upload-url, which writes to covers/studio/<callerUserId>/ —
+    // so anything outside the caller's own folder (or another bucket/project)
+    // is rejected rather than trusted as a bare string.
+    let replacingCover = false;
+    if (body.cover_url !== undefined) {
+      if (
+        !isAllowedCoverUrl(body.cover_url, {
+          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? null,
+          ownerId: userId,
+        })
+      ) {
+        return NextResponse.json(
+          { error: "cover_url is not an uploaded cover in your folder" },
+          { status: 400 },
+        );
+      }
+      update.cover_url = body.cover_url.trim();
+      replacingCover = update.cover_url !== previousCoverUrl;
+    }
+
     // Publish / unpublish. The DB CHECK constraint only permits these three
     // values, so validate before writing to avoid a raw constraint error.
-    // Ownership was already asserted above (owner or admin via requireArtist +
-    // assertTrackOwnership), and the update is scoped by OWNER_COLUMN below.
+    // Ownership was already asserted above (the caller must own the track;
+    // requireArtist + assertTrackOwnership have no admin bypass — admins edit
+    // other artists' tracks via /api/admin/studio-tracks/[id]), and the update
+    // is scoped by OWNER_COLUMN below.
     if (body.status != null) {
       const allowed = ["draft", "scheduled", "published"] as const;
       if (!allowed.includes(body.status)) {
@@ -211,6 +238,12 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       return NextResponse.json({ error: "Track not found" }, { status: 404 });
     }
 
+    // The old image is only removed when nothing else still shows it (album
+    // covers are commonly shared across every track on the album).
+    if (replacingCover) {
+      await removeCoverIfUnreferenced(supabase, previousCoverUrl).catch(() => null);
+    }
+
     // Moving a track into a new album name creates that album's pricing row.
     if (update.album) {
       await ensureStudioAlbum(supabase, userId, update.album).catch(() => null);
@@ -224,6 +257,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     return NextResponse.json({
       success: true,
       previewCleared: replacingMaster,
+      coverUrl: replacingCover ? update.cover_url : undefined,
       track: data,
     });
   } catch (err: any) {
@@ -305,10 +339,14 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
     if (error) storageErrors.push(`audio-files-preview:${error.message}`);
   }
 
-  const coverPath = pathFromPublicUrl(row.cover_url, "covers");
-  if (coverPath) {
-    const { error } = await supabase.storage.from("covers").remove([coverPath]);
-    if (error) storageErrors.push(`covers:${error.message}`);
+  // Cover art is often shared (one album cover on every track of the album),
+  // so it is only removed when no remaining row still displays it. The row
+  // above is already deleted, so it no longer counts as a reference.
+  if (row.cover_url) {
+    const result = await removeCoverIfUnreferenced(supabase, row.cover_url).catch(
+      () => "failed" as const,
+    );
+    if (result === "failed") storageErrors.push("covers:remove failed");
   }
 
   revalidatePublicTrackPaths(params.id);

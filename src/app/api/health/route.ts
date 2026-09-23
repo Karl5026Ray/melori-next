@@ -3,7 +3,7 @@
  *
  * Lightweight health probe for melorimusic.org. Runs DNS-over-HTTPS lookups
  * for the records that matter for email deliverability (SPF / DKIM / DMARC)
- * plus a single reachability ping to the VPS. **Does not send email** — health
+ * plus a site reachability check. **Does not send email** — health
  * probes that fire real emails harm sender reputation.
  *
  * Schedule: Vercel cron at every 6h (see vercel.json). Manual: `curl https://melorimusic.org/api/health`.
@@ -39,7 +39,6 @@ interface HealthCheck {
 }
 
 const DOMAIN = 'melorimusic.org';
-const VPS_PING_URL = 'https://melorimusic.org/api/members/forgot-password'; // proxied via Vercel rewrite to VPS
 const SITE_URL = 'https://melorimusic.org';
 
 // DNS-over-HTTPS via Google. Returns the raw `Answer` array (or empty).
@@ -171,33 +170,6 @@ async function checkSite(): Promise<HealthCheck> {
   }
 }
 
-async function checkVpsReachable(): Promise<HealthCheck> {
-  const start = Date.now();
-  try {
-    // The forgot-password endpoint is always-200 by design (anti-enumeration);
-    // sending an empty body produces a fast 200 without side effects.
-    const res = await fetch(VPS_PING_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-      cache: 'no-store',
-    });
-    return {
-      service: 'vps_reachable',
-      status: res.ok ? 'healthy' : 'degraded',
-      responseTime: Date.now() - start,
-      details: `HTTP ${res.status} via Vercel rewrite`,
-    };
-  } catch (err: unknown) {
-    return {
-      service: 'vps_reachable',
-      status: 'down',
-      responseTime: Date.now() - start,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
 export async function GET() {
   const startTime = Date.now();
   const checks = await Promise.all([
@@ -205,7 +177,6 @@ export async function GET() {
     checkDkim(),
     checkDmarc(),
     checkSite(),
-    checkVpsReachable(),
   ]);
 
   const anyDown = checks.some((c) => c.status === 'down');

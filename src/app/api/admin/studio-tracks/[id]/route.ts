@@ -4,6 +4,8 @@ import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 import { isUuid } from "@/lib/validators";
+import { isAllowedCoverUrl } from "@/lib/cover-url";
+import { removeCoverIfUnreferenced } from "@/lib/studio-covers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,11 +88,38 @@ export async function PATCH(
     if (Number.isFinite(n)) update.sort_order = Math.trunc(n);
   }
 
+  // Cover replacement on ANY artist's track. Admin uploads land at the root of
+  // the covers bucket (see /api/admin/upload-url), so there is no per-artist
+  // folder rule here — only "a covers object in this project".
+  if (body.cover_url !== undefined) {
+    if (
+      !isAllowedCoverUrl(body.cover_url, {
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? null,
+      })
+    ) {
+      return NextResponse.json(
+        { error: "cover_url must be an uploaded cover image" },
+        { status: 400 },
+      );
+    }
+    update.cover_url = body.cover_url.trim();
+  }
+
   if (Object.keys(update).length === 1) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
   const supabase = getSupabaseAdmin();
+
+  let previousCoverUrl: string | null = null;
+  if ("cover_url" in update) {
+    const { data: before } = await supabase
+      .from("studio_tracks")
+      .select("cover_url")
+      .eq("id", id)
+      .maybeSingle();
+    previousCoverUrl = (before as { cover_url: string | null } | null)?.cover_url ?? null;
+  }
   const { data, error } = await supabase
     .from("studio_tracks")
     .update(update)
@@ -106,6 +135,11 @@ export async function PATCH(
   }
   if (!data) {
     return NextResponse.json({ error: "Track not found" }, { status: 404 });
+  }
+
+  // Remove the replaced image only if nothing else still shows it.
+  if ("cover_url" in update && previousCoverUrl && previousCoverUrl !== update.cover_url) {
+    await removeCoverIfUnreferenced(supabase, previousCoverUrl).catch(() => null);
   }
 
   revalidatePublic(id);
@@ -176,10 +210,14 @@ export async function DELETE(
       .remove([previewPath]);
     if (error) storageErrors.push(`audio-files-preview:${error.message}`);
   }
-  const coverPath = pathFromPublicUrl(row.cover_url, "covers");
-  if (coverPath) {
-    const { error } = await supabase.storage.from("covers").remove([coverPath]);
-    if (error) storageErrors.push(`covers:${error.message}`);
+  // Cover art is often shared (one album cover on every track of the album),
+  // so it is only removed when no remaining row still displays it. The row
+  // above is already deleted, so it no longer counts as a reference.
+  if (row.cover_url) {
+    const result = await removeCoverIfUnreferenced(supabase, row.cover_url).catch(
+      () => "failed" as const,
+    );
+    if (result === "failed") storageErrors.push("covers:remove failed");
   }
 
   revalidatePublic(id);

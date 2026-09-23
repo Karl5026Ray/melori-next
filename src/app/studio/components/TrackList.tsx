@@ -5,6 +5,8 @@ import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
 import TrackReplacePanel from "./TrackReplacePanel";
 import TrackEditModal, { type EditableTrack } from "./TrackEditModal";
+import CoverReplaceButton from "@/components/CoverReplaceButton";
+import { putWithProgress } from "./uploadHelpers";
 
 interface Track {
   id: string;
@@ -14,6 +16,7 @@ interface Track {
   genre: string | null;
   status: "draft" | "scheduled" | "published" | "archived";
   preview_url: string | null;
+  cover_url: string | null;
   created_at: string;
   duration: number | null;
   sort_order: number | null;
@@ -87,6 +90,32 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
     },
     [],
   );
+
+  // Upload a new cover to the caller's own covers folder, then point the track
+  // at it. The PATCH route validates the URL is in that folder and removes the
+  // old image only if no other track/album still uses it.
+  const replaceCover = useCallback(async (trackId: string, file: File) => {
+    const signRes = await authFetch("/api/studio/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, contentType: file.type, type: "cover" }),
+    });
+    const sign = await signRes.json().catch(() => ({}));
+    if (!signRes.ok || !sign?.signedUrl || !sign?.publicUrl) {
+      throw new Error(sign?.error ?? "Could not start the cover upload.");
+    }
+    await putWithProgress(sign.signedUrl, file, () => {});
+    const saveRes = await authFetch(`/api/studio/track/${trackId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cover_url: sign.publicUrl }),
+    });
+    if (!saveRes.ok) {
+      const err = await saveRes.json().catch(() => ({}));
+      throw new Error(err?.error ?? "Could not save the new cover.");
+    }
+    return sign.publicUrl as string;
+  }, []);
 
   const loadTracks = useCallback(() => {
     return authFetch("/api/studio/tracks")
@@ -322,9 +351,17 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                           </button>
                         </div>
 
-                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-[#c9a96e]/20 to-[#a08050]/20 flex items-center justify-center text-2xl flex-shrink-0">
-                          🎵
-                        </div>
+                        <CoverReplaceButton
+                          src={track.cover_url}
+                          title={track.title}
+                          className="w-14 h-14 sm:w-16 sm:h-16"
+                          onReplace={(file) => replaceCover(track.id, file)}
+                          onReplaced={(url) =>
+                            setTracks((prev) =>
+                              prev.map((t) => (t.id === track.id ? { ...t, cover_url: url } : t)),
+                            )
+                          }
+                        />
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">

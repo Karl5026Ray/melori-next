@@ -97,3 +97,12 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   swapped on 31 Aug and kept failing. On `/ai/*`, code 10000 means the token
   lacks the Workers AI permission. After changing any credential, check the
   endpoint it serves before calling it done.
+- **The Claude browser pane's "Copy" buttons don't reach the OS clipboard
+  when Claude clicks them.** Three token swaps failed because Karl pasted
+  whatever was already on his clipboard (the account ID), not the token. When
+  a secret has to move from a dashboard into Vercel, have the human select the
+  value and press Ctrl+C themselves. Have them check the prefix (`cfut_` /
+  `cfat_`) before saving, then prove the result with /api/health, not with
+  "saved".
+- **Vercel truncates env var names** (`CLOU…OKEN` vs `CLOU…T_ID`). Tell people
+  to filter by name with the search box before editing a row.

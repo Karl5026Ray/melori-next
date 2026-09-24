@@ -3,15 +3,13 @@
 Five issues from a live read-only audit of melorimusic.org. No reset or
 redeploy was needed: production was already on the latest commit.
 
-- [ ] **#1 Moderation is off.** Cloudflare rejects `CLOUDFLARE_AI_TOKEN` with
-      401 / code 10000, logged on `/api/social/messages` and
-      `/api/social/profile` since 16 Jul. The token was replaced on 31 Aug and
-      still fails. Per Cloudflare's docs, code 10000 on `/ai/*` means the token
-      lacks the **Workers AI** permission (an AI Gateway-only token gives this
-      exact error). moderation.ts fails open, so content has been publishing
-      unscreened. Fix: new token from Workers AI → "Use REST API" (Workers AI
-      Read + Edit), update the Vercel env for Production + Preview, redeploy,
-      and confirm `cloudflare_ai_moderation: healthy` on /api/health.
+- [x] **#1 Moderation restored.** Cause: `CLOUDFLARE_AI_TOKEN` in Vercel was
+      never a working Workers AI token. The 31 Aug value got 401 / 10000, and
+      `CLOUDFLARE_ACCOUNT_ID` was also wrong. Karl corrected the account ID and
+      set a new Workers AI token ("Melori moderation FINAL", Read + Edit).
+      /api/health reports `cloudflare_ai_moderation: healthy` ("token
+      accepted") on 24 Sep, 23:50 UTC. PR #396 now normalises both values and
+      names paste mistakes in the health output.
 - [x] **#2 Marketing aliases.** /signup, /sign-up, /join, /pricing →
       /register; /contact → /support. The signup wall stays as Karl decided
       on 7 Sep. No paid tiers, so "pricing" means free signup.

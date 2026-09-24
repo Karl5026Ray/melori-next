@@ -1,3 +1,44 @@
+# Site health sweep, 24 Sep 2026
+
+Five issues from a live read-only audit of melorimusic.org. No reset or
+redeploy was needed: production was already on the latest commit.
+
+- [ ] **#1 Moderation is off.** Cloudflare rejects `CLOUDFLARE_AI_TOKEN` with
+      401 / code 10000, logged on `/api/social/messages` and
+      `/api/social/profile` since 16 Jul. The token was replaced on 31 Aug and
+      still fails. Per Cloudflare's docs, code 10000 on `/ai/*` means the token
+      lacks the **Workers AI** permission (an AI Gateway-only token gives this
+      exact error). moderation.ts fails open, so content has been publishing
+      unscreened. Fix: new token from Workers AI → "Use REST API" (Workers AI
+      Read + Edit), update the Vercel env for Production + Preview, redeploy,
+      and confirm `cloudflare_ai_moderation: healthy` on /api/health.
+- [x] **#2 Marketing aliases.** /signup, /sign-up, /join, /pricing →
+      /register; /contact → /support. The signup wall stays as Karl decided
+      on 7 Sep. No paid tiers, so "pricing" means free signup.
+- [x] **#3 Sitemap** lists /mission instead of /about, which is a 308.
+- [x] **#4 Health check sees the stack.** Added Supabase (auth + rest),
+      Cloudflare Workers AI (model listing, no inference cost), LiveKit and
+      Resend checks. The scheduled run (CRON_SECRET) emails Karl when anything
+      is unhealthy. Cron now runs every 6h instead of daily.
+      `npm run test:health` has 26 checks and is in test:unit.
+- [x] **#5 DB performance.** Migration 085 applied to production: 71 RLS
+      policies wrapped as InitPlans, and 3 duplicate indexes dropped.
+      Verified: still 170 policies, identical shape md5 and identical
+      normalised logic md5, 0 bare calls left. The advisor no longer reports
+      auth_rls_initplan or duplicate_index.
+      Not done, by Karl's choice: play-counter lockdown, and merging the 172
+      overlapping permissive policies.
+
+## Review
+
+- Full `npm run test:unit` passes and `tsc --noEmit` is clean.
+- Left alone on purpose: `is_conversation_member(uuid)` is flagged by the
+  advisor, but it is the caller-only helper from 082 that the DM policies
+  need.
+- Still open: four `_backup_*` tables in `public` (from 5–6 Sep). They are
+  not reachable by anon or authenticated. Drop them once Karl confirms they
+  are no longer needed.
+
 # Apple In-App Purchase — Melori Music iOS 1.0.2
 
 Guideline 3.1.1. PR #339 made commerce unreachable in the wrapper; it did not

@@ -95,5 +95,5 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   nobody reads is not monitoring.
 - **"Replaced the token" is not "fixed the token".** The Cloudflare token was
   swapped on 31 Aug and kept failing. On `/ai/*`, code 10000 means the token
-  lacks the **Workers AI** permission. After changing any credential, check the
+  lacks the Workers AI permission. After changing any credential, check the
   endpoint it serves before calling it done.

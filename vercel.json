@@ -17,7 +17,7 @@
   "crons": [
     {
       "path": "/api/health",
-      "schedule": "0 12 * * *"
+      "schedule": "0 */6 * * *"
     },
     {
       "path": "/api/cron/mm-social-prune",

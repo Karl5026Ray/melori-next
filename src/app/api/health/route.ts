@@ -1,12 +1,15 @@
 /**
  * GET /api/health
  *
- * Lightweight health probe for melorimusic.org. Runs DNS-over-HTTPS lookups
- * for the records that matter for email deliverability (SPF / DKIM / DMARC)
- * plus a site reachability check. **Does not send email** — health
- * probes that fire real emails harm sender reputation.
+ * Health probe for melorimusic.org. Runs DNS-over-HTTPS lookups for the
+ * records that matter for email deliverability (SPF / DKIM / DMARC), a site
+ * reachability check, and live checks of the services members depend on:
+ * Supabase, Cloudflare Workers AI (content moderation), LiveKit and Resend.
+ * See src/lib/healthChecks.ts for why those were added. The probe itself
+ * never sends test email. The scheduled run (authenticated with CRON_SECRET)
+ * emails Karl a single alert when anything is not healthy.
  *
- * Schedule: Vercel cron at every 6h (see vercel.json). Manual: `curl https://melorimusic.org/api/health`.
+ * Schedule: Vercel cron every 6h (see vercel.json). Manual: `curl https://melorimusic.org/api/health`.
  *
  * Response shape:
  *   {
@@ -24,19 +27,22 @@
  */
 
 import { NextResponse } from 'next/server';
+import {
+  checkCloudflareAi,
+  checkLivekit,
+  checkResendConfigured,
+  checkSupabase,
+  isCronCaller,
+  overallStatus,
+  sendHealthAlert,
+  type CheckStatus,
+  type Env,
+  type HealthCheck,
+} from '@/lib/healthChecks';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-type CheckStatus = 'healthy' | 'degraded' | 'down';
-
-interface HealthCheck {
-  service: string;
-  status: CheckStatus;
-  responseTime: number;
-  details?: string;
-  error?: string;
-}
 
 const DOMAIN = 'melorimusic.org';
 const SITE_URL = 'https://melorimusic.org';
@@ -170,22 +176,29 @@ async function checkSite(): Promise<HealthCheck> {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const startTime = Date.now();
+  const env = process.env as Env;
   const checks = await Promise.all([
     checkSpf(),
     checkDkim(),
     checkDmarc(),
     checkSite(),
+    checkSupabase(env, fetch),
+    checkCloudflareAi(env, fetch),
+    checkLivekit(env, fetch),
+    Promise.resolve(checkResendConfigured(env)),
   ]);
 
-  const anyDown = checks.some((c) => c.status === 'down');
-  const anyDegraded = checks.some((c) => c.status === 'degraded');
-  const overall: 'healthy' | 'degraded' | 'unhealthy' = anyDown
-    ? 'unhealthy'
-    : anyDegraded
-      ? 'degraded'
-      : 'healthy';
+  const overall = overallStatus(checks);
+
+  // Only the scheduled run emails, and only when something is wrong. A public
+  // visitor refreshing this URL can never trigger mail. While a problem
+  // persists, Karl gets one email per scheduled run until it is fixed.
+  let alert: string | undefined;
+  if (overall !== 'healthy' && isCronCaller(request.headers, env)) {
+    alert = await sendHealthAlert(env, fetch, overall, checks);
+  }
 
   const body = {
     status: overall,
@@ -194,6 +207,7 @@ export async function GET() {
     environment: process.env.VERCEL_ENV || 'development',
     totalResponseTime: Date.now() - startTime,
     checks,
+    ...(alert ? { alert } : {}),
   };
 
   return NextResponse.json(body, {

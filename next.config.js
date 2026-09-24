@@ -211,6 +211,20 @@ const nextConfig = {
       // Releases live under /albums/[slug]; /releases/* previously 404'd.
       { source: '/releases/:slug', destination: '/albums/:slug', permanent: true },
       { source: '/releases',       destination: '/music',       permanent: true },
+
+      // Marketing aliases (2026-09-24). These words get typed into bios, flyers
+      // and DMs, and none of them was a page: a signed-in member got a 404 and
+      // a stranger got the generic door. Each now lands on the page that does
+      // the job the word promises. Both targets are on the proxy's public
+      // allowlist, and config redirects run before the proxy, so the signup
+      // wall is untouched. There are no paid tiers, so "pricing" means "sign up
+      // free". Temporary (307) so any of these can later become a real page
+      // without fighting a browser-cached 308.
+      { source: '/signup',   destination: '/register', permanent: false },
+      { source: '/sign-up',  destination: '/register', permanent: false },
+      { source: '/join',     destination: '/register', permanent: false },
+      { source: '/pricing',  destination: '/register', permanent: false },
+      { source: '/contact',  destination: '/support',  permanent: false },
     ];
   },
 };

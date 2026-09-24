@@ -84,3 +84,16 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   1080x1920 and the defect was the SHAPE of the stage, which costs a vertical
   post its height at any size or pixel density. State the ratio; the pixels are
   an example, not the point.
+
+## Monitoring
+
+- **A health check that doesn't call the dependency can't see it fail.**
+  /api/health reported "healthy" for over two months while every moderation
+  call got a 401, because it only checked DNS and the home page. Anything that
+  fails open (moderation, email, analytics) needs a health check that uses the
+  real credentials, plus an alert someone actually receives. A green status
+  nobody reads is not monitoring.
+- **"Replaced the token" is not "fixed the token".** The Cloudflare token was
+  swapped on 31 Aug and kept failing. On `/ai/*`, code 10000 means the token
+  lacks the Workers AI permission. After changing any credential, check the
+  endpoint it serves before calling it done.

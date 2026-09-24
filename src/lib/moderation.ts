@@ -23,6 +23,8 @@
 //   auto-screened until the credentials are set. The user-reporting + admin
 //   tools remain the backstop in that window.
 
+import { readCloudflareCreds } from "@/lib/cloudflareCreds";
+
 export type ModerationDecision = "clean" | "flag" | "quarantine";
 
 export interface ModerationResult {
@@ -35,8 +37,9 @@ export interface ModerationResult {
   degraded: boolean;
 }
 
-const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? "";
-const AI_TOKEN = process.env.CLOUDFLARE_AI_TOKEN ?? "";
+// Normalised by readCloudflareCreds (strips pasted quotes, backticks, spaces
+// and a leading "Bearer "). See src/lib/cloudflareCreds.ts for why.
+const { accountId: ACCOUNT_ID, token: AI_TOKEN } = readCloudflareCreds(process.env);
 const TEXT_MODEL = "@cf/meta/llama-guard-3-8b";
 const VISION_MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
 const TIMEOUT_MS = 8000;

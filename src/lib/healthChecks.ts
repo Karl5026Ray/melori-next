@@ -25,6 +25,8 @@
 // (scripts/health-checks.test.ts) can drive each branch without a network.
 // Nothing here ever echoes a secret. Error text is cut to 160 characters.
 
+import { readCloudflareCreds } from "@/lib/cloudflareCreds";
+
 export type CheckStatus = "healthy" | "degraded" | "down";
 
 export interface HealthCheck {
@@ -40,9 +42,9 @@ export type FetchFn = typeof fetch;
 
 const TIMEOUT_MS = 6000;
 
-function clip(text: string): string {
+function clip(text: string, max = 160): string {
   const t = text.replace(/\s+/g, " ").trim();
-  return t.length > 160 ? `${t.slice(0, 157)}...` : t;
+  return t.length > max ? `${t.slice(0, max - 3)}...` : t;
 }
 
 async function timedFetch(
@@ -101,8 +103,7 @@ export async function checkSupabase(env: Env, fetchFn: FetchFn): Promise<HealthC
 export async function checkCloudflareAi(env: Env, fetchFn: FetchFn): Promise<HealthCheck> {
   const service = "cloudflare_ai_moderation";
   const start = Date.now();
-  const account = env.CLOUDFLARE_ACCOUNT_ID ?? "";
-  const token = env.CLOUDFLARE_AI_TOKEN ?? "";
+  const { accountId: account, token, problems } = readCloudflareCreds(env);
   if (!account || !token) {
     // Moderation silently publishes everything unscreened in this state, so
     // it is "down", not "degraded".
@@ -113,6 +114,9 @@ export async function checkCloudflareAi(env: Env, fetchFn: FetchFn): Promise<Hea
       error: "CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_AI_TOKEN not set: content is NOT being screened",
     };
   }
+  // Shape problems are reported alongside Cloudflare's answer, never instead
+  // of it: the call below is the ground truth.
+  const hint = problems.length ? ` Likely cause: ${problems.join("; ")}.` : "";
   try {
     const res = await timedFetch(
       fetchFn,
@@ -125,7 +129,7 @@ export async function checkCloudflareAi(env: Env, fetchFn: FetchFn): Promise<Hea
         service,
         status: "down",
         responseTime: Date.now() - start,
-        error: clip(`HTTP ${res.status}: content is NOT being screened. ${body}`),
+        error: clip(`HTTP ${res.status}: content is NOT being screened.${hint} ${body}`, 400),
       };
     }
     return { service, status: "healthy", responseTime: Date.now() - start, details: "token accepted" };

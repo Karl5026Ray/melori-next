@@ -18,6 +18,7 @@ import {
   sendHealthAlert,
   type FetchFn,
 } from "@/lib/healthChecks";
+import { readCloudflareCreds } from "@/lib/cloudflareCreds";
 
 let checks = 0;
 let failures = 0;
@@ -68,6 +69,29 @@ async function main() {
   {
     const r = await checkCloudflareAi(CF, throwingFetch);
     expect(r.status === "down", "network error -> down, does not throw");
+  }
+
+  console.log("cloudflare credential normalisation");
+  {
+    const HEX = "4fb48cc9b7f72277797101a1ea108437";
+    const c = readCloudflareCreds({ CLOUDFLARE_ACCOUNT_ID: ` \`${HEX}\` `, CLOUDFLARE_AI_TOKEN: '"Bearer cfut_abc123"\n' });
+    expect(c.accountId === HEX, "backticks + spaces stripped from account id");
+    expect(c.token === "cfut_abc123", "quotes, 'Bearer ' and newline stripped from token");
+    expect(c.problems.length === 0, "cleaned values have no problems");
+  }
+  {
+    const c = readCloudflareCreds({ CLOUDFLARE_ACCOUNT_ID: "my-account", CLOUDFLARE_AI_TOKEN: "cfut_abc other stuff" });
+    expect(c.problems.some((p) => p.includes("32-character")), "non-hex account id flagged");
+    expect(c.problems.some((p) => p.includes("spaces")), "token with pasted extra text flagged");
+    expect(!c.problems.join(" ").includes("cfut_abc"), "problems never echo the token");
+  }
+  {
+    const seen: string[] = [];
+    const r = await checkCloudflareAi(
+      { CLOUDFLARE_ACCOUNT_ID: "bad", CLOUDFLARE_AI_TOKEN: "cfut_x" },
+      fakeFetch(400, '{"errors":[{"code":9106}]}', seen),
+    );
+    expect(r.status === "down" && Boolean(r.error?.includes("32-character")), "health error names the likely paste mistake");
   }
 
   console.log("supabase");

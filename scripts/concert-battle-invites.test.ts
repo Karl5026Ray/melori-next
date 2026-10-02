@@ -145,7 +145,7 @@ check(
 );
 check(
   "creation uses the atomic service-only RPC with token-derived identity",
-  createRoute.includes("requireSuperfan") &&
+  createRoute.includes("requireAuth") &&
     createRoute.includes('rpc("create_concert_battle"') &&
     createRoute.includes("p_initiator_id: initiatorId") &&
     !createRoute.includes("body.initiator"),

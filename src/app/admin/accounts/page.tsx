@@ -15,8 +15,6 @@ interface AccountRow {
   full_name: string | null;
   avatar_url: string | null;
   role: Role;
-  membership_tier: string | null;
-  membership_status: string | null;
   verified: boolean | null;
   status: Status;
   suspended_reason: string | null;
@@ -311,7 +309,6 @@ export default function AdminAccountsPage() {
                   <th className="px-4 py-3">User</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Tier</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Joined</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -320,13 +317,13 @@ export default function AdminAccountsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-text-secondary">
+                    <td colSpan={6} className="px-4 py-8 text-center text-text-secondary">
                       Loading…
                     </td>
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-text-secondary">
+                    <td colSpan={6} className="px-4 py-8 text-center text-text-secondary">
                       No accounts found.
                     </td>
                   </tr>
@@ -357,7 +354,6 @@ export default function AdminAccountsPage() {
                           {u.role}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-text-secondary">{u.membership_tier ?? "—"}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full border px-2 py-0.5 text-xs ${statusBadge(u.status)}`}>
                           {u.status}
@@ -596,7 +592,6 @@ function EditModal({
   const [displayName, setDisplayName] = useState(row.display_name ?? "");
   const [username, setUsername] = useState(row.username ?? "");
   const [role, setRole] = useState<Role>(row.role);
-  const [membershipTier, setMembershipTier] = useState(row.membership_tier ?? "");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -628,7 +623,6 @@ function EditModal({
       display_name: displayName,
       username,
       role,
-      membership_tier: membershipTier,
     });
     if (j) onSaved();
   }
@@ -673,21 +667,15 @@ function EditModal({
           <label className="mb-1 block text-xs text-text-secondary">Username</label>
           <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputCls} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-text-secondary">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-text-secondary">Membership tier</label>
-            <input value={membershipTier} onChange={(e) => setMembershipTier(e.target.value)} className={inputCls} />
-          </div>
+        <div>
+          <label className="mb-1 block text-xs text-text-secondary">Role</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="mb-1 block text-xs text-text-secondary">Reason (suspend / delete)</label>

@@ -35,11 +35,15 @@ export default function RadioTeaserPage() {
         },
       ]}
       howItWorks={[
-        "Create a free account — an email, a mobile number and a password.",
+        "Create a free account with an email and a password.",
         "Open Radio and it starts playing.",
         "Keep listening while you move around the rest of Melori.",
         "Follow anything you like straight from the player.",
       ]}
+      closing={{
+        title: "The player is for members only.",
+        body: "Radio plays from the members' catalog, so it starts once you're signed in. Create an account and it's playing.",
+      }}
     />
   );
 }

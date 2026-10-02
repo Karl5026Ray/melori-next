@@ -96,6 +96,7 @@ const PUBLIC_EXACT = new Set([
   "/faces",
   "/forgot-password",
   "/gallery",
+  "/listen",
   "/login",
   "/mission",
   "/photography",
@@ -136,11 +137,20 @@ export function isPublicPath(pathname: string): boolean {
 // /spaces, /cinema, /radio) and the gate sends people there. A shared room link
 // still lands somewhere that makes sense, and the four features finally have
 // something Google can index — they were previously invisible behind /social.
+//
+// /music and /social/messages (2 Oct 2026, outside review): they are the tab
+// bar's "Explore" and "Chat", so signed-out visitors tap them all the time and
+// were bounced to the signup form with no idea why. /music gets its own public
+// page (/listen — the catalog itself stays members-only). A DM inbox has
+// nothing to preview, so /social/messages goes to the door with a reason the
+// door turns into one line: "Sign in to see your messages."
 const TEASER_FOR: [prefix: string, teaser: string][] = [
   ["/social/live", "/faces"],
   ["/social/spaces", "/spaces"],
   ["/social/cinema", "/cinema"],
   ["/social/radio", "/radio"],
+  ["/social/messages", `${DOOR_PATH}?reason=chat`],
+  ["/music", "/listen"],
 ];
 
 export function teaserFor(pathname: string): string | null {

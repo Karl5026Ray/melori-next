@@ -519,7 +519,7 @@ export default function CreatePostButton() {
   const hasClip = mode === "file" ? !!pickedFile : !!recordedBlob;
 
   // Linking a YouTube video is artist tooling (POST /api/social/videos/youtube
-  // is gated on requireArtist), so the tab only appears for artists and admins.
+  // is gated on requireAuth), so the tab only appears for artists and admins.
   // The server re-checks — this just avoids offering an action that would 403.
   const canPostYouTube = user.role === "artist" || user.role === "admin";
 

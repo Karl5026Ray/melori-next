@@ -15,8 +15,11 @@ test("signed-out /music lands on the public Music page", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "All the music, free to members",
   );
-  // Copy only — the catalog must not leak onto the teaser.
-  await expect(page.locator("audio")).toHaveCount(0);
+  // Copy only — the catalog must not leak onto the teaser: no track or album
+  // links and no play controls. (Not `<audio>`: the app shell keeps one shared,
+  // empty <audio> element mounted on every page, so counting it tests nothing.)
+  await expect(page.locator('main a[href^="/music/"]')).toHaveCount(0);
+  await expect(page.locator("main").getByRole("button", { name: /play/i })).toHaveCount(0);
   // The shared teaser's closing box used to say "People go on camera and on
   // microphone here" on every page, Music and Radio included.
   await expect(page.getByText("The catalog is for members only.")).toBeVisible();

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { authFetch } from "@/lib/authClient";
-import WaveformEditor from "./WaveformEditor";
 import {
   uploadStudioMaster,
   validateAudioFile,
@@ -16,11 +15,11 @@ interface TrackReplacePanelProps {
   onReplaced: () => void;
 }
 
-type Stage = "select" | "uploading" | "preview";
+type Stage = "select" | "uploading";
 
 // Inline, expanding panel shown beneath a studio track card. Lets an artist
-// replace the full-quality master for an EXISTING track and then re-pick its
-// 30-second preview window on the new audio — all without leaving the list.
+// replace the full-quality master for an EXISTING track without leaving the
+// list.
 export default function TrackReplacePanel({
   trackId,
   trackTitle,
@@ -65,10 +64,9 @@ export default function TrackReplacePanel({
         throw new Error(d.error ?? "Could not save the new master.");
       }
 
-      // Master persisted; the old preview was cleared server-side. Let the list
-      // refresh, then move on to re-picking the preview on the new master.
+      // Master persisted. Let the list refresh and close the panel.
       onReplaced();
-      setStage("preview");
+      onClose();
     } catch (err: any) {
       setError(err?.message ?? "Upload failed.");
       setStage("select");
@@ -96,16 +94,7 @@ export default function TrackReplacePanel({
         </div>
       )}
 
-      {stage === "preview" ? (
-        <div className="space-y-3">
-          <p className="text-xs text-[#888]">
-            New master uploaded. The old preview was cleared — drag the handles
-            to set a fresh 30-second preview on the new audio, then generate it.
-          </p>
-          <WaveformEditor trackId={trackId} onBack={onClose} />
-        </div>
-      ) : (
-        <>
+      <>
           <div
             onDragEnter={(e) => {
               e.preventDefault();
@@ -184,11 +173,10 @@ export default function TrackReplacePanel({
             >
               {stage === "uploading"
                 ? `Uploading… ${progress}%`
-                : "Upload & set preview →"}
+                : "Upload new master →"}
             </button>
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

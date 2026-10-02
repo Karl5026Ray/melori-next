@@ -119,10 +119,6 @@ interface PlayerContextValue {
   playCounts: Record<number, number>;
   hasNext: boolean;
   hasPrev: boolean;
-  // True while the current track is a free 30s preview (not full access).
-  isSample: boolean;
-  // True once a free preview has hit its 30s cap and playback was stopped.
-  sampleEnded: boolean;
   // Radio mode: the shared player is fed the whole shuffled catalog and
   // auto-reshuffles forever, so "Radio" is just a toggle on the one bar the
   // user already sees — no separate page or second audio engine.
@@ -223,13 +219,6 @@ export default function PlayerProvider({
   // True while playback is halted by an explicit user pause. Guards against a
   // late "ended" event (e.g. pausing right at the tail) silently auto-advancing.
   const userPausedRef = useRef(false);
-  // Free-preview window (absolute seconds in the track timeline) for the loaded
-  // track, or null for full access. `sampleLimitRef` is the cap (previewEnd);
-  // `sampleStartRef` is where the audible window begins (previewStart).
-  const sampleLimitRef = useRef<number | null>(null);
-  const sampleStartRef = useRef<number>(0);
-  // A one-shot seek target applied once the new src reports its metadata.
-  const pendingSeekRef = useRef<number | null>(null);
   // Consecutive unplayable tracks skipped on the radio. Bounded by the queue
   // length so an entirely dead pool surfaces an error instead of spinning.
   const deadSkipsRef = useRef(0);
@@ -270,8 +259,6 @@ export default function PlayerProvider({
   const mutedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [playCounts, setPlayCounts] = useState<Record<number, number>>({});
-  const [isSample, setIsSample] = useState(false);
-  const [sampleEnded, setSampleEnded] = useState(false);
   const [radioMode, setRadioMode] = useState(false);
   const [radioLoading, setRadioLoading] = useState(false);
   const [radioStationKey, setRadioStationKey] = useState<string | null>(null);
@@ -356,17 +343,11 @@ export default function PlayerProvider({
       const trackId = legacyIdFromKey(key);
       if (trackId === null) return;
 
-      // Measure from the start of the AUDIBLE window: a preview that opens at
-      // 60s would otherwise clear a 20s bar the instant it loads.
-      const start = sampleStartRef.current || 0;
-      const end =
-        sampleLimitRef.current ??
-        (Number.isFinite(audio.duration) ? audio.duration : 0);
-      const span = end > start ? end - start : 0;
+      const span = Number.isFinite(audio.duration) ? audio.duration : 0;
       // Short tracks can never reach 20s, so they count at the halfway mark.
       const threshold =
         span > 0 && span < PLAY_COUNT_SECONDS ? span / 2 : PLAY_COUNT_SECONDS;
-      if (audio.currentTime - start < threshold) return;
+      if (audio.currentTime < threshold) return;
 
       countedRef.current.add(key);
       void reportPlay(trackId);
@@ -375,27 +356,6 @@ export default function PlayerProvider({
     const onTime = () => {
       if (!isRealTrack()) return;
       maybeCountPlay();
-      // Hard-cap free previews at the window end: a free listener must not be
-      // able to hear past previewEnd even though the audio element holds the
-      // full file. Server-side gating serves a dedicated clip when one exists.
-      const limit = sampleLimitRef.current;
-      if (limit != null && audio.currentTime >= limit) {
-        // Clear the cap first so a late tick can't re-enter while we swap src.
-        sampleLimitRef.current = null;
-        audio.pause();
-        audio.currentTime = limit;
-        setCurrentTime(limit);
-        if (radioModeRef.current) {
-          // On the radio a preview ending must not end the station — roll on to
-          // the next track. Gating is unchanged: the listener still hears only
-          // the preview window of every track.
-          advanceRef.current();
-        } else {
-          userPausedRef.current = true;
-          setSampleEnded(true);
-        }
-        return;
-      }
       setCurrentTime(audio.currentTime);
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
@@ -405,19 +365,6 @@ export default function PlayerProvider({
       if (!isRealTrack()) return;
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
-      }
-      // Apply a pending window seek (previewStart) now that the new src is ready.
-      if (pendingSeekRef.current != null) {
-        const target = pendingSeekRef.current;
-        pendingSeekRef.current = null;
-        if (Number.isFinite(target) && target > 0) {
-          try {
-            audio.currentTime = target;
-            setCurrentTime(target);
-          } catch {
-            /* seek not yet permitted; ignore */
-          }
-        }
       }
     };
     const onPlay = () => {
@@ -604,7 +551,6 @@ export default function PlayerProvider({
       if (!audio) return;
       setError(null);
       setIsLoading(true);
-      setSampleEnded(false);
       // A genuine load starts a new listen, so the previous one's play-count
       // bookkeeping is spent — replaying a track later counts again.
       countedRef.current.clear();
@@ -614,30 +560,8 @@ export default function PlayerProvider({
           headers: await authHeaders(),
         });
         if (!res.ok) throw new Error("stream request failed");
-        const data: {
-          url?: string;
-          sample?: boolean;
-          sampleSeconds?: number | null;
-          previewStart?: number | null;
-          previewEnd?: number | null;
-        } = await res.json();
+        const data: { url?: string } = await res.json();
         if (!data.url) throw new Error("no stream url");
-
-        // A windowed sample carries an explicit [previewStart, previewEnd]. The
-        // cap is previewEnd (absolute seconds); we seek to previewStart on load.
-        const start =
-          typeof data.previewStart === "number" ? data.previewStart : 0;
-        const end =
-          typeof data.previewEnd === "number"
-            ? data.previewEnd
-            : typeof data.sampleSeconds === "number"
-              ? start + data.sampleSeconds
-              : null;
-
-        sampleStartRef.current = start;
-        sampleLimitRef.current = end;
-        pendingSeekRef.current = start > 0 ? start : null;
-        setIsSample(Boolean(data.sample));
 
         audio.src = data.url;
         // Read the src back rather than storing `data.url`: the setter resolves
@@ -1083,8 +1007,6 @@ export default function PlayerProvider({
         muted,
         error,
         playCounts,
-        isSample,
-        sampleEnded,
         radioMode,
         radioLoading,
         radioStationKey,

@@ -11,8 +11,6 @@ async function uploadToGallery({
   galleryName,
   folderName,
   clientEmail,
-  forSale,
-  priceCents,
   apiKey,
   apiUrl,
 }) {
@@ -41,8 +39,6 @@ async function uploadToGallery({
     });
     formData.append('blurHashes', img.blurHash || '');
     formData.append('filenames', img.filename);
-    formData.append('forSale', forSale ? 'true' : 'false');
-    formData.append('priceCents', forSale && priceCents ? String(priceCents) : '');
   }
 
   const response = await axios.post(`${apiUrl}/upload`, formData, {

@@ -20,8 +20,6 @@ program
   .option('-g, --gallery <name>', 'Gallery name')
   .option('-f, --folder <name>', 'Folder (sub-group) inside the gallery')
   .option('-e, --email <email>', 'Client email (sends a gallery-ready notification)')
-  .option('--for-sale', 'Mark uploaded photos as for sale (digital download)')
-  .option('--price <cents>', 'Digital download price in cents (with --for-sale)')
   .option('--quality <number>', 'JPEG quality (1-100)', '90')
   .option('--max-width <pixels>', 'Max preview width', '2400')
   .action(uploadCommand);

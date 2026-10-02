@@ -52,7 +52,6 @@ const FAKE_PROFILE = {
   followers_count: 0,
   following_count: 0,
   created_at: new Date().toISOString(),
-  membership_status: null,
   social_links: null,
   city: null,
   birth_date: null,

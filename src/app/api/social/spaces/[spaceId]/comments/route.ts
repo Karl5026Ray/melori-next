@@ -100,6 +100,21 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
       return NextResponse.json({ error: "Space not found" }, { status: 404 });
     }
 
+    // A room ban (037_space_bans) already keeps someone out of the audio; it
+    // has to keep them out of the chat too, or "banned" just means "typing".
+    const { data: ban } = await supabase
+      .from("space_bans")
+      .select("id")
+      .eq("space_id", spaceId)
+      .eq("user_id", membership.userId)
+      .maybeSingle();
+    if (ban) {
+      return NextResponse.json(
+        { error: "You can't post in this room." },
+        { status: 403 },
+      );
+    }
+
     // Resolve a friendly display name for this author from their profile.
     const { data: profile } = await supabase
       .from("profiles")

@@ -46,6 +46,10 @@ type NextFetchInit = RequestInit & {
   next?: { revalidate?: number | false; tags?: string[] };
 };
 
+const nodeWebSocket = require("ws") as NonNullable<
+  NonNullable<Parameters<typeof createClient>[2]>["realtime"]
+>["transport"];
+
 export function getSupabaseAdmin(options: AdminOptions = {}): SupabaseClient {
   const supabaseUrl =
     process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -57,6 +61,7 @@ export function getSupabaseAdmin(options: AdminOptions = {}): SupabaseClient {
 
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
+    realtime: { transport: nodeWebSocket },
     global: {
       fetch: (input, init) => {
         // If the request has a body (Storage upload/PUT/POST of bytes), pass it

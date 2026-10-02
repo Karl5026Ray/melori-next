@@ -1,29 +1,29 @@
-# Cinema podcast room + Spaces parity, 1 Oct 2026 (PLAN, awaiting Karl)
+# Cinema podcast room + Spaces parity, 1 Oct 2026
 
 Goal: Cinema = shared screen on top, 3 audio-only seats below (host + 2),
 persistent chat in the bottom space, Clubhouse-style dock. Prototype:
 the "MM Cinema Podcast Room" artifact.
 
-## Phase 1: Cinema room (one PR)
-- [ ] Remove camera from the Cinema UI: drop `cinema-camera-toggle`,
-      `toggleCinemaCamera` call sites and the slot POST from RoomScreen.
-      Keep `cinema-camera-slot` route + migration 057 dormant (no DB change).
-- [ ] `CinemaStage` → 3 audio seats (avatar, speaking ring from LiveKit
-      active speakers, mute badge, empty "open seat"). No video tiles.
-- [ ] Mic toggle for anyone on stage in Cinema (today `!isCinema` hides it,
-      so guests can never unmute). Host still auto-publishes audio.
-- [ ] Raise hand / hand queue / invite-to-speak / move-to-audience / host
-      mute enabled for Cinema, reusing the Spaces handlers
-      (`toggleHand`, `invitePromote`, `hostMute`, `hostDemote`). Stage cap 3.
-- [ ] Persistent chat below the stage: mount `RoomChat` + `useRoomComments`
-      in the canvas bottom slot; delete `CinemaChat` overlay usage.
-- [ ] Dock: Leave quietly (bottom-left), reactions, hands queue (host),
-      mic (on stage) or raise hand (listener). Host leave = hand off or end.
-- [ ] Tests: supersede the pinned strings in
-      `cinema-server-invariants.test.ts` (lines ~154-180, 239-266) with the
-      reason, add new assertions for audio seats + chat mount; update
-      `e2e/cinema-stable-room.spec.ts` (3 camera slots → 3 audio seats).
-      Full `npm run test:unit` must pass.
+## Phase 1: Cinema room (one PR) — approved by Karl 1 Oct, built
+- [x] Camera removed from Cinema: no toggle, no live-box dialog, no slot
+      fetch/realtime, `autoEnableCamera: false`. `cinema-camera-slot` route +
+      migration 057 left dormant (no DB change).
+- [x] `CinemaStage` → 3 audio seats (avatar, LiveKit volume ring, mute badge,
+      open seat). Seating rule in `src/lib/cinemaStage.ts`.
+- [x] Mic for anyone on stage; raise hand for listeners (both were `!isCinema`).
+- [x] Hands queue sheet (host + mods), seat tap → host moderation sheet,
+      Stage cap 3 enforced server-side (participants route → 409).
+      Tier no longer auto-seats artists/superfans in Cinema.
+- [x] Persistent chat panel under the listeners, composer inside it;
+      5-line fading overlay + its CSS deleted.
+- [x] Chat moderation: DELETE `/comments/[commentId]` (host / mod / author),
+      realtime DELETE drops the line everywhere; banned users get 403 on POST.
+- [x] "Remove and ban from this room" in the host sheet (route had `ban` already).
+- [x] Dock: Leave quietly bottom-left; host gets hand-off vs end-for-everyone.
+- [x] Tests: `scripts/cinema-stage.test.ts` (30 checks, in test:unit);
+      superseded camera-era assertions in `cinema-server-invariants` with
+      reasons; `e2e/cinema-stable-room.spec.ts` rewritten (4/4 pass, mobile +
+      desktop).
 
 ## Phase 2: Spaces gaps vs Clubhouse (separate PRs)
 - [ ] Chat moderation: host/mod delete, ban check on POST, report.
@@ -36,7 +36,13 @@ the "MM Cinema Podcast Room" artifact.
       follow state.
 
 ## Review
-_(fill in after build)_
+- `tsc --noEmit` clean; full `npm run test:unit` green; Cinema e2e 4/4 green
+  locally (Chromium 1194 via executablePath; repo config untouched).
+- The e2e caught a real bug before Karl did: on a 664px-tall phone the chat
+  was squeezed to ~30px. Fixed by clamping the screen to 28dvh, dropping the
+  Cinema drag pills, and putting the listener count + circles on one line.
+- Not done here (Phase 2): Report flow, reminder cron, pinned link, co-host
+  UI, reconnect-keeps-seat, followed hand-raise mode.
 
 # Site health sweep, 24 Sep 2026
 

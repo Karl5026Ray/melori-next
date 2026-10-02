@@ -97,6 +97,20 @@ export function useRoomComments(spaceId: string, enabled = true) {
           );
         },
       )
+      // A moderator deleted a line. Realtime cannot apply a column filter to
+      // DELETE events (the old row carries only its primary key), so this
+      // listens unfiltered and drops the id only if this room is showing it.
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "space_comments" },
+        (payload) => {
+          const id = (payload.old as { id?: string } | null)?.id;
+          if (!id) return;
+          setComments((prev) =>
+            prev.some((x) => x.id === id) ? prev.filter((x) => x.id !== id) : prev,
+          );
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -151,5 +165,41 @@ export function useRoomComments(spaceId: string, enabled = true) {
     [user, spaceId, router],
   );
 
-  return { comments, setComments, sendComment, sending, error, setError };
+  // Host / moderator / author delete. Optimistic, restored if the server says
+  // no, so a refused delete never leaves a line looking gone on one screen only.
+  const deleteComment = useCallback(
+    async (id: string): Promise<SendResult> => {
+      let removed: ChatComment | undefined;
+      let index = -1;
+      setComments((prev) => {
+        index = prev.findIndex((x) => x.id === id);
+        removed = prev[index];
+        return prev.filter((x) => x.id !== id);
+      });
+      try {
+        const res = await authFetch(`/api/social/spaces/${spaceId}/comments/${id}`, {
+          method: "DELETE",
+        });
+        if (res.ok) return { ok: true };
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Could not delete that message.");
+      } catch (err) {
+        const restore = removed;
+        if (restore) {
+          setComments((prev) => {
+            if (prev.some((x) => x.id === restore.id)) return prev;
+            const next = [...prev];
+            next.splice(Math.min(Math.max(index, 0), next.length), 0, restore);
+            return next;
+          });
+        }
+        const message = err instanceof Error ? err.message : "Could not delete that message.";
+        setError(message);
+        return { ok: false, error: message };
+      }
+    },
+    [spaceId],
+  );
+
+  return { comments, setComments, sendComment, deleteComment, sending, error, setError };
 }

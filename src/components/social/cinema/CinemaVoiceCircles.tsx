@@ -35,18 +35,30 @@ interface CinemaVoiceCirclesProps {
   levels?: Record<string, number>;
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   reactionBursts?: Record<string, string[]>;
+  /**
+   * One row instead of three. The podcast layout (1 Oct 2026) gives the space
+   * under the stage to the room chat, so listeners become a single strip with
+   * a "+N" chip rather than three rows competing with the chat for height.
+   */
+  compact?: boolean;
 }
+
+// How many listener circles one compact row holds on a phone before the rest
+// fold into the "+N" chip (the chip takes one of these places).
+export const COMPACT_VOICE_CIRCLES = 7;
 
 function VoiceCircle({
   participant,
   level,
   onReactToParticipant,
   bursts,
+  compact = false,
 }: {
   participant: SpaceParticipant;
   level: number;
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   bursts: string[];
+  compact?: boolean;
 }) {
   const user = participant.user;
   const muted = Boolean(participant.is_muted || participant.host_muted);
@@ -59,7 +71,11 @@ function VoiceCircle({
 
   const body = (
     <>
-      <span className="relative grid h-9 w-9 shrink-0 place-items-center sm:h-11 sm:w-11">
+      <span
+        className={`relative grid shrink-0 place-items-center ${
+          compact ? "h-7 w-7 sm:h-9 sm:w-9" : "h-9 w-9 sm:h-11 sm:w-11"
+        }`}
+      >
         {/* Volume ring. Scale and opacity are driven by the live level, so this
             is one element that breathes rather than a canned keyframe loop —
             a quiet circle is perfectly still. */}
@@ -115,7 +131,13 @@ function VoiceCircle({
           is what pushes that budget over. The ring and the avatar carry the
           meaning there; the name returns at sm and stays available to screen
           readers either way. */}
-      <span className="sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px]">
+      <span
+        className={
+          compact
+            ? "sr-only"
+            : "sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px]"
+        }
+      >
         <span className={ring.active ? "sm:text-white/80" : "sm:text-white/40"}>{name}</span>
       </span>
     </>
@@ -149,11 +171,69 @@ export function CinemaVoiceCircles({
   levels,
   onReactToParticipant,
   reactionBursts,
+  compact = false,
 }: CinemaVoiceCirclesProps) {
-  // A packed room is capped so the three rows cannot grow tall enough to push
-  // the shared screen out of the viewport; the remainder becomes one chip.
-  const { visible, hiddenCount } = partitionVoiceAudience(audience);
-  const rows = splitVoiceRows(visible, VOICE_ROW_COUNT);
+  // A packed room is capped so the rows cannot grow tall enough to push the
+  // shared screen out of the viewport; the remainder becomes one chip.
+  const { visible, hiddenCount } = compact
+    ? partitionVoiceAudience(audience, COMPACT_VOICE_CIRCLES)
+    : partitionVoiceAudience(audience);
+  const rows = splitVoiceRows(visible, compact ? 1 : VOICE_ROW_COUNT);
+
+  const renderRows = () => (
+    <div className={compact ? "flex min-w-0 flex-1 flex-col" : "flex flex-col gap-1.5 sm:gap-2"}>
+      {rows.map((row, rowIndex) => (
+        <div
+          key={`voice-row-${rowIndex}`}
+          data-testid="cinema-voice-row"
+          // Rows wrap rather than scroll: a very large room compresses into
+          // more circles per line instead of hiding people off-screen.
+          className={
+            compact
+              ? "flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1"
+              : "flex flex-wrap items-start justify-center gap-x-2.5 gap-y-1.5 sm:gap-x-3"
+          }
+        >
+          {row.map((participant) => {
+            const identity = participant.user?.id ?? participant.user_id;
+            return (
+              <VoiceCircle
+                key={participant.id}
+                participant={participant}
+                level={levels?.[participant.user_id] ?? 0}
+                onReactToParticipant={onReactToParticipant}
+                bursts={reactionBursts?.[identity] ?? []}
+                compact={compact}
+              />
+            );
+          })}
+          {hiddenCount > 0 && rowIndex === rows.length - 1 && (
+            <span
+              data-testid="cinema-voice-overflow"
+              className="flex min-w-0 flex-col items-center gap-1 text-center"
+            >
+              <span
+                className={`grid shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-[10px] font-semibold text-white/55 ${
+                  compact ? "h-7 w-7 sm:h-9 sm:w-9" : "h-9 w-9 sm:h-11 sm:w-11 sm:text-[11px]"
+                }`}
+              >
+                +{hiddenCount}
+              </span>
+              <span
+                className={
+                  compact
+                    ? "sr-only"
+                    : "sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px] sm:text-white/40"
+                }
+              >
+                listening
+              </span>
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <section
@@ -161,55 +241,28 @@ export function CinemaVoiceCircles({
       data-testid="cinema-voice-circles"
       aria-label="Cinema voice audience"
     >
-      <div className="flex items-center justify-between px-1 pb-1.5">
-        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
-          Listening · {audience.length}
+      {/* Compact (Cinema's podcast layout): the count rides on the same line
+          as the circles, so the listeners cost one short line of height. */}
+      <div
+        className={
+          compact
+            ? "flex items-center gap-2 px-1"
+            : "flex items-center justify-between px-1 pb-1.5"
+        }
+      >
+        <p className="shrink-0 text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
+          {compact ? `${audience.length} listening` : `Listening · ${audience.length}`}
         </p>
-        <p className="text-[10px] text-white/30">Tap a circle to react</p>
+        {!compact && <p className="text-[10px] text-white/30">Tap a circle to react</p>}
+        {compact && audience.length > 0 && renderRows()}
       </div>
 
-      {audience.length === 0 ? (
+      {compact ? null : audience.length === 0 ? (
         <p className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-white/35">
           No one listening yet.
         </p>
       ) : (
-        <div className="flex flex-col gap-1.5 sm:gap-2">
-          {rows.map((row, rowIndex) => (
-            <div
-              key={`voice-row-${rowIndex}`}
-              data-testid="cinema-voice-row"
-              // Rows wrap rather than scroll: a very large room compresses into
-              // more circles per line instead of hiding people off-screen.
-              className="flex flex-wrap items-start justify-center gap-x-2.5 gap-y-1.5 sm:gap-x-3"
-            >
-              {row.map((participant) => {
-                const identity = participant.user?.id ?? participant.user_id;
-                return (
-                  <VoiceCircle
-                    key={participant.id}
-                    participant={participant}
-                    level={levels?.[participant.user_id] ?? 0}
-                    onReactToParticipant={onReactToParticipant}
-                    bursts={reactionBursts?.[identity] ?? []}
-                  />
-                );
-              })}
-              {hiddenCount > 0 && rowIndex === rows.length - 1 && (
-                <span
-                  data-testid="cinema-voice-overflow"
-                  className="flex min-w-0 flex-col items-center gap-1 text-center"
-                >
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-[10px] font-semibold text-white/55 sm:h-11 sm:w-11 sm:text-[11px]">
-                    +{hiddenCount}
-                  </span>
-                  <span className="sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px] sm:text-white/40">
-                    listening
-                  </span>
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+        renderRows()
       )}
     </section>
   );

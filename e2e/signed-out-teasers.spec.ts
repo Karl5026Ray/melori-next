@@ -44,3 +44,20 @@ test("tapping Chat in the tab bar while signed out reaches the explained door", 
   await expect(page).toHaveURL(/\/platform\?reason=chat$/);
   await expect(page.getByTestId("door-reason")).toBeVisible();
 });
+
+test("the door shows what's inside, below the form", async ({ page }) => {
+  await page.goto("/platform");
+  const cards = page.getByTestId("door-cards").getByRole("link");
+  await expect(cards).toHaveCount(3);
+  // Spaces leads; every card goes to a public page on the app origin.
+  const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute("href")));
+  expect(hrefs).toEqual([
+    "https://melorimusic.org/spaces",
+    "https://melorimusic.org/cinema",
+    "https://melorimusic.org/artists",
+  ]);
+  // The form stays first: the cards sit below the signup button.
+  const button = await page.getByRole("button", { name: "Create free account" }).boundingBox();
+  const firstCard = await cards.first().boundingBox();
+  expect(button && firstCard && firstCard.y > button.y).toBeTruthy();
+});

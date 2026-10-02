@@ -1,4 +1,4 @@
-# Door conversion + privacy gaps, 2 Oct 2026 (A done; B, C next)
+# Door conversion + privacy gaps, 2 Oct 2026 (A, B done; C next)
 
 Source: an outside review of melorimusic.org, checked against the live site
 and main (5e9b630). Kept: the parts that held up. Dropped: "Loading… stuck"
@@ -34,15 +34,15 @@ that explains the product (`teaserFor` in `src/proxy.ts`, `FeatureTeaser`).
 `src/app/platform/page.tsx` today: hero photo, "Create your account", one
 sentence, the form. No proof the rooms exist, no way to look before joining.
 
-- [ ] B1. Three cards under the sign-up form (form stays first; nothing moves
+- [x] B1. Three cards under the sign-up form (form stays first; nothing moves
       it down on a phone): MM Spaces → /spaces, MM Cinema → /cinema,
       Artists → /artists. Same purple/teal tokens as the rooms. Each card:
       icon, 4-word title, one line. No new data fetching.
-- [ ] B2. Lead card = Spaces (the daily-habit product we just rebuilt).
+- [x] B2. Lead card = Spaces (the daily-habit product we just rebuilt).
 - [~] B3. Karl: NO. Optional, needs Karl: a live "N rooms live now" chip on the Spaces
       card, from a cached public count. Skip if it would show 0 most days;
       an empty-room signal hurts more than no signal.
-- [ ] Verify: Playwright screenshots of /platform at 390px and 1280px before
+- [x] Verify: Playwright screenshots of /platform at 390px and 1280px before
       and after; form still above the fold on 390x664; Lighthouse a11y no
       regression; ISR on `/` untouched (the door is a rewrite).
 
@@ -92,6 +92,18 @@ Karl's yes. One branch per section, one PR each, full `npm run test:unit`
   e2e/signed-out-teasers.spec.ts 4/4 (390x664, incl. a real tab-bar Chat tap),
   phone screenshots checked by eye. ESLint can't run in this checkout
   (pre-existing config-format error), not introduced here.
+
+## B review (2 Oct, branch feat/door-cards, stacked on #401)
+- "Inside Melori" under the form on /platform: MM Spaces (first), MM Cinema,
+  The artists. Absolute APP_ORIGIN links like the rest of the door (it is
+  also served on melori.org). All three targets are existing public pages;
+  no data fetching, no member data. No live-room count (Karl: no).
+- Form position unchanged: cards render after "Forgot your password?".
+- Verified: tsc clean, full `npm run test:unit` green, e2e
+  signed-out-teasers 5/5 (new test: 3 cards, Spaces first, hrefs, cards
+  below the signup button), before/after screenshots at 390 and 1280.
+- Lighthouse not run (no Chrome DevTools audit in this sandbox); the cards
+  are plain links with headings and aria-hidden icons.
 
 ---
 

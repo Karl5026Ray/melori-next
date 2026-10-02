@@ -35,6 +35,38 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import { doorReason } from "@/lib/doorReason";
+import { ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
+
+// What a stranger can look at before joining (outside review, 2 Oct 2026: the
+// door was "Create your account" and a form, with no proof anything was behind
+// it). Each card goes to a PUBLIC page that already exists — the FeatureTeaser
+// pages and the artist index — so nothing here exposes member data.
+//
+// Spaces leads: it is the daily-habit product. Karl, 2 Oct: no live-room count
+// on the card (an empty-room signal hurts more than none).
+//
+// Absolute APP_ORIGIN links, like every other link on this page: the door is
+// also served on melori.org, and these pages live on melorimusic.org.
+const DOOR_CARDS = [
+  {
+    href: "/spaces",
+    icon: RadioTower,
+    title: "MM Spaces",
+    line: "Live audio rooms. Drop in and listen, or ask for the mic.",
+  },
+  {
+    href: "/cinema",
+    icon: Clapperboard,
+    title: "MM Cinema",
+    line: "Premieres and screenings with a live room around them.",
+  },
+  {
+    href: "/artists",
+    icon: Mic2,
+    title: "The artists",
+    line: "Kaiel R, Gloria Joy Rivers, Karl Ray and the creators on Melori.",
+  },
+] as const;
 
 export const dynamic = "force-dynamic";
 
@@ -357,6 +389,37 @@ export default function MeloriDoorPage() {
             Forgot your password?
           </a>
         </p>
+
+        <section aria-labelledby="door-inside" className="mt-10" data-testid="door-cards">
+          <h2
+            id="door-inside"
+            className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-[#888]"
+          >
+            Inside Melori
+          </h2>
+          <ul className="mt-4 space-y-3">
+            {DOOR_CARDS.map(({ href, icon: Icon, title, line }) => (
+              <li key={href}>
+                <a
+                  href={`${APP_ORIGIN}${href}`}
+                  className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-melori-teal/50 hover:bg-white/[0.05]"
+                >
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-melori-purple/20 text-melori-teal">
+                    <Icon className="h-5 w-5" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white">{title}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-[#999]">{line}</span>
+                  </span>
+                  <ChevronRight
+                    className="h-4 w-4 shrink-0 text-[#666] transition group-hover:translate-x-0.5 group-hover:text-melori-teal"
+                    aria-hidden
+                  />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
 
         <p className="mt-8 text-center text-[11px] leading-relaxed text-[#5f5f5f]">
           By creating an account you agree to Melori&apos;s{" "}

@@ -5,7 +5,7 @@
 // Every /api/* route is a Next.js route handler in src/app/api/. There are NO
 // rewrites to the legacy VPS Express server: they used to catch any /api/members
 // or /api/artist path without a local handler, so deleting a route silently
-// handed its traffic to stale VPS code (the Sept 2026 Stripe webhook failures).
+// handed its traffic to stale VPS code.
 // A deleted route must 404, not fall through to another server.
 
 // Enforcing Content-Security-Policy. This was shipped as *Report-Only* first and
@@ -80,7 +80,7 @@ const SECURITY_HEADERS = [
   // want to submit to the HSTS preload list.
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
   // Don't let anyone else iframe the app — protects against clickjacking on the
-  // sign-in / checkout / studio surfaces. Was DENY; relaxed to SAMEORIGIN so iOS
+  // sign-in / studio surfaces. Was DENY; relaxed to SAMEORIGIN so iOS
   // wrapper browsers (Comet, Chrome iOS) that render pages inside their own
   // frame context can display the site. Cross-origin framing is still blocked,
   // and frame-ancestors 'self' in the CSP above provides the modern equivalent.
@@ -185,7 +185,7 @@ const nextConfig = {
       //   "PKCE code verifier not found in storage."
       // Pinning every request to the apex origin eliminates that class of
       // sign-in failure. Must be `permanent: true` so browsers cache the
-      // redirect and Google/Stripe/etc. see a stable canonical origin.
+      // redirect and Google etc. see a stable canonical origin.
       //
       // Follow-up (do these AFTER this ships):
       //   1. In Supabase → Authentication → URL Configuration, remove any
@@ -205,7 +205,6 @@ const nextConfig = {
       { source: '/clubhouse', destination: '/social/spaces', permanent: false },
       { source: '/about',     destination: '/mission',       permanent: true  },
       { source: '/artist',    destination: '/artists',       permanent: true  },
-      { source: '/members',   destination: '/membership',    permanent: true  },
       // Kimi also flagged /portal — safest landing for that is auth.
       { source: '/portal',    destination: '/social/auth',   permanent: false },
       // Releases live under /albums/[slug]; /releases/* previously 404'd.
@@ -217,14 +216,19 @@ const nextConfig = {
       // a stranger got the generic door. Each now lands on the page that does
       // the job the word promises. Both targets are on the proxy's public
       // allowlist, and config redirects run before the proxy, so the signup
-      // wall is untouched. There are no paid tiers, so "pricing" means "sign up
-      // free". Temporary (307) so any of these can later become a real page
-      // without fighting a browser-cached 308.
+      // wall is untouched. Temporary (307) so any of these can later become a
+      // real page without fighting a browser-cached 308.
       { source: '/signup',   destination: '/register', permanent: false },
       { source: '/sign-up',  destination: '/register', permanent: false },
       { source: '/join',     destination: '/register', permanent: false },
-      { source: '/pricing',  destination: '/register', permanent: false },
       { source: '/contact',  destination: '/support',  permanent: false },
+
+      // Retired paid surfaces. Melori has no memberships, store or pricing;
+      // old links land on the homepage instead of 404ing.
+      { source: '/membership', destination: '/', permanent: true },
+      { source: '/members',    destination: '/', permanent: true },
+      { source: '/pricing',    destination: '/', permanent: true },
+      { source: '/store',      destination: '/', permanent: true },
     ];
   },
 };

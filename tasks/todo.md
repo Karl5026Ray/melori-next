@@ -1,3 +1,32 @@
+# MM Spaces redesign, 2 Oct 2026 (PLAN, awaiting Karl)
+
+Audit (realistic room: host, 2 speakers, 43 listeners, 1 raised hand, 390px phone):
+layout e2e 14/14 green and 0 runtime errors in 7 days, but the room is not
+Clubhouse-grade:
+- On a phone only ~240px of room is visible between the app header, the
+  room header and the dock + tab bar; the participant list is 2,160px tall.
+- Tiles are large squares with a "+" follow badge on everyone (follow state
+  is never loaded, so people you already follow still show "+").
+- Host has no hands queue: raised hands sit BELOW all 43 listeners.
+- Host's speaker list repeats the stage; "move to audience" uses a hand icon.
+- Chat is a floating overlay only: no history, no delete.
+- Moderators get no moderation UI (route allows it).
+- Report = alert() placebo; reminders never sent; "followed" mode = TODO.
+- Usage: 0 Spaces rooms created in the last 60 days.
+
+Plan: one room layout for both formats. Spaces = the Cinema layout without
+the screen. Reuse CinemaStage/CinemaVoiceCircles/CinemaChat (rename to
+room/*) so fixes land once.
+- [ ] Stage: circles with speaking rings, wraps; cap 8 speakers + host.
+- [ ] Listeners: compact grid (circles, names under), collapsible; tap = sheet.
+- [ ] Persistent chat panel with delete (already built for Cinema).
+- [ ] Dock: Leave quietly, hands queue (host/mods), mic or raise hand, reactions.
+- [ ] Mod sheet for moderators too (no badge assignment for mods).
+- [ ] Drop the duplicate speaker list; hide app chrome inside a room.
+- [ ] Batch follow-state load so "+" only shows for people you don't follow.
+- [ ] Real Report → reports table + admin email.
+- [ ] Tests: supersede pinned strings with reasons; Spaces e2e rewritten.
+
 # Cinema podcast room + Spaces parity, 1 Oct 2026
 
 Goal: Cinema = shared screen on top, 3 audio-only seats below (host + 2),

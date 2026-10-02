@@ -151,32 +151,19 @@ check(
     videoClient,
   ),
 );
+// SUPERSEDED 1 Oct 2026 — Cinema is audio-only (Karl: "keep it as audio only
+// so that camera icon can be removed"). The four client checks that lived here
+// pinned the camera toggle, its connect gate, per-session camera resume and the
+// host's live-box dialog. None of that UI exists any more, so the replacement
+// invariant is the opposite: the room never asks for a camera at all. The
+// server-side slot invariants above still hold for the dormant tables.
 check(
-  "a stranded camera claim is never left holding a seat silently",
-  // Both the success and failure paths re-read durable slot state, and the
-  // failure path still runs the existing release.
-  /catch \(err\) \{[\s\S]*setShareToast\([\s\S]*await refreshCinemaSlots\(\);\s*\n\s*\} finally \{/.test(
-    cinemaPage,
-  ) && /method: "DELETE"/.test(cinemaPage),
-);
-check(
-  "the camera control is disabled until the room is connected",
-  /disabled=\{!cinemaRoomConnected \|\| cinemaCameraBusy\}/.test(cinemaPage) &&
-    /if \(!cinemaRoomConnected\)/.test(cinemaPage),
-);
-check(
-  "camera resume is per-page-session intent, never a bare reservation",
-  /autoEnableCamera: resumeCamera/.test(cinemaPage) &&
-    /const resumeCamera = cinemaCameraIntentRef\.current/.test(cinemaPage) &&
-    !/autoEnableCamera: cinemaReservations/.test(cinemaPage),
-);
-check(
-  "Cinema exposes host-only live-box controls and selected-guest readiness",
-  /isCinema && isHost/.test(cinemaPage) &&
-    /data-testid="cinema-live-box-controls"/.test(cinemaPage) &&
-    /data-testid=\{`cinema-live-box-\$\{boxNumber\}`\}/.test(cinemaPage) &&
-    /data-testid="cinema-selected-guest-readiness"/.test(cinemaPage) &&
-    /isCinema && \(isHost \|\| selectedCinemaGuest\)/.test(cinemaPage),
+  "Cinema never requests a camera and has no camera or live-box UI",
+  /autoEnableCamera: false/.test(cinemaPage) &&
+    !cinemaPage.includes("setCinemaCameraEnabled") &&
+    !cinemaPage.includes("cinema-camera-toggle") &&
+    !cinemaPage.includes("cinema-live-box-controls") &&
+    !cinemaPage.includes("cinema-camera-slot"),
 );
 
 check(
@@ -191,15 +178,17 @@ check(
     // never falls into this generic StageGrid branch, still holds either way.
     /\{!isCinema[\s\S]{0,400}?<StageGrid/.test(cinemaPage),
 );
+// SUPERSEDED 1 Oct 2026 — was "three ordered live video seats" (camera
+// placeholders, data-camera-seat). The seats are now audio: same band below the
+// screen, same fixed host/guest/guest order, voice rings instead of video.
 check(
-  "three ordered live video seats are their own band below the screen, never overlaying it",
-  cinemaStage.includes('className="grid shrink-0 grid-cols-3 gap-1.5 sm:gap-2"') &&
-    !cinemaStage.includes("absolute bottom-2 left-2 right-12") &&
-    !cinemaStage.includes("embedded") &&
+  "three ordered audio seats are their own band below the screen, never overlaying it",
+  cinemaStage.includes('className="grid shrink-0 grid-cols-3 gap-2"') &&
+    cinemaStage.includes('data-testid="cinema-audio-seat"') &&
+    cinemaStage.includes('data-seat={isHostSeat ? "host" : `guest-${seatIndex}`}') &&
+    cinemaStage.includes("voiceRing({") &&
+    !/<video|videoElement/.test(cinemaStage) &&
     cinemaCanvas.includes("{seats}") &&
-    cinemaStage.includes('data-camera-seat={seat.slot === 0 ? "host"') &&
-    cinemaStage.includes('data-testid="cinema-camera-placeholder"') &&
-    cinemaStage.includes("camera is off or offline") &&
     cinemaScreen.includes('data-testid="cinema-fullscreen-control"'),
 );
 check(
@@ -209,7 +198,11 @@ check(
     cinemaVoiceCircles.includes('data-testid="cinema-voice-circles"') &&
     cinemaVoiceCircles.includes('data-testid="cinema-voice-row"') &&
     cinemaVoiceCircles.includes('data-testid="cinema-voice-ring"') &&
-    cinemaVoiceCircles.includes("splitVoiceRows(visible, VOICE_ROW_COUNT)") &&
+    // Was the literal splitVoiceRows(visible, VOICE_ROW_COUNT). Cinema now
+    // renders the listeners as one compact row (the chat took the space under
+    // the stage), so the row count is chosen by the `compact` prop.
+    cinemaVoiceCircles.includes("splitVoiceRows(visible, compact ? 1 : VOICE_ROW_COUNT)") &&
+    cinemaPage.includes("compact\n                      audience={cinemaAudience}") &&
     // Nothing in this block hides people behind a scroll the way the old single
     // strip did; a packed room is capped and the rest becomes one visible chip,
     // so the block can never push the shared screen out of the viewport.
@@ -226,15 +219,19 @@ check(
     cinemaVoiceCircles.includes("voiceRing({") &&
     cinemaVoiceCircles.includes("transform: `scale(${ring.scale})`"),
 );
+// SUPERSEDED 1 Oct 2026 — was "a left-side five-line transient overlay" that
+// faded each comment after 8 s on top of the film. Karl asked for the empty
+// bottom of the room to hold the chat: it is now a persistent, scrollable log
+// in its own band under the stage, with host / moderator / author delete.
 check(
-  "Cinema comments are a left-side five-line transient overlay",
-  cinemaChat.includes("return next.slice(-5)") &&
-    cinemaChat.includes("absolute bottom-2 left-2") &&
-    cinemaChat.includes('data-testid="cinema-comment-line"') &&
-    cinemaChat.includes("CINEMA_COMMENT_EXIT_MS") &&
-    cinemaChat.includes("data-cinema-comment-age") &&
-    globals.includes("@keyframes cinemaCommentEnter") &&
-    globals.includes("data-cinema-comment-exiting"),
+  "Cinema chat is a persistent log in its own band, not an overlay on the screen",
+  cinemaChat.includes('role="log"') &&
+    cinemaChat.includes('data-testid="cinema-chat"') &&
+    !cinemaChat.includes("slice(-5)") &&
+    !cinemaChat.includes("absolute bottom-2 left-2") &&
+    cinemaCanvas.includes("{chat}") &&
+    !cinemaPage.includes("overlay={<CinemaChat") &&
+    !globals.includes("@keyframes cinemaCommentEnter"),
 );
 check(
   "Cinema preserves a safe top inset without shrinking the media stage",
@@ -244,25 +241,35 @@ check(
     globals.includes(".cinema-room-shell") &&
     cinemaPage.includes('data-testid={isCinema ? "cinema-room-header" : undefined}') &&
     cinemaPage.includes("h-[100dvh]") &&
-    cinemaPage.includes("flex-1") &&
-    /!isCinema && !isHost && !canSpeakNow && canRaiseHandNow/.test(cinemaPage) &&
-    /!isCinema && canSpeakNow/.test(cinemaPage),
+    cinemaPage.includes("flex-1"),
+    // The mic / raise-hand literals that used to ride on this check moved to
+    // the superseded check below; they were never about the safe inset.
 );
+// SUPERSEDED 1 Oct 2026 — the focus-contained "live seats" dialog became the
+// Cinema sheet (raised hands for the host / mods, hand-off vs end for the
+// host). Same accessibility contract: modal, described, Escape closes, Tab is
+// trapped and focus returns to whatever opened it.
 check(
-  "Cinema live-seat management is a focus-contained accessible dialog",
+  "Cinema's hands / leave sheet is a focus-contained accessible dialog",
   cinemaPage.includes('role="dialog"') &&
     cinemaPage.includes('aria-modal="true"') &&
-    cinemaPage.includes('aria-describedby="cinema-live-boxes-description"') &&
-    cinemaPage.includes("cinemaSeatsDialogRef") &&
+    cinemaPage.includes('aria-describedby="cinema-sheet-description"') &&
+    cinemaPage.includes("cinemaSheetDialogRef") &&
     cinemaPage.includes('event.key === "Escape"') &&
-    cinemaPage.includes("cinemaSeatsTriggerRef.current?.focus()"),
+    cinemaPage.includes("cinemaSheetReturnFocusRef.current?.focus?.()"),
 );
+// SUPERSEDED 1 Oct 2026 — was "Cinema suppresses ... generic raise-hand
+// controls", pinned by the literals `!isCinema && canSpeakNow` and
+// `!isCinema && !isHost && !canSpeakNow && canRaiseHandNow`. Hiding the mic and
+// the hand is exactly why guests could never speak in Cinema. They now render
+// in every room format; document scrolling is still suppressed.
 check(
-  "Cinema suppresses document scrolling and generic raise-hand controls",
+  "Cinema suppresses document scrolling and shows the mic and raise-hand controls",
   globals.includes("body:has(.cinema-room-shell)") &&
     globals.includes("padding-bottom: 0 !important") &&
-    /!isCinema && !isHost && !canSpeakNow && canRaiseHandNow/.test(cinemaPage) &&
-    /!isCinema && canSpeakNow/.test(cinemaPage),
+    /\{canSpeakNow && \(/.test(cinemaPage) &&
+    cinemaPage.includes("{!isHost && !canSpeakNow && canRaiseHandNow && (") &&
+    !/!isCinema && canSpeakNow/.test(cinemaPage),
 );
 check(
   "Cinema removes global mobile navigation only for opened room routes",

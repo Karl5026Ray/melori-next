@@ -142,12 +142,12 @@ const CONTENT_TYPE: Record<string, string> = {
 export function normalizeTitle(s: string): string {
   return s
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\\u0300-\\u036f]/g, "")
     .toLowerCase()
     // Apostrophes are DELETED, not turned into a separator, so "Let's" and
     // "Lets" collapse to the same key. Mapping them to a space instead would
     // yield "let s" vs "lets" and the importer would insert a duplicate.
-    .replace(/['‘’ʼ`]/g, "")
+    .replace(/['\\u2018\\u2019\\u02bc`]/g, "")
     .replace(/\b(feat|ft|featuring|with)\b[^)\]]*/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/^\s*the\s+/, "")
@@ -158,7 +158,7 @@ export function normalizeTitle(s: string): string {
 export function slugify(s: string): string {
   return s
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\\u0300-\\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");

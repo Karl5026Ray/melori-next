@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { moderateText, statusForDecision } from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
@@ -8,10 +8,12 @@ import { recordModeration } from "@/lib/moderation-record";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/community/comments — Public. Reading is free (incl. logged-out).
+// GET /api/community/comments — Sign-in required to read (401 when logged out).
 // Returns comments newest first. Reads via the service role client because RLS
 // is ON for public.community_comments.
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 
-  // Community comments feed is publicly readable, so a spammer with a
+  // Community comments feed is readable by every signed-in member, so a spammer with a
   // Superfan account could flood the wall. Cap at 3 quick / ~1 per 5s.
   const rl = rateLimit(`community:comments:${membership.userId}`, 3, 0.2);
   if (!rl.allowed) {

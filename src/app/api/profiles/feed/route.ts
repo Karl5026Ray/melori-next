@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getRequestMembership } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,13 +23,13 @@ export const dynamic = "force-dynamic";
 //   role    — optional. "artist" | "superfan" | "free" — filters to that
 //             role only. Absent = all roles.
 //   exclude_followed — "1" to hide people the viewer already follows.
-//             Requires auth; silently ignored when signed out.
+//             Uses the signed-in caller's follows.
 //
 // Pagination is KEYSET (not offset) so newly joined members can't shift the
 // window and cause dupes/skips. We fetch `limit + 1` rows to detect a next
 // page cheaply.
 //
-// Auth: OPTIONAL. Anonymous callers get a purely public feed. Signed-in
+// Auth: REQUIRED (sign-in wall) — anonymous callers get a 401. Signed-in
 // callers get their own id filtered out and (when `exclude_followed=1`) any
 // profiles they already follow removed. We also drop any profile that has
 // blocked the viewer or that the viewer has blocked, in either direction.
@@ -52,23 +52,11 @@ function parseCursor(raw: string | null): { key: string; id: string } | null {
   return { key, id };
 }
 
-// Try to resolve the caller from the Authorization header. Anonymous is
-// fine — the feed is public — so we use getRequestMembership (which never
-// throws) instead of requireAuth.
-async function resolveViewer(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) return null;
-  try {
-    const membership = await getRequestMembership(req);
-    return membership.userId ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // --- handler ---------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const url = new URL(req.url);
@@ -94,7 +82,7 @@ export async function GET(req: NextRequest) {
     const excludeFollowed = url.searchParams.get("exclude_followed") === "1";
     const cursor = parseCursor(url.searchParams.get("cursor"));
 
-    const viewerId = await resolveViewer(req);
+    const viewerId: string | null = guard.membership.userId;
 
     // Build the block + follow exclusion set (viewer only).
     const excludeIds = new Set<string>();

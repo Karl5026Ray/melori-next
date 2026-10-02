@@ -35,7 +35,7 @@ export default function SpacesTeaserPage() {
         },
       ]}
       howItWorks={[
-        "Create a free account — an email, a mobile number and a password.",
+        "Create a free account with an email and a password.",
         "Open Spaces to see what is live and what is scheduled.",
         "Join as a listener; your microphone is off until the host brings you up.",
         "Start your own room whenever you have something to play or say.",

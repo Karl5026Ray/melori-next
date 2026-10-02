@@ -35,7 +35,7 @@ export default function CinemaTeaserPage() {
         },
       ]}
       howItWorks={[
-        "Create a free account — an email, a mobile number and a password.",
+        "Create a free account with an email and a password.",
         "Open Cinema to see what is screening now and what is starting soon.",
         "Take a seat; the video starts for everyone together.",
         "Host your own screening when you have something to premiere.",

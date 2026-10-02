@@ -1,3 +1,100 @@
+# Door conversion + privacy gaps, 2 Oct 2026 (A done; B, C next)
+
+Source: an outside review of melorimusic.org, checked against the live site
+and main (5e9b630). Kept: the parts that held up. Dropped: "Loading… stuck"
+(it is the sr-only label on `app/loading.tsx`'s spinner, streamed before the
+page in the same response; real visitors see a brief spinner) and "/explore,
+/chat broken" (those routes never existed; the tab bar labels Explore and
+Chat point at `/music` and `/social/messages`).
+
+## A. Signed-out visitors bounce with no explanation (review item 2)
+Today, signed out: `/music` and `/social/messages` (the tab bar's Explore and
+Chat) and any made-up URL 307 to `/platform` (the sign-up door). Spaces,
+Cinema, Faces and Radio already do it right: each sends you to a public page
+that explains the product (`teaserFor` in `src/proxy.ts`, `FeatureTeaser`).
+
+- [x] A1. New public teaser `src/app/listen/page.tsx` built on `FeatureTeaser`:
+      what the catalog is (free to members, Karl Ray / Kaiel R / Gloria Joy
+      Rivers and more), 3 points, one CTA to the door. Add `/listen` to
+      PUBLIC_EXACT; map `/music` → `/listen` in TEASER_FOR.
+      (Not making `/music` itself public: the catalog stays a members' perk.)
+- [x] A2. `/social/messages` → `/platform?reason=chat` (no teaser page; a DM
+      inbox has nothing to preview). The door reads `reason` and shows one
+      line above the form: "Sign in to see your messages."
+- [~] A3. SKIPPED (security over polish). Unknown paths: leave the door redirect for signed-out (keeps every
+      gated path private without a list), but return a real 404 for paths
+      that match no route AND no gated prefix. Investigate first: the proxy
+      can't see Next's route table, so this may need a small list of known
+      top-level segments. If that list would drift, SKIP A3 and say so.
+- [x] Tests: extend `scripts/signup-wall.test.ts` (TEASERS table:
+      `/music` → `/listen`; `/listen` public; `/social/messages` reason
+      param). e2e: signed-out tap on the tab bar's Explore lands on /listen.
+
+## B. The door sells nothing above the form (review item 4, the big one)
+`src/app/platform/page.tsx` today: hero photo, "Create your account", one
+sentence, the form. No proof the rooms exist, no way to look before joining.
+
+- [ ] B1. Three cards under the sign-up form (form stays first; nothing moves
+      it down on a phone): MM Spaces → /spaces, MM Cinema → /cinema,
+      Artists → /artists. Same purple/teal tokens as the rooms. Each card:
+      icon, 4-word title, one line. No new data fetching.
+- [ ] B2. Lead card = Spaces (the daily-habit product we just rebuilt).
+- [~] B3. Karl: NO. Optional, needs Karl: a live "N rooms live now" chip on the Spaces
+      card, from a cached public count. Skip if it would show 0 most days;
+      an empty-room signal hurts more than no signal.
+- [ ] Verify: Playwright screenshots of /platform at 390px and 1280px before
+      and after; form still above the fold on 390x664; Lighthouse a11y no
+      regression; ISR on `/` untouched (the door is a rewrite).
+
+## C. Privacy policy gaps (review item 3), Karl's lawyer decides wording
+Not legal advice. `src/app/privacy/page.tsx` (86 lines, updated Jun 29 2026)
+names only Stripe and Resend. Missing, from what the code actually uses:
+- [ ] C1. Service providers: Supabase (database/auth/storage), Vercel
+      (hosting), LiveKit (live audio/video in rooms), PubNub (presence),
+      Cloudflare, Google and Apple sign-in.
+- [ ] C2. Recording: Melori Mirror DOES record live video
+      (`/api/mirror/recording/start`, MirrorRecordingControls) for the
+      for-you feed. Policy must say what is recorded, when (host-started),
+      who can see it, and how to delete it. Spaces/Cinema rooms: confirm no
+      LiveKit egress is used, then say so. Room chat is stored until deleted.
+- [ ] C3. Retention: how long accounts, chat, reports and logs are kept.
+- [ ] C4. Minimum age 16+ (Karl, 2 Oct), and a CCPA/state-rights line.
+- [ ] I draft the text as a PR; Karl (or a lawyer) approves the wording. I
+      do not ship policy text unreviewed.
+
+## Order and size
+A1+A2 (~half day), B1+B2 (~half day), C draft (~1 hr). A3 and B3 only on
+Karl's yes. One branch per section, one PR each, full `npm run test:unit`
++ tsc + the e2e above before each PR. Migrations: none.
+
+## Karl's answers (2 Oct)
+1. B3 live-rooms chip: no.
+2. C4 minimum age: 16.
+
+## A review (2 Oct, branch feat/signed-out-teasers)
+- `/listen` public teaser (FeatureTeaser, copy only, no audio/member data);
+  proxy TEASER_FOR: `/music*` → `/listen`, `/social/messages*` →
+  `/platform?reason=chat`; door shows "Sign in to see your messages." from
+  `src/lib/doorReason.ts` (allowlisted keys only; `<b>`, `__proto__`,
+  `toString` ignored).
+- A3 skipped: the proxy is an allowlist on purpose. Letting unknown paths fall
+  through to a 404 needs a list of real routes, and any route missing from it
+  would render UNGATED for strangers. A drift test would catch it, but trading
+  a fail-closed security property for a nicer 404 is the wrong trade.
+- Found by screenshot: FeatureTeaser's closing box said "People go on camera
+  and on microphone here" on every page incl. Radio. Now a `closing` prop
+  (room wording stays the default); Music and Radio pass their own.
+- Also fixed: all four room teasers said signup needs "a mobile number" —
+  dropped 10 Sep (email + password only).
+- Superseded assertion: signup-wall test listed /music and /social/messages as
+  "no teaser — meets the door"; both now have destinations (reason in test).
+- Verified: signup-wall 89/89, full `npm run test:unit` green, tsc clean,
+  e2e/signed-out-teasers.spec.ts 4/4 (390x664, incl. a real tab-bar Chat tap),
+  phone screenshots checked by eye. ESLint can't run in this checkout
+  (pre-existing config-format error), not introduced here.
+
+---
+
 # MM Spaces redesign + room separation, 2 Oct 2026
 
 Karl: "make it similar and fix the current issues", same purple/teal look as

@@ -34,6 +34,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
+import { doorReason } from "@/lib/doorReason";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,12 @@ export default function MeloriDoorPage() {
   // A missing or slow-to-upload hero must never render as broken alt text
   // again; it falls back to the brand gradient below.
   const [heroFailed, setHeroFailed] = useState(false);
+  // "Sign in to see your messages." when the proxy sent them here from Chat.
+  // Read after mount so the server render and the first client render match.
+  const [reason, setReason] = useState<string | null>(null);
+  useEffect(() => {
+    setReason(doorReason(window.location.search));
+  }, []);
 
   // A member who is already signed in has no business on the door.
   //
@@ -242,6 +249,14 @@ export default function MeloriDoorPage() {
 
       <div className="mx-auto max-w-md px-4 pb-16 pt-8">
         <div className="relative text-center">
+          {reason && (
+            <p
+              data-testid="door-reason"
+              className="mb-3 text-sm font-semibold text-melori-teal"
+            >
+              {reason}
+            </p>
+          )}
           <h1 className="text-3xl font-bold leading-tight">Create your account</h1>
           <p className="mt-2 text-sm text-[#888]">
             All the music, free to every member. Live rooms, cinema nights, and a

@@ -14,8 +14,9 @@
 // through the realtime DELETE event in useRoomComments.
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Trash2 } from "lucide-react";
+import { Flag, Trash2 } from "lucide-react";
 import { authorName, type ChatComment } from "@/components/social/rooms/useRoomComments";
+import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 // Within this many pixels of the bottom counts as "reading the latest", so a
 // new line scrolls into view. Further up, the reader is in the history and we
@@ -30,7 +31,9 @@ interface CinemaChatProps {
   /** user ids currently on stage, to tag their lines. */
   stageIds?: ReadonlySet<string>;
   onDelete?: (commentId: string) => void;
-  /** The composer form, owned by RoomScreen so there is one send path. */
+  /** Anyone who is not a moderator can report someone else's line. */
+  onReport?: (comment: ChatComment) => void;
+  /** The composer form, owned by CinemaRoomScreen so there is one send path. */
   composer?: ReactNode;
 }
 
@@ -40,6 +43,7 @@ export function CinemaChat({
   canModerate,
   stageIds,
   onDelete,
+  onReport,
   composer,
 }: CinemaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -81,7 +85,7 @@ export function CinemaChat({
 
   return (
     <section
-      className="relative flex min-h-[7.5rem] flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]"
+      className="relative flex min-h-[7.5rem] flex-1 flex-col overflow-hidden rounded-xl border border-melori-border bg-melori-surface"
       data-testid="cinema-chat"
       aria-label="Room chat"
     >
@@ -103,6 +107,7 @@ export function CinemaChat({
             const name = authorName(comment);
             const mine = Boolean(viewerId && comment.user_id === viewerId);
             const deletable = Boolean(onDelete && (canModerate || mine));
+            const reportable = Boolean(onReport && viewerId && !mine && !canModerate);
             const onStage = Boolean(comment.user_id && stageIds?.has(comment.user_id));
             return (
               <div
@@ -119,16 +124,17 @@ export function CinemaChat({
                     className="mt-0.5 h-6 w-6 shrink-0 rounded-full object-cover"
                   />
                 ) : (
-                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/[0.07] text-[10px] font-semibold text-white/55">
-                    {name.charAt(0).toUpperCase()}
+                  <span
+                    className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white"
+                    style={{ backgroundColor: cinemaAvatarColor(comment.user_id) }}
+                  >
+                    {cinemaInitials(name)}
                   </span>
                 )}
                 <p className="min-w-0 flex-1 text-[13px] leading-snug text-white/85 [overflow-wrap:anywhere]">
-                  <span className="font-semibold text-cinema-gold">{name}</span>
+                  <span className="font-semibold text-melori-text">{name}</span>
                   {onStage && (
-                    <span className="ml-1.5 text-[10px] uppercase tracking-[0.12em] text-melori-teal">
-                      on stage
-                    </span>
+                    <span className="ml-1.5 text-[11px] font-medium text-melori-accent">on stage</span>
                   )}{" "}
                   <span>{comment.body}</span>
                 </p>
@@ -142,6 +148,18 @@ export function CinemaChat({
                     className="shrink-0 rounded-full p-1 text-white/25 transition hover:bg-white/5 hover:text-red-400 focus-visible:text-red-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                )}
+                {reportable && (
+                  <button
+                    type="button"
+                    onClick={() => onReport?.(comment)}
+                    data-testid="cinema-chat-report"
+                    aria-label={`Report message from ${name}`}
+                    title="Report message"
+                    className="shrink-0 rounded-full p-1 text-white/25 transition hover:bg-white/5 hover:text-melori-warning"
+                  >
+                    <Flag className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 )}
               </div>

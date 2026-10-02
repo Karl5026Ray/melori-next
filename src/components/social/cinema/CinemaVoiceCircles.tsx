@@ -28,6 +28,7 @@ import {
   voiceRing,
   VOICE_ROW_COUNT,
 } from "@/lib/voiceCircles";
+import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 interface CinemaVoiceCirclesProps {
   audience: SpaceParticipant[];
@@ -83,7 +84,7 @@ function VoiceCircle({
           aria-hidden
           data-testid="cinema-voice-ring"
           data-ring-active={ring.active ? "true" : "false"}
-          className="pointer-events-none absolute inset-0 rounded-full border-2 border-cinema-gold transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
+          className="pointer-events-none absolute inset-0 rounded-full border-2 border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
           style={{ transform: `scale(${ring.scale})`, opacity: ring.opacity }}
         />
         {/* Resting ring, always visible, so an idle listener still reads as a
@@ -103,8 +104,11 @@ function VoiceCircle({
             className="h-full w-full rounded-full object-cover"
           />
         ) : (
-          <span className="grid h-full w-full place-items-center rounded-full bg-white/[0.04] text-sm font-medium text-white/40">
-            {name.charAt(0).toUpperCase()}
+          <span
+            className="grid h-full w-full place-items-center rounded-full text-[10px] font-bold text-white"
+            style={{ backgroundColor: cinemaAvatarColor(participant.user_id) }}
+          >
+            {cinemaInitials(name)}
           </span>
         )}
 

@@ -4,8 +4,8 @@
 //
 // The point of the preflight is that Concert's two external dependencies fail
 // QUIETLY: no LiveKit credential looks identical to "the other artist hasn't
-// turned their camera on yet", and no gift-score migration looks identical to
-// "nobody has gifted yet". So the thing worth testing is not that a correct
+// turned their camera on yet", and no vote-table migration looks identical to
+// "nobody has voted yet". So the thing worth testing is not that a correct
 // setup reports ready -- it is that every wrong or unverifiable setup refuses
 // to report ready.
 //
@@ -16,7 +16,6 @@
 import {
   evaluateConcertReadiness,
   formatConcertReadinessReport,
-  CONCERT_REQUIRED_GIFT_SLUGS,
   type ConcertCheckId,
   type ConcertDbInput,
   type ConcertEnvInput,
@@ -49,10 +48,7 @@ const GOOD_ENV: ConcertEnvInput = {
 };
 
 const GOOD_DB: ConcertDbInput = {
-  activeGiftSlugs: [...CONCERT_REQUIRED_GIFT_SLUGS],
-  scoreFunctionExists: true,
-  scoreFunctionGrantees: ["service_role"],
-  giftSendIndexExists: true,
+  voteTableExists: true,
 };
 
 function statusOf(
@@ -121,66 +117,19 @@ console.log("\nCRON_SECRET");
   );
 }
 
-console.log("\nMigration 066 objects");
+console.log("\nMigration 086 (concert_votes)");
 {
-  const missingOne: ConcertDbInput = {
-    ...GOOD_DB,
-    activeGiftSlugs: CONCERT_REQUIRED_GIFT_SLUGS.filter((s) => s !== "battle_violin"),
-  };
-  const result = evaluateConcertReadiness(GOOD_ENV, missingOne);
-  expect(!result.ready, "a single missing gift slug blocks readiness");
-  expect(
-    statusOf(GOOD_ENV, missingOne, "gift_catalog").detail.includes("battle_violin"),
-    "the missing slug is named",
-  );
-  expect(
-    statusOf(GOOD_ENV, missingOne, "gift_catalog").detail.includes("066"),
-    "the remediation points at the migration file",
-  );
-
-  const inactive = evaluateConcertReadiness(GOOD_ENV, { ...GOOD_DB, activeGiftSlugs: [] });
-  expect(!inactive.ready, "an empty active catalog blocks readiness");
-
-  const noFn = evaluateConcertReadiness(GOOD_ENV, { ...GOOD_DB, scoreFunctionExists: false });
-  expect(!noFn.ready, "a missing score function blocks readiness");
-  expect(
-    statusOf(GOOD_ENV, { ...GOOD_DB, scoreFunctionExists: false }, "score_function").detail.includes("zero"),
-    "the score-function failure explains the silent symptom",
-  );
-
-  const noIndex = evaluateConcertReadiness(GOOD_ENV, { ...GOOD_DB, giftSendIndexExists: false });
-  expect(noIndex.ready, "a missing index is advisory only — correctness is unaffected");
-  expect(
-    statusOf(GOOD_ENV, { ...GOOD_DB, giftSendIndexExists: false }, "gift_send_index").status === "fail",
-    "but the missing index is still reported",
-  );
-}
-
-console.log("\nSECURITY DEFINER lockdown");
-{
-  for (const role of ["anon", "authenticated"]) {
-    const drifted: ConcertDbInput = { ...GOOD_DB, scoreFunctionGrantees: ["service_role", role] };
-    const result = evaluateConcertReadiness(GOOD_ENV, drifted);
-    expect(!result.ready, `an EXECUTE grant to ${role} blocks readiness`);
-    const check = statusOf(GOOD_ENV, drifted, "score_function_locked");
-    expect(check.severity === "required", `the ${role} grant is escalated to required`);
-    expect(check.detail.includes("revoke"), "the remediation includes the revoke statement");
-  }
-  const owner = evaluateConcertReadiness(GOOD_ENV, {
-    ...GOOD_DB,
-    scoreFunctionGrantees: ["service_role", "postgres"],
-  });
-  expect(owner.ready, "the postgres owner grant is not drift");
+  const missing: ConcertDbInput = { voteTableExists: false };
+  const result = evaluateConcertReadiness(GOOD_ENV, missing);
+  expect(!result.ready, "a missing vote table blocks readiness");
+  const check = statusOf(GOOD_ENV, missing, "vote_table");
+  expect(check.detail.includes("086"), "the remediation points at the migration file");
+  expect(check.detail.includes("zero"), "the failure explains the silent symptom");
 }
 
 console.log("\nAn unreachable database is never 'ready'");
 {
-  const unknownDb: ConcertDbInput = {
-    activeGiftSlugs: null,
-    scoreFunctionExists: null,
-    scoreFunctionGrantees: null,
-    giftSendIndexExists: null,
-  };
+  const unknownDb: ConcertDbInput = { voteTableExists: null };
   const result = evaluateConcertReadiness(GOOD_ENV, unknownDb);
   expect(!result.ready, "unknown probe results block readiness rather than passing");
   expect(
@@ -188,13 +137,8 @@ console.log("\nAn unreachable database is never 'ready'");
     "the blockers are the unknowns, not fabricated failures",
   );
   expect(
-    statusOf(GOOD_ENV, unknownDb, "gift_catalog").detail.includes("SUPABASE_SERVICE_ROLE_KEY"),
+    statusOf(GOOD_ENV, unknownDb, "vote_table").detail.includes("SUPABASE_SERVICE_ROLE_KEY"),
     "an unknown says which credential would let the check run",
-  );
-  expect(
-    statusOf(GOOD_ENV, unknownDb, "gift_send_index").status === "unknown" &&
-      evaluateConcertReadiness(GOOD_ENV, { ...GOOD_DB, giftSendIndexExists: null }).ready,
-    "an unknown advisory check still does not block",
   );
 }
 

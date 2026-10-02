@@ -33,11 +33,11 @@ const livekitWebhook = readFileSync(
   "utf8",
 );
 const videoClient = readFileSync(join(root, "src/lib/livekitVideoClient.ts"), "utf8");
-// The room screen moved out of the Spaces route when Cinema was split onto
-// /social/cinema/[roomId]: both routes are now thin wrappers that render this
-// shared component, so the client-side invariants live here.
+// Cinema's own room screen. Until 2 Oct 2026 this was rooms/RoomScreen.tsx,
+// shared with Spaces; Karl asked for the two to share no room code, so Spaces
+// now has spaces/SpacesRoomScreen.tsx and this file is Cinema's alone.
 const cinemaPage = readFileSync(
-  join(root, "src/components/social/rooms/RoomScreen.tsx"),
+  join(root, "src/components/social/cinema/CinemaRoomScreen.tsx"),
   "utf8",
 );
 const cinemaCanvas = readFileSync(
@@ -171,12 +171,13 @@ check(
   cinemaPage.includes("<CinemaRoomCanvas") &&
     cinemaCanvas.includes('data-testid="cinema-room-canvas"') &&
     cinemaCanvas.includes("overflow-hidden") &&
-    // Non-Cinema rooms gate StageGrid behind `!isCinema` — this used to be a
-    // single combined grid, and is now a separate Stage section and Audience
-    // section (see RoomScreen's Stage/Audience split), so the literal source
-    // text changed. The invariant that actually matters, that Cinema itself
-    // never falls into this generic StageGrid branch, still holds either way.
-    /\{!isCinema[\s\S]{0,400}?<StageGrid/.test(cinemaPage),
+    // SUPERSEDED 2 Oct 2026 — was /\{!isCinema[\s\S]{0,400}?<StageGrid/,
+    // which proved Cinema never fell into the shared Spaces grid branch. The
+    // screens are now separate files, so the stronger form holds: Cinema's
+    // screen contains no Spaces grid and no format branching at all.
+    !cinemaPage.includes("StageGrid") &&
+    !cinemaPage.includes("isCinema ?") &&
+    !cinemaPage.includes("!isCinema"),
 );
 // SUPERSEDED 1 Oct 2026 — was "three ordered live video seats" (camera
 // placeholders, data-camera-seat). The seats are now audio: same band below the
@@ -239,7 +240,9 @@ check(
     globals.includes("padding-bottom: 0 !important") &&
     globals.includes("--cinema-safe-area-top") &&
     globals.includes(".cinema-room-shell") &&
-    cinemaPage.includes('data-testid={isCinema ? "cinema-room-header" : undefined}') &&
+    // Was data-testid={isCinema ? "cinema-room-header" : undefined}; the
+    // screen is Cinema-only since 2 Oct 2026, so the test id is unconditional.
+    cinemaPage.includes('data-testid="cinema-room-header"') &&
     cinemaPage.includes("h-[100dvh]") &&
     cinemaPage.includes("flex-1"),
     // The mic / raise-hand literals that used to ride on this check moved to

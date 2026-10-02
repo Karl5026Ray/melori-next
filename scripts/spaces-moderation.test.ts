@@ -244,10 +244,24 @@ group("hand-raise modes", () => {
     handRaiseAllowed("off", { signedIn: true }),
     false,
   );
+  // SUPERSEDED 2 Oct 2026 — was "'followed' mode fails CLOSED today (no
+  // follow-graph check wired up yet)". The follow check is now built: the
+  // raise-hand route looks up follows(host -> caller). Unknown still fails
+  // closed, which is the part of the old assertion that must keep holding.
   assertEq(
-    "'followed' mode fails CLOSED today (no follow-graph check wired up yet)",
+    "'followed' mode fails closed when we don't know the host follows you",
     handRaiseAllowed("followed", { signedIn: true }),
     false,
+  );
+  assertEq(
+    "'followed' mode refuses someone the host does not follow",
+    handRaiseAllowed("followed", { signedIn: true, followedByHost: false }),
+    false,
+  );
+  assertEq(
+    "'followed' mode allows someone the host follows",
+    handRaiseAllowed("followed", { signedIn: true, followedByHost: true }),
+    true,
   );
   assertEq(
     "missing/undefined mode defaults to 'everyone' behavior",

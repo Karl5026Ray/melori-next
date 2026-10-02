@@ -107,7 +107,7 @@ expect(
 
 console.log("\nWiring");
 const read = (path: string) => readFileSync(path, "utf8");
-const roomScreen = read("src/components/social/rooms/RoomScreen.tsx");
+const roomScreen = read("src/components/social/cinema/CinemaRoomScreen.tsx");
 const participantsRoute = read("src/app/api/social/spaces/[spaceId]/participants/[userId]/route.ts");
 const commentsRoute = read("src/app/api/social/spaces/[spaceId]/comments/route.ts");
 const deleteRoute = read("src/app/api/social/spaces/[spaceId]/comments/[commentId]/route.ts");
@@ -116,7 +116,9 @@ const cinemaStage = read("src/components/social/cinema/CinemaStage.tsx");
 const cinemaChat = read("src/components/social/cinema/CinemaChat.tsx");
 
 expect(
-  participantsRoute.includes('body.role === "speaker" && space.room_format === "cinema"') &&
+  // Updated 2 Oct 2026: the route now caps Spaces too, each format with its
+  // own rule, so the Cinema branch is a ternary rather than an if.
+  participantsRoute.includes('space.room_format === "cinema"') &&
     participantsRoute.includes("cinemaStageHasRoom(stageRows ?? [], space.host_id, params.userId)") &&
     participantsRoute.includes("status: 409"),
   "participants route refuses a third guest with 409",
@@ -140,7 +142,7 @@ expect(
   roomScreen.includes("buildCinemaAudioSeats(withSpeaking, hostId)") &&
     roomScreen.includes("<CinemaStage") &&
     roomScreen.includes("seats={cinemaSeats}"),
-  "RoomScreen seats Cinema from the shared rule",
+  "CinemaRoomScreen seats Cinema from the shared rule",
 );
 expect(
   /\{canSpeakNow && \(\s*<button/.test(roomScreen) &&

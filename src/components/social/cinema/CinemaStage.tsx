@@ -15,6 +15,7 @@
 import { MicOff, Plus } from "lucide-react";
 import { SpaceParticipant } from "@/types/social";
 import { voiceRing } from "@/lib/voiceCircles";
+import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 interface CinemaStageProps {
   /** [host, guest, guest] from buildCinemaAudioSeats; null = open seat. */
@@ -90,8 +91,8 @@ function AudioSeat({
         />
         <span
           aria-hidden
-          className={`pointer-events-none absolute inset-0 rounded-full border ${
-            isHostSeat ? "border-cinema-gold/70" : "border-white/10"
+          className={`pointer-events-none absolute inset-0 rounded-full border-2 ${
+            isHostSeat ? "border-melori-purple" : "border-transparent"
           }`}
         />
         {user?.avatar_url ? (
@@ -103,8 +104,11 @@ function AudioSeat({
             className="h-full w-full rounded-full object-cover"
           />
         ) : (
-          <span className="grid h-full w-full place-items-center rounded-full bg-white/[0.06] text-lg font-semibold text-white/60">
-            {name.charAt(0).toUpperCase()}
+          <span
+            className="grid h-full w-full place-items-center rounded-full text-base font-bold text-white"
+            style={{ backgroundColor: cinemaAvatarColor(participant.user_id) }}
+          >
+            {cinemaInitials(name)}
           </span>
         )}
         {muted && (
@@ -128,7 +132,7 @@ function AudioSeat({
         <span className="max-w-full truncate text-xs font-semibold text-white/90">{name}</span>
         <span
           className={`text-[10px] uppercase tracking-[0.14em] ${
-            isHostSeat ? "text-cinema-gold" : "text-white/45"
+            isHostSeat ? "text-melori-accent" : "text-white/45"
           }`}
         >
           {roleLabel}

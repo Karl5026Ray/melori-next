@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { sendLiveRoomReportEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,14 +13,30 @@ export const dynamic = "force-dynamic";
 // item by the same reporter are absorbed silently (unique index).
 //
 // Body: {
-//   content_type: 'message'|'comment'|'gallery'|'profile'|'track'|'other',
+//   content_type: 'message'|'comment'|'gallery'|'profile'|'track'|'video'|
+//                 'space'|'space_chat'|'other',
 //   content_id?: string,
 //   reported_user?: string (uuid),
 //   reason?: string,   // e.g. 'nudity','harassment','spam','other'
 //   details?: string,  // free-text
 // }
 
-const CONTENT_TYPES = ["message", "comment", "gallery", "profile", "track", "video", "other"];
+// 'space' is a live room and 'space_chat' one line of its chat (space_comments).
+// They are deliberately NOT 'comment', which the admin queue maps to
+// community_comments for hide/restore; an unmapped type can only be reviewed
+// and dismissed there, so a room report can never hide an unrelated row.
+const CONTENT_TYPES = [
+  "message",
+  "comment",
+  "gallery",
+  "profile",
+  "track",
+  "video",
+  "space",
+  "space_chat",
+  "other",
+];
+const LIVE_ROOM_TYPES = new Set(["space", "space_chat"]);
 
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req);
@@ -59,6 +76,17 @@ export async function POST(req: NextRequest) {
   if (error && error.code !== "23505") {
     console.error("Report insert error:", error);
     return NextResponse.json({ error: "Failed to submit report" }, { status: 500 });
+  }
+
+  // A live room is happening now, so a queue check tomorrow is too late. Email
+  // the founder right away. Best-effort: the report is already saved.
+  // Awaited: a serverless function may be frozen once the response is sent.
+  if (!error && LIVE_ROOM_TYPES.has(contentType)) {
+    try {
+      await sendLiveRoomReportEmail({ contentType, contentId, reason, details });
+    } catch (err) {
+      console.error("Live room report email failed:", err);
+    }
   }
 
   return NextResponse.json({ ok: true });

@@ -148,18 +148,22 @@ check(
     migration,
   ),
 );
+// Updated 2 Oct 2026: the Spaces route now renders SpacesRoomScreen (Spaces
+// and Cinema no longer share a RoomScreen). The invariant is unchanged: the
+// Concert redirect must run before the Spaces room renders.
 check(
-  "legacy Spaces URLs redirect Concert rooms before RoomScreen renders",
+  "legacy Spaces URLs redirect Concert rooms before the Spaces room renders",
   legacyRoute.includes("CONCERT_BATTLE_ROOM_FORMAT") &&
     legacyRoute.includes("redirect(`/social/concert/${spaceId}`)") &&
+    legacyRoute.indexOf("return <SpacesRoomScreen") > 0 &&
     legacyRoute.indexOf("redirect(`/social/concert/${spaceId}`)") <
-      legacyRoute.indexOf("return <RoomScreen"),
+      legacyRoute.indexOf("return <SpacesRoomScreen"),
 );
 check(
   "Concert route is a dedicated boundary and does not render RoomScreen",
   concertRoute.includes("ConcertBattleSetup") &&
-    !/import\s+RoomScreen/.test(concertRoute) &&
-    !/return\s+<RoomScreen/.test(concertRoute),
+    !/import\s+(Spaces|Cinema)?RoomScreen/.test(concertRoute) &&
+    !/return\s+<(Spaces|Cinema)?RoomScreen/.test(concertRoute),
 );
 
 console.log(

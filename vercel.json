@@ -38,6 +38,10 @@
     {
       "path": "/api/cron/concert-battle-rounds",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/space-reminders",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

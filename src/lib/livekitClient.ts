@@ -62,6 +62,12 @@ export interface JoinOptions {
   // speaking ring for EVERYONE and clear it when they stop — this is the
   // primary, real-time driver (the DB is_speaking write is only a fallback).
   onActiveSpeakersChange?: (identities: string[]) => void;
+  // Continuous per-identity microphone loudness, 0..1 (local included),
+  // sampled every SPACES_LEVEL_INTERVAL_MS. ActiveSpeakersChanged is only an
+  // on/off flag; the Spaces stage rings breathe with how loud someone is, so
+  // they need the real level. Muted or unpublished mics report 0. Only emits
+  // when something changed meaningfully, so a quiet room costs no renders.
+  onAudioLevels?: (levels: Record<string, number>) => void;
   // Fired when the LOCAL participant's publish permission changes at runtime
   // (host/mod approved a raised hand via the server SDK). canPublish=true means
   // the user may unmute and speak WITHOUT re-minting a token / reconnecting.
@@ -75,6 +81,32 @@ export interface JoinOptions {
   // stopped by the time this fires.
   onRoomEnded?: () => void;
   onError?: (err: Error) => void;
+}
+
+// Spaces volume-ring sampling. ~8 samples a second reads as continuous motion
+// without putting React on the animation hot path.
+export const SPACES_LEVEL_INTERVAL_MS = 125;
+// Below this, LiveKit's level is room noise, not a voice.
+const SPACES_LEVEL_FLOOR = 0.05;
+// Smallest change worth a re-render.
+const SPACES_LEVEL_EPSILON = 0.03;
+
+/** Clamp a LiveKit audioLevel into 0..1, treating background noise as 0. */
+export function spacesLevel(value: unknown): number {
+  const level = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  if (level <= SPACES_LEVEL_FLOOR) return 0;
+  return Math.min(1, level);
+}
+
+export function spacesLevelsChanged(
+  previous: Record<string, number>,
+  next: Record<string, number>,
+): boolean {
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (Math.abs((previous[key] ?? 0) - (next[key] ?? 0)) >= SPACES_LEVEL_EPSILON) return true;
+  }
+  return false;
 }
 
 interface ActiveSession {
@@ -285,6 +317,38 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
     };
     room.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
     session.cleanups.push(() => room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed));
+
+    // --- Continuous audio levels (Spaces volume rings) ----------------------
+    // LiveKit exposes participant.audioLevel but pushes no event for it, so it
+    // is sampled. Kept self-contained in this Spaces client on purpose: Spaces
+    // and Cinema do not share room code (Karl, 2 Oct 2026).
+    if (opts.onAudioLevels) {
+      const emitLevels = opts.onAudioLevels;
+      let previous: Record<string, number> = {};
+      const sample = () => {
+        const next: Record<string, number> = {};
+        const collect = (participant: any) => {
+          const identity = participant?.identity;
+          if (!identity) return;
+          const micPub = participant.getTrackPublication?.(
+            Track?.Source?.Microphone ?? "microphone",
+          );
+          const audible = Boolean(micPub) && !micPub?.isMuted;
+          next[identity] = audible ? spacesLevel(participant.audioLevel) : 0;
+        };
+        collect(room.localParticipant);
+        const remotes = room.remoteParticipants ?? room.participants ?? new Map();
+        remotes.forEach?.((participant: any) => collect(participant));
+        if (!spacesLevelsChanged(previous, next)) return;
+        previous = next;
+        emitLevels(next);
+      };
+      const levelTimer = setInterval(sample, SPACES_LEVEL_INTERVAL_MS);
+      session.cleanups.push(() => {
+        clearInterval(levelTimer);
+        emitLevels({});
+      });
+    }
 
     await room.connect(creds.url, creds.token, { autoSubscribe: true });
 

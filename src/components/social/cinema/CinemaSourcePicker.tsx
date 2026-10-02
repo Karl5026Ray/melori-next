@@ -324,8 +324,8 @@ export function CinemaSourcePicker({
               }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
                 active
-                  ? "bg-cinema-gold text-black"
-                  : "text-white/50 hover:text-cinema-gold"
+                  ? "bg-melori-purple text-white"
+                  : "text-white/50 hover:text-melori-accent"
               }`}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden />
@@ -354,16 +354,16 @@ export function CinemaSourcePicker({
                 {paused ? (
                   <Pause className="h-3.5 w-3.5 text-white/40" aria-hidden />
                 ) : (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-cinema-gold" aria-hidden />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-melori-accent" aria-hidden />
                 )}
                 <span className="truncate">{uploadName}</span>
-                <span className="ml-auto font-mono tabular-nums text-cinema-gold">
+                <span className="ml-auto font-mono tabular-nums text-melori-accent">
                   {Math.round(progress)}%
                 </span>
               </div>
               <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
                 <div
-                  className={`h-full transition-[width] ${paused ? "bg-white/30" : "bg-cinema-gold"}`}
+                  className={`h-full transition-[width] ${paused ? "bg-white/30" : "bg-melori-pink"}`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -375,7 +375,7 @@ export function CinemaSourcePicker({
                   <button
                     type="button"
                     onClick={togglePause}
-                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/60 transition hover:text-cinema-gold"
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/60 transition hover:text-melori-accent"
                   >
                     {paused ? (
                       <>
@@ -407,7 +407,7 @@ export function CinemaSourcePicker({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={remainingSlots <= 0}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-cinema-border px-4 py-4 text-sm font-medium text-white/70 transition hover:border-cinema-gold/50 hover:text-cinema-gold"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-cinema-border px-4 py-4 text-sm font-medium text-white/70 transition hover:border-melori-purple/50 hover:text-melori-accent"
             >
               <Upload className="h-4 w-4" aria-hidden />
               {remainingSlots > 0
@@ -426,7 +426,7 @@ export function CinemaSourcePicker({
           )}
 
           {resumedNote && (
-            <p className="mt-2 text-[11px] text-cinema-gold">{resumedNote}</p>
+            <p className="mt-2 text-[11px] text-melori-accent">{resumedNote}</p>
           )}
         </div>
       )}
@@ -474,7 +474,7 @@ export function CinemaSourcePicker({
               aria-label="Video links"
               rows={Math.min(5, Math.max(2, remainingSlots))}
               disabled={remainingSlots <= 0}
-              className="w-full resize-none rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-cinema-gold/50 focus:outline-none disabled:opacity-50"
+              className="w-full resize-none rounded-lg border border-cinema-border bg-black/40 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:border-melori-purple/50 focus:outline-none disabled:opacity-50"
             />
             </div>
             <button
@@ -510,7 +510,7 @@ export function CinemaSourcePicker({
                 }
                 setUrlDraft("");
               }}
-              className="shrink-0 self-start rounded-lg bg-cinema-gold px-4 py-2.5 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 self-start rounded-lg bg-melori-purple px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Add {remainingSlots > 1 ? "links" : "link"}
             </button>

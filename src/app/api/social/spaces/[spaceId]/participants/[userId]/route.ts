@@ -15,6 +15,8 @@ import {
   type RoomMediaRole,
 } from "@/lib/roomMediaPolicy";
 import { cinemaStageHasRoom } from "@/lib/cinemaStage";
+import { SPACES_SPEAKER_LIMIT, spacesStageHasRoom } from "@/lib/spacesRoom";
+import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,7 +107,12 @@ export async function PATCH(
     // Cinema's stage is three audio seats: the host plus CINEMA_GUEST_SEATS.
     // Checked here, server-side, so two hosts' taps or a stale client can never
     // seat a fourth person.
-    if (body.role === "speaker" && space.room_format === "cinema") {
+    // MM Spaces' stage holds the host plus SPACES_SPEAKER_LIMIT speakers
+    // (src/lib/spacesRoom.ts). Each product keeps its own rule; Concert
+    // Battle stages are governed by the battle itself, not a cap here.
+    const capped =
+      body.role === "speaker" && space.room_format !== CONCERT_BATTLE_ROOM_FORMAT;
+    if (capped) {
       const { data: stageRows, error: stageErr } = await supabase
         .from("space_participants")
         .select("user_id, role, left_at")
@@ -114,9 +121,18 @@ export async function PATCH(
       if (stageErr) {
         return NextResponse.json({ error: stageErr.message }, { status: 500 });
       }
-      if (!cinemaStageHasRoom(stageRows ?? [], space.host_id, params.userId)) {
+      const hasRoom =
+        space.room_format === "cinema"
+          ? cinemaStageHasRoom(stageRows ?? [], space.host_id, params.userId)
+          : spacesStageHasRoom(stageRows ?? [], space.host_id, params.userId);
+      if (!hasRoom) {
         return NextResponse.json(
-          { error: "The stage is full. Move a guest to the audience first." },
+          {
+            error:
+              space.room_format === "cinema"
+                ? "The stage is full. Move a guest to the audience first."
+                : `The stage is full (${SPACES_SPEAKER_LIMIT} speakers). Move someone to the audience first.`,
+          },
           { status: 409 },
         );
       }

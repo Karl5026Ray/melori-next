@@ -171,3 +171,82 @@ export async function sendDmDigestEmail(opts: {
   if (error) throw new Error(error.message ?? "Resend send failed");
   return data?.id ?? "";
 }
+
+// Alert Karl the moment someone reports a live room or a line in its chat.
+// Plain and short: what was reported, why, and a link to the room. Throws if
+// Resend is unconfigured so the caller can log it.
+export async function sendLiveRoomReportEmail(opts: {
+  contentType: string;
+  contentId: string | null;
+  reason: string | null;
+  details: string | null;
+}): Promise<string> {
+  const resend = getResend();
+  if (!resend) throw new Error("RESEND_API_KEY is not configured");
+  const escape = (value: string) =>
+    value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
+  const what = opts.contentType === "space" ? "a live room" : "a message in a live room";
+  const roomId = opts.contentType === "space" ? opts.contentId : null;
+  const link = roomId
+    ? `https://melorimusic.org/social/spaces/${encodeURIComponent(roomId)}`
+    : "https://melorimusic.org/admin/moderation";
+  const html = `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a;">
+    <h1 style="font-size:18px;margin:0 0 12px;">Someone reported ${what}</h1>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 8px;"><strong>Reason:</strong> ${escape(opts.reason ?? "not given")}</p>
+    ${opts.details ? `<p style="font-size:15px;line-height:1.6;margin:0 0 8px;"><strong>Details:</strong> ${escape(opts.details)}</p>` : ""}
+    <p style="margin:20px 0 0;"><a href="${link}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:10px 20px;border-radius:9999px;">${roomId ? "Open the room" : "Open the moderation queue"}</a></p>
+  </div>`;
+  const { data, error } = await resend.emails.send({
+    from: MELORI_FROM,
+    to: [MELORI_REPLY_TO],
+    subject: `Report: ${what} on Melori`,
+    html,
+  });
+  if (error) throw new Error(error.message ?? "Resend send failed");
+  return data?.id ?? "";
+}
+
+// "Your room is live" / "starts in a few minutes" — one email per reminder.
+export async function sendSpaceReminderEmail(opts: {
+  to: string;
+  greetingName: string;
+  roomTitle: string;
+  hostName: string;
+  live: boolean;
+  roomUrl: string;
+  unsubscribeUrl: string;
+}): Promise<string> {
+  const resend = getResend();
+  if (!resend) throw new Error("RESEND_API_KEY is not configured");
+  const escape = (value: string) =>
+    value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
+  const title = escape(opts.roomTitle);
+  const host = escape(opts.hostName);
+  const subject = opts.live
+    ? `Live now on Melori: ${opts.roomTitle}`
+    : `Starting soon on Melori: ${opts.roomTitle}`;
+  const lead = opts.live
+    ? `<strong>${title}</strong> with ${host} is live right now.`
+    : `<strong>${title}</strong> with ${host} starts in a few minutes.`;
+  const html = `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a;">
+    <p style="font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${escape(opts.greetingName)},</p>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">${lead} You asked us to remind you.</p>
+    <p style="margin:0 0 28px;"><a href="${opts.roomUrl}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:9999px;">${opts.live ? "Join the room" : "Open the room"}</a></p>
+    <p style="font-size:12px;line-height:1.6;color:#888;margin:0;">You're getting this because you tapped "remind me" on Melori. <a href="${opts.unsubscribeUrl}" style="color:#888;">Turn off Melori emails</a>.</p>
+  </div>`;
+  const { data, error } = await resend.emails.send({
+    from: MELORI_FROM,
+    to: [opts.to],
+    replyTo: MELORI_REPLY_TO,
+    subject,
+    html,
+    headers: {
+      "List-Unsubscribe": `<${opts.unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  });
+  if (error) throw new Error(error.message ?? "Resend send failed");
+  return data?.id ?? "";
+}

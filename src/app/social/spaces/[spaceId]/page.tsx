@@ -1,15 +1,15 @@
 // Audio Spaces room route.
 //
-// The screen itself lives in RoomScreen, shared with /social/cinema/[roomId].
-// This route's only added job is to bounce a Cinema room to its own URL, so an
-// old link, a share, or a stale tile still lands the viewer in Cinema instead
-// of presenting a watch party as part of Spaces.
+// Renders Spaces' own room screen (SpacesRoomScreen). Since 2 Oct 2026 Spaces
+// and Cinema share no room code. This route also bounces a Cinema or Concert
+// room to its own URL, so an old link, a share, or a stale tile still lands
+// the viewer in the right product.
 
 import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { CINEMA_ROOM_FORMAT } from "@/lib/cinema";
 import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
-import RoomScreen from "@/components/social/rooms/RoomScreen";
+import SpacesRoomScreen from "@/components/social/spaces/SpacesRoomScreen";
 
 // Queries Supabase per request; must not be statically prerendered, and must
 // not serve a cached format for a room whose row can change.
@@ -30,7 +30,7 @@ export default async function SpaceRoomPage({
     .maybeSingle();
 
   // Only redirect on a row we actually read. A failed or empty read falls
-  // through to RoomScreen, which owns the real not-found / ended states —
+  // through to SpacesRoomScreen, which owns the real not-found / ended states —
   // guessing here would strand people on the wrong route during a blip.
   if (data?.room_format === CINEMA_ROOM_FORMAT) {
     redirect(`/social/cinema/${spaceId}`);
@@ -39,5 +39,5 @@ export default async function SpaceRoomPage({
     redirect(`/social/concert/${spaceId}`);
   }
 
-  return <RoomScreen spaceId={spaceId} />;
+  return <SpacesRoomScreen spaceId={spaceId} />;
 }

@@ -349,8 +349,8 @@ export function CinemaScreen({
       <div
         className={
           viewportBound
-            ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void"
-            : "mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-cinema-void md:mb-4"
+            ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-melori-border bg-cinema-void"
+            : "mb-2 overflow-hidden rounded-2xl border border-melori-border bg-cinema-void md:mb-4"
         }
         data-testid="cinema-screen"
       >
@@ -364,7 +364,7 @@ export function CinemaScreen({
           }
           data-testid="cinema-media-area"
         >
-          <span className="text-xl font-light uppercase tracking-[0.34em] text-cinema-gold">
+          <span className="text-xl font-light uppercase tracking-[0.34em] text-melori-accent">
             Cinema
           </span>
           <p className="mt-3 max-w-sm text-xs text-white/40">
@@ -392,8 +392,8 @@ export function CinemaScreen({
     <div
       className={
         viewportBound
-          ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black"
-          : "mb-2 overflow-hidden rounded-2xl border border-cinema-gold/50 bg-black md:mb-4"
+          ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-melori-border bg-black"
+          : "mb-2 overflow-hidden rounded-2xl border border-melori-border bg-black md:mb-4"
       }
       data-testid="cinema-screen"
     >
@@ -455,7 +455,7 @@ export function CinemaScreen({
 
         {loading && (
           <div className="absolute inset-0 grid place-items-center bg-black/60">
-            <Loader2 className="h-6 w-6 animate-spin text-cinema-gold" aria-hidden />
+            <Loader2 className="h-6 w-6 animate-spin text-melori-accent" aria-hidden />
           </div>
         )}
 
@@ -472,7 +472,7 @@ export function CinemaScreen({
             onClick={acceptGesture}
             className="absolute inset-0 grid place-items-center bg-black/70 backdrop-blur-sm"
           >
-            <span className="flex items-center gap-2 rounded-full bg-cinema-gold px-5 py-3 text-sm font-semibold text-black">
+            <span className="flex items-center gap-2 rounded-full bg-melori-purple px-5 py-3 text-sm font-semibold text-white">
               <Play className="h-4 w-4 fill-current" aria-hidden />
               Tap to join the screening
             </span>
@@ -480,7 +480,7 @@ export function CinemaScreen({
         )}
 
         {!isHost && (
-          <span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest text-cinema-gold backdrop-blur">
+          <span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest text-melori-accent backdrop-blur">
             Synced to host
           </span>
         )}
@@ -515,7 +515,7 @@ export function CinemaScreen({
           hostSeek(((e.clientX - rect.left) / rect.width) * duration);
         }}
       >
-        <div className="h-full bg-cinema-gold transition-[width]" style={{ width: `${progress}%` }} />
+        <div className="h-full bg-melori-pink transition-[width]" style={{ width: `${progress}%` }} />
       </div>
 
       <div className="flex shrink-0 items-center gap-2.5 bg-cinema-surface px-3 py-1 sm:gap-3 sm:py-1.5 md:py-2.5">
@@ -525,7 +525,7 @@ export function CinemaScreen({
               type="button"
               onClick={hostTogglePlay}
               aria-label={isPlaying ? "Pause for everyone" : "Play for everyone"}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cinema-gold text-black transition hover:brightness-110"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-melori-purple text-white transition hover:brightness-110"
             >
               {isPlaying ? (
                 <Pause className="h-4 w-4 fill-current" aria-hidden />
@@ -537,7 +537,7 @@ export function CinemaScreen({
               type="button"
               onClick={() => hostSeek(localPosition - 10)}
               aria-label="Back 10 seconds"
-              className="text-white/50 transition hover:text-cinema-gold"
+              className="text-white/50 transition hover:text-melori-accent"
             >
               <RotateCcw className="h-4 w-4" aria-hidden />
             </button>
@@ -545,7 +545,7 @@ export function CinemaScreen({
               type="button"
               onClick={() => hostSeek(localPosition + 10)}
               aria-label="Forward 10 seconds"
-              className="text-white/50 transition hover:text-cinema-gold"
+              className="text-white/50 transition hover:text-melori-accent"
             >
               <RotateCw className="h-4 w-4" aria-hidden />
             </button>
@@ -562,7 +562,7 @@ export function CinemaScreen({
           type="button"
           onClick={() => setPlaylistOpen(true)}
           aria-label={`Open playlist, ${playlist.length} of ${MAX_CINEMA_PLAYLIST_ITEMS} items`}
-          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] tabular-nums text-white/50 transition hover:bg-white/5 hover:text-cinema-gold"
+          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] tabular-nums text-white/50 transition hover:bg-white/5 hover:text-melori-accent"
         >
           <ListVideo className="h-4 w-4" aria-hidden />
           {playlist.length}/{MAX_CINEMA_PLAYLIST_ITEMS}
@@ -583,7 +583,7 @@ export function CinemaScreen({
             setMuted(next);
           }}
           aria-label={muted ? "Unmute" : "Mute"}
-          className="text-white/50 transition hover:text-cinema-gold"
+          className="text-white/50 transition hover:text-melori-accent"
         >
           {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
         </button>
@@ -602,7 +602,7 @@ export function CinemaScreen({
             onClick={(event) => event.stopPropagation()}
           >
             <header className="flex shrink-0 items-center gap-2 border-b border-cinema-border px-3 py-2.5">
-              <ListVideo className="h-4 w-4 text-cinema-gold" aria-hidden />
+              <ListVideo className="h-4 w-4 text-melori-accent" aria-hidden />
               <h2 id="cinema-playlist-title" className="text-sm font-semibold text-white/90">
                 Playlist
               </h2>
@@ -644,13 +644,13 @@ export function CinemaScreen({
                       key={item.id}
                       className={`flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 ${
                         active
-                          ? "border-cinema-gold/45 bg-cinema-gold/10"
+                          ? "border-melori-purple/45 bg-melori-purple/10"
                           : "border-transparent bg-black/20"
                       }`}
                     >
                       <span
                         className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
-                          active ? "bg-cinema-gold text-black" : "bg-white/10 text-white/50"
+                          active ? "bg-melori-purple text-white" : "bg-white/10 text-white/50"
                         }`}
                       >
                         {index + 1}
@@ -688,7 +688,7 @@ export function CinemaScreen({
                               })
                             }
                             aria-label={`Move ${label} up`}
-                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-cinema-gold disabled:opacity-20"
+                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-melori-accent disabled:opacity-20"
                           >
                             <ArrowUp className="h-3.5 w-3.5" aria-hidden />
                           </button>
@@ -703,7 +703,7 @@ export function CinemaScreen({
                               })
                             }
                             aria-label={`Move ${label} down`}
-                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-cinema-gold disabled:opacity-20"
+                            className="rounded p-1.5 text-white/35 transition hover:bg-white/5 hover:text-melori-accent disabled:opacity-20"
                           >
                             <ArrowDown className="h-3.5 w-3.5" aria-hidden />
                           </button>
@@ -726,7 +726,7 @@ export function CinemaScreen({
 
               {isHost && (
                 <details className="mt-2 border-t border-cinema-border pt-2">
-                  <summary className="cursor-pointer list-none px-1 py-2 text-xs font-semibold text-white/50 transition hover:text-cinema-gold">
+                  <summary className="cursor-pointer list-none px-1 py-2 text-xs font-semibold text-white/50 transition hover:text-melori-accent">
                     {remainingPlaylistSlots > 0
                       ? `Add videos (${remainingPlaylistSlots} open)`
                       : "Playlist full"}

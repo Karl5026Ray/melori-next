@@ -1,23 +1,16 @@
 "use client";
 
-// The shared live-room screen, rendered by BOTH room routes:
+// MM Cinema live room: /social/cinema/[roomId].
 //
-//   /social/spaces/[spaceId]  — audio Spaces (release_party | discussion |
-//                               dj_set) and the live_* formats
-//   /social/cinema/[roomId]   — Cinema watch parties
+// Cinema's own screen. Until 2 Oct 2026 one RoomScreen served both Cinema and
+// Spaces; Karl asked for the two to share no room code, so Spaces now has
+// spaces/SpacesRoomScreen.tsx and this file only knows about Cinema.
 //
-// It used to live at the Spaces route and be reached by Cinema too, which is
-// why a Cinema room had a /social/spaces/... URL. Concert Battle similarly
-// redirects to its dedicated route. The product routes name their
-// dynamic segment differently ([spaceId] vs [roomId]), so this component takes
-// the id as a prop rather than reading useParams() — that is the only reason
-// the prop exists.
-//
-// Cinema is still a `spaces` row with room_format='cinema'. That is deliberate:
-// it keeps roles, the ordered raise-hand queue, moderation, room bans and
-// unified end-room teardown shared rather than duplicated. Since 1 Oct 2026
-// Cinema is audio-only: its three seats are the host plus two speakers, capped
-// by src/lib/cinemaStage.ts (the camera-slot tables are dormant). The split here is about URLs and entry points, not storage.
+// A Cinema room is still a `spaces` row with room_format='cinema', so the two
+// products share plumbing (tables, moderation and ban routes, LiveKit,
+// PubNub) but no screen code. Cinema is audio-only since 1 Oct 2026: the
+// shared screen on top, three seats (host + two guests, capped by
+// src/lib/cinemaStage.ts), the listeners, and a persistent chat.
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -26,13 +19,6 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate, useCanRequestStage } from "@/components/social/UpgradePrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
 import { authFetch, authHeaders } from "@/lib/authClient";
-import {
-  joinChannel as agoraJoin,
-  leaveChannel as agoraLeave,
-  setMuted as agoraSetMuted,
-  setRole as agoraSetRole,
-  ensureAudioPlayback as agoraEnsureAudio,
-} from "@/lib/livekitClient";
 import {
   ensureVideoAudio,
   joinVideoRoom,
@@ -47,10 +33,7 @@ import {
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { sortStageQueue } from "@/lib/stageQueue";
-import { Badge } from "@/components/social/ui/Badge";
-import { StageGrid } from "@/components/social/spaces/StageGrid";
-import RoomCommentOverlay from "@/components/social/spaces/RoomCommentOverlay";
-import { useRoomComments } from "@/components/social/rooms/useRoomComments";
+import { useRoomComments, type ChatComment } from "@/components/social/rooms/useRoomComments";
 import CinemaStage from "@/components/social/cinema/CinemaStage";
 import CinemaVoiceCircles from "@/components/social/cinema/CinemaVoiceCircles";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
@@ -58,9 +41,6 @@ import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
 import { buildCinemaAudioSeats } from "@/lib/cinemaStage";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
-import { GiftPicker } from "@/components/social/gifts/GiftPicker";
-import { GiftOverlay } from "@/components/social/gifts/GiftOverlay";
-import { isConcertRoom, type GiftSignal } from "@/lib/gifting";
 import {
   ChevronDown,
   Share2,
@@ -76,6 +56,7 @@ import {
   Trash2,
   VolumeX,
   UserMinus,
+  UserPlus,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -91,13 +72,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const canRequestStage = useCanRequestStage();
 
   const [space, setSpace] = useState<Space | null>(null);
-  const isCinema = space?.room_format === "cinema";
-  // PubNub callbacks are intentionally long-lived; use a ref so a signal
-  // cannot render a gift in a non-Concert room even if the room object changes
-  // after the presence subscription was created.
-  const roomFormatRef = useRef<Space["room_format"]>(null);
-  roomFormatRef.current = space?.room_format ?? null;
-
+  // This screen is Cinema's alone; the Cinema route redirects every other
+  // format to its own product before this renders.
   // Where every exit from this room leads. Cinema rooms are `spaces` rows and
   // render at this same route, so without this they'd dump the viewer into
   // Spaces — a screen they may never have been on.
@@ -116,10 +92,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // Cinema's two bottom sheets: the raised-hands queue (host / moderators) and
   // the host's leave choice (hand off vs end for everyone). One state so they
   // can never both be open, sharing one focus-contained dialog below.
-  const [cinemaSheet, setCinemaSheet] = useState<null | "hands" | "leave">(null);
+  const [cinemaSheet, setCinemaSheet] = useState<null | "hands" | "leave" | "report">(null);
+  // What the report sheet is about: the room, or one chat message.
+  const [reportTarget, setReportTarget] = useState<
+    { kind: "space" } | { kind: "chat"; message: ChatComment } | null
+  >(null);
+  const [reportSending, setReportSending] = useState(false);
   const cinemaSheetReturnFocusRef = useRef<HTMLElement | null>(null);
   const cinemaSheetDialogRef = useRef<HTMLElement>(null);
-  const openCinemaSheet = useCallback((sheet: "hands" | "leave") => {
+  const openCinemaSheet = useCallback((sheet: "hands" | "leave" | "report") => {
     cinemaSheetReturnFocusRef.current =
       typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
     setCinemaSheet(sheet);
@@ -207,10 +188,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
-  const [activeGift, setActiveGift] = useState<GiftSignal | null>(null);
   // Targeted reaction bursts, keyed by the target participant's user id. Each
   // value is a list of unique burst keys ("<ts>-<seq>:<emoji>"). Rendered over
-  // that person's avatar in StageGrid, separate from the center-screen bursts.
+  // that person's seat or circle, separate from the center-screen bursts.
   const [targetedReactions, setTargetedReactions] = useState<
     Record<string, string[]>
   >({});
@@ -231,7 +211,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // participant grid gets the full sheet the way the reference room does.
   const [draft, setDraft] = useState("");
   // Tapping a tile as the host opens per-person controls; long-press always
-  // reacts. See StageGrid for the gesture handling.
+  // reacts.
   const [modTarget, setModTarget] = useState<SpaceParticipant | null>(null);
   // Newest room event, rendered as the one-line ticker docked above the
   // controls. Reactions only for now — hand raises keep their own toast.
@@ -430,7 +410,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       // Unlock remote audio playback so listeners can hear the speakers.
       // Browsers only honour this inside a user gesture; entering the room from
       // a tap counts, and the mic button covers the case where it doesn't.
-      void (isCinema ? ensureVideoAudio() : agoraEnsureAudio());
+      void ensureVideoAudio();
       // Best-effort participant count bump. Doesn't gate the UX.
       void supabase
         .rpc("increment_space_participants", { space_id: spaceId })
@@ -440,7 +420,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     } finally {
       joiningRef.current = false;
     }
-  }, [user, spaceId, router, space, roomPath, isCinema]);
+  }, [user, spaceId, router, space, roomPath]);
 
   // Enter the room on arrival, for EVERY signed-in user.
   //
@@ -474,8 +454,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     // Release media before the follow-up API call so hardware shuts down even
     // shuts down even if the follow-up API call fails.
     try {
-      if (isCinema) await leaveVideoRoom();
-      else await agoraLeave();
+      await leaveVideoRoom();
     } catch {
       /* noop */
     }
@@ -499,7 +478,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     setIsJoined(false);
     await supabase.rpc("decrement_space_participants", { space_id: spaceId });
     router.push(exitHrefRef.current);
-  }, [user, spaceId, router, isCinema]);
+  }, [user, spaceId, router]);
 
   // My own current on-stage role, mirrored from the participants table
   // (server-authoritative -- set only by the host's moderation actions or the
@@ -510,8 +489,32 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const myRole = participants.find((p) => p.user_id === user?.id && !p.left_at)?.role ?? null;
   const canSpeakNow = canSpeak(myRole);
   const handRaiseMode = space?.hand_raise_mode ?? "everyone";
+  // "followed" hand-raise mode: only people the host follows may raise a hand.
+  // The raise-hand route re-checks this server-side.
+  const [hostFollowsMe, setHostFollowsMe] = useState(false);
+  const hostIdForMode = space?.host_id ?? null;
+  useEffect(() => {
+    if (!user || !hostIdForMode || hostIdForMode === user.id || handRaiseMode !== "followed") {
+      setHostFollowsMe(false);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from("follows")
+      .select("id")
+      .eq("follower_id", hostIdForMode)
+      .eq("following_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setHostFollowsMe(Boolean(data));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, hostIdForMode, handRaiseMode]);
   const canRaiseHandNow =
-    canRequestStage && handRaiseAllowed(handRaiseMode, { signedIn: !!user });
+    canRequestStage &&
+    handRaiseAllowed(handRaiseMode, { signedIn: !!user, followedByHost: hostFollowsMe });
 
   // Central helper: change mute state locally + on LiveKit + in the DB.
   // The audio session is the source of truth: we drive the mic first, then
@@ -521,8 +524,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     async (nextMuted: boolean) => {
       if (!user) return;
       try {
-        if (isCinema) await setCinemaMicEnabled(!nextMuted);
-        else await agoraSetMuted(nextMuted);
+        await setCinemaMicEnabled(!nextMuted);
         // A successful unmute means the mic is actually live — clear any
         // previous "blocked" hint.
         if (!nextMuted) setMicDenied(false);
@@ -550,7 +552,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         .eq("user_id", user.id);
       if (muteErr) console.warn("is_muted persist failed", muteErr);
     },
-    [user, spaceId, isCinema],
+    [user, spaceId],
   );
 
   const toggleMute = useCallback(async () => {
@@ -564,9 +566,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     }
     // Keyboard/click activation is also a user gesture — unlock playback here
     // too so non-pointer paths still enable remote audio.
-    void (isCinema ? ensureVideoAudio() : agoraEnsureAudio());
+    void ensureVideoAudio();
     await applyMute(!isMuted);
-  }, [user, isMuted, canSpeakNow, applyMute, isCinema]);
+  }, [user, isMuted, canSpeakNow, applyMute]);
 
   // Press-and-hold-to-talk (PTT). While the mic button is held down we
   // unmute; on release we return to whatever mute state the user had before.
@@ -582,7 +584,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     if (!user || !canSpeakNow) return;
     // Unlock remote audio playback from this genuine user gesture (pointer/
     // touch/mouse down) so browsers allow everyone to be heard instantly.
-    void (isCinema ? ensureVideoAudio() : agoraEnsureAudio());
+    void ensureVideoAudio();
     if (pttHeldRef.current) return;
     pttHeldRef.current = true;
     pttStartedAtRef.current = Date.now();
@@ -590,7 +592,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     // Optimistically go live while the button is held. For a quick tap we
     // reconcile this into a normal toggle in endPTT.
     if (isMuted) void applyMute(false);
-  }, [user, canSpeakNow, isMuted, applyMute, isCinema]);
+  }, [user, canSpeakNow, isMuted, applyMute]);
 
   const endPTT = useCallback(() => {
     if (!pttHeldRef.current) return false;
@@ -810,7 +812,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     [runHostAction],
   );
 
-  // Host-only: grant or revoke the moderator badge (🎸 in StageGrid). The
+  // Host-only: grant or revoke the moderator badge. The
   // route restricts this to the host regardless of who calls it, and mirrors
   // the change into LiveKit stage permissions server-side — this is just the
   // UI trigger. Works whether the target is currently on stage or in the
@@ -881,14 +883,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       return;
     }
     try {
-      if (isCinema) await leaveVideoRoom();
-      else await agoraLeave();
+      await leaveVideoRoom();
     } catch {
       /* noop */
     }
     await authFetch(`/api/social/spaces/${spaceId}/end`, { method: "POST", headers: { "Content-Type": "application/json" } });
     router.push(exitHrefRef.current);
-  }, [isHost, spaceId, router, isCinema]);
+  }, [isHost, spaceId, router]);
 
   // Spawn a floating emoji burst locally. Used both for the local user's own
   // reactions and for reactions received from other participants over PubNub.
@@ -913,7 +914,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   );
 
   // Spawn a floating emoji burst over a specific participant's avatar. Mirrors
-  // spawnReaction but keyed by the target user id so StageGrid can render each
+  // spawnReaction but keyed by the target user id so the seat can render each
   // person's bursts locally. Fades after ~2s; the seq counter keeps keys unique.
   const spawnTargetedReaction = useCallback(
     (targetId: string, emoji: string) => {
@@ -986,135 +987,114 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     return () => clearTimeout(t);
   }, [activity]);
 
-  // Follow a member straight from their tile in the stage grid. Optimistic so
-  // the "+" flips to a check on tap; rolled back with a toast if the request
-  // fails, since a silently-stuck check would misreport the follow graph.
-  const handleFollowFromTile = useCallback(
+  // Follow or unfollow the host from the room menu. Optimistic, rolled back
+  // with a toast if the request fails.
+  const toggleHostFollow = useCallback(
     (targetId: string) => {
       if (!user || !targetId || targetId === user.id) return;
-      setFollowedIds((prev) => new Set(prev).add(targetId));
+      const following = followedIds.has(targetId);
+      const flip = (on: boolean) =>
+        setFollowedIds((prev) => {
+          const next = new Set(prev);
+          if (on) next.add(targetId);
+          else next.delete(targetId);
+          return next;
+        });
+      flip(!following);
       void (async () => {
         try {
-          const res = await authFetch("/api/social/follow", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ target: targetId }),
-          });
+          const res = following
+            ? await authFetch(`/api/social/follow?target=${encodeURIComponent(targetId)}`, {
+                method: "DELETE",
+              })
+            : await authFetch("/api/social/follow", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ target: targetId }),
+              });
           if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-            throw new Error(data?.error ?? "Could not follow");
+            throw new Error(data?.error ?? "Could not update follow");
           }
+          setShareToast(following ? "Unfollowed" : "Following");
+          setTimeout(() => setShareToast(null), 1800);
         } catch (e) {
-          setFollowedIds((prev) => {
-            const next = new Set(prev);
-            next.delete(targetId);
-            return next;
-          });
-          setShareToast(e instanceof Error ? e.message : "Could not follow");
+          flip(following);
+          setShareToast(e instanceof Error ? e.message : "Could not update follow");
           setTimeout(() => setShareToast(null), 2500);
         }
       })();
     },
-    [user],
+    [user, followedIds],
   );
 
-  // ---- Agora audio lifecycle -----------------------------------------------
-  // We (re)join whenever role changes. Audience → subscriber, speaker/host →
-  // publisher. Any signed-in user joins as a SUBSCRIBER to LISTEN for free.
-  // Clubhouse parity: publishing (speaking) is gated on the participant's
-  // *role* (host/speaker, i.e. host-promoted), not on membership tier -- the
-  // livekit-token route mints a publisher token for any promoted Spaces
-  // participant regardless of tier (MM Faces video rooms still require
-  // Superfan+ even once promoted; see that route's comments).
+  // Load whether the viewer already follows the host (follows are publicly
+  // readable). It used to be seeded empty, so the menu always said "follow".
+  const hostIdForFollow = space?.host_id ?? null;
   useEffect(() => {
-    // Cinema uses livekitVideoClient as its sole camera-capable Room. Never
-    // connect the audio-only client to the same identity/room in parallel.
-    if (isCinema || !isJoined || !user || !space?.agora_channel) return;
-
-    const myPart = participants.find(
-      (p) => p.user_id === user.id && !p.left_at,
-    );
-    if (!myPart) return;
-
-    const role: "publisher" | "subscriber" =
-      myPart.role === "host" || myPart.role === "speaker"
-        ? "publisher"
-        : "subscriber";
-
+    if (!user || !hostIdForFollow || hostIdForFollow === user.id) return;
     let cancelled = false;
-    (async () => {
-      try {
-        await agoraJoin({
-          channel: space.agora_channel!,           spaceType: space.type,
-          role,
-          spaceId,
-          onActiveSpeakersChange: (identities: string[]) => setSpeakingIds(new Set(identities)),
-          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),
-          onRoomEnded: () => {
-            if (cancelled) return;
-            setRoomEnded(true);
-            setTimeout(() => router.push(exitHrefRef.current), 1800);
-          },
-          onError: (err) => {
-            if (
-              /NotAllowedError|Permission|permission denied/i.test(
-                err.message ?? "",
-              )
-            ) {
-              setMicDenied(true);
-            }
-            console.warn("agora error", err);
-          },
+    void supabase
+      .from("follows")
+      .select("following_id")
+      .eq("follower_id", user.id)
+      .eq("following_id", hostIdForFollow)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setFollowedIds((prev) => {
+          const next = new Set(prev);
+          if (data) next.add(hostIdForFollow);
+          else next.delete(hostIdForFollow);
+          return next;
         });
-        if (cancelled) await agoraLeave();
-      } catch (err) {
-        if (
-          /NotAllowedError|Permission|permission denied/i.test(
-            (err as Error).message ?? "",
-          )
-        ) {
-          setMicDenied(true);
-        }
-        console.warn("agora join failed", err);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
-    // We intentionally re-run when the participant's role changes so we can
-    // switch publisher/subscriber cleanly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isJoined,
-    user?.id,
-    space?.agora_channel,
-    spaceId,
-    canParticipate,
-    isCinema,
-    participants.find((p) => p.user_id === user?.id)?.role,
-  ]);
+  }, [user, hostIdForFollow]);
 
-  // React to role changes without a full rejoin when we're already connected.
-  useEffect(() => {
-    if (isCinema || !user || !isJoined) return;
-    const myPart = participants.find(
-      (p) => p.user_id === user.id && !p.left_at,
-    );
-    if (!myPart) return;
-    const desired: "publisher" | "subscriber" =
-      myPart.role === "host" || myPart.role === "speaker"
-        ? "publisher"
-        : "subscriber";
-    agoraSetRole(desired).catch(() => {
-      /* handled inside setRole */
-    });
-  }, [user, isJoined, participants, isCinema]);
+  // Report the room or one chat message: the moderation queue, plus an email
+  // to Karl (see /api/social/report). Replaced an alert() that sent nothing.
+  const submitReport = useCallback(
+    async (reason: string) => {
+      if (!reportTarget || reportSending) return;
+      setReportSending(true);
+      const body =
+        reportTarget.kind === "space"
+          ? { content_type: "space", content_id: spaceId, reported_user: space?.host_id ?? undefined, reason }
+          : {
+              content_type: "space_chat",
+              content_id: reportTarget.message.id,
+              reported_user: reportTarget.message.user_id ?? undefined,
+              reason,
+              details: reportTarget.message.body.slice(0, 900),
+            };
+      try {
+        const res = await authFetch("/api/social/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        setShareToast(res.ok ? "Reported. Thank you." : data?.error ?? "Could not send the report");
+      } catch {
+        setShareToast("Network error");
+      } finally {
+        setReportSending(false);
+        setReportTarget(null);
+        setCinemaSheet(null);
+        setTimeout(() => setShareToast(null), 2500);
+      }
+    },
+    [reportTarget, reportSending, spaceId, space?.host_id],
+  );
 
   // Cinema's one RTC connection. Cinema is audio-only (1 Oct 2026): the host
   // and the two seated guests publish a microphone, everyone else listens. The
   // camera is never requested, so no permission prompt for it ever appears.
   useEffect(() => {
-    if (!isCinema || !isJoined || !user || !space) return;
+    if (!isJoined || !user || !space) return;
     const myPart = participants.find((participant) => participant.user_id === user.id && !participant.left_at);
     if (!myPart) return;
     const role: "publisher" | "subscriber" =
@@ -1164,7 +1144,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     // intentionally reconnects this one room with a fresh, server-authorized
     // publish grant.
   }, [
-    isCinema,
     isJoined,
     user?.id,
     spaceId,
@@ -1248,21 +1227,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               setPeerHandToast(`✋ ${who} raised their hand`);
               setTimeout(() => setPeerHandToast(null), 2600);
             }
-            if (
-              signal.type === "gift" &&
-              isConcertRoom(roomFormatRef.current) &&
-              signal.gift &&
-              signal.giftSendId &&
-              signal.target
-            ) {
-              setActiveGift({
-                type: "gift",
-                giftSendId: signal.giftSendId,
-                gift: signal.gift,
-                targetId: signal.target,
-                senderName: signal.senderName,
-              });
-            }
           },
           onError: (err) => console.warn("pubnub presence", err),
         });
@@ -1316,8 +1280,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             blob,
           );
         }
-        if (isCinema) await leaveVideoRoom();
-        else await agoraLeave();
+        await leaveVideoRoom();
         // Explicit PubNub leave → immediate `leave` presence event → webhook
         // fires now instead of waiting for the presence timeout.
         await pubnubLeave();
@@ -1334,12 +1297,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("beforeunload", onPageHide);
     };
-  }, [isJoined, spaceId, isCinema]);
+  }, [isJoined, spaceId]);
 
   // Component unmount → leave Agora + PubNub presence cleanly.
   useEffect(() => {
     return () => {
-      void agoraLeave();
       void leaveVideoRoom();
       void pubnubLeave();
     };
@@ -1352,7 +1314,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     if (typeof document === "undefined") return;
     const unlock = () => {
-      void (isCinema ? ensureVideoAudio() : agoraEnsureAudio());
+      void ensureVideoAudio();
     };
     document.addEventListener("pointerdown", unlock, { once: true });
     document.addEventListener("click", unlock, { once: true });
@@ -1360,12 +1322,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       document.removeEventListener("pointerdown", unlock);
       document.removeEventListener("click", unlock);
     };
-  }, [isCinema]);
+  }, []);
 
   // Drive is_speaking from the real-time client set (authoritative: every client
   // hears the whole room via ActiveSpeakersChanged), so the ring shows for
   // everyone who is speaking and clears when they stop — not stuck on a stale DB
-  // value. StageGrid still gates on !is_muted, so muted users never show a ring.
+  // value. The rings still gate on mute, so muted users never show one.
   const withSpeaking = participants.map((p) => ({
     ...p,
     is_speaking: speakingIds.has(p.user_id),
@@ -1460,15 +1422,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const commentComposer = (
     <form
       onSubmit={submitComment}
-      data-testid={isCinema ? "cinema-composer" : "spaces-composer"}
+      data-testid="cinema-composer"
       className={`flex-1 min-w-0 flex items-center gap-1.5 pl-4 pr-1.5 rounded-full bg-melori-void/70 focus-within:bg-melori-void transition ${
-        isCinema ? "h-10" : "h-12"
+        "h-10"
       }`}
     >
       <input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder={isCinema ? "Say something to the room" : "say something"}
+        placeholder="Say something to the room"
         aria-label="Write a comment"
         enterKeyHint="send"
         maxLength={2000}
@@ -1478,7 +1440,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         type="submit"
         disabled={!draft.trim() || sendingComment}
         aria-label="Send comment"
-        className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full bg-[#1d9bf0] text-white transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
+        className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full bg-melori-purple text-white transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
       >
         <Send className="w-[18px] h-[18px]" />
       </button>
@@ -1500,289 +1462,171 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     // (z-[70]). max-height still clamps a flex item, so it pins the column to
     // the real available height; the scroll region's `flex-1 min-h-0` then
     // absorbs the difference and the shrink-0 control bar stays on screen.
-    <div
-      className={
-        isCinema
-          ? "cinema-room-shell flex h-[100dvh] max-h-[100dvh] min-h-0 flex-1 flex-col overflow-hidden bg-black animate-fade-in"
-          : "flex-1 flex flex-col h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 bg-black pt-2 animate-fade-in"
-      }
-    >
-      <div className="flex-1 flex flex-col min-h-0 rounded-t-3xl bg-melori-void overflow-hidden">
-        {/* The drag pill is decoration. Cinema spends that height on the chat. */}
-        {!isCinema && (
-          <div className="shrink-0 pt-2.5 flex justify-center" aria-hidden="true">
-            <span className="h-1 w-9 rounded-full bg-white/25" />
-          </div>
-        )}
+    <div className="cinema-room-shell flex h-[100dvh] max-h-[100dvh] min-h-0 flex-1 flex-col overflow-hidden bg-melori-void animate-fade-in">
+      <div className="flex-1 flex flex-col min-h-0 bg-melori-void overflow-hidden">
 
+        {/* One header line (the look Karl picked from the prototype): back,
+            live state, the title with the head count and host under it,
+            share, and the room menu. Every pixel saved here goes to the
+            screen and the chat. */}
         <div
-          className={`px-4 md:px-6 flex items-center justify-between shrink-0 ${
-            isCinema ? "pt-1.5 pb-0.5" : "pt-3 pb-1"
-          }`}
-          data-testid={isCinema ? "cinema-room-header" : undefined}
+          className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-2.5 px-4 pb-1.5 pt-1"
+          data-testid="cinema-room-header"
         >
           <Link
             href={exitHref}
             aria-label={roomExitLabel(space?.room_format)}
-            className="-ml-1 p-2 rounded-full hover:bg-white/5 transition shrink-0"
+            className="-ml-2 grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-white/5"
           >
-            <ChevronDown className="w-7 h-7" strokeWidth={2.5} />
+            <ChevronDown className="h-6 w-6" strokeWidth={2.5} />
           </Link>
-          <div className="flex items-center gap-3 shrink-0">
-            {isJoined && user && isConcertRoom(space.room_format) && (
-              <GiftPicker
-                spaceId={spaceId}
-                hostId={hostId}
-                participants={participants}
-                senderName={user.display_name}
-                onSignal={(signal) => {
-                  setActiveGift(signal);
-                }}
-              />
-            )}
+          {space.status === "live" ? (
+            <span className="shrink-0 rounded bg-melori-danger px-1.5 py-0.5 text-[11px] font-bold tracking-[0.08em] text-white">
+              LIVE
+            </span>
+          ) : (
+            <span className="shrink-0 rounded bg-melori-elevated px-1.5 py-0.5 text-[11px] font-bold tracking-[0.08em] text-melori-muted">
+              {space.status === "scheduled" ? "SOON" : "ENDED"}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-bold leading-tight text-melori-text">
+              {space.title}
+            </h1>
+            <p className="truncate text-xs text-melori-muted tabular-nums">
+              {cinemaAudience.length} listening · {cinemaSeatUserIds.size} on stage ·{" "}
+              {hostProfile?.display_name ?? "Host"}
+            </p>
+          </div>
+          {!user && (
+            <Link
+              href={exitHref}
+              data-testid="spaces-back"
+              className="shrink-0 rounded-full border border-melori-border bg-melori-elevated px-3 py-2 text-sm font-medium"
+            >
+              Back
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={handleShare}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-melori-border bg-melori-elevated transition hover:bg-white/10"
+            aria-label="Share this space"
+          >
+            <Share2 className="h-[18px] w-[18px]" />
+          </button>
+          <div className="relative shrink-0">
             <button
               type="button"
-              onClick={handleShare}
-              className="w-11 h-11 flex items-center justify-center rounded-full bg-melori-elevated hover:bg-white/10 transition"
-              title="Share"
-              aria-label="Share this space"
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-expanded={moreOpen}
+              className="grid h-10 w-10 place-items-center rounded-full hover:bg-white/5"
+              aria-label="More room options"
             >
-              <Share2 className="w-[18px] h-[18px]" />
+              <MoreHorizontal className="h-6 w-6" />
             </button>
-            {/* Leave moves out of the control bar and into the header as the
-                reference's peace-sign pill. handleLeave is unchanged — this is
-                the same "leave quietly" action, just relocated.
-
-                Cinema puts it back in the dock instead, bottom-left, where
-                Clubhouse keeps "leave quietly": the header there is a single
-                tight line competing with the screen for height.
-
-                Only for people actually in the room. A signed-out visitor was
-                previously offered "leave" for a room they had never entered,
-                which is where the flow started reading as broken. They get a
-                plain back link to the same destination instead. */}
-            {isJoined && isCinema ? null : isJoined ? (
-              <button
-                type="button"
-                data-testid="spaces-leave"
-                onClick={handleLeave}
-                className="h-11 pl-3.5 pr-4 flex items-center gap-1.5 rounded-full bg-melori-elevated hover:bg-red-500/15 transition"
-              >
-                <span aria-hidden="true" className="text-base leading-none">
-                  ✌️
-                </span>
-                <span className="text-[17px] font-medium">leave</span>
-              </button>
-            ) : (
-              <Link
-                href={exitHref}
-                data-testid="spaces-back"
-                className="h-11 px-4 flex items-center rounded-full bg-melori-elevated hover:bg-white/10 transition text-[17px] font-medium"
-              >
-                back
-              </Link>
-            )}
-          </div>
-        </div>
-
-        {/* Room meta: host chip, title, topic. The reference puts a community
-            chip here with a join link; MM Spaces has no club/community model,
-            so the closest true equivalent is the host — same shape, same
-            inline follow affordance, backed by the follow API we already use
-            on the tiles. */}
-        <div className={`px-4 md:px-6 shrink-0 ${isCinema ? "pt-1 pb-1.5" : "pt-2 pb-4"}`}>
-          <div className="flex items-center gap-2 min-w-0">
-            <img
-              src={hostProfile?.avatar_url || "/favicon.png"}
-              alt=""
-              className="w-5 h-5 rounded object-cover shrink-0"
-            />
-            <span className="text-[15px] font-semibold uppercase tracking-wide truncate min-w-0">
-              {hostProfile?.display_name ?? "Host"}
-            </span>
-            {/* In Cinema the format chip rides along on the host row instead of
-                claiming a line of its own below the title: every pixel spent on
-                chrome here comes straight out of the shared screen. */}
-            {isCinema && (
-              <Badge variant={format.variant} className="shrink-0">
-                {format.label}
-              </Badge>
-            )}
-            {!isHost && hostId && (
-              <button
-                type="button"
-                onClick={() => handleFollowFromTile(hostId)}
-                disabled={followsHost}
-                className={`shrink-0 text-[15px] font-semibold ${
-                  followsHost
-                    ? "text-melori-muted"
-                    : "text-[#1d9bf0] underline hover:brightness-110"
-                }`}
-              >
-                {followsHost ? "following" : "follow"}
-              </button>
-            )}
-            <div className="ml-auto relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setMoreOpen((v) => !v)}
-                aria-expanded={moreOpen}
-                className="p-1.5 -mr-1.5 rounded-full hover:bg-white/5 transition"
-                title="More"
-                aria-label="More room options"
-              >
-                <MoreHorizontal className="w-6 h-6" />
-              </button>
-              {moreOpen && (
-            <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-melori-border bg-melori-void shadow-xl overflow-hidden z-20">
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  void handleShare();
-                }}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5 transition"
-              >
-                <Copy className="w-4 h-4" />
-                Copy room link
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  alert(
-                    "Thanks — a moderator will review this space.",
-                  );
-                }}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5 transition"
-              >
-                <Flag className="w-4 h-4" />
-                Report space
-              </button>
-              {isHost && (
-                <div className="border-t border-melori-border">
-                  <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-melori-muted">
-                    Who can raise a hand
-                  </p>
-                  {(
-                    [
-                      { value: "everyone" as const, label: "Everyone" },
-                      { value: "off" as const, label: "Off (host invites only)" },
-                      { value: "followed" as const, label: "Followed (TODO)" },
-                    ]
-                  ).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={opt.value === "followed"}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        void setHandRaiseMode(opt.value);
-                      }}
-                      title={
-                        opt.value === "followed"
-                          ? "Not implemented yet -- no follow-graph check is wired up. See spacesStage.ts."
-                          : undefined
-                      }
-                      className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-sm transition ${
-                        opt.value === "followed"
-                          ? "text-melori-muted/50 cursor-not-allowed"
-                          : "text-melori-text hover:bg-white/5"
-                      }`}
-                    >
-                      <span>{opt.label}</span>
-                      {handRaiseMode === opt.value && (
-                        <span className="text-melori-purple text-xs">✓</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {isHost && (
+            {moreOpen && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-xl border border-melori-border bg-melori-elevated shadow-xl">
                 <button
                   type="button"
                   onClick={() => {
                     setMoreOpen(false);
-                    void handleEndSpace();
+                    void handleShare();
                   }}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition border-t border-melori-border"
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  End space
+                  <Copy className="h-4 w-4" />
+                  Copy room link
                 </button>
-              )}
-            </div>
-          )}
-              {shareToast && (
-                <span className="absolute right-0 -bottom-9 whitespace-nowrap rounded-full bg-melori-purple/90 text-white text-xs font-medium px-3 py-1.5 shadow-lg z-20">
-                  {shareToast}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Title gets room to wrap to two lines instead of being truncated
-              next to a row of badges. break-words guards the long unbroken
-              title the mobile-layout spec exercises.
-
-              Cinema is the exception: its header is competing for height with a
-              big shared screen, three live seats, and three rows of listeners in
-              one non-scrolling viewport, so the title stays on a single small
-              line there and the topic prose is dropped entirely. */}
-          <h1
-            className={`leading-[1.15] font-bold break-words ${
-              isCinema
-                ? "mt-0.5 truncate text-[15px] sm:text-[22px]"
-                : "mt-1.5 text-[26px]"
-            }`}
-          >
-            {space.title}
-          </h1>
-
-          <div
-            className={`flex items-center gap-2 flex-wrap ${
-              isCinema ? "hidden" : "mt-2"
-            }`}
-          >
-            {space.topic && (
-              <p className="text-[15px] text-melori-muted break-words min-w-0">
-                {space.topic}
-              </p>
-            )}
-            <Badge variant={format.variant} className="shrink-0">
-              {format.label}
-            </Badge>
-            {liveHere !== null && (
-              <span
-                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-melori-purple/15 px-2 py-0.5 text-[11px] font-medium text-melori-purple"
-                title="Live presence (PubNub)"
-                data-testid="badge-here-now"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-melori-purple animate-pulse" />
-                {liveHere} here
-              </span>
+                {!isHost && hostId && user && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      toggleHostFollow(hostId);
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    {followsHost ? "Unfollow host" : "Follow host"}
+                  </button>
+                )}
+                {user && !isHost && (
+                  <button
+                    type="button"
+                    data-testid="cinema-report-room"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setReportTarget({ kind: "space" });
+                      openCinemaSheet("report");
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-melori-text hover:bg-white/5"
+                  >
+                    <Flag className="h-4 w-4" />
+                    Report room
+                  </button>
+                )}
+                {isHost && (
+                  <div className="border-t border-melori-border">
+                    <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-melori-muted">
+                      Who can raise a hand
+                    </p>
+                    {(
+                      [
+                        { value: "everyone" as const, label: "Everyone" },
+                        { value: "followed" as const, label: "People I follow" },
+                        { value: "off" as const, label: "Nobody (I invite)" },
+                      ]
+                    ).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setMoreOpen(false);
+                          void setHandRaiseMode(opt.value);
+                        }}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-2 text-sm text-melori-text hover:bg-white/5"
+                      >
+                        <span>{opt.label}</span>
+                        {handRaiseMode === opt.value && (
+                          <span className="text-xs text-melori-accent">✓</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isHost && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      openCinemaSheet("leave");
+                    }}
+                    className="flex w-full items-center gap-3 border-t border-melori-border px-4 py-2.5 text-sm text-melori-danger hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    End room
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-      {/* relative anchors the floating comment overlay to the grid area, so
-          comments drift up over the tiles instead of over the header. */}
+        {shareToast && (
+          <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-[95] flex justify-center px-4">
+            <span
+              role="status"
+              className="rounded-full bg-melori-text px-4 py-1.5 text-xs font-semibold text-melori-void shadow-lg"
+            >
+              {shareToast}
+            </span>
+          </div>
+        )}
+
       <div className="relative flex-1 min-h-0 flex flex-col">
-      {isJoined && !isCinema && (
-        <RoomCommentOverlay comments={roomComments} />
-      )}
-      <div
-        className={`flex-1 min-h-0 px-4 md:px-8 ${
-          isCinema ? "overflow-hidden pb-2" : "overflow-y-auto pb-4"
-        }`}
-      >
-        <div
-          className={
-            isCinema
-              ? "mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col"
-              : "max-w-2xl mx-auto"
-          }
-        >
+      <div className="flex-1 min-h-0 overflow-hidden px-4 pb-2 md:px-8">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col">
           {space.status === "scheduled" && (
             <div className="mb-6 rounded-2xl border border-melori-purple/30 bg-melori-purple/10 p-5 flex items-center justify-between gap-4">
               <div>
@@ -1845,7 +1689,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           )}
 
             <>
-              {isCinema && cinemaSheet && (
+              {cinemaSheet && (
                 <div
                   className="fixed inset-0 z-[90] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
                   onClick={closeCinemaSheet}
@@ -1859,7 +1703,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   aria-modal="true"
                   aria-labelledby="cinema-sheet-heading"
                   aria-describedby="cinema-sheet-description"
-                  data-testid={cinemaSheet === "hands" ? "cinema-hands-sheet" : "cinema-leave-sheet"}
+                  data-testid={`cinema-${cinemaSheet}-sheet`}
                 >
                   {cinemaSheet === "hands" ? (
                     <>
@@ -1916,6 +1760,47 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                         </ul>
                       )}
                     </>
+                  ) : cinemaSheet === "report" ? (
+                    <>
+                      <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
+                        {reportTarget?.kind === "chat" ? "Report this message" : "Report this room"}
+                      </h2>
+                      <p id="cinema-sheet-description" className="mt-1 text-sm text-melori-muted">
+                        What&apos;s wrong? Melori reviews every report.
+                      </p>
+                      <div className="mt-4 flex flex-col gap-2">
+                        {(
+                          [
+                            ["harassment", "Harassment or hate"],
+                            ["spam", "Spam or scams"],
+                            ["sexual", "Sexual content"],
+                            ["violence", "Threats or violence"],
+                            ["other", "Something else"],
+                          ] as const
+                        ).map(([key, label], index) => (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={reportSending}
+                            {...(index === 0 ? { "data-cinema-dialog-initial-focus": true } : {})}
+                            onClick={() => void submitReport(key)}
+                            className="min-h-11 rounded-xl border border-melori-border bg-melori-void px-4 text-left text-sm font-semibold disabled:opacity-50"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportTarget(null);
+                            closeCinemaSheet();
+                          }}
+                          className="min-h-11 rounded-xl px-4 text-sm font-medium text-melori-muted hover:bg-white/5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
@@ -1962,7 +1847,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 </div>
               )}
 
-              {isCinema && (
                 <CinemaRoomCanvas
                   screen={<CinemaScreen spaceId={spaceId} isHost={isHost} viewportBound />}
                   seats={
@@ -1990,172 +1874,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                       canModerate={canModerateRoom}
                       stageIds={cinemaSeatUserIds}
                       onDelete={(id) => void deleteComment(id)}
+                      onReport={(message) => {
+                        setReportTarget({ kind: "chat", message });
+                        openCinemaSheet("report");
+                      }}
                       composer={user && isJoined ? commentComposer : undefined}
                     />
                   }
                 />
-              )}
-
-              <div className={isCinema ? "mb-0" : "mb-8"}>
-                {reconnecting && !isCinema && (<div className="mb-3 px-4 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/40 text-yellow-200 text-sm text-center">Reconnecting to audio…</div>)}
-                {/* Audio rooms split into a Stage (host + speakers, uncapped —
-                    no live video, matching Karl's call to keep this audio-only)
-                    and an Audience grid below it, unchanged from the single
-                    grid this used to be. The header/topic/leave chrome around
-                    this block is untouched — only this participant area split.
-                    Cinema keeps its own stage/audience layout further up (fixed
-                    front-row seats with HOST/GUEST labels) and never reaches
-                    this branch. */}
-                {!isCinema && speakers.length > 0 && (
-                  <div className="mb-6">
-                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
-                      Stage{speakers.length > 1 ? ` (${speakers.length})` : ""}
-                    </h3>
-                    <StageGrid
-                      participants={speakers}
-                      size="lg"
-                      onReactToParticipant={setReactTarget}
-                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
-                      reactionBursts={targetedReactions}
-                      viewerId={user?.id}
-                      followingIds={followedIds}
-                      onFollow={handleFollowFromTile}
-                    />
-                  </div>
-                )}
-
-                {!isCinema && isHost && speakers.filter((s) => s.user_id !== user?.id).length > 0 && (
-                  <div className="mt-4 rounded-xl border border-melori-border bg-melori-elevated/40 divide-y divide-melori-border/60">
-                    {speakers
-                      .filter((s) => s.user_id !== user?.id)
-                      .map((s) => (
-                        <div
-                          key={s.id}
-                          className="flex items-center gap-3 px-3 py-2"
-                        >
-                          <img
-                            src={s.user?.avatar_url || "/favicon.png"}
-                            className="w-8 h-8 rounded-full object-cover"
-                            alt=""
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {s.user?.display_name}
-                            </p>
-                            <p className="text-[11px] text-melori-muted">
-                              {s.role === "host" ? "Host" : "Speaker"}
-                              {(s as any).host_muted ? " · muted by host" : ""}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              s.user_id &&
-                              hostMute(s.user_id, !(s as any).host_muted)
-                            }
-                            className="p-2 rounded-full hover:bg-white/5 text-melori-muted hover:text-melori-text transition"
-                            title={
-                              (s as any).host_muted
-                                ? "Unmute speaker"
-                                : "Mute speaker"
-                            }
-                          >
-                            {(s as any).host_muted ? (
-                              <Mic className="w-4 h-4" />
-                            ) : (
-                              <VolumeX className="w-4 h-4" />
-                            )}
-                          </button>
-                          {s.role !== "host" && s.user_id && (
-                            <button
-                              type="button"
-                              onClick={() => hostDemote(s.user_id!)}
-                              className="p-2 rounded-full hover:bg-white/5 text-melori-muted hover:text-melori-text transition"
-                              title="Move to audience"
-                            >
-                              <Hand className="w-4 h-4" />
-                            </button>
-                          )}
-                          {s.role !== "host" && s.user_id && (
-                            <button
-                              type="button"
-                              onClick={() => hostRemove(s.user_id!)}
-                              className="p-2 rounded-full hover:bg-red-500/10 text-melori-muted hover:text-red-400 transition"
-                              title="Remove from space"
-                            >
-                              <UserMinus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {!isCinema && audience.length > 0 && (
-                  <div className="mt-8">
-                    <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
-                      Audience{audience.length > 1 ? ` (${audience.length})` : ""}
-                    </h3>
-                    <StageGrid
-                      participants={audience}
-                      onReactToParticipant={setReactTarget}
-                      onSelectParticipant={isHost ? setModTarget : setReactTarget}
-                      reactionBursts={targetedReactions}
-                      viewerId={user?.id}
-                      followingIds={followedIds}
-                      onFollow={handleFollowFromTile}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {micDenied && !isCinema && (
-                <div className="mb-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
-                  Microphone access was blocked. Enable it in your browser
-                  settings to speak in this space.
-                </div>
-              )}
-
-              {!isCinema && raisedHands.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-xs font-semibold text-melori-muted uppercase tracking-wider mb-4">
-                    Raised Hands ({raisedHands.length})
-                  </h3>
-                  <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-                    {raisedHands.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex flex-col items-center gap-2 min-w-[64px]"
-                      >
-                        <div className="relative">
-                          <img
-                            src={p.user?.avatar_url || "/favicon.png"}
-                            className="w-14 h-14 rounded-full border-2 border-melori-warning/50 opacity-70 object-cover"
-                            alt={p.user?.display_name}
-                          />
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-melori-warning rounded-full flex items-center justify-center">
-                            <Hand className="w-3 h-3 text-melori-void" />
-                          </div>
-                        </div>
-                        <span className="text-xs text-melori-muted truncate w-16 text-center">
-                          {p.user?.display_name}
-                        </span>
-                        {isHost && p.user_id && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              p.user_id && invitePromote(p.user_id)
-                            }
-                            className="text-[10px] bg-melori-purple/20 text-melori-purple px-2 py-1 rounded-full hover:bg-melori-purple/30 transition"
-                          >
-                            Invite
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
             </>
 
@@ -2165,7 +1891,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       </div>
 
       {/* Floating reaction bursts */}
-      <GiftOverlay signal={activeGift} onFinished={() => setActiveGift(null)} />
 
       {reactions.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 safe-bottom-offset-32 z-30 flex justify-center gap-3">
@@ -2372,21 +2097,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           thing it unlocks will appear, and the participant grid is never
           pushed down the screen to make room for it. */}
       {!user && (
-        <div
-          className={`shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 ${
-            isCinema
-              ? "pb-[calc(1rem+env(safe-area-inset-bottom))]"
-              : "pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
-          }`}
-        >
-          <div className="flex justify-center" aria-hidden="true">
-            <span className="h-1 w-9 rounded-full bg-white/25" />
-          </div>
+        <div className="shrink-0 border-t border-melori-border bg-melori-void pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="max-w-2xl mx-auto px-4 md:px-6 pt-3">
             <button
               onClick={handleJoin}
               data-testid="spaces-signin-cta"
-              className="w-full rounded-full bg-[#1d9bf0] py-3.5 text-[16px] font-bold text-white active:opacity-80"
+              className="w-full rounded-full bg-melori-purple py-3.5 text-[16px] font-bold text-white active:opacity-80"
             >
               Sign in to join the conversation
             </button>
@@ -2395,22 +2111,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       )}
 
       {isJoined && (
-        <div
-          className={`shrink-0 rounded-t-3xl bg-melori-elevated ${
-            isCinema
-              ? "pt-1 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
-              : "pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
-          }`}
-        >
-          {!isCinema && (
-            <div className="flex justify-center" aria-hidden="true">
-              <span className="h-1 w-9 rounded-full bg-white/25" />
-            </div>
-          )}
+        <div className="shrink-0 border-t border-melori-border bg-melori-void pt-1 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
 
           {/* Cinema's room is one non-scrolling viewport, so its connection and
               microphone notices ride on the dock rather than below the fold. */}
-          {isCinema && (reconnecting || micDenied) && (
+          {(reconnecting || micDenied) && (
             <p
               role="status"
               className="max-w-2xl mx-auto px-4 md:px-6 pt-2 text-center text-xs text-yellow-200"
@@ -2447,15 +2152,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
              than taking the primary slot. "End space" is not duplicated here
              — it lives in the header's overflow menu. */}
           <div
-            data-testid={isCinema ? "cinema-control-dock" : "spaces-control-bar"}
-            className={`max-w-2xl mx-auto px-4 md:px-6 flex items-center gap-2 ${
-              isCinema ? "pt-1.5 min-h-[56px]" : "pt-3 min-h-[64px]"
-            }`}
+            data-testid="cinema-control-dock"
+            className="max-w-2xl mx-auto px-4 md:px-6 flex items-center gap-2 pt-1.5 min-h-[56px]"
           >
             {/* Cinema: leave quietly sits bottom-left, away from the mic, as in
                Clubhouse. Listeners and guests just go; the host is asked
                whether to hand the room off or end it for everyone. */}
-            {isCinema && (
               <button
                 type="button"
                 data-testid="cinema-leave"
@@ -2467,9 +2169,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 </span>
                 <span className="text-[15px] font-semibold">Leave quietly</span>
               </button>
-            )}
-            {isCinema && <span className="flex-1" aria-hidden="true" />}
-            {isCinema && canModerateRoom && (
+            <span className="flex-1" aria-hidden="true" />
+            {canModerateRoom && (
               <button
                 type="button"
                 data-testid="cinema-hands-queue"
@@ -2498,7 +2199,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             {canSpeakNow && (
               <button
                 type="button"
-                data-testid={isCinema ? "cinema-mic" : undefined}
+                data-testid="cinema-mic"
                 onClick={() => {
                   // Pointer/touch gestures resolve the tap in endPTTGesture; a
                   // mouse release fires a synthetic click right after, which we
@@ -2530,8 +2231,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 title="Tap to toggle mute · Press and hold to talk"
                 className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition select-none touch-none ${
                   isMuted
-                    ? "bg-red-500/20 text-red-400"
-                    : "bg-melori-purple text-white"
+                    ? "border border-melori-border bg-melori-elevated text-melori-danger"
+                    : "bg-melori-text text-melori-void"
                 }`}
               >
                 {isMuted ? (
@@ -2544,21 +2245,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
             {/* Ask to speak. Hidden for the host, for anyone already on stage
                (they don't need to ask), and whenever the host has set
-               hand_raise_mode to "off" (or the not-yet-enforced "followed" --
+               hand_raise_mode to "off", or to "followed" and does not follow you --
                see spacesStage.ts). The label is carried by aria + title rather
                than visible text so the comment field keeps the width. */}
             {!isHost && !canSpeakNow && canRaiseHandNow && (
               <button
                 type="button"
                 onClick={toggleHand}
-                data-testid={isCinema ? "cinema-raise-hand" : "spaces-ask-to-speak"}
+                data-testid="cinema-raise-hand"
                 title={hasRaisedHand ? "Lower hand" : "Ask to speak"}
                 aria-label={hasRaisedHand ? "Lower hand" : "Ask to speak"}
                 aria-pressed={hasRaisedHand}
                 className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition ${
                   hasRaisedHand
                     ? "bg-melori-warning/20 text-melori-warning"
-                    : "bg-[#1d9bf0] text-white hover:brightness-110"
+                    : "border border-melori-border bg-melori-elevated text-melori-text hover:bg-white/10"
                 }`}
               >
                 <Hand className="w-6 h-6" />
@@ -2576,10 +2277,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               </span>
             )}
 
-            {!isCinema && commentComposer}
 
             {/* Right cluster: room-wide reactions. Reactions aimed at ONE
-               person are a long-press on their tile — see StageGrid. */}
+               person come from tapping their seat or circle. */}
             <div className="ml-auto flex items-center gap-2">
 
               {/* Quick reactions (global, center-screen burst). Emoji picker on click. */}

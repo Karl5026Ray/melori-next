@@ -68,7 +68,7 @@ export default function LivePage() {
 
   const loadRooms = useCallback(async () => {
     try {
-      const res = await fetch("/api/social/faces");
+      const res = await authFetch("/api/social/faces");
       const data = await res.json();
       setRooms(data.rooms ?? []);
     } catch {

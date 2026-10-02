@@ -7,8 +7,9 @@ import {
 } from "@/lib/concertStage";
 
 /**
- * The battle's top status band: both coin scores, a pulsing LIVE badge, the
- * phase countdown, and a two-sided proportional bar showing who is ahead.
+ * The battle's top status band: both performers' audience-vote counts for the
+ * current round, a pulsing LIVE badge, the phase countdown, and a two-sided
+ * proportional bar showing who is ahead.
  *
  * All geometry comes from concertScoreSplit so the bar can be asserted without
  * a browser. The leading side is also marked with data attributes rather than
@@ -24,8 +25,7 @@ export function ConcertBattleStatusBar({
 }: {
   leftScore: number;
   rightScore: number;
-  // Optional: Concert always has a round countdown; MM Faces Duo has no
-  // formal rounds, so it omits this and the timer chip is simply skipped.
+  // Optional: when omitted the timer chip is simply skipped.
   timerLabel?: string;
   isLive: boolean;
   roundLabel?: string;
@@ -86,7 +86,7 @@ export function ConcertBattleStatusBar({
       <div
         className="mt-1 flex h-[6px] w-full overflow-hidden rounded-full bg-black/60"
         role="img"
-        aria-label={`${leaderLabel[split.leader]}. ${formatConcertScore(split.left)} to ${formatConcertScore(split.right)} coins.`}
+        aria-label={`${leaderLabel[split.leader]}. ${formatConcertScore(split.left)} to ${formatConcertScore(split.right)} votes.`}
         data-testid="concert-status-track"
       >
         <span

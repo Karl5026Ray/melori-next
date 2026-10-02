@@ -38,9 +38,11 @@ type BattleState = {
     recipient: Person | null;
   } | null;
   scores?: {
-    initiator_coins: number;
-    opponent_coins: number;
+    round: number;
+    initiator_votes: number;
+    opponent_votes: number;
   } | null;
+  viewer_vote?: string | null;
   server_now: string;
 };
 
@@ -267,6 +269,7 @@ export function ConcertBattleSetup({ spaceId }: { spaceId: string }) {
                   opponent: view.opponent,
                   viewer_slot: view.viewer_slot,
                   scores: view.scores ?? null,
+                  viewer_vote: view.viewer_vote ?? null,
                 }}
                 // Round transitions are server-side. When the stage reports one,
                 // re-read the battle rather than mutating a local copy.

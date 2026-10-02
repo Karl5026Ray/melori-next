@@ -34,7 +34,6 @@ export interface Release {
   release_type: ReleaseType;
   description: string | null;
   cover_art_url: string | null;
-  price: number;
   release_date: string | null;
   is_published: boolean;
   created_at: string;
@@ -50,39 +49,9 @@ export interface Track {
   duration_seconds: number | null;
   audio_url: string | null;
   preview_url: string | null;
-  price: number | null;
   is_published: boolean;
   play_count: number;
   created_at: string;
   vps_track_id: number | null;
 }
 
-// Store — mirrors the `store_products` Supabase table (prices in integer cents).
-export interface StoreProduct {
-  id: string;
-  name: string;
-  slug: string;
-  description: string;
-  price: number; // cents
-  sale_price: number | null; // cents
-  image_url: string | null;
-  category: string;
-  subcategory: string | null;
-  sizes: string | null; // comma separated
-  inventory: number;
-  sold_count: number;
-  is_featured: boolean;
-  is_active: boolean;
-  created_at: string;
-}
-
-// A single line in the shopping cart (client-side only).
-export interface CartLine {
-  productId: string;
-  slug: string;
-  name: string;
-  image_url: string | null;
-  unitPrice: number; // cents (already resolved sale/price)
-  size: string;
-  quantity: number;
-}

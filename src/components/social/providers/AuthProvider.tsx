@@ -61,22 +61,14 @@ export function SocialAuthProvider({
     // Select explicit columns rather than "*". PostgREST fails the ENTIRE query
     // if any column is unknown (or lacks a SELECT grant for the authenticated
     // role), which would leave `user` null — and a null user makes the shared
-    // gate (isSuperfanOrBetter) treat an Artist as free (the "Become a Superfan"
-    // wall on /social/community) AND bounces genuinely-logged-in members to
-    // /social/auth from the create-space submit (`if (!user)`).
-    //
-    // `role` is the SOURCE OF TRUTH for the participation gate (see membership.ts
-    // effectiveTierString), so we select it here. We do NOT select
-    // `membership_tier` / `membership_expires_at`: those are optional derived
-    // Stripe fields that are ABSENT on this `profiles` table (see the notes in
-    // membership-server.ts and /api/user/me, which reads them defensively). Naming
-    // them in an explicit select made every profile fetch error out — the exact
-    // failure this comment warns about.
+    // gate (isSignedIn) treat a member as logged out AND bounces
+    // genuinely-logged-in members to /social/auth from the create-space submit
+    // (`if (!user)`). Only name columns that exist and are granted.
     try {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, membership_status, social_links, city, birth_date, birthday_visible",
+          "id, username, display_name, full_name, avatar_url, role, bio, verified, followers_count, following_count, created_at, social_links, city, birth_date, birthday_visible",
         )
         .eq("id", id)
         .maybeSingle();

@@ -1,3 +1,78 @@
+# Door conversion + privacy gaps, 2 Oct 2026 (PLAN, awaiting Karl's OK)
+
+Source: an outside review of melorimusic.org, checked against the live site
+and main (5e9b630). Kept: the parts that held up. Dropped: "Loading… stuck"
+(it is the sr-only label on `app/loading.tsx`'s spinner, streamed before the
+page in the same response; real visitors see a brief spinner) and "/explore,
+/chat broken" (those routes never existed; the tab bar labels Explore and
+Chat point at `/music` and `/social/messages`).
+
+## A. Signed-out visitors bounce with no explanation (review item 2)
+Today, signed out: `/music` and `/social/messages` (the tab bar's Explore and
+Chat) and any made-up URL 307 to `/platform` (the sign-up door). Spaces,
+Cinema, Faces and Radio already do it right: each sends you to a public page
+that explains the product (`teaserFor` in `src/proxy.ts`, `FeatureTeaser`).
+
+- [ ] A1. New public teaser `src/app/listen/page.tsx` built on `FeatureTeaser`:
+      what the catalog is (free to members, Karl Ray / Kaiel R / Gloria Joy
+      Rivers and more), 3 points, one CTA to the door. Add `/listen` to
+      PUBLIC_EXACT; map `/music` → `/listen` in TEASER_FOR.
+      (Not making `/music` itself public: the catalog stays a members' perk.)
+- [ ] A2. `/social/messages` → `/platform?reason=chat` (no teaser page; a DM
+      inbox has nothing to preview). The door reads `reason` and shows one
+      line above the form: "Sign in to see your messages."
+- [ ] A3. Unknown paths: leave the door redirect for signed-out (keeps every
+      gated path private without a list), but return a real 404 for paths
+      that match no route AND no gated prefix. Investigate first: the proxy
+      can't see Next's route table, so this may need a small list of known
+      top-level segments. If that list would drift, SKIP A3 and say so.
+- [ ] Tests: extend `scripts/signup-wall.test.ts` (TEASERS table:
+      `/music` → `/listen`; `/listen` public; `/social/messages` reason
+      param). e2e: signed-out tap on the tab bar's Explore lands on /listen.
+
+## B. The door sells nothing above the form (review item 4, the big one)
+`src/app/platform/page.tsx` today: hero photo, "Create your account", one
+sentence, the form. No proof the rooms exist, no way to look before joining.
+
+- [ ] B1. Three cards under the sign-up form (form stays first; nothing moves
+      it down on a phone): MM Spaces → /spaces, MM Cinema → /cinema,
+      Artists → /artists. Same purple/teal tokens as the rooms. Each card:
+      icon, 4-word title, one line. No new data fetching.
+- [ ] B2. Lead card = Spaces (the daily-habit product we just rebuilt).
+- [ ] B3. Optional, needs Karl: a live "N rooms live now" chip on the Spaces
+      card, from a cached public count. Skip if it would show 0 most days;
+      an empty-room signal hurts more than no signal.
+- [ ] Verify: Playwright screenshots of /platform at 390px and 1280px before
+      and after; form still above the fold on 390x664; Lighthouse a11y no
+      regression; ISR on `/` untouched (the door is a rewrite).
+
+## C. Privacy policy gaps (review item 3), Karl's lawyer decides wording
+Not legal advice. `src/app/privacy/page.tsx` (86 lines, updated Jun 29 2026)
+names only Stripe and Resend. Missing, from what the code actually uses:
+- [ ] C1. Service providers: Supabase (database/auth/storage), Vercel
+      (hosting), LiveKit (live audio/video in rooms), PubNub (presence),
+      Cloudflare, Google and Apple sign-in.
+- [ ] C2. Recording: Melori Mirror DOES record live video
+      (`/api/mirror/recording/start`, MirrorRecordingControls) for the
+      for-you feed. Policy must say what is recorded, when (host-started),
+      who can see it, and how to delete it. Spaces/Cinema rooms: confirm no
+      LiveKit egress is used, then say so. Room chat is stored until deleted.
+- [ ] C3. Retention: how long accounts, chat, reports and logs are kept.
+- [ ] C4. Minimum age (13+? 16+?), and a CCPA/state-rights line.
+- [ ] I draft the text as a PR; Karl (or a lawyer) approves the wording. I
+      do not ship policy text unreviewed.
+
+## Order and size
+A1+A2 (~half day), B1+B2 (~half day), C draft (~1 hr). A3 and B3 only on
+Karl's yes. One branch per section, one PR each, full `npm run test:unit`
++ tsc + the e2e above before each PR. Migrations: none.
+
+## Questions for Karl before I start
+1. B3 live-rooms chip: yes / no / later?
+2. C4 minimum age: 13 or 16?
+
+---
+
 # MM Spaces redesign + room separation, 2 Oct 2026
 
 Karl: "make it similar and fix the current issues", same purple/teal look as

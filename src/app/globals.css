@@ -94,39 +94,6 @@ body {
   padding-top: max(0.5rem, var(--cinema-safe-area-top));
 }
 
-@keyframes cinemaCommentEnter {
-  from {
-    opacity: 0;
-    transform: translateY(0.35rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.cinema-comment-line {
-  transition: opacity 600ms ease, transform 600ms ease;
-}
-.cinema-comment-line-content {
-  display: block;
-  animation: cinemaCommentEnter 220ms ease-out both;
-}
-.cinema-comment-line[data-cinema-comment-age="5"] { opacity: 0.42; }
-.cinema-comment-line[data-cinema-comment-age="4"] { opacity: 0.56; }
-.cinema-comment-line[data-cinema-comment-age="3"] { opacity: 0.7; }
-.cinema-comment-line[data-cinema-comment-age="2"] { opacity: 0.84; }
-.cinema-comment-line[data-cinema-comment-exiting="true"] {
-  opacity: 0;
-  transform: translateY(-0.25rem);
-}
-@media (prefers-reduced-motion: reduce) {
-  .cinema-comment-line,
-  .cinema-comment-line-content {
-    animation: none;
-    transition: none;
-  }
-}
-
 /* Any element that opts into horizontal scrolling (carousels, tab strips)
    must not leak that scroll up to the page. */
 * {

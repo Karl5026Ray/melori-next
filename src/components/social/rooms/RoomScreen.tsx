@@ -14,9 +14,10 @@
 // the prop exists.
 //
 // Cinema is still a `spaces` row with room_format='cinema'. That is deliberate:
-// it keeps roles, the ordered raise-hand queue, moderation, room bans, the
-// migration 054 camera slots and unified end-room teardown shared rather than
-// duplicated. The split here is about URLs and entry points, not storage.
+// it keeps roles, the ordered raise-hand queue, moderation, room bans and
+// unified end-room teardown shared rather than duplicated. Since 1 Oct 2026
+// Cinema is audio-only: its three seats are the host plus two speakers, capped
+// by src/lib/cinemaStage.ts (the camera-slot tables are dormant). The split here is about URLs and entry points, not storage.
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -34,10 +35,8 @@ import {
 } from "@/lib/livekitClient";
 import {
   ensureVideoAudio,
-  isVideoRoomConnected,
   joinVideoRoom,
   leaveVideoRoom,
-  setCameraEnabled as setCinemaCameraEnabled,
   setMicEnabled as setCinemaMicEnabled,
 } from "@/lib/livekitVideoClient";
 import {
@@ -57,7 +56,7 @@ import CinemaVoiceCircles from "@/components/social/cinema/CinemaVoiceCircles";
 import CinemaChat from "@/components/social/cinema/CinemaChat";
 import CinemaRoomCanvas from "@/components/social/cinema/CinemaRoomCanvas";
 import { CinemaScreen } from "@/components/social/cinema/CinemaScreen";
-import { buildCinemaSlotAssignments, type CinemaReservation } from "@/lib/roomMediaPolicy";
+import { buildCinemaAudioSeats } from "@/lib/cinemaStage";
 import { roomExitHref, roomExitLabel, roomHref } from "@/lib/cinema";
 import { GiftPicker } from "@/components/social/gifts/GiftPicker";
 import { GiftOverlay } from "@/components/social/gifts/GiftOverlay";
@@ -77,8 +76,7 @@ import {
   Trash2,
   VolumeX,
   UserMinus,
-  Video,
-  VideoOff,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -112,41 +110,27 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   exitHrefRef.current = exitHref;
 
   const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
-  const [cinemaReservations, setCinemaReservations] = useState<CinemaReservation[]>([]);
-  // Did THIS page session deliberately turn the camera on? Read by the Cinema
-  // join effect to resume capture after a role change or reconnect rebuilds the
-  // room. It is a ref, not state, so it never re-triggers that effect — and it
-  // is deliberately per-page-session: a durable reservation alone must never
-  // switch a camera on for someone who just loaded the page.
-  const cinemaCameraIntentRef = useRef(false);
-  const [cinemaVideoElements, setCinemaVideoElements] = useState<
-    Record<string, HTMLVideoElement>
-  >({});
-  // Camera capture requires a connected room. Tracked so the control is disabled
-  // until then rather than claiming a durable slot with nothing to publish on.
-  const [cinemaRoomConnected, setCinemaRoomConnected] = useState(false);
   // Identity -> 0..1 microphone level, sampled from LiveKit. Drives the volume
-  // rings on Cinema's voice circles.
+  // rings on Cinema's audio seats and voice circles.
   const [cinemaAudioLevels, setCinemaAudioLevels] = useState<Record<string, number>>({});
-  // A camera toggle claims a durable slot, so it must not run twice at once: a
-  // double tap would otherwise race a claim against its own release.
-  const [cinemaCameraBusy, setCinemaCameraBusy] = useState(false);
-  // Guest-box allocation is separate from local camera capture. Keep its busy
-  // and error state visible beside the host-only controls so a failed assign
-  // cannot look like a successful stage change.
-  const [cinemaGuestCandidateId, setCinemaGuestCandidateId] = useState("");
-  const [cinemaSeatBusy, setCinemaSeatBusy] = useState<string | null>(null);
-  const [cinemaSeatError, setCinemaSeatError] = useState<string | null>(null);
-  const [cinemaSeatsOpen, setCinemaSeatsOpen] = useState(false);
-  const cinemaSeatsTriggerRef = useRef<HTMLButtonElement>(null);
-  const cinemaSeatsDialogRef = useRef<HTMLElement>(null);
-  const closeCinemaSeatManager = useCallback(() => setCinemaSeatsOpen(false), []);
+  // Cinema's two bottom sheets: the raised-hands queue (host / moderators) and
+  // the host's leave choice (hand off vs end for everyone). One state so they
+  // can never both be open, sharing one focus-contained dialog below.
+  const [cinemaSheet, setCinemaSheet] = useState<null | "hands" | "leave">(null);
+  const cinemaSheetReturnFocusRef = useRef<HTMLElement | null>(null);
+  const cinemaSheetDialogRef = useRef<HTMLElement>(null);
+  const openCinemaSheet = useCallback((sheet: "hands" | "leave") => {
+    cinemaSheetReturnFocusRef.current =
+      typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
+    setCinemaSheet(sheet);
+  }, []);
+  const closeCinemaSheet = useCallback(() => setCinemaSheet(null), []);
   // This must live with the rest of the component hooks, before the loading,
   // error, and ended-room returns below. A room initially loads without a
   // space, then renders the Cinema controls after the query resolves.
   useEffect(() => {
-    if (!cinemaSeatsOpen) return;
-    const dialog = cinemaSeatsDialogRef.current;
+    if (!cinemaSheet) return;
+    const dialog = cinemaSheetDialogRef.current;
     if (!dialog) return;
 
     const focusableSelector = [
@@ -168,7 +152,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeCinemaSeatManager();
+        closeCinemaSheet();
         return;
       }
       if (event.key !== "Tab") return;
@@ -195,9 +179,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     return () => {
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", onKeyDown);
-      cinemaSeatsTriggerRef.current?.focus();
+      cinemaSheetReturnFocusRef.current?.focus?.();
     };
-  }, [cinemaSeatsOpen, closeCinemaSeatManager]);
+  }, [cinemaSheet, closeCinemaSheet]);
   // `participants` starts empty for two very different reasons: the roster has
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
@@ -343,56 +327,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     };
   }, [spaceId]);
 
-  // Camera assignments are durable state, separate from transient LiveKit
-  // tracks. This keeps a guest departure as an empty fixed tile instead of
-  // deriving/reordering seats from whichever speaker list arrived first.
-  const refreshCinemaSlots = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data?.reservations)) {
-        setCinemaReservations(
-          data.reservations.map((entry: { slot: number; userId?: string; user_id?: string }) => ({
-            slot: Number(entry.slot),
-            userId: String(entry.userId ?? entry.user_id),
-          })),
-        );
-      }
-    } catch {
-      // A slot fetch failure must render placeholders, never speculative seats.
-      setCinemaReservations([]);
-    }
-  }, [spaceId]);
-
-  useEffect(() => {
-    if (!isCinema) {
-      setCinemaReservations([]);
-      setCinemaVideoElements({});
-      cinemaCameraIntentRef.current = false;
-      return;
-    }
-    void refreshCinemaSlots();
-    const channel = supabase
-      .channel(`cinema_slots:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cinema_camera_slots",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        () => void refreshCinemaSlots(),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isCinema, refreshCinemaSlots, spaceId]);
-
   // Mirror the roster into local join state. This used to be a one-way latch
   // (it only ever set isJoined true), so a host removing someone left that
   // person looking joined to themselves: composer live, controls live, writes
@@ -448,11 +382,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       const existing = participantsRef.current.find((p) => p.user_id === user.id);
       const keepsStage =
         existing?.role === "speaker" || existing?.role === "host";
+      // Cinema's stage is three seats the host fills by hand (see
+      // src/lib/cinemaStage.ts), so membership tier never auto-seats anyone
+      // there: an artist or superfan walking in must not take a guest seat.
+      const elevatedTakesStage = isElevated && space?.room_format !== "cinema";
       const joinRole = isHostJoining
         ? "host"
         : keepsStage
           ? existing!.role
-          : isElevated
+          : elevatedTakesStage
             ? "speaker"
             : "audience";
       // On stage but start muted (except the host) so people opt in to talking.
@@ -734,6 +672,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const {
     comments: roomComments,
     sendComment,
+    deleteComment,
     sending: sendingComment,
   } = useRoomComments(spaceId, true);
 
@@ -862,6 +801,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     [runHostAction],
   );
 
+  // Host-only: remove someone AND keep them out. Records a room-scoped ban
+  // (037_space_bans) that the token route and the chat route both refuse.
+  // The route has supported { ban: true } all along; this is its first UI.
+  const hostBan = useCallback(
+    (participantUserId: string) =>
+      runHostAction(participantUserId, { ban: true }, "Removed and banned"),
+    [runHostAction],
+  );
+
   // Host-only: grant or revoke the moderator badge (🎸 in StageGrid). The
   // route restricts this to the host regardless of who calls it, and mirrors
   // the change into LiveKit stage permissions server-side — this is just the
@@ -921,9 +869,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     [isHost, spaceId, space?.hand_raise_mode],
   );
 
-  const handleEndSpace = useCallback(async () => {
+  // `confirmed` is passed by callers that already asked in their own UI (the
+  // Cinema leave sheet), so the host is not asked twice.
+  const handleEndSpace = useCallback(async (confirmed = false) => {
     if (!isHost) return;
     if (
+      !confirmed &&
       typeof window !== "undefined" &&
       !window.confirm("End this space for everyone?")
     ) {
@@ -1159,9 +1110,9 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     });
   }, [user, isJoined, participants, isCinema]);
 
-  // Cinema's one RTC connection carries both audio and camera. Camera capture
-  // stays off on join even for the host; LiveKit token/runtime grants only
-  // include camera for a durable slot owner and the dock explicitly requests it.
+  // Cinema's one RTC connection. Cinema is audio-only (1 Oct 2026): the host
+  // and the two seated guests publish a microphone, everyone else listens. The
+  // camera is never requested, so no permission prompt for it ever appears.
   useEffect(() => {
     if (!isCinema || !isJoined || !user || !space) return;
     const myPart = participants.find((participant) => participant.user_id === user.id && !participant.left_at);
@@ -1170,47 +1121,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       myPart.role === "host" || myPart.role === "speaker" ? "publisher" : "subscriber";
     let cancelled = false;
 
-    // A role change or reconnect tears this room down and rebuilds it, but the
-    // slot reservation and the token's camera grant both survive. Without this
-    // the camera came back off while the seat stayed occupied and the control
-    // still read "turn camera on". joinVideoRoom additionally requires the fresh
-    // token to actually name camera, so a revoked slot cannot resume capture.
-    const resumeCamera = cinemaCameraIntentRef.current;
-
     void joinVideoRoom({
       spaceId,
       role,
       roomMode: "cinema",
-      autoEnableCamera: resumeCamera,
+      autoEnableCamera: false,
       autoEnableMicrophone: !myPart.is_muted && !myPart.host_muted,
       spaceType: space.type,
-      onLocalVideo: (element) => {
-        if (!cancelled) setCinemaVideoElements((current) => ({ ...current, [user.id]: element }));
-      },
-      onLocalVideoRemoved: () => {
-        if (!cancelled) {
-          // Covers both an explicit Camera Off and a host revoking this seat. In
-          // either case a later reconnect must not resume capture.
-          cinemaCameraIntentRef.current = false;
-          setCinemaVideoElements((current) => {
-            const next = { ...current };
-            delete next[user.id];
-            return next;
-          });
-        }
-      },
-      onRemoteVideo: ({ identity, element }) => {
-        if (!cancelled) setCinemaVideoElements((current) => ({ ...current, [identity]: element }));
-      },
-      onRemoteVideoRemoved: (identity) => {
-        if (!cancelled) {
-          setCinemaVideoElements((current) => {
-            const next = { ...current };
-            delete next[identity];
-            return next;
-          });
-        }
-      },
       onActiveSpeakersChange: (identities) => {
         if (!cancelled) setSpeakingIds(new Set(identities));
       },
@@ -1223,7 +1140,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       onReconnected: () => !cancelled && setReconnecting(false),
       onRoomEnded: () => {
         if (cancelled) return;
-        setCinemaRoomConnected(false);
         setRoomEnded(true);
         setTimeout(() => router.push(exitHrefRef.current), 1800);
       },
@@ -1234,11 +1150,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         console.warn("cinema LiveKit join error", err);
       },
     })
-      .then(() => {
-        if (!cancelled) setCinemaRoomConnected(isVideoRoomConnected());
-      })
       .catch((err) => {
-        if (!cancelled) setCinemaRoomConnected(false);
         if (/NotAllowedError|Permission|permission denied/i.test((err as Error).message ?? "")) {
           setMicDenied(true);
         }
@@ -1246,12 +1158,11 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
     return () => {
       cancelled = true;
-      setCinemaRoomConnected(false);
       void leaveVideoRoom();
     };
-    // A role transition intentionally reconnects this one room with a fresh,
-    // server-authorized source grant. Reservation changes update permissions
-    // runtime and do not create a second client.
+    // A role transition (brought on stage / moved to the audience)
+    // intentionally reconnects this one room with a fresh, server-authorized
+    // publish grant.
   }, [
     isCinema,
     isJoined,
@@ -1509,190 +1420,70 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const hostProfile = space.host;
   const hostId = hostProfile?.id ?? space.host_id;
   const followsHost = followedIds.has(hostId);
-  const cinemaSlots = buildCinemaSlotAssignments(hostId, cinemaReservations).map((assignment) => ({
-    slot: assignment.slot,
-    participant:
-      withSpeaking.find((participant) => participant.user_id === assignment.userId) ?? null,
-    videoElement: assignment.userId ? cinemaVideoElements[assignment.userId] ?? null : null,
-  }));
-  // Cinema does not inherit the generic audio-stage roster. Everyone other
-  // than the fixed host + two reserved live-video visitors stays in the
-  // voice-only audience strip, regardless of their legacy speaker role.
+  // Cinema's stage: [host, guest, guest] from the same `role` column Spaces
+  // uses. Speakers beyond the two-guest cap (rooms from before the cap) stay
+  // visible with the listeners rather than vanishing with a live microphone.
+  const { seats: cinemaSeats } = buildCinemaAudioSeats(withSpeaking, hostId);
   const cinemaSeatUserIds = new Set(
-    cinemaSlots
-      .map((seat) => seat.participant?.user_id)
+    cinemaSeats
+      .map((seat) => seat?.user_id)
       .filter((participantId): participantId is string => Boolean(participantId)),
   );
   const cinemaAudience = withSpeaking.filter(
     (participant) => !cinemaSeatUserIds.has(participant.user_id),
   );
-  const localCinemaCameraEnabled = Boolean(user && cinemaVideoElements[user.id]);
   const myParticipant =
     participants.find((participant) => participant.user_id === user?.id && !participant.left_at) ?? null;
-  const selectedCinemaGuestSlot =
-    user && user.id !== hostId
-      ? cinemaReservations.find(
-          (reservation) => reservation.userId === user.id && reservation.slot !== 0,
-        )?.slot ?? null
-      : null;
-  const selectedCinemaGuest =
-    selectedCinemaGuestSlot !== null &&
-    (canSpeakNow || myParticipant?.badge === "mod" || myParticipant?.badge === "cohost");
-  // Mirror the API's candidate eligibility so the host only sees participants
-  // who can actually receive a camera source. The route re-checks this; the UI
-  // is convenience, never authorization.
-  const cinemaEligibleGuests = withSpeaking.filter(
-    (participant) =>
-      participant.user_id !== hostId &&
-      !participant.left_at &&
-      !participant.host_muted &&
-      (participant.role === "speaker" ||
-        participant.badge === "mod" ||
-        participant.badge === "cohost") &&
-      !cinemaReservations.some((reservation) => reservation.userId === participant.user_id),
-  );
-  const cinemaGuestSeats = [1, 2].map((slot) => {
-    const reservation = cinemaReservations.find((entry) => entry.slot === slot) ?? null;
-    const participant = reservation
-      ? withSpeaking.find((entry) => entry.user_id === reservation.userId) ?? null
-      : null;
-    return { slot, reservation, participant };
-  });
-  const cinemaGuestSeatsFull = cinemaGuestSeats.every((seat) => Boolean(seat.reservation));
+  // Host plus badged moderators run the stage (the participants route grants
+  // them the same promote / demote / mute), and may delete chat lines.
+  const canModerateRoom =
+    isHost || myParticipant?.badge === "mod" || myParticipant?.badge === "cohost";
+  const cinemaGuestSeatsOpen = cinemaSeats.slice(1).filter((seat) => !seat).length;
 
-  const cinemaParticipantName = (participant: SpaceParticipant | null, fallback: string) =>
-    participant?.user?.display_name || participant?.user?.username || fallback;
-
-  const assignCinemaGuest = async () => {
-    if (!isHost || !cinemaGuestCandidateId || cinemaGuestSeatsFull || cinemaSeatBusy) return;
-    setCinemaSeatBusy("assign");
-    setCinemaSeatError(null);
-    try {
-      const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: cinemaGuestCandidateId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? "Could not add that guest to a live box");
-      if (Array.isArray(data?.reservations)) setCinemaReservations(data.reservations);
-      setCinemaGuestCandidateId("");
-      await refreshCinemaSlots();
-    } catch (err) {
-      setCinemaSeatError(
-        err instanceof Error ? err.message : "Could not add that guest to a live box",
-      );
-      await refreshCinemaSlots();
-    } finally {
-      setCinemaSeatBusy(null);
-    }
-  };
-
-  const removeCinemaGuest = async (participantId: string) => {
-    if (!isHost || cinemaSeatBusy) return;
-    setCinemaSeatBusy(participantId);
-    setCinemaSeatError(null);
-    try {
-      const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: participantId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? "Could not remove that guest from the live box");
-      if (Array.isArray(data?.reservations)) setCinemaReservations(data.reservations);
-      await refreshCinemaSlots();
-    } catch (err) {
-      setCinemaSeatError(
-        err instanceof Error ? err.message : "Could not remove that guest from the live box",
-      );
-      await refreshCinemaSlots();
-    } finally {
-      setCinemaSeatBusy(null);
-    }
-  };
-
-  const toggleCinemaCamera = async () => {
-    if (!user || !isCinema || cinemaCameraBusy) return;
-    // Claiming a slot before the RTC connection exists reserved a seat that
-    // nothing could publish on, and the failure was invisible.
-    if (!cinemaRoomConnected) {
-      setShareToast("Still connecting to the room — try the camera again in a moment.");
-      setTimeout(() => setShareToast(null), 2600);
+  // Tapping a seat: an empty one opens the hands queue for whoever runs the
+  // stage; a person opens the host's moderation sheet, or a reaction picker.
+  const selectCinemaSeat = (participant: SpaceParticipant | null) => {
+    if (!participant) {
+      if (canModerateRoom) openCinemaSheet("hands");
       return;
     }
-    setCinemaCameraBusy(true);
-    try {
-      if (localCinemaCameraEnabled) {
-        // Clear the resume intent first: if the release below fails, a later
-        // reconnect must not silently republish a camera the user turned off.
-        cinemaCameraIntentRef.current = false;
-        await setCinemaCameraEnabled(false);
-        if (user.id !== hostId) {
-          const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data?.error ?? "Could not release camera slot");
-          }
-        }
-      } else {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data?.error ?? "No Cinema camera slot is available");
-        }
-        const data = await res.json();
-        if (Array.isArray(data?.reservations)) {
-          setCinemaReservations(data.reservations);
-        }
-        try {
-          await setCinemaCameraEnabled(true);
-          cinemaCameraIntentRef.current = true;
-        } catch (error) {
-          cinemaCameraIntentRef.current = false;
-          let cleanupError: string | null = null;
-          if (user.id !== hostId) {
-            try {
-              const release = await authFetch(`/api/social/spaces/${spaceId}/cinema-camera-slot`, {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({}),
-              });
-              if (!release.ok) {
-                const detail = await release.json().catch(() => ({}));
-                cleanupError = detail?.error ?? "camera slot cleanup failed";
-              }
-            } catch {
-              cleanupError = "camera slot cleanup failed";
-            }
-          }
-          if (cleanupError) {
-            throw new Error(
-              `${error instanceof Error ? error.message : "Camera could not start"}; ${cleanupError}`,
-            );
-          }
-          throw error;
-        }
-      }
-      await refreshCinemaSlots();
-    } catch (err) {
-      setShareToast(err instanceof Error ? err.message : "Could not update camera");
-      setTimeout(() => setShareToast(null), 2600);
-      // Re-read durable state after a failure so the seat the UI shows always
-      // matches what the server actually kept.
-      await refreshCinemaSlots();
-    } finally {
-      setCinemaCameraBusy(false);
+    if (isHost && participant.user_id !== user?.id) {
+      setModTarget(participant);
+      return;
     }
+    setReactTarget(participant);
   };
+
+  // The one composer for every room format, so there is a single send path.
+  // Spaces docks it in the control bar; Cinema puts it at the foot of the chat
+  // panel under the stage, where the conversation it belongs to is visible.
+  const commentComposer = (
+    <form
+      onSubmit={submitComment}
+      data-testid={isCinema ? "cinema-composer" : "spaces-composer"}
+      className={`flex-1 min-w-0 flex items-center gap-1.5 pl-4 pr-1.5 rounded-full bg-melori-void/70 focus-within:bg-melori-void transition ${
+        isCinema ? "h-10" : "h-12"
+      }`}
+    >
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={isCinema ? "Say something to the room" : "say something"}
+        aria-label="Write a comment"
+        enterKeyHint="send"
+        maxLength={2000}
+        className="flex-1 min-w-0 bg-transparent text-[15px] placeholder:text-melori-muted focus:outline-none"
+      />
+      <button
+        type="submit"
+        disabled={!draft.trim() || sendingComment}
+        aria-label="Send comment"
+        className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full bg-[#1d9bf0] text-white transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
+      >
+        <Send className="w-[18px] h-[18px]" />
+      </button>
+    </form>
+  );
 
   return (
     // The room is presented as a sheet lifted off a black backdrop, per the
@@ -1717,9 +1508,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       }
     >
       <div className="flex-1 flex flex-col min-h-0 rounded-t-3xl bg-melori-void overflow-hidden">
-        <div className="shrink-0 pt-2.5 flex justify-center" aria-hidden="true">
-          <span className="h-1 w-9 rounded-full bg-white/25" />
-        </div>
+        {/* The drag pill is decoration. Cinema spends that height on the chat. */}
+        {!isCinema && (
+          <div className="shrink-0 pt-2.5 flex justify-center" aria-hidden="true">
+            <span className="h-1 w-9 rounded-full bg-white/25" />
+          </div>
+        )}
 
         <div
           className={`px-4 md:px-6 flex items-center justify-between shrink-0 ${
@@ -1755,27 +1549,19 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
             >
               <Share2 className="w-[18px] h-[18px]" />
             </button>
-            {isCinema && isHost && (
-              <button
-                type="button"
-                onClick={() => setCinemaSeatsOpen(true)}
-                ref={cinemaSeatsTriggerRef}
-                className="h-11 px-3 text-xs font-semibold rounded-full bg-cinema-gold text-black transition hover:brightness-110"
-                aria-label="Manage Cinema live seats"
-                data-testid="cinema-live-seat-manager"
-              >
-                Live seats
-              </button>
-            )}
             {/* Leave moves out of the control bar and into the header as the
                 reference's peace-sign pill. handleLeave is unchanged — this is
                 the same "leave quietly" action, just relocated.
+
+                Cinema puts it back in the dock instead, bottom-left, where
+                Clubhouse keeps "leave quietly": the header there is a single
+                tight line competing with the screen for height.
 
                 Only for people actually in the room. A signed-out visitor was
                 previously offered "leave" for a room they had never entered,
                 which is where the flow started reading as broken. They get a
                 plain back link to the same destination instead. */}
-            {isJoined ? (
+            {isJoined && isCinema ? null : isJoined ? (
               <button
                 type="button"
                 data-testid="spaces-leave"
@@ -1873,7 +1659,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                 <Flag className="w-4 h-4" />
                 Report space
               </button>
-              {isHost && !isCinema && (
+              {isHost && (
                 <div className="border-t border-melori-border">
                   <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-melori-muted">
                     Who can raise a hand
@@ -2059,122 +1845,118 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
           )}
 
             <>
-              {isCinema && isHost && cinemaSeatsOpen && (
-                <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-3 backdrop-blur-sm">
+              {isCinema && cinemaSheet && (
+                <div
+                  className="fixed inset-0 z-[90] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+                  onClick={closeCinemaSheet}
+                >
                 <section
-                  ref={cinemaSeatsDialogRef}
+                  ref={cinemaSheetDialogRef}
                   tabIndex={-1}
-                  className="max-h-[min(34rem,calc(100dvh-2rem))] w-full max-w-lg overflow-y-auto rounded-xl border border-cinema-border bg-melori-void p-3 shadow-2xl"
+                  onClick={(event) => event.stopPropagation()}
+                  className="max-h-[min(34rem,calc(100dvh-2rem))] w-full max-w-md overflow-y-auto rounded-t-3xl border border-cinema-border bg-melori-elevated p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl"
                   role="dialog"
                   aria-modal="true"
-                  aria-labelledby="cinema-live-boxes-heading"
-                  aria-describedby="cinema-live-boxes-description"
-                  data-testid="cinema-live-box-controls"
+                  aria-labelledby="cinema-sheet-heading"
+                  aria-describedby="cinema-sheet-description"
+                  data-testid={cinemaSheet === "hands" ? "cinema-hands-sheet" : "cinema-leave-sheet"}
                 >
-                  <div className="mb-3 flex items-baseline justify-between gap-3">
-                    <div>
-                      <h2 id="cinema-live-boxes-heading" className="text-sm font-semibold text-melori-text">
-                        Live boxes
-                      </h2>
-                      <p id="cinema-live-boxes-description" className="mt-0.5 text-xs text-melori-muted">
-                        Choose up to two on-stage guests. They turn on their own camera when ready.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeCinemaSeatManager}
-                      data-cinema-dialog-initial-focus
-                      className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
-                      aria-label="Close Cinema live seat manager"
-                    >
-                      Close
-                    </button>
-                    <span className="shrink-0 text-xs text-melori-muted">
-                      {cinemaGuestSeats.filter((seat) => seat.reservation).length}/2 occupied
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {cinemaGuestSeats.map((seat) => {
-                      const guestName = cinemaParticipantName(
-                        seat.participant,
-                        seat.reservation ? "Participant unavailable" : "Empty",
-                      );
-                      const boxNumber = seat.slot + 1;
-                      const removing = cinemaSeatBusy === seat.reservation?.userId;
-                      return (
-                        <div
-                          key={seat.slot}
-                          className="flex min-h-11 items-center gap-3 rounded-lg border border-melori-border/70 bg-melori-void/45 px-3 py-2"
-                          data-testid={`cinema-live-box-${boxNumber}`}
-                        >
-                          <span className="w-20 shrink-0 text-xs font-medium text-melori-muted">
-                            Live box {boxNumber}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-sm text-melori-text">
-                            {seat.reservation ? guestName : "Empty"}
-                          </span>
-                          {seat.reservation && (
-                            <button
-                              type="button"
-                              onClick={() => void removeCinemaGuest(seat.reservation!.userId)}
-                              disabled={Boolean(cinemaSeatBusy)}
-                              aria-busy={removing}
-                              aria-label={`Remove ${guestName} from live box ${boxNumber}`}
-                              className="min-h-9 shrink-0 rounded-lg border border-melori-border px-2.5 text-xs font-medium text-melori-muted transition hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {removing ? "Removing…" : "Remove"}
-                            </button>
-                          )}
+                  {cinemaSheet === "hands" ? (
+                    <>
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
+                            Raised hands
+                          </h2>
+                          <p id="cinema-sheet-description" className="mt-0.5 text-xs text-melori-muted">
+                            {cinemaGuestSeatsOpen > 0
+                              ? `${cinemaGuestSeatsOpen} open ${cinemaGuestSeatsOpen === 1 ? "seat" : "seats"} on stage. Oldest request first.`
+                              : "The stage is full. Move a guest to the audience first."}
+                          </p>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <label className="sr-only" htmlFor="cinema-live-box-candidate">
-                      Choose a speaker for the next available live box
-                    </label>
-                    <select
-                      id="cinema-live-box-candidate"
-                      data-testid="cinema-live-box-candidate"
-                      value={cinemaGuestCandidateId}
-                      onChange={(event) => setCinemaGuestCandidateId(event.target.value)}
-                      disabled={cinemaGuestSeatsFull || Boolean(cinemaSeatBusy)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-melori-border bg-melori-void px-3 text-sm text-melori-text disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">
-                        {cinemaGuestSeatsFull ? "Both live boxes are occupied" : "Choose an eligible guest"}
-                      </option>
-                      {cinemaEligibleGuests.map((participant) => (
-                        <option key={participant.user_id} value={participant.user_id}>
-                          {cinemaParticipantName(participant, "Speaker")}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => void assignCinemaGuest()}
-                      disabled={
-                        !cinemaGuestCandidateId ||
-                        cinemaGuestSeatsFull ||
-                        Boolean(cinemaSeatBusy)
-                      }
-                      aria-busy={cinemaSeatBusy === "assign"}
-                      className="min-h-11 rounded-lg bg-cinema-gold px-4 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {cinemaSeatBusy === "assign" ? "Adding…" : "Add to live box"}
-                    </button>
-                  </div>
-                  {cinemaEligibleGuests.length === 0 && !cinemaGuestSeatsFull && (
-                    <p className="mt-2 text-xs text-melori-muted">
-                      Promote an audience member to speaker before adding them to a live box.
-                    </p>
-                  )}
-                  {cinemaSeatError && (
-                    <p className="mt-2 text-xs text-red-300" role="alert">
-                      {cinemaSeatError}
-                    </p>
+                        <button
+                          type="button"
+                          onClick={closeCinemaSheet}
+                          data-cinema-dialog-initial-focus
+                          className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
+                        >
+                          Done
+                        </button>
+                      </div>
+                      {raisedHands.length === 0 ? (
+                        <p className="rounded-lg bg-white/[0.03] px-3 py-3 text-sm text-melori-muted">
+                          No hands up right now.
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-1">
+                          {raisedHands.map((p) => (
+                            <li
+                              key={p.id}
+                              className="flex items-center gap-3 rounded-xl px-2 py-2"
+                              data-testid="cinema-hand-row"
+                            >
+                              <img
+                                src={p.user?.avatar_url || "/favicon.png"}
+                                alt=""
+                                className="h-9 w-9 shrink-0 rounded-full object-cover"
+                              />
+                              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                {p.user?.display_name ?? "Listener"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => p.user_id && void invitePromote(p.user_id)}
+                                disabled={cinemaGuestSeatsOpen === 0}
+                                className="min-h-9 shrink-0 rounded-full bg-melori-teal px-3 text-xs font-semibold text-melori-void transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Bring up
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
+                        Leave the room?
+                      </h2>
+                      <p id="cinema-sheet-description" className="mt-1 text-sm text-melori-muted">
+                        If you leave, a moderator or a guest on stage takes over as host and
+                        the room keeps going. If nobody is on stage, the room ends.
+                      </p>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            closeCinemaSheet();
+                            void handleLeave();
+                          }}
+                          data-cinema-dialog-initial-focus
+                          className="min-h-11 rounded-xl border border-melori-border bg-melori-void px-4 text-left text-sm font-semibold"
+                        >
+                          Leave and hand off
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            closeCinemaSheet();
+                            void handleEndSpace(true);
+                          }}
+                          data-testid="cinema-end-room"
+                          className="min-h-11 rounded-xl border border-red-500/30 bg-red-500/10 px-4 text-left text-sm font-semibold text-red-300"
+                        >
+                          End room for everyone
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeCinemaSheet}
+                          className="min-h-11 rounded-xl px-4 text-sm font-medium text-melori-muted hover:bg-white/5"
+                        >
+                          Stay
+                        </button>
+                      </div>
+                    </>
                   )}
                 </section>
                 </div>
@@ -2182,35 +1964,36 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
               {isCinema && (
                 <CinemaRoomCanvas
-                  screen={
-                    <CinemaScreen
-                      spaceId={spaceId}
-                      isHost={isHost}
-                      viewportBound
-                      overlay={<CinemaChat comments={roomComments} />}
-                    />
-                  }
+                  screen={<CinemaScreen spaceId={spaceId} isHost={isHost} viewportBound />}
                   seats={
                     <CinemaStage
-                      slots={cinemaSlots}
-                      onReactToParticipant={setReactTarget}
+                      seats={cinemaSeats}
+                      levels={cinemaAudioLevels}
+                      viewerIsHost={canModerateRoom}
+                      onSelectSeat={selectCinemaSeat}
                       reactionBursts={targetedReactions}
                     />
                   }
                   audience={
                     <CinemaVoiceCircles
+                      compact
                       audience={cinemaAudience}
                       levels={cinemaAudioLevels}
-                      onReactToParticipant={setReactTarget}
+                      onReactToParticipant={isHost ? setModTarget : setReactTarget}
                       reactionBursts={targetedReactions}
                     />
                   }
+                  chat={
+                    <CinemaChat
+                      comments={roomComments}
+                      viewerId={user?.id}
+                      canModerate={canModerateRoom}
+                      stageIds={cinemaSeatUserIds}
+                      onDelete={(id) => void deleteComment(id)}
+                      composer={user && isJoined ? commentComposer : undefined}
+                    />
+                  }
                 />
-              )}
-              {isCinema && selectedCinemaGuestSlot !== null && !isHost && (
-                <p className="sr-only" role="status" data-testid="cinema-selected-guest-readiness">
-                  You have Live box {selectedCinemaGuestSlot + 1}. Turn on your camera when ready.
-                </p>
               )}
 
               <div className={isCinema ? "mb-0" : "mb-8"}>
@@ -2522,6 +2305,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                         onClick={() => void hostRemove(targetId)}
                       />
                     )}
+                    {modTarget.role !== "host" && (
+                      <Item
+                        danger
+                        label="Remove and ban from this room"
+                        onClick={() => void hostBan(targetId)}
+                      />
+                    )}
                   </>
                 );
               })()}
@@ -2606,15 +2396,30 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
       {isJoined && (
         <div
-          className={`shrink-0 rounded-t-3xl bg-melori-elevated pt-2.5 ${
+          className={`shrink-0 rounded-t-3xl bg-melori-elevated ${
             isCinema
-              ? "pb-[calc(1rem+env(safe-area-inset-bottom))]"
-              : "pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
+              ? "pt-1 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+              : "pt-2.5 pb-[calc(1rem+3.5rem+env(safe-area-inset-bottom))] md:pb-6"
           }`}
         >
-          <div className="flex justify-center" aria-hidden="true">
-            <span className="h-1 w-9 rounded-full bg-white/25" />
-          </div>
+          {!isCinema && (
+            <div className="flex justify-center" aria-hidden="true">
+              <span className="h-1 w-9 rounded-full bg-white/25" />
+            </div>
+          )}
+
+          {/* Cinema's room is one non-scrolling viewport, so its connection and
+              microphone notices ride on the dock rather than below the fold. */}
+          {isCinema && (reconnecting || micDenied) && (
+            <p
+              role="status"
+              className="max-w-2xl mx-auto px-4 md:px-6 pt-2 text-center text-xs text-yellow-200"
+            >
+              {reconnecting
+                ? "Reconnecting to audio…"
+                : "Microphone access was blocked. Allow it in your browser settings to speak."}
+            </p>
+          )}
 
           {/* Activity ticker — the newest targeted reaction, as one line. */}
           {activity && (
@@ -2643,8 +2448,44 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
              — it lives in the header's overflow menu. */}
           <div
             data-testid={isCinema ? "cinema-control-dock" : "spaces-control-bar"}
-            className="max-w-2xl mx-auto px-4 md:px-6 pt-3 flex items-center gap-2 min-h-[64px]"
+            className={`max-w-2xl mx-auto px-4 md:px-6 flex items-center gap-2 ${
+              isCinema ? "pt-1.5 min-h-[56px]" : "pt-3 min-h-[64px]"
+            }`}
           >
+            {/* Cinema: leave quietly sits bottom-left, away from the mic, as in
+               Clubhouse. Listeners and guests just go; the host is asked
+               whether to hand the room off or end it for everyone. */}
+            {isCinema && (
+              <button
+                type="button"
+                data-testid="cinema-leave"
+                onClick={() => (isHost ? openCinemaSheet("leave") : void handleLeave())}
+                className="h-12 pl-1 pr-3 shrink-0 flex items-center gap-1.5 rounded-full text-red-300 hover:bg-red-500/10 transition"
+              >
+                <span aria-hidden="true" className="text-base leading-none">
+                  ✌️
+                </span>
+                <span className="text-[15px] font-semibold">Leave quietly</span>
+              </button>
+            )}
+            {isCinema && <span className="flex-1" aria-hidden="true" />}
+            {isCinema && canModerateRoom && (
+              <button
+                type="button"
+                data-testid="cinema-hands-queue"
+                onClick={() => openCinemaSheet("hands")}
+                aria-label={`Raised hands (${raisedHands.length})`}
+                title="Raised hands"
+                className="relative w-12 h-12 shrink-0 flex items-center justify-center rounded-full bg-melori-void/60 text-melori-text hover:bg-melori-void transition"
+              >
+                <Users className="w-6 h-6" />
+                {raisedHands.length > 0 && (
+                  <span className="absolute -top-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full bg-melori-pink px-1 text-[11px] font-bold text-white">
+                    {raisedHands.length}
+                  </span>
+                )}
+              </button>
+            )}
             {/* Mic button — primary control once you're on stage. Only participants the
                host has put on stage (canSpeakNow: role 'host'/'speaker') see
                it; listeners get the reactions control only. Clubhouse parity:
@@ -2654,9 +2495,10 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                  - Press & hold: push-to-talk. Unmutes for as long as you're
                    holding it, then restores the previous mute state on
                    release. Works with mouse and touch. */}
-            {!isCinema && canSpeakNow && (
+            {canSpeakNow && (
               <button
                 type="button"
+                data-testid={isCinema ? "cinema-mic" : undefined}
                 onClick={() => {
                   // Pointer/touch gestures resolve the tap in endPTTGesture; a
                   // mouse release fires a synthetic click right after, which we
@@ -2700,45 +2542,16 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               </button>
             )}
 
-            {isCinema && (isHost || selectedCinemaGuest) && (
-              <button
-                type="button"
-                onClick={() => void toggleCinemaCamera()}
-                data-testid="cinema-camera-toggle"
-                disabled={!cinemaRoomConnected || cinemaCameraBusy}
-                aria-label={localCinemaCameraEnabled ? "Turn camera off" : "Turn camera on"}
-                aria-busy={cinemaCameraBusy}
-                title={
-                  !cinemaRoomConnected
-                    ? "Connecting to the room…"
-                    : localCinemaCameraEnabled
-                      ? "Turn camera off and release your guest slot"
-                      : "Turn camera on"
-                }
-                className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full transition disabled:opacity-50 ${
-                  localCinemaCameraEnabled
-                    ? "bg-cinema-gold text-black"
-                    : "bg-melori-void/70 text-melori-text hover:bg-melori-void"
-                }`}
-              >
-                {localCinemaCameraEnabled ? (
-                  <Video className="w-5 h-5" />
-                ) : (
-                  <VideoOff className="w-5 h-5" />
-                )}
-              </button>
-            )}
-
             {/* Ask to speak. Hidden for the host, for anyone already on stage
                (they don't need to ask), and whenever the host has set
                hand_raise_mode to "off" (or the not-yet-enforced "followed" --
                see spacesStage.ts). The label is carried by aria + title rather
                than visible text so the comment field keeps the width. */}
-            {!isCinema && !isHost && !canSpeakNow && canRaiseHandNow && (
+            {!isHost && !canSpeakNow && canRaiseHandNow && (
               <button
                 type="button"
                 onClick={toggleHand}
-                data-testid="spaces-ask-to-speak"
+                data-testid={isCinema ? "cinema-raise-hand" : "spaces-ask-to-speak"}
                 title={hasRaisedHand ? "Lower hand" : "Ask to speak"}
                 aria-label={hasRaisedHand ? "Lower hand" : "Ask to speak"}
                 aria-pressed={hasRaisedHand}
@@ -2754,7 +2567,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
             {/* Listeners in a hands-off room get an honest disabled state
                rather than a missing control, so the bar keeps its shape. */}
-            {!isCinema && !isHost && !canSpeakNow && !canRaiseHandNow && (
+            {!isHost && !canSpeakNow && !canRaiseHandNow && (
               <span
                 title="The host has turned off requests to speak"
                 className="w-12 h-12 shrink-0 flex items-center justify-center rounded-full bg-white/5 text-melori-muted"
@@ -2763,31 +2576,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               </span>
             )}
 
-            {/* The one stable composer for every room format. Cinema's feed is
-               display-only over the screen, so it never owns another sticky
-               input in the scrollable content. */}
-            <form
-              onSubmit={submitComment}
-              data-testid={isCinema ? "cinema-composer" : "spaces-composer"}
-              className="flex-1 min-w-0 flex items-center gap-1.5 h-12 pl-4 pr-1.5 rounded-full bg-melori-void/70 focus-within:bg-melori-void transition"
-            >
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="say something"
-                  aria-label="Write a comment"
-                  enterKeyHint="send"
-                  className="flex-1 min-w-0 bg-transparent text-[15px] placeholder:text-melori-muted focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={!draft.trim() || sendingComment}
-                  aria-label="Send comment"
-                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full bg-[#1d9bf0] text-white transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
-                >
-                  <Send className="w-[18px] h-[18px]" />
-                </button>
-            </form>
+            {!isCinema && commentComposer}
 
             {/* Right cluster: room-wide reactions. Reactions aimed at ONE
                person are a long-press on their tile — see StageGrid. */}

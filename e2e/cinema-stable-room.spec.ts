@@ -146,7 +146,9 @@ const participants = [
     is_speaking: false,
     is_muted: true,
     host_muted: false,
-    has_raised_hand: false,
+    // One listener is waiting to talk, so the host's raised-hands queue has a
+    // real row (and, with both guest seats taken, a disabled "Bring up").
+    has_raised_hand: index === 0,
   })),
 ];
 
@@ -202,10 +204,6 @@ async function seedSession(page: Page, activeProfile = profile) {
 }
 
 async function mockCinemaRoom(page: Page, activeProfile = profile) {
-  const reservations = [
-    { slot: 0, userId: HOST_ID },
-    { slot: 1, userId: GUEST_ID },
-  ];
   // The room starts presence, heartbeat, PubNub, and LiveKit work alongside
   // its data fetches. Keep this browser suite request-mocked end to end so it
   // proves layout without a real account, realtime service, or local secrets.
@@ -219,26 +217,6 @@ async function mockCinemaRoom(page: Page, activeProfile = profile) {
     return route.fulfill(json(participants.find((participant) => participant.user_id === activeProfile.id)));
   });
   await page.route("**/rest/v1/rpc/**", (route) => route.fulfill(json({})));
-  await page.route(`**/api/social/spaces/${SPACE_ID}/cinema-camera-slot`, async (route) => {
-    const method = route.request().method();
-    if (method === "POST") {
-      const body = route.request().postDataJSON() as { user_id?: string };
-      const userId = body.user_id ?? activeProfile.id;
-      if (!reservations.some((entry) => entry.userId === userId)) {
-        const slot = reservations.some((entry) => entry.slot === 1) ? 2 : 1;
-        reservations.push({ slot, userId });
-      }
-      return route.fulfill(json({ reservations }));
-    }
-    if (method === "DELETE") {
-      const body = route.request().postDataJSON() as { user_id?: string };
-      const userId = body.user_id ?? activeProfile.id;
-      const index = reservations.findIndex((entry) => entry.userId === userId && entry.slot !== 0);
-      if (index >= 0) reservations.splice(index, 1);
-      return route.fulfill(json({ ok: true, reservations }));
-    }
-    return route.fulfill(json({ reservations }));
-  });
   await page.route(`**/api/social/spaces/${SPACE_ID}/playback`, (route) =>
     route.fulfill(
       json({
@@ -288,7 +266,7 @@ async function mockCinemaRoom(page: Page, activeProfile = profile) {
 }
 
 test.describe("Cinema stable room", () => {
-  test("keeps Cinema inside the mobile viewport with video seats on the screen and horizontal audience", async ({
+  test("keeps the podcast room inside the mobile viewport: screen, audio seats, listeners, chat", async ({
     page,
   }) => {
     await seedSession(page);
@@ -320,13 +298,17 @@ test.describe("Cinema stable room", () => {
     await expect(playlistDialog.getByText("Now playing", { exact: true })).toBeVisible();
     await page.getByLabel("Close playlist").click();
     await expect(page.getByText("Playlist", { exact: true })).toHaveCount(0);
-    await expect(page.getByTestId("cinema-camera-slot")).toHaveCount(3);
-    const cameraStage = page.getByTestId("cinema-camera-stage");
+    // Three AUDIO seats: host first, then the two speakers in roster order.
+    // Cinema is audio-only, so there is no camera tile or video element at all.
+    await expect(page.getByTestId("cinema-audio-seat")).toHaveCount(3);
+    const cameraStage = page.getByTestId("cinema-audio-stage");
     const cinemaScreen = page.getByTestId("cinema-screen");
-    await expect(page.locator("[data-camera-seat='host']")).toContainText("Cinema Host");
-    await expect(page.locator("[data-camera-seat='guest-1']")).toContainText("Camera Guest");
-    await expect(page.locator("[data-camera-seat='guest-2']")).toContainText("Guest");
-    await expect(page.getByTestId("cinema-camera-placeholder")).toHaveCount(3);
+    await expect(page.locator("[data-seat='host']")).toContainText("Cinema Host");
+    await expect(page.locator("[data-seat='guest-1']")).toContainText("Ready Guest");
+    await expect(page.locator("[data-seat='guest-2']")).toContainText("Camera Guest");
+    await expect(page.getByTestId("cinema-seat-muted")).toHaveCount(2);
+    // The film itself may be a <video>; the stage never holds one.
+    await expect(cameraStage.locator("video")).toHaveCount(0);
     const [mediaBox, stageBox, screenBox, headerBox, shellMetrics] = await Promise.all([
       page.getByTestId("cinema-media-area").boundingBox(),
       cameraStage.boundingBox(),
@@ -385,18 +367,18 @@ test.describe("Cinema stable room", () => {
     await fullscreenControl.click();
     await expect(fullscreenControl).toHaveAttribute("aria-label", "Enter fullscreen");
 
-    // The document itself never scrolls, and the voice audience is what keeps
-    // that true under load: this room seeds 40+ listeners, so the block has to
-    // cap itself into rows plus one "+N" chip rather than growing unbounded or
-    // hiding people behind a swipe like the old horizontal strip did.
+    // The document itself never scrolls, and the listeners are what keep that
+    // true under load: this room seeds 40+ of them, so the strip caps itself at
+    // one compact row plus a "+N" chip. (It was three rows before the chat
+    // took the space under the stage.)
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
     const voiceBlock = page.getByTestId("cinema-voice-circles");
     await expect(voiceBlock).toBeVisible();
     const voiceRows = page.getByTestId("cinema-voice-row");
-    await expect(voiceRows).toHaveCount(3);
+    await expect(voiceRows).toHaveCount(1);
     const circleCount = await page.getByTestId("cinema-voice-circle").count();
-    expect(circleCount).toBeGreaterThan(5);
-    expect(circleCount).toBeLessThanOrEqual(15);
+    expect(circleCount).toBeGreaterThan(3);
+    expect(circleCount).toBeLessThanOrEqual(7);
     await expect(page.getByTestId("cinema-voice-overflow")).toHaveCount(1);
     // Every circle carries a volume ring, and a silent room leaves them at rest
     // rather than animating on a canned loop.
@@ -418,88 +400,117 @@ test.describe("Cinema stable room", () => {
       })),
     ).toEqual({ overflowX: "visible", overflowY: "visible" });
 
-    // Exactly one Cinema composer is anchored in the visible, hit-testable dock.
-    await expect(page.getByTestId("cinema-control-dock")).toHaveCount(1);
+    // The chat is its own band under the listeners, holding every message
+    // (not a five-line overlay fading off the film), with the one composer.
+    const chat = page.getByTestId("cinema-chat");
+    await expect(chat).toBeVisible();
+    await expect(page.getByTestId("cinema-chat-line")).toHaveCount(6);
+    await expect(page.getByTestId("cinema-comment-overlay")).toHaveCount(0);
     await expect(page.getByTestId("cinema-composer")).toHaveCount(1);
-    const dockBox = await page.getByTestId("cinema-control-dock").boundingBox();
+    await expect(chat.getByTestId("cinema-composer")).toHaveCount(1);
+    const chatBox = await chat.boundingBox();
+    expect(chatBox).not.toBeNull();
+    expect(chatBox!.y).toBeGreaterThanOrEqual(voiceBox!.y + voiceBox!.height - 1);
+    // Tall enough to read a conversation in, not a sliver.
+    expect(chatBox!.height).toBeGreaterThanOrEqual(110);
+    // A listener cannot delete the host's messages.
+    await expect(page.getByTestId("cinema-chat-delete")).toHaveCount(0);
+
+    // The dock is visible and hit-testable, and sits below the chat.
+    const dock = page.getByTestId("cinema-control-dock");
+    await expect(dock).toHaveCount(1);
+    const dockBox = await dock.boundingBox();
     expect(dockBox).not.toBeNull();
     expect(dockBox!.y + dockBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(dockBox!.y).toBeGreaterThanOrEqual(chatBox!.y + chatBox!.height - 1);
     expect(
-      await page.getByTestId("cinema-control-dock").evaluate((dock) => {
-        const box = dock.getBoundingClientRect();
+      await dock.evaluate((element) => {
+        const box = element.getBoundingClientRect();
         const topmost = document.elementFromPoint(
           box.left + box.width / 2,
           box.top + Math.min(box.height / 2, 24),
         );
-        return Boolean(topmost && dock.contains(topmost));
+        return Boolean(topmost && element.contains(topmost));
       }),
     ).toBe(true);
     await page.getByLabel("Write a comment").click();
-    await expect(page.getByRole("button", { name: /Ask to speak|Lower hand/ })).toHaveCount(0);
-    await expect(page.getByLabel(/Unmute \(tap\)|Mute \(tap\)/)).toHaveCount(0);
 
-    const overlay = page.getByTestId("cinema-comment-overlay");
-    await expect(overlay).toBeVisible();
-    await expect(page.getByTestId("cinema-comment-line")).toHaveCount(5);
-    const overlayBox = await overlay.boundingBox();
-    expect(overlayBox).not.toBeNull();
-    expect(overlayBox!.x).toBeLessThan((mediaBox!.x + mediaBox!.width) / 2);
-    await expect
-      .poll(async () =>
-        page.getByTestId("cinema-comment-line").evaluateAll((lines) => {
-          if (lines.length !== 5) return false;
-          const opacities = lines.map((line) => Number(getComputedStyle(line).opacity));
-          const transition = getComputedStyle(lines[0]).transitionProperty;
-          return (
-            opacities[0] < opacities[opacities.length - 1] && transition.includes("opacity")
-          );
-        }),
-      )
-      .toBe(true);
+    // A listener gets Leave quietly and Ask to speak; no mic, no camera, and
+    // no host tools.
+    await expect(dock.getByTestId("cinema-leave")).toBeVisible();
+    await expect(page.getByTestId("cinema-raise-hand")).toBeVisible();
+    await expect(page.getByLabel(/Unmute \(tap\)|Mute \(tap\)/)).toHaveCount(0);
+    await expect(page.getByTestId("cinema-camera-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("cinema-hands-queue")).toHaveCount(0);
   });
 
-  test("shows host-only live box controls without auto-enabling the host camera", async ({ page }) => {
-    const cameraSlotMethods: string[] = [];
+  test("gives the host the hands queue, seat moderation, chat delete and a leave choice, with no camera", async ({
+    page,
+  }) => {
+    const cameraRequests: string[] = [];
+    const deletedComments: string[] = [];
     await seedSession(page, hostProfile);
     await mockCinemaRoom(page, hostProfile);
     page.on("request", (request) => {
-      if (request.url().includes(`/api/social/spaces/${SPACE_ID}/cinema-camera-slot`)) {
-        cameraSlotMethods.push(request.method());
-      }
+      const url = request.url();
+      if (url.includes("cinema-camera-slot")) cameraRequests.push(request.method());
+      const deleted = url.match(/\/comments\/([^/?]+)$/);
+      if (deleted && request.method() === "DELETE") deletedComments.push(deleted[1]);
     });
 
     await page.goto(`/social/cinema/${SPACE_ID}`, { waitUntil: "domcontentloaded" });
-    const managerTrigger = page.getByTestId("cinema-live-seat-manager");
-    await managerTrigger.click();
-    const controls = page.getByRole("dialog", { name: "Live boxes" });
-    await expect(controls).toBeVisible();
-    await expect(controls).toHaveAttribute("aria-modal", "true");
-    await expect(page.getByLabel("Close Cinema live seat manager")).toBeFocused();
+    await expect(page.getByTestId("cinema-audio-seat")).toHaveCount(3);
+    // Audio-only: the room never touches the camera-slot API.
+    expect(cameraRequests).toEqual([]);
+    await expect(page.getByTestId("cinema-camera-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("cinema-live-seat-manager")).toHaveCount(0);
+    await expect(page.getByTestId("cinema-mic")).toBeVisible();
+
+    // Raised hands: a focus-contained dialog. Both guest seats are taken, so
+    // the waiting listener cannot be brought up until someone steps down.
+    const queueTrigger = page.getByTestId("cinema-hands-queue");
+    await expect(queueTrigger).toHaveAccessibleName("Raised hands (1)");
+    await queueTrigger.click();
+    const hands = page.getByRole("dialog", { name: "Raised hands" });
+    await expect(hands).toBeVisible();
+    await expect(hands).toHaveAttribute("aria-modal", "true");
+    await expect(hands).toContainText("The stage is full");
+    await expect(page.getByTestId("cinema-hand-row")).toHaveCount(1);
+    await expect(hands.getByRole("button", { name: "Bring up" })).toBeDisabled();
     await page.keyboard.press("Shift+Tab");
     await expect
-      .poll(() =>
-        controls.evaluate((dialog) => dialog.contains(document.activeElement)),
-      )
+      .poll(() => hands.evaluate((dialog) => dialog.contains(document.activeElement)))
       .toBe(true);
     await page.keyboard.press("Escape");
-    await expect(controls).toHaveCount(0);
-    await expect(managerTrigger).toBeFocused();
-    await managerTrigger.click();
-    const reopenedControls = page.getByRole("dialog", { name: "Live boxes" });
-    await expect(reopenedControls).toBeVisible();
-    await expect(page.getByTestId("cinema-live-box-2")).toContainText("Camera Guest");
-    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Empty");
-    await expect(page.getByTestId("cinema-live-box-candidate")).toContainText("Ready Guest");
-    // Room entry only reads reservations; a durable host slot must not start
-    // camera capture or make a create/claim request by itself.
-    expect(cameraSlotMethods.filter((method) => method === "POST")).toEqual([]);
+    await expect(hands).toHaveCount(0);
+    await expect(queueTrigger).toBeFocused();
 
-    await page.getByTestId("cinema-live-box-candidate").selectOption(SECOND_GUEST_ID);
-    await page.getByRole("button", { name: "Add to live box" }).click();
-    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Ready Guest");
-    await expect(page.getByRole("button", { name: "Remove Ready Guest from live box 3" })).toBeVisible();
+    // Tapping a guest's seat opens the host's per-person sheet.
+    await page.locator("[data-seat='guest-1']").click();
+    const manage = page.getByRole("dialog", { name: "Manage Ready Guest" });
+    await expect(manage).toBeVisible();
+    await expect(manage.getByRole("button", { name: "Move to audience" })).toBeVisible();
+    await expect(manage.getByRole("button", { name: "Remove and ban from this room" })).toBeVisible();
+    await page.mouse.click(5, 5);
+    await expect(manage).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Remove Ready Guest from live box 3" }).click();
-    await expect(page.getByTestId("cinema-live-box-3")).toContainText("Empty");
+    // The host can delete any chat line; it leaves this screen at once.
+    await expect(page.getByTestId("cinema-chat-line")).toHaveCount(6);
+    // History arrives newest-first and is shown oldest-first, so the top line
+    // is the oldest message. Delete that one line and nothing else.
+    await expect(page.getByTestId("cinema-chat-line").first()).toContainText("Screening comment 6");
+    await page.getByTestId("cinema-chat-delete").first().click();
+    await expect(page.getByTestId("cinema-chat-line")).toHaveCount(5);
+    await expect(page.getByText("Screening comment 6")).toHaveCount(0);
+    await expect.poll(() => deletedComments).toEqual(["cinema-comment-6"]);
+
+    // Leaving as host asks: hand the room off, or end it for everyone.
+    await page.getByTestId("cinema-leave").click();
+    const leave = page.getByRole("dialog", { name: "Leave the room?" });
+    await expect(leave).toBeVisible();
+    await expect(leave.getByRole("button", { name: "Leave and hand off" })).toBeVisible();
+    await expect(page.getByTestId("cinema-end-room")).toBeVisible();
+    await leave.getByRole("button", { name: "Stay" }).click();
+    await expect(leave).toHaveCount(0);
   });
 });

@@ -1,96 +1,167 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+// CinemaChat — the room chat, docked below the stage.
+//
+// It used to be a five-line overlay on top of the shared screen that faded
+// each line after eight seconds, which meant a comment made while you looked
+// away was simply gone and the bottom of the room was empty space. Karl asked
+// for that space to be used: this is a persistent, scrollable log below the
+// guests, with its composer at the bottom (Clubhouse's 2022 in-room chat is
+// the model).
+//
+// Moderation is part of the panel, not an afterthought: the host, a badged
+// moderator or the author can delete a line, and every open room drops it
+// through the realtime DELETE event in useRoomComments.
+
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { authorName, type ChatComment } from "@/components/social/rooms/useRoomComments";
 
-export const CINEMA_COMMENT_TTL_MS = 8_000;
-export const CINEMA_COMMENT_EXIT_MS = 600;
+// Within this many pixels of the bottom counts as "reading the latest", so a
+// new line scrolls into view. Further up, the reader is in the history and we
+// leave them there and offer a jump button instead of yanking the scroll.
+const STICK_TO_BOTTOM_PX = 48;
 
-type ExpiringComment = ChatComment & { expiresAt: number; exitingAt?: number };
+interface CinemaChatProps {
+  comments: readonly ChatComment[];
+  viewerId?: string | null;
+  /** Host or badged moderator: may delete anyone's message. */
+  canModerate?: boolean;
+  /** user ids currently on stage, to tag their lines. */
+  stageIds?: ReadonlySet<string>;
+  onDelete?: (commentId: string) => void;
+  /** The composer form, owned by RoomScreen so there is one send path. */
+  composer?: ReactNode;
+}
 
-/**
- * Transient presentation over the shared Cinema media area. It never deletes
- * comments: persistence remains in `space_comments`; only this client-side
- * display list expires.
- */
-export function CinemaChat({ comments }: { comments: readonly ChatComment[] }) {
-  const [visible, setVisible] = useState<ExpiringComment[]>([]);
-  const seenRef = useRef(new Set<string>());
+export function CinemaChat({
+  comments,
+  viewerId,
+  canModerate,
+  stageIds,
+  onDelete,
+  composer,
+}: CinemaChatProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+  const [unseen, setUnseen] = useState(0);
+  const lastCountRef = useRef(comments.length);
 
+  const scrollToBottom = () => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+    atBottomRef.current = true;
+    setUnseen(0);
+  };
+
+  // Follow new lines only when the reader is already at the bottom.
+  useLayoutEffect(() => {
+    const added = comments.length - lastCountRef.current;
+    lastCountRef.current = comments.length;
+    if (atBottomRef.current) {
+      scrollToBottom();
+    } else if (added > 0) {
+      setUnseen((n) => n + added);
+    }
+  }, [comments.length]);
+
+  // First paint lands on the newest message.
   useEffect(() => {
-    const now = Date.now();
-    setVisible((current) => {
-      // Keep a line around for its short exit transition even when a new
-      // comment arrives while it is fading. The final slice still guarantees
-      // that this presentation layer never exposes more than five lines.
-      const next = current.filter(
-        (comment) =>
-          (!comment.exitingAt && comment.expiresAt > now) ||
-          (comment.exitingAt && comment.exitingAt + CINEMA_COMMENT_EXIT_MS > now),
-      );
-      for (const comment of comments) {
-        if (seenRef.current.has(comment.id)) continue;
-        seenRef.current.add(comment.id);
-        next.push({ ...comment, expiresAt: now + CINEMA_COMMENT_TTL_MS });
-      }
-      // Cinema intentionally remains a fleeting, readable overlay rather than
-      // a scrolling transcript. Five short lines leave the screen legible and
-      // older comments fade away on their own.
-      return next.slice(-5);
-    });
-  }, [comments]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const now = Date.now();
-      setVisible((current) =>
-        current
-          .filter(
-            (comment) =>
-              !comment.exitingAt || comment.exitingAt + CINEMA_COMMENT_EXIT_MS > now,
-          )
-          .map((comment) =>
-            comment.expiresAt <= now && !comment.exitingAt
-              ? { ...comment, exitingAt: now }
-              : comment,
-          ),
-      );
-    }, 300);
-    return () => window.clearInterval(timer);
+    scrollToBottom();
   }, []);
 
-  if (visible.length === 0) return null;
+  const onScroll = () => {
+    const list = listRef.current;
+    if (!list) return;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < STICK_TO_BOTTOM_PX;
+    atBottomRef.current = atBottom;
+    if (atBottom) setUnseen(0);
+  };
 
   return (
-    <div
-      // Anchored to the bottom-left of the shared screen. It used to be pushed
-      // up by 5.75rem to clear the three live seats that were overlaid inside
-      // the frame; those seats now live in their own band below the screen, so
-      // the comment column sits where the eye expects it.
-      className="pointer-events-none absolute bottom-2 left-2 z-20 max-h-[42%] w-[min(66%,21rem)] overflow-hidden bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2.5 pb-2 pt-8 sm:bottom-3 sm:left-3 sm:px-3"
-      data-testid="cinema-comment-overlay"
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions"
-      aria-label="Cinema comments"
+    <section
+      className="relative flex min-h-[7.5rem] flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]"
+      data-testid="cinema-chat"
+      aria-label="Room chat"
     >
-      <div className="space-y-1.5">
-        {visible.map((comment, index) => (
-          <p
-            key={comment.id}
-            data-testid="cinema-comment-line"
-            data-cinema-comment-age={visible.length - index}
-            data-cinema-comment-exiting={comment.exitingAt ? "true" : undefined}
-            className="cinema-comment-line text-[12px] leading-snug text-white/80"
-          >
-            <span className="cinema-comment-line-content">
-              <span className="font-semibold text-cinema-gold">{authorName(comment)}</span>{" "}
-              <span>{comment.body}</span>
-            </span>
+      <div
+        ref={listRef}
+        onScroll={onScroll}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5"
+        data-testid="cinema-chat-log"
+      >
+        {comments.length === 0 ? (
+          <p className="m-auto text-center text-xs text-white/35">
+            No messages yet. Say hi to the room.
           </p>
-        ))}
+        ) : (
+          comments.map((comment) => {
+            const name = authorName(comment);
+            const mine = Boolean(viewerId && comment.user_id === viewerId);
+            const deletable = Boolean(onDelete && (canModerate || mine));
+            const onStage = Boolean(comment.user_id && stageIds?.has(comment.user_id));
+            return (
+              <div
+                key={comment.id}
+                className="group flex items-start gap-2"
+                data-testid="cinema-chat-line"
+              >
+                {comment.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={comment.avatar_url}
+                    alt=""
+                    loading="lazy"
+                    className="mt-0.5 h-6 w-6 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/[0.07] text-[10px] font-semibold text-white/55">
+                    {name.charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <p className="min-w-0 flex-1 text-[13px] leading-snug text-white/85 [overflow-wrap:anywhere]">
+                  <span className="font-semibold text-cinema-gold">{name}</span>
+                  {onStage && (
+                    <span className="ml-1.5 text-[10px] uppercase tracking-[0.12em] text-melori-teal">
+                      on stage
+                    </span>
+                  )}{" "}
+                  <span>{comment.body}</span>
+                </p>
+                {deletable && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete?.(comment.id)}
+                    data-testid="cinema-chat-delete"
+                    aria-label={`Delete message from ${name}`}
+                    title="Delete message"
+                    className="shrink-0 rounded-full p-1 text-white/25 transition hover:bg-white/5 hover:text-red-400 focus-visible:text-red-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
-    </div>
+
+      {unseen > 0 && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-melori-purple px-3 py-1 text-xs font-semibold text-white shadow-lg"
+        >
+          {unseen} new {unseen === 1 ? "message" : "messages"}
+        </button>
+      )}
+
+      {composer && <div className="shrink-0 border-t border-white/[0.06] p-1.5">{composer}</div>}
+    </section>
   );
 }
 

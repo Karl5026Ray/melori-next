@@ -15,7 +15,7 @@ import Link from "next/link";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useCanParticipate } from "@/components/social/UpgradePrompt";
+import { useCanParticipate } from "@/components/social/SignInPrompt";
 import { Users, Radio, Loader2, Plus, X } from "lucide-react";
 
 interface LiveRoomListItem {

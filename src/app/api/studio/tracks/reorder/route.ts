@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { OWNER_COLUMN } from "@/lib/studio-ownership";
 
 // POST /api/studio/tracks/reorder
@@ -18,7 +18,7 @@ import { OWNER_COLUMN } from "@/lib/studio-ownership";
 // a personal-tool UI; a real conflict would require optimistic locking that
 // the front-end can't currently surface.
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   let body: { album?: string | null; orderedIds?: unknown };

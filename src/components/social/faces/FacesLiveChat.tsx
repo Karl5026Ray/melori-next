@@ -88,7 +88,7 @@ export default function FacesLiveChat({ spaceId }: { spaceId: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/social/spaces/${spaceId}/comments`, {
+        const res = await authFetch(`/api/social/spaces/${spaceId}/comments`, {
           cache: "no-store",
         });
         const data = await res.json();

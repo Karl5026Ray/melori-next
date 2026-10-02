@@ -16,6 +16,7 @@ import {
 } from "@/lib/mirrorFeedNavigation";
 import { Compass } from "lucide-react";
 import { CommunityToggle } from "@/components/social/community/CommunityToggle";
+import { authFetch } from "@/lib/authClient";
 
 // Melori Mirror — the TikTok "For You"-style vertical feed.
 //
@@ -278,7 +279,7 @@ export default function MirrorFeed({
     if (loadingMore || !cursor) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/mirror/feed?cursor=${encodeURIComponent(cursor)}&limit=10`,
         { cache: "no-store" },
       );

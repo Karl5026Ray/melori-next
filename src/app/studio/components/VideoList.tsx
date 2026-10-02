@@ -14,8 +14,8 @@ interface StudioVideo {
 }
 
 // Studio-side listing of the artist's own social videos. Shows the video with
-// its title/description and a Delete button. The public /api/social/videos
-// route already returns every video (it's a public feed), so we filter to the
+// its title/description and a Delete button. The /api/social/videos route
+// (sign-in required) returns every member's video feed, so we filter to the
 // caller's uid on the client — the DELETE route re-enforces ownership server
 // side, so this filter is just presentation, not a security boundary.
 export default function VideoList({ userId }: { userId: string | null }) {
@@ -28,7 +28,7 @@ export default function VideoList({ userId }: { userId: string | null }) {
     try {
       // Public endpoint — no auth needed for the read; caller-side filter
       // limits the list to this artist's rows for the Studio UI.
-      const res = await fetch("/api/social/videos", { cache: "no-store" });
+      const res = await authFetch("/api/social/videos", { cache: "no-store" });
       if (!res.ok) {
         setVideos([]);
         return;

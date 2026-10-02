@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,14 @@ export const dynamic = "force-dynamic";
 // automatically after 24h. A pg_cron job also sweeps expired rows into
 // social_videos_archive every 10 min, so even between sweeps an expired post is
 // never shown here.
+//
+// Sign-in required: anonymous callers get a 401.
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const url = new URL(req.url);

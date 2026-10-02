@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getRequestMembership } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isBlockedBetween } from "@/lib/blocks";
 
 export const runtime = "nodejs";
@@ -15,13 +15,17 @@ export const dynamic = "force-dynamic";
 // Private tabs (Liked, Saves, Family) are only meaningful for the profile owner
 // and are served by their own caller-scoped endpoints; here we only include
 // their counts when the caller IS the owner.
+//
+// Sign-in required: anonymous callers get a 401.
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const supabase = getSupabaseAdmin();
   const url = new URL(req.url);
   let userId = url.searchParams.get("user_id");
 
   // Default to the caller's own profile.
-  const { userId: callerId } = await getRequestMembership(req);
+  const { userId: callerId } = guard.membership;
   if (!userId) userId = callerId;
   if (!userId) {
     return NextResponse.json({ error: "user_id required" }, { status: 400 });
@@ -29,7 +33,7 @@ export async function GET(req: NextRequest) {
   const isOwner = !!callerId && callerId === userId;
 
   // Mutual invisibility: a blocked pair can't load each other's content.
-  // Owners always see their own tabs; anonymous callers are unaffected.
+  // Owners always see their own tabs.
   if (!isOwner && callerId && (await isBlockedBetween(supabase, callerId, userId))) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }

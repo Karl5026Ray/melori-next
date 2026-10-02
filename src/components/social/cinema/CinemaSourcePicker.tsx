@@ -275,7 +275,7 @@ export function CinemaSourcePicker({
     setLibraryLoading(true);
     (async () => {
       try {
-        const res = await fetch("/api/social/videos");
+        const res = await authFetch("/api/social/videos");
         const json = (await res.json()) as { videos?: SocialVideo[] };
         // Only things this player can actually play. YouTube rows are now
         // included -- the shared screen has an IFrame player for them -- so the

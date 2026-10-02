@@ -62,6 +62,42 @@ names only Stripe and Resend. Missing, from what the code actually uses:
 - [ ] I draft the text as a PR; Karl (or a lawyer) approves the wording. I
       do not ship policy text unreviewed.
 
+## C0. Must-fix BEFORE the policy can be honest (audit, 2 Oct)
+The current /privacy promises export (none exists), "purges everything" on
+delete (wrong table names, FK failures, storage left behind), and a "cart"
+(none). It names Stripe + Resend only. The code also does things no policy
+should have to admit. Fix first, then write the policy for the fixed state.
+
+Karl (2 Oct): "I need people to sign in otherwise listeners and speakers
+alike are not safe. There is no more superfan accounts... Sign in to
+participate."
+
+- [ ] C0-1. Sign-in wall for the API (this branch, feat/signin-wall-api).
+      The proxy never gates /api, so these GETs hand member data to anyone
+      with curl: mirror/live, social/faces (who is live), profiles/feed
+      (member directory + online list), social/profile/[username],
+      social/profile/tabs (city, birthday, unmoderated photos),
+      social/reshares, mirror/feed, social/videos (`select *`),
+      videos/[id]/comments, photos/[id]/comments, spaces/[id]/comments,
+      spaces/[id]/reactions, community/comments, spaces/[id]/playback.
+      Each GET → requireAuth (401 signed out); each caller → authFetch.
+      Public /artists/[slug]: remove the "Top fans" SuperfanButton and the
+      public /api/artists/[slug]/superfans route (fans' names, sometimes real
+      full_name, + listening history). /api/profiles/[id]/gallery stays
+      public ONLY for a published artist's own profile.
+      Test: a script that calls every listed handler with no token → 401.
+- [ ] C0-2. Mirror recording (decision pending): sign-in alone does NOT fix
+      this. A signed-in guest is still recorded without notice, and files
+      sit in a PUBLIC bucket even after "Not now". Illinois: all-party
+      consent. Recommend: banner for everyone + notice on join, private
+      bucket until posted, "Not now" deletes, clean up orphans.
+- [ ] C0-3. Connect (dating) 18+ gate (decision pending): sign-in alone
+      does not stop a 15-year-old with an account. Plus 16+ attestation at
+      signup (Karl's minimum age).
+- [ ] C0-4. Account deletion fixes + data export (or drop the promise).
+- [ ] C0-5. Terms "nothing to buy" vs gift coins / Apple IAP; remove the
+      "women-only rooms" claim until it exists.
+
 ## Order and size
 A1+A2 (~half day), B1+B2 (~half day), C draft (~1 hr). A3 and B3 only on
 Karl's yes. One branch per section, one PR each, full `npm run test:unit`

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getRequestMembership } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
   liveParticipantCounts,
   withLiveParticipantCounts,
@@ -29,15 +29,17 @@ const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 //
 // scope=friends restricts `members` to the caller's MUTUAL follows (a pair
 // where caller follows X AND X follows caller). Used by the Messages page's
-// "find your friends" strip. Requires auth; returns members=[] for anonymous.
+// "find your friends" strip.
 // The live-rooms list is untouched by this scope — anyone hosting a room is
 // still discoverable via Mirror.
 //
 // Runs on the admin client so it is not gated by the per-row profiles RLS the
-// anonymous client is subject to. Auth is optional (except for scope=friends):
-// a Bearer token lets us drop the caller from the online-members list so they
-// don't see themselves.
+// anonymous client is subject to. Auth is REQUIRED (sign-in wall): anonymous
+// callers get a 401. The caller's id also lets us drop them from the
+// online-members list so they don't see themselves.
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -91,12 +93,7 @@ export async function GET(req: NextRequest) {
     // represented by a live-room ring above (we dedupe hosts). Presence lookup
     // failures must not break the live-room row, so this is best-effort.
     const hostIds = new Set(live.map((r) => r.host?.id).filter(Boolean));
-    let callerId: string | null = null;
-    try {
-      callerId = (await getRequestMembership(req)).userId;
-    } catch {
-      /* anonymous / bad token — just don't exclude a caller */
-    }
+    const callerId: string | null = guard.membership.userId;
 
     let members: Array<{
       id: string;

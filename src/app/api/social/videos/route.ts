@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getRequestMembership } from "@/lib/membership-server";
+import { getRequestMembership, requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/social/videos — public video feed (most recent first).
-export async function GET() {
+// GET /api/social/videos — video feed (most recent first). Sign-in required.
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
   OWNER_COLUMN,
   isOwnedStudioPath,
@@ -11,7 +11,7 @@ import { ensureStudioAlbum } from "@/lib/studio-albums";
 
 // GET /api/studio/tracks — List all studio tracks
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const { data: tracks, error } = await supabase
       .from("studio_tracks")
       .select(
-        "id, title, artist, album, genre, status, preview_url, cover_url, created_at, duration, sort_order, price_cents"
+        "id, title, artist, album, genre, status, preview_url, cover_url, created_at, duration, sort_order"
       )
       .eq(OWNER_COLUMN, guard.membership.userId)
       .order("album", { ascending: true, nullsFirst: false })
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 // forged path would leak someone else's private master. Reject anything not
 // scoped under the caller's own subfolder before writing the row.
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
@@ -139,8 +139,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Materialise the album side-car so the artist can price the album as a
-    // whole. Best-effort: a failure here must not undo a successful upload.
+    // Materialise the album side-car so the album gets a stable id and public
+    // slug. Best-effort: a failure here must not undo a successful upload.
     if (albumForOrder) {
       await ensureStudioAlbum(
         supabase,

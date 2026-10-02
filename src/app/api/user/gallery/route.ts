@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
-import { tierOf } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { moderateImage, statusForDecision } from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
@@ -9,23 +8,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Personal media gallery for EVERY signed-in account (photos or vertical
-// videos), editable straight from the profile page. Slot limits are tier-based
-// so free accounts get a taste and paid tiers get room to express a brand:
-//   free      -> 4 slots
-//   superfan  -> 20 slots
-//   artist    -> 20 slots
+// videos), editable straight from the profile page. Every account gets the same
+// slot allowance (Melori has no paid tiers).
 // Media lives in the public `covers` bucket under gallery/{userId}/… .
 // All DB access uses the service-role client (bypasses RLS); requireAuth
 // restricts every method to the signed-in owner acting on their own rows.
 
 const BUCKET = "covers";
 
-// Per-tier slot allowance. Photos and vertical videos share the same pool.
-function maxSlotsFor(profile: Parameters<typeof tierOf>[0]): number {
-  const tier = tierOf(profile); // "free" | "superfan" | "artist"
-  if (tier === "superfan" || tier === "artist") return 20;
-  return 4; // free
-}
+// Slot allowance. Photos and vertical videos share the same pool.
+const MAX_SLOTS = 20;
 
 // True when the query error means the table hasn't been created yet, so reads
 // can degrade to an empty gallery instead of a 500.
@@ -51,7 +43,7 @@ export async function GET(req: Request) {
   if (isGuardFailure(guard)) return guard;
 
   const userId = guard.membership.userId!;
-  const max = maxSlotsFor(guard.membership.profile);
+  const max = MAX_SLOTS;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("profile_gallery")
@@ -95,7 +87,7 @@ export async function POST(req: Request) {
   }
 
   const userId = guard.membership.userId!;
-  const max = maxSlotsFor(guard.membership.profile);
+  const max = MAX_SLOTS;
   const supabase = getSupabaseAdmin();
 
   const { count, error: countError } = await supabase
@@ -108,7 +100,7 @@ export async function POST(req: Request) {
   }
   if ((count ?? 0) >= max) {
     return NextResponse.json(
-      { error: `Your gallery is full (max ${max} slots for your plan).` },
+      { error: `Your gallery is full (max ${max} slots).` },
       { status: 400 },
     );
   }
@@ -142,7 +134,7 @@ export async function PATCH(req: Request) {
 
   const body = await req.json().catch(() => ({}) as any);
   const userId = guard.membership.userId!;
-  const max = maxSlotsFor(guard.membership.profile);
+  const max = MAX_SLOTS;
   const supabase = getSupabaseAdmin();
 
   // Reorder mode: persist a new sort_order for the caller's own rows.
@@ -186,7 +178,7 @@ export async function PATCH(req: Request) {
     .eq("profile_id", userId);
   if ((count ?? 0) >= max) {
     return NextResponse.json(
-      { error: `Your gallery is full (max ${max} slots for your plan).` },
+      { error: `Your gallery is full (max ${max} slots).` },
       { status: 400 },
     );
   }

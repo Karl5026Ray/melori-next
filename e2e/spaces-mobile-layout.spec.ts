@@ -203,19 +203,15 @@ async function seedSignedInSession(page: Page) {
   );
 }
 
-// Leave moved out of the bottom control bar and into the sheet header as the
-// reference design's "✌️ leave" pill, so the old
-// `[data-testid='spaces-control-bar'] button:has(svg.lucide-log-out)` locator
-// no longer resolves. Text is not a reliable hook either: the label is
-// lowercase "leave" and a page-wide match would also hit the account menu's
-// "Sign Out". Use the button's own stable testid.
+// Leave is "✌️ Leave quietly" at the bottom-left of the dock (Spaces redesign,
+// 2 Oct 2026, Clubhouse placement). Text is not a reliable hook — a page-wide
+// match would also hit the account menu's "Sign Out" — so use the testid.
 function leaveButtonLocator(page: Page) {
   return page.locator("[data-testid='spaces-leave']");
 }
 
-// The primary action inside the bottom control bar — the mic pill for anyone
-// on stage, otherwise "ask to speak". Used as the joined-room readiness signal
-// now that Leave lives in the header and renders before isJoined flips.
+// The bottom dock (leave, hands queue, reactions, mic or raise hand). It only
+// renders once isJoined flips, so it doubles as the joined-room signal.
 function controlBarLocator(page: Page) {
   return page.locator("[data-testid='spaces-control-bar']");
 }
@@ -333,11 +329,11 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
     ).toBeLessThanOrEqual(overflowInfo.clientWidth);
   });
 
-  // Leave used to sit in the bottom control bar, where it was at risk of being
-  // covered by the fixed MobileTabBar. It now lives in the sheet header, which
-  // removes that specific hazard — but the affordance still has to be present
-  // and tappable, so the guarantee moves with it rather than disappearing.
-  test("the leave control is reachable in the sheet header", async ({ page }) => {
+  // Leave went header -> back to the dock in the 2 Oct 2026 redesign. The
+  // MobileTabBar no longer renders inside a Spaces room, so the old hazard of
+  // the tab bar covering it is gone, but the guarantee stays: present, inside
+  // the viewport, and the topmost thing where you tap.
+  test("the leave control is reachable in the bottom dock", async ({ page }) => {
     await openJoinedSpace(page);
 
     const leaveButton = leaveButtonLocator(page);
@@ -360,7 +356,10 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
     expect(isHitTestable, "leave must be tappable, not covered by another element").toBe(true);
   });
 
-  test("the long space title wraps instead of overflowing", async ({ page }) => {
+  // The header is one line since 2 Oct 2026, so the title truncates with an
+  // ellipsis instead of wrapping. The guarantee is the same: it never widens
+  // the page.
+  test("the long space title never widens the page", async ({ page }) => {
     // This originally exercised the pre-join card's <h3>, which was the
     // element missing `break-words` in the reported bug. That card is gone —
     // the join interstitial was removed (see the "MM Spaces join flow" block
@@ -418,9 +417,8 @@ test.describe("MM Spaces mobile layout (390x844)", () => {
   test("the bottom control bar is within the visible viewport", async ({ page }) => {
     await openJoinedSpace(page);
 
-    // Retargeted from the Leave button, which now lives in the sheet header
-    // and is trivially on-screen. The defect this test documents is about the
-    // BOTTOM bar, so measure the bar itself.
+    // The defect this test documents is about the BOTTOM bar, so measure the
+    // bar itself.
     const controlBar = controlBarLocator(page);
     await expect(controlBar).toBeVisible();
 

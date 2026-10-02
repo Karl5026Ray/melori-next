@@ -1,7 +1,7 @@
-// Approve the request's origin for use in return URLs (Stripe success/cancel,
-// email links, etc.). Anything not on the whitelist falls back to the
-// canonical production origin so an attacker can't set `Origin: attacker.com`
-// on a checkout request and get Stripe's post-payment handoff sent there.
+// Approve the request's origin for use in return URLs (OAuth callbacks, email
+// links, shareable gallery URLs, etc.). Anything not on the whitelist falls
+// back to the canonical production origin so an attacker can't set
+// `Origin: attacker.com` on a request and get a redirect or link pointed there.
 
 const APPROVED_HOSTS = new Set<string>([
   "melorimusic.org",

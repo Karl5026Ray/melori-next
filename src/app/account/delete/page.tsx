@@ -36,10 +36,10 @@ export default function DeleteAccountPage() {
         </ul>
         <h2 className="text-lg font-semibold mt-6 mb-3">What is retained</h2>
         <p className="text-sm text-[#ccc]">
-          Records we are legally required to keep — such as payment and tax
-          records for completed purchases — are retained by our payment
-          processor (Stripe) for the period required by law. These are not used
-          to identify you within Melori after deletion.
+          Melori does not take payments, so there are no purchase or billing
+          records to retain. Any records we are legally required to keep are kept
+          only for the period required by law and are not used to identify you
+          within Melori after deletion.
         </p>
       </section>
 

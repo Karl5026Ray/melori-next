@@ -1,3 +1,43 @@
+# Cinema podcast room + Spaces parity, 1 Oct 2026 (PLAN, awaiting Karl)
+
+Goal: Cinema = shared screen on top, 3 audio-only seats below (host + 2),
+persistent chat in the bottom space, Clubhouse-style dock. Prototype:
+the "MM Cinema Podcast Room" artifact.
+
+## Phase 1: Cinema room (one PR)
+- [ ] Remove camera from the Cinema UI: drop `cinema-camera-toggle`,
+      `toggleCinemaCamera` call sites and the slot POST from RoomScreen.
+      Keep `cinema-camera-slot` route + migration 057 dormant (no DB change).
+- [ ] `CinemaStage` → 3 audio seats (avatar, speaking ring from LiveKit
+      active speakers, mute badge, empty "open seat"). No video tiles.
+- [ ] Mic toggle for anyone on stage in Cinema (today `!isCinema` hides it,
+      so guests can never unmute). Host still auto-publishes audio.
+- [ ] Raise hand / hand queue / invite-to-speak / move-to-audience / host
+      mute enabled for Cinema, reusing the Spaces handlers
+      (`toggleHand`, `invitePromote`, `hostMute`, `hostDemote`). Stage cap 3.
+- [ ] Persistent chat below the stage: mount `RoomChat` + `useRoomComments`
+      in the canvas bottom slot; delete `CinemaChat` overlay usage.
+- [ ] Dock: Leave quietly (bottom-left), reactions, hands queue (host),
+      mic (on stage) or raise hand (listener). Host leave = hand off or end.
+- [ ] Tests: supersede the pinned strings in
+      `cinema-server-invariants.test.ts` (lines ~154-180, 239-266) with the
+      reason, add new assertions for audio seats + chat mount; update
+      `e2e/cinema-stable-room.spec.ts` (3 camera slots → 3 audio seats).
+      Full `npm run test:unit` must pass.
+
+## Phase 2: Spaces gaps vs Clubhouse (separate PRs)
+- [ ] Chat moderation: host/mod delete, ban check on POST, report.
+- [ ] Real Report flow (replace the `alert()` placebo) → reports table.
+- [ ] Ban UI reachable from the participant sheet (037_space_bans exists).
+- [ ] Reminder delivery cron for `space_reminders` (never sent today).
+- [ ] Pinned link (host sets, shows above chat).
+- [ ] Co-host role UI + host hand-off on leave.
+- [ ] Reconnect keeps your seat; "followed" hand-raise mode TODO; seed
+      follow state.
+
+## Review
+_(fill in after build)_
+
 # Site health sweep, 24 Sep 2026
 
 Five issues from a live read-only audit of melorimusic.org. No reset or

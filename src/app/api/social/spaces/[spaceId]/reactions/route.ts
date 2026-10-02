@@ -12,13 +12,15 @@ export const dynamic = "force-dynamic";
 // same list). Any emoji outside this set is rejected.
 const ALLOWED_EMOJI = ["👍", "❤️", "😂", "🎉", "🔥", "😮"];
 
-// GET /api/social/spaces/[spaceId]/reactions — Public. Reading is free (mirrors
+// GET /api/social/spaces/[spaceId]/reactions — Sign-in required to read (mirrors
 // the comments feed). Returns every reaction row for the room so the client can
 // group counts per message; capped for safety.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   props: { params: Promise<{ spaceId: string }> },
 ) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const params = await props.params;
   const spaceId = String(params.spaceId ?? "").trim();
   if (!spaceId || !isUuid(spaceId)) {

@@ -10,9 +10,11 @@ export const dynamic = "force-dynamic";
 
 const MAX_LEN = 2000;
 
-// GET /api/social/videos/[id]/comments — public. Newest first.
+// GET /api/social/videos/[id]/comments — sign-in required. Newest first.
 // Joins the author profile so the client can render name + avatar.
-export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const params = await props.params;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

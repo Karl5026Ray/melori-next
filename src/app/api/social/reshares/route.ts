@@ -11,17 +11,17 @@ function normalizeType(v: unknown): TargetType | null {
 }
 
 // GET /api/social/reshares?user_id=<uuid>  → that member's reshares (Shared tab)
-//   Public: a profile's "Shared" is visible to anyone viewing the profile.
-//   Falls back to the caller's own reshares when user_id is omitted.
+//   Sign-in required: a profile's "Shared" is visible to any signed-in member
+//   viewing the profile. Falls back to the caller's own reshares when user_id is omitted.
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const supabase = getSupabaseAdmin();
   const url = new URL(req.url);
   let userId = url.searchParams.get("user_id");
 
   if (!userId) {
-    const { getRequestMembership } = await import("@/lib/membership-server");
-    const m = await getRequestMembership(req);
-    userId = m.userId;
+    userId = guard.membership.userId;
   }
   if (!userId) {
     return NextResponse.json({ error: "user_id required" }, { status: 400 });

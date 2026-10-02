@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getRequestMembership } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isBlockedBetween } from "@/lib/blocks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // GET /api/social/profile/<username>
-// Public read of another member's profile (used by /social/profile/[username]).
-// When the caller is signed in we also return whether they follow this member
+// Signed-in read of another member's profile (used by /social/profile/[username]).
+// Sign-in required (401 otherwise). We also return whether they follow this member
 // and whether a block exists in either direction (so the UI can hide follow).
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const { username } = await params;
   const uname = (username ?? "").trim();
   if (!uname) {
@@ -39,15 +41,8 @@ export async function GET(
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
-  // Best-effort caller identity — this endpoint is public, so an anonymous
-  // viewer is fine (they just get following:false and no self flag).
-  let viewerId: string | null = null;
-  try {
-    const { userId } = await getRequestMembership(req);
-    viewerId = userId ?? null;
-  } catch {
-    /* anonymous */
-  }
+  // Caller identity comes from the sign-in guard above.
+  const viewerId: string | null = guard.membership.userId;
 
   let following = false;
   let blocked = false;

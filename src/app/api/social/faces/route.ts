@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireGoLiveReady } from "@/lib/goLiveGate.server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { isArtistSubscriber } from "@/lib/membership";
 import {
   liveParticipantCounts,
@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 //   FREE   : 9 people,  30 min
 //   ARTIST : 50 people, unlimited
 //
-// GET  /api/social/faces          — list active live video rooms
+// GET  /api/social/faces          — list active live video rooms (sign-in required)
 // POST /api/social/faces          — create (go live) a room; caller becomes host
 
 const VIDEO_FORMATS = new Set(["live_solo", "live_duo", "live_group"]);
@@ -45,7 +45,9 @@ function limitsForFormat(format: string, isArtist: boolean) {
   return { maxOnCamera, durationMinutes };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase

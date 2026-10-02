@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, requireSuperfan, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUuid } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/social/spaces/[spaceId]/comments — Public. Reading is free.
+// GET /api/social/spaces/[spaceId]/comments — Sign-in required to read.
 // Returns newest first, up to 200.
-export async function GET(_req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const params = await props.params;
   const spaceId = String(params.spaceId ?? "").trim();
   if (!spaceId || !isUuid(spaceId)) {

@@ -82,6 +82,29 @@ body {
   }
 }
 
+/* An opened MM Spaces room is full screen too: the room's own header, stage,
+   chat and dock replace the app chrome. Spaces' own rules, kept apart from
+   Cinema's above so a change to one room cannot move the other. */
+@supports selector(body:has(.spaces-room-shell)) {
+  body:has(.spaces-room-shell) {
+    overflow: hidden;
+  }
+  body:has(.spaces-room-shell) main {
+    flex: 0 1 auto;
+    min-height: 0;
+    padding-bottom: 0 !important;
+  }
+  body:has(.spaces-room-shell) > header {
+    display: none;
+  }
+  body:has(.spaces-room-shell) footer {
+    display: none;
+  }
+}
+.spaces-room-shell {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+}
+
 /* `viewport-fit=cover` lets Cinema use the whole display, including the area
    beneath a phone notch. The safe top padding belongs to the outer room shell,
    not the media canvas, so its header controls clear the hardware cutout while

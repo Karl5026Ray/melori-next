@@ -1,31 +1,47 @@
-# MM Spaces redesign, 2 Oct 2026 (PLAN, awaiting Karl)
+# MM Spaces redesign + room separation, 2 Oct 2026
 
-Audit (realistic room: host, 2 speakers, 43 listeners, 1 raised hand, 390px phone):
-layout e2e 14/14 green and 0 runtime errors in 7 days, but the room is not
-Clubhouse-grade:
-- On a phone only ~240px of room is visible between the app header, the
-  room header and the dock + tab bar; the participant list is 2,160px tall.
-- Tiles are large squares with a "+" follow badge on everyone (follow state
-  is never loaded, so people you already follow still show "+").
-- Host has no hands queue: raised hands sit BELOW all 43 listeners.
-- Host's speaker list repeats the stage; "move to audience" uses a hand icon.
-- Chat is a floating overlay only: no history, no delete.
-- Moderators get no moderation UI (route allows it).
-- Report = alert() placebo; reminders never sent; "followed" mode = TODO.
-- Usage: 0 Spaces rooms created in the last 60 days.
+Karl: "make it similar and fix the current issues", same purple/teal look as
+the Cinema prototype, and Spaces and Cinema "not connected in any way" (he
+chose: separate code, same colors; shared plumbing stays).
 
-Plan: one room layout for both formats. Spaces = the Cinema layout without
-the screen. Reuse CinemaStage/CinemaVoiceCircles/CinemaChat (rename to
-room/*) so fixes land once.
-- [ ] Stage: circles with speaking rings, wraps; cap 8 speakers + host.
-- [ ] Listeners: compact grid (circles, names under), collapsible; tap = sheet.
-- [ ] Persistent chat panel with delete (already built for Cinema).
-- [ ] Dock: Leave quietly, hands queue (host/mods), mic or raise hand, reactions.
-- [ ] Mod sheet for moderators too (no badge assignment for mods).
-- [ ] Drop the duplicate speaker list; hide app chrome inside a room.
-- [ ] Batch follow-state load so "+" only shows for people you don't follow.
-- [ ] Real Report → reports table + admin email.
-- [ ] Tests: supersede pinned strings with reasons; Spaces e2e rewritten.
+Audit before (realistic room: host, 2 speakers, 43 listeners, 1 raised hand,
+390px phone): ~240px of visible room; 2,160px participant list; raised hands
+below every listener; duplicate speaker list; chat overlay with no history or
+delete; follow "+" on people already followed; mods had no UI; Report was an
+alert(); reminders never sent; "followed" hand-raise mode was a TODO.
+
+## Done
+- [x] Separate code: `spaces/SpacesRoomScreen.tsx` (new) and
+      `cinema/CinemaRoomScreen.tsx` (was the shared rooms/RoomScreen.tsx, now
+      Cinema-only). Spaces' own SpacesStage / SpacesListeners / SpacesChat /
+      useSpaceChat / spacesRoom / spacesAvatar / spacesRoomRoute; Cinema's own
+      cinemaAvatar. `scripts/spaces-room.test.ts` fails if either imports the
+      other. Old StageGrid + RoomCommentOverlay deleted.
+- [x] Spaces layout: one-line header (LIVE, title, head count), stage with
+      live speaking rings (loudness added to livekitClient), listeners strip
+      with "See all", persistent chat, dock (Leave quietly, hands queue,
+      reactions, mic / hand). App header + tab bar hidden inside a room.
+- [x] Stage cap: host + 8 speakers, server-side (409). Nobody but the host
+      joins on stage (tier auto-seat bypassed the cap).
+- [x] One person sheet: follow/unfollow, react, and stage tools for host AND
+      moderators; host-only make-moderator and remove-and-ban.
+- [x] Follow state loaded in one query (Spaces) / host follow loaded (Cinema).
+- [x] Report: room + chat line, both screens; report API takes `space` and
+      `space_chat` and emails Karl.
+- [x] Reminders: `/api/cron/space-reminders` every 5 min, emails once when a
+      room goes live or starts within 10 min; respects email opt-out.
+- [x] "Followed" hand-raise mode works (route checks follows host -> caller).
+- [x] Prototype colors on both rooms: colored initials, purple host ring,
+      teal speaking rings, red LIVE chip, purple buttons. Gold removed from
+      the Cinema room (screen, picker, seats, chat).
+
+## Review
+- `tsc --noEmit` clean; full `npm run test:unit` green (new spaces-room
+  suite 44 checks; superseded assertions carry their reason).
+- Browser: spaces-room 4/4, spaces-mobile-layout 14/14, cinema 4/4 (phone +
+  desktop).
+- Not done: the Cinema listing/create pages keep their gold look; pinned
+  link; co-host role; reconnect-keeps-seat.
 
 # Cinema podcast room + Spaces parity, 1 Oct 2026
 

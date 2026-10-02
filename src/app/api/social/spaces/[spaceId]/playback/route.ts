@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 // Playback control for an MM Cinema room.
 //
-// GET  — anyone may read the room's playback state.
+// GET  — any signed-in member may read the room's playback state.
 // PUT  — ONLY the room's host may write it.
 //
 // That asymmetry is the entire security model of the shared screen. There is
@@ -29,6 +29,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ spaceId: string }> },
 ) {
+  const guard = await requireAuth(req);
+  if (isGuardFailure(guard)) return guard;
   const { spaceId: raw } = await params;
   const spaceId = String(raw ?? "").trim();
   if (!spaceId) {

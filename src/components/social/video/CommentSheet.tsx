@@ -65,7 +65,7 @@ export default function CommentSheet({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/social/videos/${videoId}/comments`, { cache: "no-store" })
+    authFetch(`/api/social/videos/${videoId}/comments`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;

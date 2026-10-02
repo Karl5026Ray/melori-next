@@ -20,8 +20,8 @@ import Link from "next/link";
 // WHAT THIS PAGE MUST NEVER CONTAIN
 // ---------------------------------
 // Live room listings. The real pages show host names, avatars and who is on
-// camera right now; /api/social/faces and the spaces queries hand that to
-// anonymous callers today. Melori runs women-only rooms, so publishing who is
+// camera right now; /api/social/faces (now sign-in only) and the spaces
+// queries carry that data. Melori runs women-only rooms, so publishing who is
 // live to strangers is a safety question, not just a privacy one. Everything
 // here is written copy. If you find yourself passing member data into this
 // component, that is the bug.

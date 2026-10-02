@@ -1,15 +1,15 @@
 // Cinema room route.
 //
-// Cinema rooms are `spaces` rows with room_format='cinema' and render the same
-// RoomScreen as audio Spaces — the room engine, roles, raise-hand queue,
-// moderation, bans, camera slots (migration 054) and teardown stay shared.
-// What this route buys is a URL that matches the product: a watch party is
-// reached at /social/cinema/<id> and never presents itself as a Space.
+// Cinema rooms are `spaces` rows with room_format='cinema' and render Cinema's
+// own screen, CinemaRoomScreen. Since 2 Oct 2026 Cinema and Spaces share no
+// room code; they share only plumbing (tables, moderation and ban routes,
+// LiveKit, PubNub). A watch party lives at /social/cinema/<id> and never
+// presents itself as a Space.
 
 import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { CINEMA_ROOM_FORMAT } from "@/lib/cinema";
-import RoomScreen from "@/components/social/rooms/RoomScreen";
+import CinemaRoomScreen from "@/components/social/cinema/CinemaRoomScreen";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -35,5 +35,5 @@ export default async function CinemaRoomPage({
     redirect(`/social/spaces/${roomId}`);
   }
 
-  return <RoomScreen spaceId={roomId} />;
+  return <CinemaRoomScreen spaceId={roomId} />;
 }

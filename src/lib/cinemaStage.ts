@@ -8,7 +8,7 @@
 // the shared Spaces moderation calls; the only Cinema-specific rule is the cap.
 //
 // Pure functions only: the participants route enforces the cap server-side and
-// RoomScreen renders the seats, and both read these so they cannot disagree.
+// CinemaRoomScreen renders the seats, and both read these so they cannot disagree.
 
 export const CINEMA_GUEST_SEATS = 2;
 

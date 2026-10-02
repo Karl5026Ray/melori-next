@@ -57,13 +57,30 @@ export async function POST(
 
     const { data: space } = await supabase
       .from("spaces")
-      .select("hand_raise_mode")
+      .select("hand_raise_mode, host_id")
       .eq("id", spaceId)
       .maybeSingle();
     const mode = (space?.hand_raise_mode ?? "everyone") as HandRaiseMode;
-    if (!handRaiseAllowed(mode, { signedIn: true })) {
+    // "followed" mode: does the host follow the caller? Looked up here, never
+    // taken from the client.
+    let followedByHost = false;
+    if (mode === "followed" && space?.host_id) {
+      const { data: follow } = await supabase
+        .from("follows")
+        .select("id")
+        .eq("follower_id", space.host_id)
+        .eq("following_id", userId)
+        .maybeSingle();
+      followedByHost = Boolean(follow);
+    }
+    if (!handRaiseAllowed(mode, { signedIn: true, followedByHost })) {
       return NextResponse.json(
-        { error: "The host has turned off hand-raising for this space" },
+        {
+          error:
+            mode === "followed"
+              ? "The host is only taking requests from people they follow"
+              : "The host has turned off hand-raising for this space",
+        },
         { status: 403 },
       );
     }

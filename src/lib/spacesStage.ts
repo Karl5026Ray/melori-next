@@ -15,6 +15,9 @@ export interface StageIdentity {
   // Whether the caller is signed in at all. Logged-out users can never raise
   // a hand or speak — they're routed to sign-in, unchanged from before.
   signedIn: boolean;
+  // Does the room's host follow this person? Only read in "followed" mode.
+  // Unknown (undefined) is treated as "no", so the gate fails closed.
+  followedByHost?: boolean;
 }
 
 // Raising a hand (requesting the stage) requires ONLY a signed-in account —
@@ -38,10 +41,10 @@ export function canSpeak(role: ParticipantRole | null | undefined): boolean {
 // shown/allowed for a given (non-host, non-speaker) participant right now?
 //   "off"      -> nobody may raise a hand; host must invite directly.
 //   "everyone" -> any signed-in participant may raise a hand.
-//   "followed" -> intentionally NOT enforced yet (see TODO in the raise-hand
-//                 route + migration 047). Until the follow-graph check is
-//                 wired up we fail CLOSED (treat like "off") rather than
-//                 silently granting broader access than the host configured.
+//   "followed" -> only people the host follows (follows.follower_id = host).
+//                 Built 2 Oct 2026; it used to fail closed as a TODO. The
+//                 raise-hand route looks the follow up server-side, so a
+//                 client claiming followedByHost cannot get past it.
 export function handRaiseAllowed(
   mode: HandRaiseMode | null | undefined,
   identity: StageIdentity,
@@ -49,7 +52,7 @@ export function handRaiseAllowed(
   if (!canRaiseHand(identity)) return false;
   const effective = mode ?? "everyone";
   if (effective === "everyone") return true;
-  // "off" and the not-yet-implemented "followed" both fail closed today.
+  if (effective === "followed") return identity.followedByHost === true;
   return false;
 }
 

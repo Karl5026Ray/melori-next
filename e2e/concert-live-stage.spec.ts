@@ -4,7 +4,7 @@ import { bypassDoor } from "./support/door";
 // The Concert battle stage on a real mobile viewport, with every network
 // dependency intercepted. LiveKit and PubNub are NOT mocked: both fail to
 // connect under this harness, which is deliberate — it proves the stage renders
-// its full layout (score bar, two tiles, gift tray, guests, chat) from the
+// its full layout (score bar, two tiles, vote tray, guests, chat) from the
 // battle read alone, and degrades to placeholder tiles instead of collapsing
 // when media transport is unavailable.
 
@@ -42,14 +42,6 @@ const viewer = {
   role: "superfan",
   verified: false,
 };
-
-const GIFTS = [
-  { id: "gift-guitar", slug: "battle_guitar", name: "Battle Guitar", tier: "spark", asset_url: "/gifts/guitar.glb", duration_ms: 3500, price_coins: 15 },
-  { id: "gift-piano", slug: "battle_piano", name: "Battle Piano", tier: "spark", asset_url: "/gifts/piano.glb", duration_ms: 3500, price_coins: 20 },
-  { id: "gift-drum", slug: "battle_drum", name: "Battle Drum", tier: "glow", asset_url: "/gifts/drum.glb", duration_ms: 4000, price_coins: 30 },
-  { id: "gift-violin", slug: "battle_violin", name: "Battle Violin", tier: "glow", asset_url: "/gifts/violin.glb", duration_ms: 4000, price_coins: 40 },
-  { id: "gift-saxophone", slug: "battle_saxophone", name: "Battle Saxophone", tier: "epic", asset_url: "/gifts/saxophone.glb", duration_ms: 5000, price_coins: 60 },
-];
 
 function json(body: unknown, status = 200) {
   return { status, contentType: "application/json", body: JSON.stringify(body) };
@@ -139,18 +131,17 @@ function battleView() {
     // 900 vs 300 is a deliberately lopsided score: it makes the proportional
     // bar assertion below meaningful rather than trivially even.
     scores: {
-      initiator_coins: 900,
-      opponent_coins: 300,
-      initiator_gifts: 12,
-      opponent_gifts: 5,
+      round: 1,
+      initiator_votes: 900,
+      opponent_votes: 300,
     },
+    viewer_vote: null,
     server_now: new Date().toISOString(),
   };
 }
 
 async function mockStageRequests(page: Page) {
   const sent: Array<Record<string, unknown>> = [];
-  let balance = 500;
   const comments: Array<Record<string, unknown>> = [
     { id: "c1", user_id: OPPONENT_ID, author_display: "Right Stage", body: "let's go", created_at: new Date().toISOString() },
   ];
@@ -159,14 +150,13 @@ async function mockStageRequests(page: Page) {
   await page.route("**/api/presence/heartbeat", (route) => route.fulfill(json({ ok: true })));
   await page.route("**/api/concert/battle-invites", (route) => route.fulfill(json({ invites: [] })));
   await page.route(`**/api/concert/battles/${SPACE_ID}`, (route) => route.fulfill(json(battleView())));
-  await page.route("**/api/gifts", (route) => route.fulfill(json({ gifts: GIFTS, packs: [] })));
-  await page.route("**/api/gifts/wallet", (route) => route.fulfill(json({ balance })));
-  await page.route("**/api/gifts/send", async (route) => {
+  await page.route(`**/api/concert/battles/${SPACE_ID}/vote`, async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     sent.push(body);
-    const gift = GIFTS.find((entry) => entry.id === body.gift_id);
-    balance -= gift?.price_coins ?? 0;
-    return route.fulfill(json({ gift_send_id: `send-${sent.length}`, balance }, 201));
+    // The server answers with the ABSOLUTE tally for the round.
+    return route.fulfill(
+      json({ ok: true, round: 1, performer_id: body.performer_id, initiator_votes: 900, opponent_votes: 301 }),
+    );
   });
   await page.route(`**/api/social/spaces/${SPACE_ID}/participants`, (route) =>
     route.fulfill(
@@ -200,7 +190,7 @@ async function mockStageRequests(page: Page) {
     route.fulfill(json({ error: "no realtime in e2e" }, 503)),
   );
 
-  return { sent, wallet: () => balance };
+  return { sent };
 }
 
 test.describe("Concert live battle stage", () => {
@@ -229,36 +219,33 @@ test.describe("Concert live battle stage", () => {
     await expect(page.getByTestId("concert-competitor-name").nth(0)).toContainText("Left Stage");
     await expect(page.getByTestId("concert-competitor-name").nth(1)).toContainText("Right Stage");
 
-    // Five instrument slots, priced from the mocked server catalog.
-    const options = page.getByTestId("concert-gift-option");
-    await expect(options).toHaveCount(5);
-    await expect(options.nth(0)).toHaveAttribute("data-slug", "battle_guitar");
-    await expect(options.nth(0)).toHaveAttribute("data-price", "15");
-    await expect(options.nth(4)).toHaveAttribute("data-slug", "battle_saxophone");
-    await expect(options.nth(4)).toHaveAttribute("data-price", "60");
+    // One vote button per performer, in slot order.
+    const options = page.getByTestId("concert-vote-option");
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(0)).toHaveAttribute("data-side", "left");
+    await expect(options.nth(1)).toHaveAttribute("data-side", "right");
 
     // Guests and chat.
     await expect(page.getByTestId("concert-guest")).toHaveCount(3);
     await expect(page.getByTestId("concert-chat-list")).toContainText("let's go");
   });
 
-  test("sending an instrument scores its side and posts the auto-comment", async ({ page }) => {
+  test("voting sends the performer and shows the server's tally", async ({ page }) => {
     await seedSession(page);
     const mocks = await mockStageRequests(page);
     await page.goto(`/social/concert/${SPACE_ID}`);
     await expect(page.getByTestId("concert-live-stage")).toBeVisible();
 
-    // Aim at the right stage, then send the drum (30 coins).
-    await page.getByTestId("concert-gift-target").filter({ hasText: "Gift right" }).click();
-    await page.getByTestId("concert-gift-option").filter({ hasText: "Drum" }).click();
+    await page.getByTestId("concert-vote-option").filter({ hasText: "Right Stage" }).click();
 
-    await expect(page.getByTestId("concert-score-right")).toHaveText("330");
+    // The score comes back from the vote response, never from client math.
+    await expect(page.getByTestId("concert-score-right")).toHaveText("301");
     await expect(page.getByTestId("concert-score-left")).toHaveText("900");
-    await expect(page.getByTestId("concert-chat-list")).toContainText("drum solo!");
+    await expect(
+      page.getByTestId("concert-vote-option").filter({ hasText: "Right Stage" }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(mocks.sent).toHaveLength(1);
-    expect(mocks.sent[0]).toMatchObject({ space_id: SPACE_ID, target_id: OPPONENT_ID, gift_id: "gift-drum" });
-    // The wallet reading comes back from the send response, never from client math.
-    await expect(page.getByText("470 coins")).toBeVisible();
+    expect(mocks.sent[0]).toMatchObject({ performer_id: OPPONENT_ID });
   });
 
   test("keeps every band visible on a mobile viewport", async ({ page }) => {
@@ -276,7 +263,7 @@ test.describe("Concert live battle stage", () => {
     const stage = await box("concert-live-stage");
     const statusBar = await box("concert-status-bar");
     const videoStage = await box("concert-video-stage");
-    const tray = await box("concert-gift-tray");
+    const tray = await box("concert-vote-tray");
     const guests = await box("concert-guest-list");
     const chat = await box("concert-chat");
 
@@ -284,7 +271,7 @@ test.describe("Concert live battle stage", () => {
     // rather than being squeezed out by the panels below it. This is the exact
     // failure mode MM Cinema hit on this viewport.
     expect(videoStage.height).toBeGreaterThan(170);
-    expect(tray.height).toBeGreaterThan(50);
+    expect(tray.height).toBeGreaterThan(30);
     expect(guests.height).toBeGreaterThan(60);
     expect(chat.height).toBeGreaterThan(60);
 

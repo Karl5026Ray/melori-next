@@ -92,7 +92,7 @@ function AuthInner() {
           disabled={googleLoading || appleLoading}
           className="w-full flex items-center justify-center gap-2 rounded-xl border border-melori-border bg-melori-elevated py-3 text-sm font-medium transition hover:border-melori-purple/40 disabled:opacity-50 mb-3"
         >
-          {googleLoading ? "Redirecting\\u2026" : "Continue with Google"}
+          {googleLoading ? "Redirecting…" : "Continue with Google"}
         </button>
 
         <button
@@ -102,7 +102,7 @@ function AuthInner() {
           className="w-full flex items-center justify-center gap-2 rounded-xl border border-melori-border bg-melori-elevated py-3 text-sm font-medium transition hover:border-melori-purple/40 disabled:opacity-50 mb-4"
         >
           {appleLoading ? (
-            "Redirecting\\u2026"
+            "Redirecting…"
           ) : (
             <>
               <svg

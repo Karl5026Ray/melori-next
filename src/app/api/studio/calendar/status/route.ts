@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isCalendarConfigured } from "@/lib/google-calendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/studio/calendar/status — requireArtist. Returns whether the
+// GET /api/studio/calendar/status — requireAuth. Returns whether the
 // caller has a connected Google Calendar, plus which calendar id is synced.
 // Also reports `configured` so the UI can tell "not connected" apart from
 // "Karl hasn't set the Google env vars yet" without needing a 503.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

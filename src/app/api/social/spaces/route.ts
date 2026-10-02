@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireGoLiveReady } from "@/lib/goLiveGate.server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // Participation (creating/posting) requires an active Superfan-or-better member.
 // The host is taken from the verified token, never from the request body.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 

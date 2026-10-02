@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/studio/calendar/disconnect — requireArtist. Deletes the caller's
+// POST /api/studio/calendar/disconnect — requireAuth. Deletes the caller's
 // calendar_connections row. Idempotent: succeeds even if no connection exists.
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

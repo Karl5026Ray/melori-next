@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { fetchYouTubeTitle, parseYouTubeUrl } from "@/lib/youtube";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 //
 // ARTIST-ONLY. Native uploads (POST /api/social/videos) are open to any signed-in
 // member, but a YouTube post links out to content we don't host, so it is gated
-// on the same requireArtist guard the rest of the artist tooling uses (admins
+// on the same requireAuth guard the rest of the artist tooling uses (admins
 // pass it too).
 //
 // Nothing is downloaded or re-hosted: we store the canonical watch URL plus the
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 //
 // Body: { url, title?, description? }
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   try {

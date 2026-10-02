@@ -98,6 +98,43 @@ participate."
 - [ ] C0-5. Terms "nothing to buy" vs gift coins / Apple IAP; remove the
       "women-only rooms" claim until it exists.
 
+## F. Remove everything about fees and subscriptions (Karl, 2 Oct)
+Karl: "Lets remove anything dealing with a fee or subscription."
+Audit: nothing can charge money today (no checkout route, no stripe dep,
+no Stripe/Apple env vars). What is left is dead code, price fields, copy.
+- [ ] F1. Delete dead leftovers: account-lockout.ts, formatPrice*,
+      hasMembershipAccess/isActive, catalog checkout/priceCents, coin-pack
+      Stripe helpers, hidePurchaseUI, /membership + /store stubs and the
+      /members /pricing redirects, robots /membership-success, sample/
+      "Preview" plumbing (stream routes always return sample:false).
+- [ ] F2. Remove price fields from UI + API: album/track/release price
+      editors (studio + admin), photo "for sale" toggle and price, `price`
+      in public release/track JSON. Admin dashboard Orders/Revenue/Stripe
+      panels and tier breakdown; admin "membership tier" editor.
+- [ ] F3. Rename requireSuperfan/requireArtist → requireAuth,
+      isSuperfanOrBetter/isArtistSubscriber → isSignedIn, UpgradePrompt →
+      SignInPrompt (mechanical, ~70 call sites, no behavior change).
+- [ ] F4. Copy: /privacy Stripe + "purchase confirmations", /account/delete
+      "purchase records kept by Stripe", Terms "amount you paid us";
+      mobile docs IAP/Stripe/Play Billing sections.
+- [ ] F5. Gifts REMOVED entirely (Karl, 2 Oct): gifts, wallet, coin packs,
+      GiftPicker, concert gift tray. MM Concert battles switch to audience
+      votes: one vote per signed-in member per round.
+- [ ] F6. Database DROP (Karl, 2 Oct: "Drop them now"): orders,
+      order_items, music_purchases, revenue_splits, split_payouts,
+      artist_payouts, photo_gallery_purchases, apple_iap_events, coin_packs,
+      wallets, wallet_transactions, gifts, gift_sends (+ RPCs), profile
+      columns membership_*/billing_exempt, price columns. ORDER MATTERS:
+      back up → merge + deploy the code that stops reading them → confirm
+      with list_migrations → apply the drop. Dropping first breaks the live
+      site (admin stats, account delete and gifts still query them today).
+
+## Karl's answers (2 Oct, round 2)
+- Recording: fix properly. Karl: "I don't want to have to approve
+  everyone's files." He won't: the HOST posts or taps "Not now" (deletes).
+  Private-until-posted just means unposted files aren't reachable by link.
+- Connect: 18+ required.
+
 ## Order and size
 A1+A2 (~half day), B1+B2 (~half day), C draft (~1 hr). A3 and B3 only on
 Karl's yes. One branch per section, one PR each, full `npm run test:unit`

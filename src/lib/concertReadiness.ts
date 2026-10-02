@@ -6,10 +6,9 @@
 //   1. LiveKit server credentials. Without them /api/livekit-token cannot mint
 //      a join token, so both competitors sit on "Waiting for their camera"
 //      forever with no visible error on the stage itself.
-//   2. Migration 066 (instrument gift catalog + the concert_battle_gift_totals
-//      aggregate). Without the rows the gift tray is empty; without the
-//      function the battle read degrades every score to zero, which looks
-//      exactly like "nobody has gifted yet".
+//   2. The concert_votes table (migration 086). Without it every vote fails
+//      and the battle read degrades every score to zero, which looks exactly
+//      like "nobody has voted yet".
 //
 // Both failure modes are silent-by-design at runtime -- the stage degrades
 // gracefully rather than crashing -- which is precisely why they need an
@@ -24,10 +23,7 @@ export type ConcertCheckId =
   | "livekit_api_secret"
   | "livekit_reachable"
   | "cron_secret"
-  | "gift_catalog"
-  | "score_function"
-  | "score_function_locked"
-  | "gift_send_index";
+  | "vote_table";
 
 export type ConcertCheckSeverity = "required" | "recommended";
 
@@ -41,15 +37,6 @@ export type ConcertCheck = {
   /** Present on anything other than a pass: what to actually do about it. */
   detail: string;
 };
-
-/** The five instrument gift slugs the battle tray expects, in tray order. */
-export const CONCERT_REQUIRED_GIFT_SLUGS = [
-  "battle_guitar",
-  "battle_piano",
-  "battle_drum",
-  "battle_violin",
-  "battle_saxophone",
-] as const;
 
 /**
  * Environment values as read from process.env. Deliberately typed as
@@ -70,14 +57,8 @@ export type ConcertEnvInput = {
  * "ready".
  */
 export type ConcertDbInput = {
-  /** Slugs found in public.gifts with active = true. */
-  activeGiftSlugs: readonly string[] | null;
-  /** Whether public.concert_battle_gift_totals(uuid) exists. */
-  scoreFunctionExists: boolean | null;
-  /** Roles holding EXECUTE on that function, excluding the table owner. */
-  scoreFunctionGrantees: readonly string[] | null;
-  /** Whether gift_sends_space_target_idx exists on public.gift_sends. */
-  giftSendIndexExists: boolean | null;
+  /** Whether public.concert_votes exists and is readable by the service role. */
+  voteTableExists: boolean | null;
 };
 
 /**
@@ -216,10 +197,7 @@ export function evaluateConcertReadiness(
       "Set any long random value in Vercel; /api/cron/concert-battle-rounds and every other scheduled route in vercel.json refuse to run without it, which can leave a round stuck at 00:00.",
     ),
     livekitReachableCheck(livekit),
-    giftCatalogCheck(db.activeGiftSlugs),
-    scoreFunctionCheck(db.scoreFunctionExists),
-    scoreFunctionLockCheck(db.scoreFunctionGrantees),
-    giftSendIndexCheck(db.giftSendIndexExists),
+    voteTableCheck(db.voteTableExists),
   ];
 
   // "unknown" blocks too. A probe that could not run is not evidence of health.
@@ -227,43 +205,17 @@ export function evaluateConcertReadiness(
   return { checks, ready: blocking.length === 0, blocking };
 }
 
-function giftCatalogCheck(slugs: readonly string[] | null): ConcertCheck {
-  const id: ConcertCheckId = "gift_catalog";
-  const label = "Instrument gift catalog";
-  if (slugs === null) {
-    return {
-      id,
-      label,
-      severity: "required",
-      status: "unknown",
-      detail:
-        "Could not read public.gifts. Set SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL to let this check run.",
-    };
-  }
-  const present = new Set(slugs);
-  const missing = CONCERT_REQUIRED_GIFT_SLUGS.filter((slug) => !present.has(slug));
-  if (missing.length > 0) {
-    return {
-      id,
-      label,
-      severity: "required",
-      status: "fail",
-      detail: `Missing or inactive gift ${missing.length === 1 ? "slug" : "slugs"}: ${missing.join(", ")}. Apply supabase/migrations/066_concert_instrument_gifts_and_scores.sql.`,
-    };
-  }
-  return { id, label, severity: "required", status: "pass", detail: "" };
-}
-
-function scoreFunctionCheck(exists: boolean | null): ConcertCheck {
-  const id: ConcertCheckId = "score_function";
-  const label = "concert_battle_gift_totals()";
+function voteTableCheck(exists: boolean | null): ConcertCheck {
+  const id: ConcertCheckId = "vote_table";
+  const label = "concert_votes table";
   if (exists === null) {
     return {
       id,
       label,
       severity: "required",
       status: "unknown",
-      detail: "Could not inspect pg_proc. Set SUPABASE_SERVICE_ROLE_KEY to let this check run.",
+      detail:
+        "Could not read public.concert_votes. Set SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL to let this check run.",
     };
   }
   if (!exists) {
@@ -273,60 +225,10 @@ function scoreFunctionCheck(exists: boolean | null): ConcertCheck {
       severity: "required",
       status: "fail",
       detail:
-        "public.concert_battle_gift_totals(uuid) does not exist, so every battle score reads as zero. Apply migration 066.",
+        "public.concert_votes does not exist, so every vote fails and every battle score reads as zero. Apply supabase/migrations/086_concert_votes.sql.",
     };
   }
   return { id, label, severity: "required", status: "pass", detail: "" };
-}
-
-/**
- * The score aggregate is SECURITY DEFINER, so an accidental grant to anon or
- * authenticated would let any signed-in client read gift totals for any space
- * directly, bypassing the server routes. Migration 062 established that
- * lockdown for the Concert domain; this check keeps it from drifting.
- */
-function scoreFunctionLockCheck(grantees: readonly string[] | null): ConcertCheck {
-  const id: ConcertCheckId = "score_function_locked";
-  const label = "Score aggregate is server-only";
-  if (grantees === null) {
-    return {
-      id,
-      label,
-      severity: "recommended",
-      status: "unknown",
-      detail: "Could not read function grants.",
-    };
-  }
-  const leaked = grantees.filter((role) => role === "anon" || role === "authenticated");
-  if (leaked.length > 0) {
-    return {
-      id,
-      label,
-      severity: "required",
-      status: "fail",
-      detail: `${leaked.join(" and ")} can execute the SECURITY DEFINER score aggregate directly. Revoke it: revoke all on function public.concert_battle_gift_totals(uuid) from ${leaked.join(", ")};`,
-    };
-  }
-  return { id, label, severity: "recommended", status: "pass", detail: "" };
-}
-
-function giftSendIndexCheck(exists: boolean | null): ConcertCheck {
-  const id: ConcertCheckId = "gift_send_index";
-  const label = "gift_sends_space_target_idx";
-  if (exists === null) {
-    return { id, label, severity: "recommended", status: "unknown", detail: "Could not read pg_indexes." };
-  }
-  if (!exists) {
-    return {
-      id,
-      label,
-      severity: "recommended",
-      status: "fail",
-      detail:
-        "The score aggregate will still be correct but scans gift_sends unindexed, which gets slow as gift volume grows. Apply migration 066.",
-    };
-  }
-  return { id, label, severity: "recommended", status: "pass", detail: "" };
 }
 
 /** Human-readable report. Kept pure so the test can assert on the text. */
@@ -341,7 +243,7 @@ export function formatConcertReadinessReport(result: {
     return check.detail ? `${head}\n        ${check.detail}` : head;
   });
   const verdict = result.ready
-    ? "Concert is configured: a live battle can connect and score."
+    ? "Concert is configured: a live battle can connect and count votes."
     : "Concert is NOT ready — the required items above must be resolved first.";
   return `${lines.join("\n")}\n\n${verdict}`;
 }

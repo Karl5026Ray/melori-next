@@ -2,8 +2,8 @@
 // Contracts for the Concert battle stage.
 //
 // Two things are pinned here:
-//   1. src/lib/concertStage.ts — the score bar, gift routing, badge, and float
-//      math the stage renders from.
+//   1. src/lib/concertStage.ts — the vote score bar, vote routing, badge, and
+//      float math the stage renders from.
 //   2. The Concert branch of src/lib/roomMediaPolicy.ts — who may publish a
 //      camera in a versus_battle room. That is a security boundary: it must be
 //      impossible for a third participant to reach the stage.
@@ -11,14 +11,12 @@
 import {
   CONCERT_CHAT_MAX_LENGTH,
   CONCERT_FLOAT_DURATION_MS,
-  CONCERT_INSTRUMENT_GIFTS,
   CONCERT_MAX_FLOATS_PER_SIDE,
   CONCERT_NEW_GUEST_WINDOW_MS,
   CONCERT_NOTE_GLYPHS,
-  applyConcertGift,
+  applyConcertVoteTally,
   concertFloatOffset,
   concertGuestBadge,
-  concertInstrumentBySlug,
   concertNoteGlyph,
   concertScoreSplit,
   concertSideForSlot,
@@ -28,7 +26,6 @@ import {
   type ConcertFloatItem,
 } from "../src/lib/concertStage";
 import { decideRoomPublish } from "../src/lib/roomMediaPolicy";
-import { resolveConcertTray } from "../src/components/social/concert/ConcertGiftTray";
 
 let failures = 0;
 function check(label: string, value: boolean) {
@@ -40,54 +37,6 @@ function check(label: string, value: boolean) {
 }
 
 console.log("\nConcert battle stage contracts\n");
-
-// --- Instrument catalog ----------------------------------------------------
-console.log("Instrument catalog");
-check("offers exactly five instruments", CONCERT_INSTRUMENT_GIFTS.length === 5);
-check(
-  "every slug is battle-namespaced",
-  CONCERT_INSTRUMENT_GIFTS.every((gift) => gift.slug.startsWith("battle_")),
-);
-check(
-  "prices ascend so the tray reads cheapest-first",
-  CONCERT_INSTRUMENT_GIFTS.every(
-    (gift, index) =>
-      index === 0 ||
-      gift.expectedPriceCoins > CONCERT_INSTRUMENT_GIFTS[index - 1].expectedPriceCoins,
-  ),
-);
-check(
-  "every instrument carries an auto-comment",
-  CONCERT_INSTRUMENT_GIFTS.every((gift) => gift.comment.trim().length > 0),
-);
-check("lookup by slug resolves", concertInstrumentBySlug("battle_drum")?.label === "Drum");
-check("unknown slug resolves to null", concertInstrumentBySlug("battle_kazoo") === null);
-check("missing slug resolves to null", concertInstrumentBySlug(null) === null);
-
-// The tray must render the SERVER price, never the local constant. A repriced
-// catalog row has to win, otherwise a migration could not reprice a gift.
-console.log("\nTray resolves against the server catalog");
-const serverCatalog = [
-  {
-    id: "gift-drum",
-    slug: "battle_drum",
-    name: "Battle Drum",
-    tier: "glow" as const,
-    asset_url: "/gifts/drum.glb",
-    duration_ms: 4000,
-    price_coins: 999,
-  },
-];
-const tray = resolveConcertTray(serverCatalog);
-check("tray always has one entry per instrument", tray.length === CONCERT_INSTRUMENT_GIFTS.length);
-check(
-  "a catalogued instrument carries the server price",
-  tray.find((entry) => entry.instrument.slug === "battle_drum")?.gift?.price_coins === 999,
-);
-check(
-  "an uncatalogued instrument has no gift row (renders disabled)",
-  tray.filter((entry) => entry.gift === null).length === 4,
-);
 
 // --- Score split -----------------------------------------------------------
 console.log("\nScore split");
@@ -106,12 +55,12 @@ check(
 const dirty = concertScoreSplit(Number.NaN, -50);
 check("non-finite and negative input clamp to zero", dirty.left === 0 && dirty.right === 0);
 check("clamped input still yields finite widths", Number.isFinite(dirty.leftPercent));
-check("scores floor to whole coins", concertScoreSplit(10.9, 0).left === 10);
+check("scores floor to whole votes", concertScoreSplit(10.9, 0).left === 10);
 check("score formatting groups thousands", formatConcertScore(12345) === "12,345");
 check("score formatting clamps negatives", formatConcertScore(-5) === "0");
 
-// --- Gift routing ----------------------------------------------------------
-console.log("\nGift routing");
+// --- Vote routing ----------------------------------------------------------
+console.log("\nVote routing");
 const ids = { initiatorId: "user-a", opponentId: "user-b" };
 check("slot 1 is the left stage", concertSideForSlot(1) === "left");
 check("slot 2 is the right stage", concertSideForSlot(2) === "right");
@@ -126,26 +75,44 @@ check(
   concertSideForTarget({ targetId: "user-b", initiatorId: "user-a", opponentId: null }) === null,
 );
 
-const start = { left: 0, right: 0 };
-const afterLeft = applyConcertGift(start, { targetId: "user-a", coins: 15 }, ids);
-check("a gift raises its own side only", afterLeft.left === 15 && afterLeft.right === 0);
-const afterBoth = applyConcertGift(afterLeft, { targetId: "user-b", coins: 60 }, ids);
-check("both sides accumulate", afterBoth.left === 15 && afterBoth.right === 60);
+// --- Vote tallies ----------------------------------------------------------
+console.log("\nVote tallies");
+const start = { round: 1, left: 0, right: 0 };
+const first = applyConcertVoteTally(start, { round: 1, initiatorVotes: 1, opponentVotes: 0 });
+check("a tally sets the current round's score", first.left === 1 && first.right === 0);
+const second = applyConcertVoteTally(first, { round: 1, initiatorVotes: 1, opponentVotes: 3 });
+check("tallies are absolute, not added", second.left === 1 && second.right === 3);
 check(
-  "an audience-targeted gift is ignored by identity, not object equality",
-  applyConcertGift(afterBoth, { targetId: "user-c", coins: 999 }, ids) === afterBoth,
+  "re-applying the same tally is a no-op (a duplicate message cannot inflate)",
+  applyConcertVoteTally(second, { round: 1, initiatorVotes: 1, opponentVotes: 3 }) === second,
 );
 check(
-  "a zero-coin gift is ignored",
-  applyConcertGift(afterBoth, { targetId: "user-a", coins: 0 }, ids) === afterBoth,
+  "a tally for an earlier round is ignored",
+  applyConcertVoteTally(second, { round: 0, initiatorVotes: 99, opponentVotes: 0 }) === second,
 );
 check(
-  "a negative-coin gift cannot drain a score",
-  applyConcertGift(afterBoth, { targetId: "user-a", coins: -100 }, ids) === afterBoth,
+  "a tally for a later round is ignored until the battle read moves the stage on",
+  applyConcertVoteTally(second, { round: 2, initiatorVotes: 99, opponentVotes: 0 }) === second,
 );
 check(
-  "a non-finite coin value is ignored",
-  applyConcertGift(afterBoth, { targetId: "user-a", coins: Number.NaN }, ids) === afterBoth,
+  "a negative count is rejected",
+  applyConcertVoteTally(second, { round: 1, initiatorVotes: -1, opponentVotes: 3 }) === second,
+);
+check(
+  "a non-finite count is rejected",
+  applyConcertVoteTally(second, { round: 1, initiatorVotes: Number.NaN, opponentVotes: 3 }) === second,
+);
+check(
+  "a non-finite round is rejected",
+  applyConcertVoteTally(second, { round: Number.NaN, initiatorVotes: 5, opponentVotes: 5 }) === second,
+);
+check(
+  "fractional counts floor to whole votes",
+  applyConcertVoteTally(start, { round: 1, initiatorVotes: 2.7, opponentVotes: 0 }).left === 2,
+);
+check(
+  "a tally can fall (a member switched their vote)",
+  applyConcertVoteTally(second, { round: 1, initiatorVotes: 2, opponentVotes: 2 }).right === 2,
 );
 
 // --- Guest badges ----------------------------------------------------------
@@ -153,23 +120,15 @@ console.log("\nGuest badges");
 const now = 1_700_000_000_000;
 check(
   "a competitor is VIP",
-  concertGuestBadge({ isCompetitor: true, coinsGifted: 0, nowMs: now }) === "VIP",
+  concertGuestBadge({ isCompetitor: true, nowMs: now }) === "VIP",
 );
 check(
   "a verified member is VIP",
   concertGuestBadge({ verified: true, nowMs: now }) === "VIP",
 );
 check(
-  "VIP outranks spend",
-  concertGuestBadge({ verified: true, coinsGifted: 500, nowMs: now }) === "VIP",
-);
-check(
-  "a spender is a GIFTER",
-  concertGuestBadge({ coinsGifted: 15, nowMs: now }) === "GIFTER",
-);
-check(
-  "spend outranks recency",
-  concertGuestBadge({ coinsGifted: 15, joinedAtMs: now, nowMs: now }) === "GIFTER",
+  "VIP outranks recency",
+  concertGuestBadge({ verified: true, joinedAtMs: now, nowMs: now }) === "VIP",
 );
 check(
   "a just-joined guest is NEW",
@@ -186,7 +145,7 @@ check(
 check("a plain guest has no badge", concertGuestBadge({ nowMs: now }) === null);
 
 // --- Floats ---------------------------------------------------------------
-console.log("\nFloating notes and gifts");
+console.log("\nFloating notes and votes");
 check("note glyph cycles the set", concertNoteGlyph(0) === CONCERT_NOTE_GLYPHS[0]);
 check(
   "note glyph wraps",
@@ -195,7 +154,7 @@ check(
 check("note glyph handles negatives", CONCERT_NOTE_GLYPHS.includes(concertNoteGlyph(-3) as never));
 check("float offsets stay within the tile", Math.abs(concertFloatOffset(3)) <= 40);
 check(
-  "float offsets vary so gifts do not stack",
+  "float offsets vary so floats do not stack",
   concertFloatOffset(0) !== concertFloatOffset(1),
 );
 
@@ -210,7 +169,7 @@ for (let i = 0; i < CONCERT_MAX_FLOATS_PER_SIDE + 5; i += 1) {
   items = pushConcertFloat(items, float(i, "left"));
 }
 check(
-  "a gift-spamming audience cannot grow the list past the cap",
+  "a tap-happy audience cannot grow the list past the cap",
   items.filter((entry) => entry.side === "left").length === CONCERT_MAX_FLOATS_PER_SIDE,
 );
 check("the cap drops the oldest float first", items[0].id === "f5");

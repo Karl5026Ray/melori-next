@@ -21,7 +21,6 @@ export const dynamic = "force-dynamic";
 type FormType =
   | "woe_first_look"
   | "melori_waitlist"
-  | "purchase"
   | "casting"
   | "other";
 
@@ -148,7 +147,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing formId" }, { status: 400 });
   }
 
-  const formType: FormType = TALLY_FORM_MAP[formId] ?? "other";
+  // Unknown or retired map values (e.g. the old "purchase" funnel — Melori
+  // takes no payments) fall back to "other": stored, no follow-up email.
+  const mapped = TALLY_FORM_MAP[formId];
+  const formType: FormType =
+    mapped && Object.prototype.hasOwnProperty.call(FOLLOW_UPS, mapped)
+      ? mapped
+      : "other";
 
   // Dedupe key. submissionId is the right one, but fall back rather than let a
   // null key through: a null never conflicts, so a retry would insert a second
@@ -305,11 +310,6 @@ const FOLLOW_UPS: Record<
     subject: "Welcome to the Melori waitlist",
     heading: "Welcome to Melori.",
     body: "Melori is a home for independent musicians, photographers, storytellers and podcasters. You're on the list — I'll reach out as soon as your spot opens up.",
-  },
-  purchase: {
-    subject: "Your Melori order",
-    heading: "Thank you.",
-    body: "Your payment went through and your download is on its way. If anything looks wrong, just reply to this email — it comes straight to me.",
   },
   casting: {
     subject: "We got your submission",

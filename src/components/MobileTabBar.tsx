@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { isCinemaLiveRoomRoute } from "@/lib/cinemaRoomRoute";
+import { isSpacesLiveRoomRoute } from "@/lib/spacesRoomRoute";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -104,6 +105,7 @@ export default function MobileTabBar() {
   const isLiveRoomRoute =
     !!pathname && /^\/social\/live\/[^/]+/.test(pathname);
   const isCinemaRoomRoute = isCinemaLiveRoomRoute(pathname);
+  const isSpacesRoomRoute = isSpacesLiveRoomRoute(pathname);
 
   // The auth doors — create account, sign in, password reset and the OAuth
   // callback — are not the app. A signed-out visitor was being handed
@@ -264,7 +266,7 @@ export default function MobileTabBar() {
 
   // Suppress the tab bar only for opened, fullscreen room routes. Cinema's
   // listing and creation pages keep normal navigation.
-  if (isLiveRoomRoute || isCinemaRoomRoute || isAuthDoorRoute) return null;
+  if (isLiveRoomRoute || isCinemaRoomRoute || isSpacesRoomRoute || isAuthDoorRoute) return null;
 
   return (
     <>

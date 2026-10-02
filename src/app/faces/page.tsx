@@ -35,7 +35,7 @@ export default function FacesTeaserPage() {
         },
       ]}
       howItWorks={[
-        "Create a free account — an email, a mobile number and a password.",
+        "Create a free account with an email and a password.",
         "Open Faces and you will see the rooms that are live right now.",
         "Join one, or start your own and invite people into it.",
         "Camera and microphone stay off until you turn them on.",

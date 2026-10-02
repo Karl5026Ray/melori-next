@@ -42,9 +42,21 @@ export interface FeatureTeaserProps {
   howItWorks: string[];
   /** The page's own href, so it is excluded from the cross-links below. */
   self: string;
+  /**
+   * The members-only box at the end. Defaults to the live-room wording (camera
+   * and microphone), which is wrong for pages that are not rooms — Music and
+   * Radio pass their own.
+   */
+  closing?: TeaserPoint;
 }
 
+const ROOM_CLOSING: TeaserPoint = {
+  title: "The room itself is for members only.",
+  body: "People go on camera and on microphone here, so who is in the room is not something we publish. Create an account and you are in.",
+};
+
 const SURFACES: { href: string; label: string }[] = [
+  { href: "/listen", label: "Music" },
   { href: "/faces", label: "MM Faces" },
   { href: "/spaces", label: "MM Spaces" },
   { href: "/cinema", label: "MM Cinema" },
@@ -59,6 +71,7 @@ export default function FeatureTeaser({
   points,
   howItWorks,
   self,
+  closing = ROOM_CLOSING,
 }: FeatureTeaserProps) {
   return (
     <div className="bg-brand-background text-text-primary">
@@ -128,12 +141,9 @@ export default function FeatureTeaser({
           </ol>
 
           <div className="mt-12 rounded-2xl border border-brand-border bg-brand-surface p-6">
-            <p className="font-semibold">
-              The room itself is for members only.
-            </p>
+            <p className="font-semibold">{closing.title}</p>
             <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-              People go on camera and on microphone here, so who is in the room
-              is not something we publish. Create an account and you are in.
+              {closing.body}
             </p>
             <Link
               href="/register"

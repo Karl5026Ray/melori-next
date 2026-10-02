@@ -23,6 +23,7 @@
 // Run:  npx tsx scripts/signup-wall.test.ts
 
 import { isPublicPath, teaserFor } from "@/proxy";
+import { doorReason } from "@/lib/doorReason";
 
 let checks = 0;
 let failures = 0;
@@ -45,6 +46,7 @@ const PUBLIC: [string, string][] = [
   ["/spaces", "the MM Spaces teaser"],
   ["/cinema", "the MM Cinema teaser"],
   ["/radio", "the Radio teaser"],
+  ["/listen", "the Music teaser (the tab bar's Explore, signed out)"],
 
   // 2. The artists. Gating these would hide Kaiel R and Gloria Joy Rivers from
   //    search, which is backwards for a platform that needs traffic.
@@ -154,6 +156,14 @@ const TEASERS: [string, string][] = [
   ["/social/cinema", "/cinema"],
   ["/social/cinema/abc123", "/cinema"],
   ["/social/radio", "/radio"],
+  // 2 Oct 2026: the tab bar's Explore and Chat. They used to fall through to
+  // the bare door (the old assertion below listed both); a signed-out visitor
+  // tapping them had no idea why they were looking at a signup form.
+  ["/music", "/listen"],
+  ["/music/123", "/listen"],
+  ["/music/album/some-album", "/listen"],
+  ["/social/messages", "/platform?reason=chat"],
+  ["/social/messages/abc123", "/platform?reason=chat"],
 ];
 
 for (const [from, to] of TEASERS) {
@@ -162,8 +172,30 @@ for (const [from, to] of TEASERS) {
   else bad(`${from} should send a stranger to ${to}, got ${String(got)}`);
 }
 
+// The /music prefix must not swallow a sibling it was never meant to cover.
+if (teaserFor("/musicians") === null) ok("/musicians is not treated as the catalog");
+else bad("the /music prefix swallowed a sibling route");
+
+// /listen is public as an exact path only: it is copy, not a catalog.
+if (isPublicPath("/listen") && !isPublicPath("/listen/anything")) {
+  ok("/listen is public without opening anything beneath it");
+} else {
+  bad("/listen public status is wrong");
+}
+
+// The door only ever shows reasons it knows; a URL can't make it print text.
+if (doorReason("?reason=chat") === "Sign in to see your messages.") {
+  ok("?reason=chat shows the messages line on the door");
+} else {
+  bad(`?reason=chat should show the messages line, got ${String(doorReason("?reason=chat"))}`);
+}
+for (const search of ["", "?reason=", "?reason=<b>hi</b>", "?reason=toString", "?reason=__proto__"]) {
+  if (doorReason(search) === null) ok(`door ignores ${JSON.stringify(search)}`);
+  else bad(`door printed something for ${JSON.stringify(search)}`);
+}
+
 // Everything else falls through to the door rather than guessing.
-for (const path of ["/social/messages", "/dashboard", "/music", "/settings"]) {
+for (const path of ["/dashboard", "/settings", "/social/profile", "/upload"]) {
   if (teaserFor(path) === null) ok(`${path} has no teaser — it meets the door`);
   else bad(`${path} unexpectedly has a teaser`);
 }

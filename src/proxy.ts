@@ -72,7 +72,8 @@ const DOOR_PATH = "/platform";
 // named here meets the door.
 //
 // The four groups, and why each is public:
-//   1. The advertising  — the photography gallery and Karl's own introduction,
+//   1. The advertising  — the photography gallery, Karl's own introduction and
+//      his books (/books, which only links out to Amazon),
 //      plus a page for each live room describing what happens inside it. This
 //      is the surface that has to be findable by a stranger.
 //   2. The artists      — read-only profile pages. Gating these would hide
@@ -92,6 +93,7 @@ const PUBLIC_EXACT = new Set([
   "/account-info",
   "/admin",
   "/artists",
+  "/books",
   "/cinema",
   "/faces",
   "/forgot-password",

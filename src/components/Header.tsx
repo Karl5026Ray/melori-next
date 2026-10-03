@@ -256,6 +256,24 @@ export default function Header() {
           ref={navRef}
           className="hidden md:flex items-center gap-2 lg:gap-4 text-sm"
         >
+          {/* The Melori Band logo opens the Books page — the desktop twin of
+             the logo in the mobile "Go anywhere" launcher (Karl, 2026-10-03).
+             Sits between MELORI MUSIC and the profile name. */}
+          <Link
+            href="/books"
+            aria-label="The Melori Band books"
+            className="shrink-0 rounded-lg transition-transform hover:scale-105 active:scale-95"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/melori-band-logo.svg"
+              alt="The Melori Band"
+              width={84}
+              height={48}
+              className="h-10 w-auto"
+            />
+          </Link>
+
           {user ? (
             <div className="relative">
               <button

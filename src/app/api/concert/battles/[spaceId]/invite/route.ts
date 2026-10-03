@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { concertBattleErrorResponse } from "@/lib/concertBattleApi";
 import { filterVisibleMembers } from "@/lib/memberVisibility";
@@ -15,7 +15,7 @@ type Props = { params: Promise<{ spaceId: string }> };
 // Body intentionally contains only the selected recipient id. Initiator,
 // opponent, and battle identity are derived/validated server-side.
 export async function POST(req: NextRequest, { params }: Props) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const initiatorId = guard.membership.userId;
   if (!isUuid(initiatorId)) {
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest, { params }: Props) {
 // Explicit cancellation is required before an initiator may replace a pending
 // invite. This does not and cannot alter an accepted slot 2.
 export async function DELETE(req: NextRequest, { params }: Props) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const initiatorId = guard.membership.userId;
   if (!isUuid(initiatorId)) {

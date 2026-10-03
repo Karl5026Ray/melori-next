@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireAuth, requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { moderateText, statusForDecision } from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
@@ -39,11 +39,11 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/community/comments — Posting requires an active Superfan-or-better
-// member (requireSuperfan → 401/403 otherwise). The author is resolved from the
+// member (requireAuth → 401/403 otherwise). The author is resolved from the
 // verified bearer token, never from the request body — no client-supplied
 // user_id is trusted. Inserts via the service role client (RLS is ON).
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 

@@ -22,7 +22,7 @@ import {
   isHandRaiseMode,
   HAND_RAISE_MODES,
 } from "@/lib/spacesStage";
-import { isSuperfanOrBetter } from "@/lib/membership";
+import { isSignedIn } from "@/lib/membership";
 import type { HandRaiseMode, ParticipantRole } from "@/types/social";
 
 let failures = 0;
@@ -181,11 +181,11 @@ group("hand-raise eligibility (signed-out vs free vs superfan)", () => {
   assertEq("signed-out user cannot raise a hand", canRaiseHand({ signedIn: false }), false);
   assertEq("signed-in free member CAN raise a hand", canRaiseHand({ signedIn: true }), true);
 
-  // isSuperfanOrBetter is irrelevant to canRaiseHand — assert every profile
+  // isSignedIn is irrelevant to canRaiseHand — assert every profile
   // lands on the identical (signed-in) answer, proving the hand-raise gate does
   // not key off tier at all.
   //
-  // Paid tiers were removed from Melori, so isSuperfanOrBetter now means "is
+  // Paid tiers were removed from Melori, so isSignedIn now means "is
   // there a signed-in account" and can no longer tell free from superfan from
   // artist. That is exactly why canRaiseHand must not consult it. Logged out is
   // the only remaining false.
@@ -195,13 +195,13 @@ group("hand-raise eligibility (signed-out vs free vs superfan)", () => {
   assertEq(
     "every signed-in profile is superfan-or-better now that tiers are gone",
     [
-      isSuperfanOrBetter(freeProfile),
-      isSuperfanOrBetter(superfanProfile),
-      isSuperfanOrBetter(artistProfile),
+      isSignedIn(freeProfile),
+      isSignedIn(superfanProfile),
+      isSignedIn(artistProfile),
     ],
     [true, true, true],
   );
-  assertEq("logged-out is still excluded", isSuperfanOrBetter(null), false);
+  assertEq("logged-out is still excluded", isSignedIn(null), false);
   assertEq(
     "free AND superfan both pass canRaiseHand once signed in",
     [canRaiseHand({ signedIn: true }), canRaiseHand({ signedIn: true })],

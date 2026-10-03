@@ -41,7 +41,7 @@ export default function GalleryDetail({
       const { data, error: qErr } = await supabase
         .from("photo_gallery_images")
         .select(
-          "id, folder_id, preview_key, thumbnail_key, caption, filename, for_sale, price_cents, order_index",
+          "id, folder_id, preview_key, thumbnail_key, caption, filename, order_index",
         )
         .eq("gallery_id", gallery.id)
         .order("order_index", { ascending: true });
@@ -58,8 +58,6 @@ export default function GalleryDetail({
           .getPublicUrl(img.thumbnail_key as string).data.publicUrl,
         caption: img.caption as string | null,
         filename: img.filename as string | null,
-        forSale: Boolean(img.for_sale),
-        priceCents: img.price_cents as number | null,
         orderIndex: img.order_index as number,
       }));
       setImages(rows);

@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("tracks")
       .select(
-        "id, title, audio_url, preview_url, preview_start, preview_end, duration_seconds, price, is_published, release_id, release:releases(title, artist:artists(name))",
+        "id, title, audio_url, preview_url, duration_seconds, is_published, release_id, release:releases(title, artist:artists(name))",
       )
       .order("id", { ascending: false });
 
@@ -58,10 +58,7 @@ export async function GET(req: NextRequest) {
         title: row.title,
         audio_url: row.audio_url,
         preview_url: row.preview_url,
-        preview_start: row.preview_start ?? 0,
-        preview_end: row.preview_end ?? 30,
         duration_seconds: row.duration_seconds,
-        price: row.price,
         is_published: row.is_published,
         release_id: row.release_id,
         release_title: release?.title ?? null,
@@ -123,12 +120,6 @@ export async function POST(req: NextRequest) {
 
     const duration =
       body.duration_seconds != null ? Math.round(Number(body.duration_seconds)) : null;
-    let previewStart = Number(body.preview_start ?? 0);
-    let previewEnd = Number(body.preview_end ?? 30);
-    if (!Number.isFinite(previewStart) || previewStart < 0) previewStart = 0;
-    if (!Number.isFinite(previewEnd) || previewEnd <= previewStart) {
-      previewEnd = previewStart + 30;
-    }
 
     const previewUrl =
       typeof body.preview_url === "string" && body.preview_url.trim()
@@ -142,24 +133,10 @@ export async function POST(req: NextRequest) {
     }
     const isPublished = Boolean(body.is_published);
 
-    // A newly-created track can only go live if it has a dedicated preview.
-    // See PATCH handler for the rationale (free-listener cap is cosmetic).
-    if (isPublished && !previewUrl) {
-      return NextResponse.json(
-        {
-          error:
-            "Cannot publish: this track has no preview clip. Create it as unpublished, generate a preview, then publish.",
-        },
-        { status: 400 },
-      );
-    }
-
     const insert: Record<string, any> = {
       title,
       audio_url: audioUrl,
       preview_url: previewUrl,
-      preview_start: previewStart,
-      preview_end: previewEnd,
       duration_seconds: duration,
       is_published: isPublished,
     };
@@ -171,13 +148,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid release_id" }, { status: 400 });
       }
       insert.release_id = rid;
-    }
-    if (body.price != null && body.price !== "") {
-      const p = Number(body.price);
-      if (!Number.isFinite(p) || p < 0) {
-        return NextResponse.json({ error: "Invalid price" }, { status: 400 });
-      }
-      insert.price = p;
     }
     if (body.track_number != null && body.track_number !== "") {
       const tn = Number(body.track_number);

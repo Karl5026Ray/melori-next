@@ -39,6 +39,8 @@ import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
 import MirrorRecordingControls from "@/components/social/mirror/MirrorRecordingControls";
+import RecordingConsent, { RecordingBanner } from "@/components/social/mirror/RecordingConsent";
+import { initialConsentGate, isRoomRecording, type ConsentGate } from "@/lib/mirrorRecording";
 import {
   Mic,
   MicOff,
@@ -303,6 +305,47 @@ export default function LiveRoom({
   const [isRecording, setIsRecording] = useState(false);
   const [showEndPrompt, setShowEndPrompt] = useState(false);
 
+  // Recording CONSENT (Illinois is all-party consent). `roomRecording` is the
+  // server-set LiveKit room-metadata flag the start/stop routes write, so every
+  // participant — not just the host — sees the red banner. `consentGate` holds
+  // a non-host who arrives mid-recording at a Continue / Leave prompt BEFORE we
+  // connect them, so their camera/mic can never publish into a recording they
+  // didn't agree to. Continuing is consent; leaving is always fine.
+  const [roomRecording, setRoomRecording] = useState(false);
+  const [consentGate, setConsentGate] = useState<ConsentGate>("checking");
+  const consentedRef = useRef(false);
+  const isHostRef = useRef(isHost);
+  isHostRef.current = isHost;
+
+  useEffect(() => {
+    if (isHost) {
+      setConsentGate("ok");
+      return;
+    }
+    let active = true;
+    void (async () => {
+      const { data } = await supabase
+        .from("spaces")
+        .select("is_recording")
+        .eq("id", spaceId)
+        .maybeSingle();
+      if (!active) return;
+      const recording = !!(data as { is_recording?: boolean } | null)?.is_recording;
+      setRoomRecording(recording);
+      setConsentGate((g) =>
+        g === "checking" ? initialConsentGate({ isHost: false, recording }) : g,
+      );
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isHost, spaceId]);
+
+  const acceptRecording = useCallback(() => {
+    consentedRef.current = true;
+    setConsentGate("ok");
+  }, []);
+
   // The actual teardown + navigation, factored out so it can run either
   // immediately (not recording) or after the post-prompt decision.
   const finishLeave = useCallback(async () => {
@@ -342,7 +385,7 @@ export default function LiveRoom({
   // Ensure a participant row exists for anyone who joins (audience by default;
   // host row is 'host'). Enables the raise-hand / promote flow.
   useEffect(() => {
-    if (!user) return;
+    if (!user || consentGate !== "ok") return;
     void supabase
       .from("space_participants")
       .upsert(
@@ -354,7 +397,7 @@ export default function LiveRoom({
         },
         { onConflict: "space_id,user_id" },
       );
-  }, [user, spaceId, isHost]);
+  }, [user, spaceId, isHost, consentGate]);
 
   // Heartbeat every 60s, mirroring MM Spaces (page.tsx). Keeps
   // spaces.last_activity_at fresh for the idle reaper, and — when the caller
@@ -375,9 +418,12 @@ export default function LiveRoom({
     return () => clearInterval(interval);
   }, [user, spaceId]);
 
-  // Connect to the LiveKit room on mount.
+  // Connect to the LiveKit room once the viewer is cleared to join (no
+  // recording in progress, or they chose Continue on the consent prompt).
   useEffect(() => {
+    if (consentGate !== "ok") return;
     let cancelled = false;
+    let seeded = false;
     (async () => {
       try {
         setConnecting(true);
@@ -413,6 +459,18 @@ export default function LiveRoom({
           },
           onAudioPlaybackChanged: (canPlay) => setAudioBlocked(!canPlay),
           onActiveSpeakersChange: (ids) => setSpeakers(new Set(ids)),
+          onRoomMetadataChange: (metadata) => {
+            const recording = isRoomRecording(metadata);
+            setRoomRecording(recording);
+            // Recording started between our pre-join check and connecting:
+            // drop back to the consent prompt (this disconnects via cleanup)
+            // until they choose. Viewers already in the room when the host
+            // starts recording get the banner, not a disconnect.
+            if (recording && !isHostRef.current && !consentedRef.current && seeded === false) {
+              setConsentGate("needs-consent");
+            }
+            seeded = true;
+          },
           onFacingModeChange: (mode) => setFacingMode(mode),
           onLocalPermissionsChanged: (allowed) => {
             // Server promoted me (host/mod approved my raised hand). Publish in
@@ -464,7 +522,7 @@ export default function LiveRoom({
       void leaveVideoRoom();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spaceId, isHost, hostId, tier, durationMinutes]);
+  }, [spaceId, isHost, hostId, tier, durationMinutes, consentGate]);
 
   // Host: load raise-hand requests + the audience roster. Reads through the
   // server route (service role) so it never depends on the anon client's RLS for
@@ -1115,6 +1173,13 @@ export default function LiveRoom({
 
       {/* Top bar */}
       <div data-no-like className="absolute inset-x-0 top-0 flex flex-col gap-2 p-3 sm:p-4">
+        {/* Everyone sees this while the room is recorded — host and guests. */}
+        {(roomRecording || (isHost && isRecording)) && (
+          <RecordingBanner
+            isHost={isHost}
+            onLeave={isHost ? undefined : () => void handleLeave()}
+          />
+        )}
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/40 px-2.5 py-1.5 backdrop-blur">
@@ -1500,8 +1565,21 @@ export default function LiveRoom({
         </div>
       )}
 
+      {/* Join-time recording consent: shown BEFORE we connect, so nothing of
+          this viewer is published until they choose Continue. */}
+      {consentGate === "needs-consent" && (
+        <RecordingConsent
+          onContinue={acceptRecording}
+          onLeave={() => {
+            setConsentGate("declined");
+            void leaveVideoRoom();
+            router.push("/social/live");
+          }}
+        />
+      )}
+
       {/* Status overlays */}
-      {(connecting || reconnecting) && !removed && !roomEnded && (
+      {(connecting || reconnecting) && !removed && !roomEnded && consentGate !== "needs-consent" && consentGate !== "declined" && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm text-white backdrop-blur">
           <Loader2 className="h-4 w-4 animate-spin" />
           {reconnecting ? "Reconnecting…" : "Connecting…"}

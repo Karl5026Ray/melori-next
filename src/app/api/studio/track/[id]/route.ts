@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
   assertTrackOwnership,
   isOwnershipFailure,
@@ -34,7 +34,7 @@ function revalidatePublicTrackPaths(trackId: string) {
 // tracks still load until they are replaced.
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       supabase,
       params.id,
       guard.membership.userId,
-      "title, artist, album, genre, price_cents, file_url, file_path, preview_url, preview_start, preview_end, duration, status"
+      "title, artist, album, genre, file_url, file_path, preview_url, duration, status"
     );
     if (isOwnershipFailure(ownership)) return ownership;
 
@@ -61,14 +61,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     }
     if (!audioUrl) audioUrl = track.file_url ?? null;
 
-    // The WaveformEditor consumes camelCase fields; expose aliases alongside the
-    // raw columns so it can load the master audio and preview window directly.
     return NextResponse.json({
       ...track,
       audioUrl,
       previewUrl: track.preview_url,
-      previewStart: track.preview_start,
-      previewEnd: track.preview_end,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -77,12 +73,12 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
 // PATCH /api/studio/track/[id] — Replace an existing track's master audio.
 //
-// Ownership: gated by requireArtist AND assertTrackOwnership so an artist can
+// Ownership: gated by requireAuth AND assertTrackOwnership so an artist can
 // only replace the master of their own track, matching every other studio
 // route. The final update is also scoped by OWNER_COLUMN as defense-in-depth.
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   try {
     const supabase = createServiceClient();
@@ -157,7 +153,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     // Publish / unpublish. The DB CHECK constraint only permits these three
     // values, so validate before writing to avoid a raw constraint error.
     // Ownership was already asserted above (the caller must own the track;
-    // requireArtist + assertTrackOwnership have no admin bypass — admins edit
+    // requireAuth + assertTrackOwnership have no admin bypass — admins edit
     // other artists' tracks via /api/admin/studio-tracks/[id]), and the update
     // is scoped by OWNER_COLUMN below.
     if (body.status != null) {
@@ -204,13 +200,10 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
           : 1;
     }
 
-    // When the master is replaced, the previously generated 30-second preview
-    // points at the old audio and is now stale. Clear it so nothing plays a
-    // broken/mismatched clip; the artist re-picks the window on the new master.
+    // When the master is replaced, any old preview clip points at the old
+    // audio and is now stale. Clear it so nothing plays a mismatched clip.
     if (replacingMaster) {
       update.preview_url = null;
-      update.preview_start = null;
-      update.preview_end = null;
     }
 
     if (
@@ -273,7 +266,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 // admin can sweep any orphans separately; leaving the row behind is worse.
 export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const guard = await requireArtist(_req);
+  const guard = await requireAuth(_req);
   if (isGuardFailure(guard)) return guard;
 
   const supabase = createServiceClient();

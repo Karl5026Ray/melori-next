@@ -14,8 +14,7 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 //
 // MUSIC IS FREE, BUT NOT ANONYMOUS. Mirrors the legacy
 // `/api/tracks/[id]/stream` contract: every signed-in account gets the
-// full-length master, there is no membership tier and no sample window, and an
-// unauthenticated request gets 401. See that route for the reasoning.
+// full-length master, and an unauthenticated request gets 401. See that route for the reasoning.
 //
 // Listen logging still excludes self-listens by the owning artist.
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
@@ -91,13 +90,6 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json({
       url: playbackUrl,
       expiresIn: EXPIRES_IN,
-      // Retained for client compatibility. Music is free to members, so
-      // playback is never sampled or windowed.
-      sample: false,
-      sampleSeconds: null,
-      previewStart: null,
-      previewEnd: null,
-      dedicatedPreview: false,
     });
   } catch (err) {
     console.error(`GET /api/studio/tracks/${params.id}/stream failed:`, err);

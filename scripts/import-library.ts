@@ -142,7 +142,7 @@ const CONTENT_TYPE: Record<string, string> = {
 export function normalizeTitle(s: string): string {
   return s
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/\p{Mn}/gu, "")
     .toLowerCase()
     // Apostrophes are DELETED, not turned into a separator, so "Let's" and
     // "Lets" collapse to the same key. Mapping them to a space instead would
@@ -158,7 +158,7 @@ export function normalizeTitle(s: string): string {
 export function slugify(s: string): string {
   return s
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/\p{Mn}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");

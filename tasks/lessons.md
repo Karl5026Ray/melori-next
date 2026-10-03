@@ -106,3 +106,9 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   "saved".
 - **Vercel truncates env var names** (`CLOU…OKEN` vs `CLOU…T_ID`). Tell people
   to filter by name with the search box before editing a row.
+- **Tailwind only scans `src/app` and `src/components`.** Class names written
+  in `src/lib` (e.g. a gradient stored in a data file) are never generated and
+  render as nothing. Keep class strings in components.
+- **Melori pages are named for what they are, not for Karl** (2026-10-02: "I
+  didn't need it to say Karl Ray Books, just Books"). Melori is a platform for
+  every creator, so page titles and nav labels stay generic.

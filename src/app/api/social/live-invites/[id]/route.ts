@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function PATCH(
   props: { params: Promise<{ id: string }> },
 ) {
   const params = await props.params;
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;
 

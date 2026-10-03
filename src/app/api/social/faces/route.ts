@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireGoLiveReady } from "@/lib/goLiveGate.server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireAuth, requireSuperfan, isGuardFailure } from "@/lib/membership-server";
-import { isArtistSubscriber } from "@/lib/membership";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
+import { isSignedIn } from "@/lib/membership";
 import {
   liveParticipantCounts,
   withLiveParticipantCounts,
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
       ? (body.room_format as string)
       : "live_group";
 
-    const isArtist = isArtistSubscriber(membership.profile);
+    const isArtist = isSignedIn(membership.profile);
     const { maxOnCamera, durationMinutes } = limitsForFormat(
       room_format,
       isArtist,

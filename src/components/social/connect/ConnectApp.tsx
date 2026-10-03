@@ -19,6 +19,19 @@ import ConnectProfileEditor from "./ConnectProfileEditor";
 
 type Tab = "discover" | "matches" | "likes";
 
+// Melori Connect is 18+. The server decides (see src/lib/connectAgeGate.ts);
+// these are the 403 `code`s it sends so we can show the right screen instead
+// of mistaking an age block for the paid-tier upgrade prompt.
+const CONNECT_UNDER_AGE_MESSAGE = "Melori Connect is for members 18 and over.";
+type AgeVerdict = "under_18" | "needs_birthdate" | null;
+async function ageVerdictOf(res: Response): Promise<AgeVerdict> {
+  if (res.status !== 403) return null;
+  const body = await res.clone().json().catch(() => ({}) as { code?: string });
+  if (body?.code === "connect_under_18") return "under_18";
+  if (body?.code === "connect_birthdate_required") return "needs_birthdate";
+  return null;
+}
+
 interface MatchRow {
   matchId: string;
   conversationId: string | null;
@@ -42,11 +55,13 @@ export default function ConnectApp() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("discover");
 
-  // gate: 'loading' | 'ok' | 'signin'
-  const [gate, setGate] = useState<"loading" | "ok" | "signin">(
+  // gate: 'loading' | 'ok' | 'signin' | 'underage'
+  const [gate, setGate] = useState<"loading" | "ok" | "signin" | "underage">(
     "loading",
   );
   const [needsProfile, setNeedsProfile] = useState(false);
+  // Signed-up Connect profile with no birthdate on file (legacy rows).
+  const [needsBirthdate, setNeedsBirthdate] = useState(false);
   const [editing, setEditing] = useState(false);
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -61,8 +76,18 @@ export default function ConnectApp() {
     try {
       const res = await authFetch("/api/social/connect/discover?limit=20");
       if (res.status === 401) return setGate("signin");
+      const verdict = await ageVerdictOf(res);
+      if (verdict === "under_18") return setGate("underage");
+      if (verdict === "needs_birthdate") {
+        setGate("ok");
+        setNeedsBirthdate(true);
+        setNeedsProfile(true);
+        setCandidates([]);
+        return;
+      }
       const data = await res.json();
       setGate("ok");
+      setNeedsBirthdate(false);
       if (data.needsProfile) {
         setNeedsProfile(true);
         setCandidates([]);
@@ -107,8 +132,14 @@ export default function ConnectApp() {
           body: JSON.stringify({ target_id: targetId, action }),
         });
         if (res.status === 401) return setGate("signin");
-        // 403 = blocked pair; the card has already advanced, nothing to show.
-        if (!res.ok) return;
+        const verdict = await ageVerdictOf(res);
+        if (verdict === "under_18") return setGate("underage");
+        if (verdict === "needs_birthdate") {
+          setNeedsBirthdate(true);
+          setNeedsProfile(true);
+          return;
+        }
+        if (!res.ok) return; // e.g. 404 Unavailable — card already advanced
         const data = await res.json();
         if (data.matched) {
           setMatchToast(data.profile);
@@ -154,6 +185,25 @@ export default function ConnectApp() {
       </Centered>
     );
   }
+  if (gate === "underage") {
+    return (
+      <Centered>
+        <Heart className="mb-3 h-8 w-8 text-melori-pink" />
+        <h2 className="text-xl font-bold" data-testid="connect-age-gate">
+          {CONNECT_UNDER_AGE_MESSAGE}
+        </h2>
+        <p className="mt-1 max-w-sm text-sm text-melori-muted">
+          The rest of Melori is still yours: music, rooms, cinema and chat.
+        </p>
+        <Link
+          href="/music"
+          className="mt-4 rounded-full bg-brand-primary px-6 py-2 font-semibold text-white"
+        >
+          Back to Melori
+        </Link>
+      </Centered>
+    );
+  }
   // ---- main UI ---------------------------------------------------------------
   return (
     <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pb-24 pt-4">
@@ -193,16 +243,19 @@ export default function ConnectApp() {
         (needsProfile ? (
           <Centered>
             <Music className="mb-3 h-8 w-8 text-melori-pink" />
-            <h2 className="text-lg font-bold">Set up your Connect profile</h2>
+            <h2 className="text-lg font-bold">
+              {needsBirthdate ? "Add your birthdate" : "Set up your Connect profile"}
+            </h2>
             <p className="mt-1 max-w-xs text-sm text-melori-muted">
-              Add a few details and preferences so we can match you with the
-              right people.
+              {needsBirthdate
+                ? "Melori Connect is for members 18 and over. Add your birthdate to keep using it."
+                : "Add a few details and preferences so we can match you with the right people. Connect is for members 18 and over."}
             </p>
             <button
               onClick={() => setEditing(true)}
               className="mt-4 rounded-full bg-brand-primary px-6 py-2 font-semibold text-white"
             >
-              Create profile
+              {needsBirthdate ? "Add birthdate" : "Create profile"}
             </button>
           </Centered>
         ) : loadingCards && candidates.length === 0 ? (
@@ -402,6 +455,10 @@ export default function ConnectApp() {
       {editing && (
         <ConnectProfileEditor
           onClose={() => setEditing(false)}
+          onUnderAge={() => {
+            setEditing(false);
+            setGate("underage");
+          }}
           onSaved={() => {
             setEditing(false);
             setNeedsProfile(false);

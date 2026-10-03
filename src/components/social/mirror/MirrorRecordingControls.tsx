@@ -12,6 +12,8 @@ import { Circle, Square, Loader2 } from "lucide-react";
 //   2. Host taps Stop (or ends the live) → POST /api/mirror/recording/stop.
 //   3. We prompt "Post this LIVE to the Mirror?" → on YES,
 //      POST /api/mirror/recording/publish creates a Mirror post (social_videos).
+//      On NOT NOW, POST /api/mirror/recording/discard DELETES the recording.
+//      The host decides; an unposted recording is private and never kept.
 //
 // Recording may not be configured yet (no S3 egress creds). In that case the
 // start call returns { configured:false } and we surface a friendly note rather
@@ -30,7 +32,15 @@ type Props = {
   onRecordingChange?: (recording: boolean) => void;
 };
 
-type Phase = "idle" | "starting" | "recording" | "stopping" | "prompt" | "publishing" | "done";
+type Phase =
+  | "idle"
+  | "starting"
+  | "recording"
+  | "stopping"
+  | "prompt"
+  | "publishing"
+  | "discarding"
+  | "done";
 
 export default function MirrorRecordingControls({
   spaceId,
@@ -110,10 +120,27 @@ export default function MirrorRecordingControls({
     }
   }, [spaceId, title, onDone]);
 
-  const skip = useCallback(() => {
-    setPhase("done");
-    onDone?.();
-  }, [onDone]);
+  // "Not now" = delete. The recording is removed from storage server-side; if
+  // that fails we keep the prompt up so the host can retry rather than leave a
+  // file behind they believe is gone.
+  const skip = useCallback(async () => {
+    setError(null);
+    setPhase("discarding");
+    try {
+      const res = await authFetch("/api/mirror/recording/discard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spaceId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Could not delete the recording");
+      setPhase("done");
+      onDone?.();
+    } catch (e) {
+      setError((e as Error).message);
+      setPhase("prompt");
+    }
+  }, [spaceId, onDone]);
 
   // When mounted in "end the live" mode, immediately stop the recording and
   // show the post-prompt. Runs once on mount regardless of initial phase (this
@@ -134,13 +161,20 @@ export default function MirrorRecordingControls({
   }
 
   // "Post this LIVE?" prompt (also renders the publishing / done states).
-  if (phase === "prompt" || phase === "publishing" || phase === "done") {
+  if (
+    phase === "prompt" ||
+    phase === "publishing" ||
+    phase === "discarding" ||
+    phase === "done"
+  ) {
     if (phase === "done") return null;
+    const busy = phase === "publishing" || phase === "discarding";
     return (
       <div className="w-full max-w-sm rounded-2xl bg-neutral-900 p-4 text-white shadow-xl">
         <h3 className="text-base font-semibold">Post this LIVE to the Mirror?</h3>
         <p className="mt-1 text-sm text-white/70">
           Your recording will appear in the Melori Mirror feed as a video post.
+          It&apos;s private until you post it &mdash; <strong>Not now</strong> deletes it.
         </p>
         <input
           value={title}
@@ -153,14 +187,20 @@ export default function MirrorRecordingControls({
         <div className="mt-4 flex gap-2">
           <button
             onClick={skip}
-            disabled={phase === "publishing"}
+            disabled={busy}
             className="flex-1 rounded-lg bg-neutral-700 px-4 py-2 text-sm font-medium hover:bg-neutral-600 disabled:opacity-50"
           >
-            Not now
+            {phase === "discarding" ? (
+              <span className="inline-flex items-center gap-1">
+                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+              </span>
+            ) : (
+              "Not now"
+            )}
           </button>
           <button
             onClick={publish}
-            disabled={phase === "publishing"}
+            disabled={busy}
             className="flex-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold hover:bg-orange-400 disabled:opacity-50"
           >
             {phase === "publishing" ? (

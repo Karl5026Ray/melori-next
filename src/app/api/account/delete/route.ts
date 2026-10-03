@@ -58,7 +58,6 @@ export async function POST(req: NextRequest) {
     ["messages", "sender_id"],
     ["conversation_participants", "user_id"],
     ["reports", "reporter_id"],
-    ["music_purchases", "user_id"],
     ["gallery_photos", "user_id"],
     ["social_videos", "owner_id"],
     ["tracks", "owner_id"],

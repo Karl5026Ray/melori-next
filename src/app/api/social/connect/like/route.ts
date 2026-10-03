@@ -3,6 +3,7 @@ import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 import { rateLimit } from "@/lib/rate-limit";
+import { guardConnectCaller, isConnectEligible } from "@/lib/connectAgeGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,27 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
+  const now = new Date();
+
+  // 18+ only, both sides. The caller needs a Connect profile with a valid 18+
+  // birthdate; the target must be an ACTIVE Connect profile with one too, so a
+  // hidden (under-18 / no-birthdate) member can't be liked or matched by id.
+  const callerGate = await guardConnectCaller(supabase, me, now);
+  if (callerGate === "no_profile") {
+    return NextResponse.json(
+      { error: "Create your Connect profile first.", code: "connect_profile_required" },
+      { status: 403 },
+    );
+  }
+  if (callerGate) return callerGate;
+  const { data: target } = await supabase
+    .from("dating_profiles")
+    .select("user_id, birthdate, is_active")
+    .eq("user_id", targetId)
+    .maybeSingle();
+  if (!target || !target.is_active || !isConnectEligible(target.birthdate, now)) {
+    return NextResponse.json({ error: "Unavailable." }, { status: 404 });
+  }
 
   // Block check (either direction).
   const { data: blocks } = await supabase

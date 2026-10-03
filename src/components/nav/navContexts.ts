@@ -64,12 +64,16 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
       items: [
         { label: "Current Artists", href: "/artists" },
         { label: "Artist Studio", href: "/studio" },
+        // Karl, 2026-10-02: a Books link under Artist Studio, on every profile
+        // page. Listed here because this bar renders on every /artists/* page.
+        { label: "Books", href: "/books" },
         { label: "Upload", href: "/upload" },
       ],
     },
     test: (p) =>
       p.startsWith("/artists") ||
       p.startsWith("/studio") ||
+      p.startsWith("/books") ||
       p.startsWith("/upload"),
   },
   {

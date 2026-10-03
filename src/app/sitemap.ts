@@ -30,6 +30,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // redirect to /mission (next.config.js), and a sitemap entry that
     // redirects tells Google to index a URL that is not the page.
     { url: `${SITE_URL}/mission`,   lastModified: now, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE_URL}/books`,     lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/artists`,   lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
     // The live surfaces, as public pages rather than the members-only rooms.
     { url: `${SITE_URL}/faces`,     lastModified: now, changeFrequency: "monthly", priority: 0.7 },

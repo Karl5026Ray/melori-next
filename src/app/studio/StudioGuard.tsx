@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { isArtistSubscriber } from "@/lib/membership";
+import { isSignedIn } from "@/lib/membership";
 import { authFetch } from "@/lib/authClient";
 
 // Client-side gate for the Artist Studio. Supabase auth here is localStorage-based
@@ -11,7 +11,7 @@ import { authFetch } from "@/lib/authClient";
 // rendering until we've confirmed the caller is signed in with a loadable profile,
 // and send everyone else to the sign-in screen. Paid tiers were removed from
 // Melori, so this is an auth check, not a subscription check. The studio's own API
-// routes are independently protected server-side (requireArtist → requireAuth → 401).
+// routes are independently protected server-side (requireAuth → requireAuth → 401).
 export default function StudioGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "allowed">("checking");
@@ -31,7 +31,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
 
       const { data: profile, error } = await supabase
         .from("profiles")
-        .select("role, membership_status")
+        .select("role")
         .eq("id", session.user.id)
         .maybeSingle();
 
@@ -48,7 +48,7 @@ export default function StudioGuard({ children }: { children: React.ReactNode })
         });
       }
 
-      if (isArtistSubscriber(profile)) {
+      if (isSignedIn(profile)) {
         setStatus("allowed");
         // Self-heal: ensure this artist has a linked `artists` row so the
         // dashboard/studio stats populate. Idempotent + fire-and-forget.

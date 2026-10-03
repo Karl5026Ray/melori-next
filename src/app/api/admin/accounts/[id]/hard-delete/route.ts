@@ -40,7 +40,6 @@ export const dynamic = "force-dynamic";
 // and must be cleared before the account can be removed. Best-effort.
 const NO_ACTION_REFS: Array<{ table: string; column: string; action: "null" | "delete" }> = [
   { table: "audit_logs", column: "actor_id", action: "null" },
-  { table: "orders", column: "user_id", action: "null" },
   { table: "tracks", column: "moderated_by", action: "null" },
   { table: "humanizer_access", column: "granted_by", action: "null" },
   { table: "track_submissions", column: "profile_id", action: "delete" },

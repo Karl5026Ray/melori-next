@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { LogIn } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { isSuperfanOrBetter } from "@/lib/membership";
+import { isSignedIn } from "@/lib/membership";
 import { canRaiseHand } from "@/lib/spacesStage";
 
 // Client-side hook: is the caller allowed to PARTICIPATE (post/create,
-// comment/reply, join voice)? Paid tiers were removed from Melori, so this is
-// now purely "are you signed in" — every signed-in account participates.
+// comment/reply, join voice)? This is purely "are you signed in" — every
+// signed-in account participates.
 // Logged-out visitors may still view and listen. Server routes enforce the
 // same rule independently (requireAuth → 401).
 export function useCanParticipate(): boolean {
   const { user } = useAuth();
-  return isSuperfanOrBetter(user);
+  return isSignedIn(user);
 }
 
 // Spaces-voice carve-out (Clubhouse parity): any SIGNED-IN user may raise a
@@ -27,10 +27,9 @@ export function useCanRequestStage(): boolean {
 }
 
 // Shown when a signed-out visitor reaches something that needs an account.
-// This used to be a paid-tier upsell ("Become a Superfan to …"). There are no
-// tiers and nothing to buy on Melori, so the only thing standing between a
-// visitor and this action is a free account — say exactly that.
-export function UpgradePrompt({
+// Nothing on Melori is paid, so the only thing standing between a visitor and
+// this action is a free account — say exactly that.
+export function SignInPrompt({
   action = "participate",
   className = "",
 }: {

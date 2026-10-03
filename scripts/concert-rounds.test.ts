@@ -8,13 +8,14 @@
 //      due, who won a round, who won the battle.
 //   2. src/lib/concertRoundsServer.ts — the applier, exercised against a fake
 //      Supabase client. The two properties that matter most in production live
-//      here: gift coins are counted PER ROUND WINDOW (not battle-wide), and
+//      here: audience votes are counted PER ROUND (not battle-wide), and
 //      every battle write is guarded by `version` so the client fast path and
 //      the cron backstop firing together still produce exactly one transition.
 
 import {
   CONCERT_BATTLE_INTERMISSION_SECONDS,
   canStartConcertRound,
+  decideConcertVote,
   formatConcertPhaseCountdown,
   formatConcertRoundLabel,
   isConcertPhaseExpired,
@@ -74,10 +75,19 @@ function round(
     starts_at: iso(NOW - 600_000),
     ends_at: iso(NOW - 360_000),
     winner_id: INITIATOR,
-    initiator_coins_total: 100,
-    opponent_coins_total: 50,
+    initiator_votes: 100,
+    opponent_votes: 50,
     ...overrides,
   };
+}
+
+function vote(roundNumber: number, voterId: string, performerId: string): {
+  space_id: string;
+  round_number: number;
+  voter_id: string;
+  performer_id: string;
+} {
+  return { space_id: SPACE, round_number: roundNumber, voter_id: voterId, performer_id: performerId };
 }
 
 console.log("\nConcert battle round lifecycle\n");
@@ -299,7 +309,7 @@ function expiredActive(roundNumber: number, extraRounds: ConcertRoundRow[] = [])
 
 {
   // A round row whose start was lost must not be scored against the whole
-  // battle: that would credit round 1's gifts to round 3.
+  // battle: that would misdescribe round 3 as spanning round 1.
   const plan = planConcertBattleTick({
     battle: battle({
       status: "round_active",
@@ -361,12 +371,12 @@ function expiredActive(roundNumber: number, extraRounds: ConcertRoundRow[] = [])
 console.log("\nRound outcomes");
 
 check(
-  "more coins in the window wins the round",
+  "more votes in the round wins the round",
   resolveConcertRound({
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
-    initiatorCoins: 120,
-    opponentCoins: 119,
+    initiatorVotes: 120,
+    opponentVotes: 119,
   }).winnerId === INITIATOR,
 );
 check(
@@ -374,16 +384,16 @@ check(
   resolveConcertRound({
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
-    initiatorCoins: 0,
-    opponentCoins: 15,
+    initiatorVotes: 0,
+    opponentVotes: 15,
   }).winnerId === OPPONENT,
 );
 {
   const tie = resolveConcertRound({
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
-    initiatorCoins: 60,
-    opponentCoins: 60,
+    initiatorVotes: 60,
+    opponentVotes: 60,
   });
   check("an exact tie is a draw", tie.state === "draw");
   check("a drawn round records no winner", tie.winnerId === null);
@@ -392,10 +402,10 @@ check(
   const empty = resolveConcertRound({
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
-    initiatorCoins: 0,
-    opponentCoins: 0,
+    initiatorVotes: 0,
+    opponentVotes: 0,
   });
-  check("a round with no gifts at all is a draw", empty.state === "draw");
+  check("a round with no votes at all is a draw", empty.state === "draw");
 }
 
 // --- Battle outcomes -------------------------------------------------------
@@ -427,18 +437,18 @@ console.log("\nBattle outcomes");
     rounds: [
       round(1, {
         winner_id: INITIATOR,
-        initiator_coins_total: 10,
-        opponent_coins_total: 9,
+        initiator_votes: 10,
+        opponent_votes: 9,
       }),
       round(2, {
         winner_id: INITIATOR,
-        initiator_coins_total: 10,
-        opponent_coins_total: 9,
+        initiator_votes: 10,
+        opponent_votes: 9,
       }),
       round(3, {
         winner_id: OPPONENT,
-        initiator_coins_total: 0,
-        opponent_coins_total: 5_000,
+        initiator_votes: 0,
+        opponent_votes: 5_000,
       }),
     ],
   });
@@ -453,15 +463,15 @@ console.log("\nBattle outcomes");
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
     rounds: [
-      round(1, { winner_id: INITIATOR, initiator_coins_total: 50, opponent_coins_total: 0 }),
-      round(2, { winner_id: OPPONENT, initiator_coins_total: 0, opponent_coins_total: 10 }),
-      round(3, { state: "draw", winner_id: null, initiator_coins_total: 5, opponent_coins_total: 5 }),
+      round(1, { winner_id: INITIATOR, initiator_votes: 50, opponent_votes: 0 }),
+      round(2, { winner_id: OPPONENT, initiator_votes: 0, opponent_votes: 10 }),
+      round(3, { state: "draw", winner_id: null, initiator_votes: 5, opponent_votes: 5 }),
     ],
   });
   check(
-    "a round tie is broken on total coins",
+    "a round tie is broken on total votes",
     outcome.winnerId === INITIATOR &&
-      outcome.completionReason === "coins_tiebreak",
+      outcome.completionReason === "votes_tiebreak",
   );
 }
 
@@ -470,12 +480,12 @@ console.log("\nBattle outcomes");
     initiatorId: INITIATOR,
     opponentId: OPPONENT,
     rounds: [
-      round(1, { state: "draw", winner_id: null, initiator_coins_total: 10, opponent_coins_total: 10 }),
-      round(2, { state: "draw", winner_id: null, initiator_coins_total: 0, opponent_coins_total: 0 }),
-      round(3, { state: "draw", winner_id: null, initiator_coins_total: 7, opponent_coins_total: 7 }),
+      round(1, { state: "draw", winner_id: null, initiator_votes: 10, opponent_votes: 10 }),
+      round(2, { state: "draw", winner_id: null, initiator_votes: 0, opponent_votes: 0 }),
+      round(3, { state: "draw", winner_id: null, initiator_votes: 7, opponent_votes: 7 }),
     ],
   });
-  check("dead even on rounds and coins is a draw", outcome.winnerId === null);
+  check("dead even on rounds and votes is a draw", outcome.winnerId === null);
   check("a drawn battle says so", outcome.completionReason === "draw");
 }
 
@@ -485,12 +495,81 @@ console.log("\nBattle outcomes");
     opponentId: OPPONENT,
     rounds: [
       round(1),
-      round(2, { state: "active", winner_id: null, initiator_coins_total: 9_999 }),
+      round(2, { state: "active", winner_id: null, initiator_votes: 9_999 }),
     ],
   });
   check(
     "an unfinished round contributes nothing to the outcome",
-    outcome.initiatorCoins === 100 && outcome.initiatorRoundsWon === 1,
+    outcome.initiatorVotes === 100 && outcome.initiatorRoundsWon === 1,
+  );
+}
+
+// --- Audience votes ---------------------------------------------------------
+console.log("\nAudience votes");
+{
+  const liveBattle = battle({ status: "round_active", current_round: 2 });
+  const liveRound = {
+    round_number: 2,
+    state: "active" as const,
+    starts_at: iso(NOW - 60_000),
+    ends_at: iso(NOW + 180_000),
+  };
+  const decide = (overrides: Partial<Parameters<typeof decideConcertVote>[0]> = {}) =>
+    decideConcertVote({
+      voterId: AUDIENCE,
+      performerId: OPPONENT,
+      battle: liveBattle,
+      round: liveRound,
+      nowMs: NOW,
+      ...overrides,
+    });
+  check("a member may vote for either performer in a live round", decide() === null);
+  check(
+    "the initiator is a valid vote target too",
+    decide({ performerId: INITIATOR }) === null,
+  );
+  check(
+    "nobody can vote for themselves",
+    decide({ voterId: OPPONENT, performerId: OPPONENT }) === "self-vote",
+  );
+  check(
+    "a competitor cannot vote at all, not even for the other side",
+    decide({ voterId: INITIATOR, performerId: OPPONENT }) === "competitor",
+  );
+  check(
+    "an audience member is not a vote target",
+    decide({ voterId: "voter-x", performerId: AUDIENCE }) === "not-a-performer",
+  );
+  check(
+    "no opponent yet means no valid target",
+    decide({ battle: { ...liveBattle, opponent_id: null }, performerId: INITIATOR }) ===
+      "not-a-performer",
+  );
+  for (const status of ["ready", "round_intermission", "completed", "cancelled"] as const) {
+    check(
+      `voting is closed while the battle is ${status}`,
+      decide({ battle: { ...liveBattle, status } }) === "voting-closed",
+    );
+  }
+  check(
+    "voting is closed when the round row is missing",
+    decide({ round: null }) === "voting-closed",
+  );
+  check(
+    "voting is closed on a finalized round",
+    decide({ round: { ...liveRound, state: "finalized" } }) === "voting-closed",
+  );
+  check(
+    "a vote can only go to the battle's CURRENT round",
+    decide({ round: { ...liveRound, round_number: 1 } }) === "voting-closed",
+  );
+  check(
+    "voting closes at the round's deadline",
+    decide({ nowMs: Date.parse(liveRound.ends_at) }) === "voting-closed",
+  );
+  check(
+    "voting is not open before the round starts",
+    decide({ nowMs: Date.parse(liveRound.starts_at) - 1 }) === "voting-closed",
   );
 }
 
@@ -593,16 +672,21 @@ console.log("\nApplier — version guard and per-round scoring");
 // top-level await is not available.
 async function applierContracts() {
 
-type GiftRow = { target_id: string | null; coins_spent: number; created_at: string };
+type VoteRow = {
+  space_id: string;
+  round_number: number;
+  voter_id: string;
+  performer_id: string;
+};
 
 type FakeState = {
   battle: (ConcertBattleRow & Record<string, unknown>) | null;
   rounds: Array<ConcertRoundRow & Record<string, unknown>>;
-  gifts: GiftRow[];
+  votes: VoteRow[];
   battleUpdates: Array<Record<string, unknown>>;
   roundUpdates: Array<Record<string, unknown>>;
   roundUpserts: Array<Record<string, unknown>>;
-  giftQueries: Array<{ gte?: string; lt?: string }>;
+  voteQueries: Array<Record<string, unknown>>;
 };
 
 function fakeDb(state: FakeState) {
@@ -695,12 +779,13 @@ function fakeDb(state: FakeState) {
           }
           return { data: state.rounds, error: null };
         }
-        if (table === "gift_sends") {
-          state.giftQueries.push({ ...range });
-          const rows = state.gifts.filter(
-            (g) =>
-              (!range.gte || g.created_at >= range.gte) &&
-              (!range.lt || g.created_at < range.lt),
+        if (table === "concert_votes") {
+          state.voteQueries.push({ ...filters, ...range });
+          const rows = state.votes.filter(
+            (v) =>
+              (filters.space_id === undefined || v.space_id === filters.space_id) &&
+              (filters.round_number === undefined ||
+                v.round_number === Number(filters.round_number)),
           );
           return { data: rows, error: null };
         }
@@ -716,11 +801,11 @@ function state(overrides: Partial<FakeState> = {}): FakeState {
   return {
     battle: battle(),
     rounds: [],
-    gifts: [],
+    votes: [],
     battleUpdates: [],
     roundUpdates: [],
     roundUpserts: [],
-    giftQueries: [],
+    voteQueries: [],
     ...overrides,
   };
 }
@@ -756,7 +841,7 @@ function state(overrides: Partial<FakeState> = {}): FakeState {
 
 {
   // The core scoring property. Round 1 was a blowout for the initiator; round 2
-  // must be scored on round 2's gifts only.
+  // must be scored on round 2's votes only.
   const roundTwoStart = NOW - 240_000;
   const s = state({
     battle: battle({
@@ -769,28 +854,29 @@ function state(overrides: Partial<FakeState> = {}): FakeState {
     rounds: [
       round(1, {
         winner_id: INITIATOR,
-        initiator_coins_total: 5_000,
-        opponent_coins_total: 0,
+        initiator_votes: 5_000,
+        opponent_votes: 0,
       }),
       round(2, {
         state: "active",
         winner_id: null,
         starts_at: iso(roundTwoStart),
         ends_at: iso(NOW - 1_000),
-        initiator_coins_total: 0,
-        opponent_coins_total: 0,
+        initiator_votes: 0,
+        opponent_votes: 0,
       }),
     ],
-    gifts: [
-      // Round 1 money — must NOT count toward round 2.
-      { target_id: INITIATOR, coins_spent: 5_000, created_at: iso(NOW - 600_000) },
-      // Round 2 window.
-      { target_id: OPPONENT, coins_spent: 40, created_at: iso(NOW - 120_000) },
-      { target_id: OPPONENT, coins_spent: 20, created_at: iso(NOW - 100_000) },
-      { target_id: INITIATOR, coins_spent: 30, created_at: iso(NOW - 90_000) },
-      // An untargeted room tip scores for nobody.
-      { target_id: null, coins_spent: 900, created_at: iso(NOW - 80_000) },
-      { target_id: AUDIENCE, coins_spent: 900, created_at: iso(NOW - 80_000) },
+    votes: [
+      // Round 1 votes — must NOT count toward round 2.
+      ...Array.from({ length: 50 }, (_, i) => vote(1, `r1-voter-${i}`, INITIATOR)),
+      // Round 2.
+      vote(2, "voter-a", OPPONENT),
+      vote(2, "voter-b", OPPONENT),
+      vote(2, "voter-c", INITIATOR),
+      // A row naming someone who is not a competitor scores for nobody.
+      vote(2, "voter-d", AUDIENCE),
+      // Another battle's round 2 is not this battle's round 2.
+      { ...vote(2, "voter-e", INITIATOR), space_id: "55555555-5555-4555-8555-555555555555" },
     ],
   });
 
@@ -798,19 +884,25 @@ function state(overrides: Partial<FakeState> = {}): FakeState {
   check("the expired round is finalized", outcome.applied === "round-finalized");
   check("round 2 is won by the opponent", outcome.winnerId === OPPONENT);
   check(
-    "only the round's own window was queried",
-    s.giftQueries.length === 1 &&
-      s.giftQueries[0].gte === iso(roundTwoStart) &&
-      s.giftQueries[0].lt === iso(NOW - 1_000),
+    "only this battle's round 2 votes were queried",
+    s.voteQueries.length === 1 &&
+      s.voteQueries[0].space_id === SPACE &&
+      s.voteQueries[0].round_number === 2,
   );
   const written = s.rounds.find((r) => r.round_number === 2);
   check(
-    "the round stores its own window totals, not the battle's",
-    written?.initiator_coins_total === 30 && written?.opponent_coins_total === 60,
+    "the round stores its own vote totals, not the battle's",
+    written?.initiator_votes === 1 && written?.opponent_votes === 2,
   );
   check(
-    "untargeted and non-competitor gifts are excluded",
-    written?.initiator_gift_count === 1 && written?.opponent_gift_count === 2,
+    "no coin or gift columns are written any more",
+    s.roundUpdates.every(
+      (u) =>
+        !("initiator_coins_total" in u) &&
+        !("opponent_coins_total" in u) &&
+        !("initiator_gift_count" in u) &&
+        !("opponent_gift_count" in u),
+    ),
   );
   check(
     "the finalize write only touches an ACTIVE round",
@@ -841,20 +933,18 @@ function state(overrides: Partial<FakeState> = {}): FakeState {
       version: 3,
     }),
     rounds: [
-      round(1, { winner_id: OPPONENT, initiator_coins_total: 0, opponent_coins_total: 10 }),
-      round(2, { winner_id: INITIATOR, initiator_coins_total: 10, opponent_coins_total: 0 }),
+      round(1, { winner_id: OPPONENT, initiator_votes: 0, opponent_votes: 10 }),
+      round(2, { winner_id: INITIATOR, initiator_votes: 10, opponent_votes: 0 }),
       round(3, {
         state: "active",
         winner_id: null,
         starts_at: iso(NOW - 240_000),
         ends_at: iso(NOW - 1_000),
-        initiator_coins_total: 0,
-        opponent_coins_total: 0,
+        initiator_votes: 0,
+        opponent_votes: 0,
       }),
     ],
-    gifts: [
-      { target_id: OPPONENT, coins_spent: 75, created_at: iso(NOW - 60_000) },
-    ],
+    votes: [vote(3, "voter-a", OPPONENT)],
   });
 
   const outcome = await advanceConcertBattle(fakeDb(s), SPACE, { nowMs: NOW });

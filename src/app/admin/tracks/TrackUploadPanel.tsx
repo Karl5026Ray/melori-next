@@ -1,26 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import SampleEditor from "./SampleEditor";
-import {
-  uploadAudioMaster,
-  validateAudioFile,
-  type UploadedMaster,
-} from "./uploadHelpers";
+import { uploadAudioMaster, validateAudioFile } from "./uploadHelpers";
 
 interface TrackUploadPanelProps {
   trackId: number;
   trackTitle: string;
   onClose: () => void;
-  // Called after the master + sample window are saved so the list can refresh.
+  // Called after the master is saved so the list can refresh.
   onSaved: () => void;
 }
 
-type Stage = "select" | "uploading" | "sample";
+type Stage = "select" | "uploading";
 
 // Inline, expanding panel shown beneath a track row. Lets the admin upload or
-// replace the full-quality master for an EXISTING track and then pick its
-// 30-second preview window — all without leaving the list.
+// replace the full-quality master for an EXISTING track without leaving the
+// list.
 export default function TrackUploadPanel({
   trackId,
   trackTitle,
@@ -32,8 +27,6 @@ export default function TrackUploadPanel({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [master, setMaster] = useState<UploadedMaster | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const pickFile = (f: File) => {
     const msg = validateAudioFile(f);
@@ -51,28 +44,13 @@ export default function TrackUploadPanel({
     setProgress(0);
     setError(null);
     try {
-      const result = await uploadAudioMaster(file, setProgress);
-      setMaster(result);
-      setStage("sample");
-    } catch (err: any) {
-      setError(err?.message ?? "Upload failed.");
-      setStage("select");
-    }
-  };
-
-  const saveSample = async (start: number, end: number) => {
-    if (!master) return;
-    setSaving(true);
-    setError(null);
-    try {
+      const master = await uploadAudioMaster(file, setProgress);
       const res = await fetch(`/api/admin/tracks/${trackId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           audio_url: master.path,
           duration_seconds: master.duration,
-          preview_start: start,
-          preview_end: end,
         }),
       });
       if (!res.ok) {
@@ -81,8 +59,8 @@ export default function TrackUploadPanel({
       }
       onSaved();
     } catch (err: any) {
-      setError(err?.message ?? "Could not save the track.");
-      setSaving(false);
+      setError(err?.message ?? "Upload failed.");
+      setStage("select");
     }
   };
 
@@ -94,7 +72,7 @@ export default function TrackUploadPanel({
         </h3>
         <button
           onClick={onClose}
-          disabled={stage === "uploading" || saving}
+          disabled={stage === "uploading"}
           className="text-xs text-[#888] hover:text-white disabled:opacity-40"
         >
           Close
@@ -107,22 +85,7 @@ export default function TrackUploadPanel({
         </div>
       )}
 
-      {stage === "sample" && master ? (
-        <div className="space-y-3">
-          <p className="text-xs text-[#888]">
-            Master uploaded. Drag the fixed 30-second window to choose the free
-            preview, then save.
-          </p>
-          <SampleEditor
-            audioUrl={master.audioSignedUrl}
-            initialStart={0}
-            saving={saving}
-            onSave={saveSample}
-            onCancel={onClose}
-          />
-        </div>
-      ) : (
-        <>
+      <>
           <div
             onDragEnter={(e) => {
               e.preventDefault();
@@ -199,11 +162,10 @@ export default function TrackUploadPanel({
             >
               {stage === "uploading"
                 ? `Uploading… ${progress}%`
-                : "Upload & set sample →"}
+                : "Upload master →"}
             </button>
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
 import {
@@ -70,12 +70,12 @@ function head(buf: Buffer): string {
 // Downloading from Supabase → server-side is not subject to Vercel's
 // 4.5 MB request-body limit (that limit is only on inbound REQUEST bodies).
 //
-// Body: { imageId, filename, forSale?, priceCents? }
+// Body: { imageId, filename }
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const callerIsAdmin = isAdmin(guard.membership.profile);
@@ -85,8 +85,6 @@ export async function POST(
   let body: {
     imageId?: unknown;
     filename?: unknown;
-    forSale?: unknown;
-    priceCents?: unknown;
   };
   try {
     body = await req.json();
@@ -103,12 +101,6 @@ export async function POST(
     );
   }
 
-  const forSale = body?.forSale === true || body?.forSale === "true";
-  const priceCentsParsed = Number.parseInt(String(body?.priceCents ?? ""), 10);
-  const hasValidPrice =
-    Number.isInteger(priceCentsParsed) && priceCentsParsed > 0;
-  const rowForSale = forSale && hasValidPrice;
-  const rowPriceCents = rowForSale ? priceCentsParsed : null;
 
   const supabase = getSupabaseAdmin();
 
@@ -359,8 +351,6 @@ export async function POST(
       thumbnail_key: thumbnailKey,
       filename,
       order_index: orderIndex,
-      for_sale: rowForSale,
-      price_cents: rowPriceCents,
     })
     .select("id")
     .single();

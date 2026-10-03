@@ -8,7 +8,6 @@ import { MemberActions } from "@/components/social/MemberActions";
 import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
 import { getArtistBySlug } from "@/lib/data";
 import {
-  dollarsToCents,
   getStudioCatalogForProfile,
   type CatalogItem,
 } from "@/lib/catalog";
@@ -70,11 +69,9 @@ export default async function ArtistDetailPage(
       href: `/albums/${r.slug}`,
       release_type: r.release_type,
       cover_art_url: r.cover_art_url,
-      priceCents: dollarsToCents(r.price),
       release_date: r.release_date,
       artist: { name: artist.name, slug: artist.slug },
       genre: null,
-      checkout: { releaseId: r.id },
     })),
     ...studioItems,
   ];

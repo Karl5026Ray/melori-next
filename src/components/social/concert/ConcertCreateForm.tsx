@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Mic } from "lucide-react";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { UpgradePrompt, useCanParticipate } from "@/components/social/UpgradePrompt";
+import { SignInPrompt, useCanParticipate } from "@/components/social/SignInPrompt";
 import { authFetch } from "@/lib/authClient";
 
 // Concert creation intentionally does not reuse the generic Spaces endpoint: the
@@ -66,7 +66,7 @@ export function ConcertCreateForm() {
         </div>
 
         {user && !canParticipate ? (
-          <UpgradePrompt action="start a Concert" />
+          <SignInPrompt action="start a Concert" />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="rounded-xl border border-teal-500/40 bg-teal-500/10 p-4">

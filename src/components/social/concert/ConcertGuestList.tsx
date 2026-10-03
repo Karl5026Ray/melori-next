@@ -10,12 +10,10 @@ export interface ConcertGuest {
   badge: string | null;
   isCompetitor: boolean;
   joinedAt: string | null;
-  coinsGifted: number;
 }
 
 const BADGE_STYLE: Record<ConcertGuestBadge, string> = {
   VIP: "bg-[#f5e56b]/15 text-[#f5e56b]",
-  GIFTER: "bg-[#ff4d6d]/15 text-[#ff8fa3]",
   NEW: "bg-white/10 text-white/50",
 };
 
@@ -47,7 +45,6 @@ export function ConcertGuestList({
           const badge = concertGuestBadge({
             isCompetitor: guest.isCompetitor,
             verified: guest.badge === "vip",
-            coinsGifted: guest.coinsGifted,
             joinedAtMs: guest.joinedAt ? Date.parse(guest.joinedAt) : null,
             nowMs: now,
           });

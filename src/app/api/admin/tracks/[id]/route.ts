@@ -20,7 +20,7 @@ async function verifyAdmin(req: NextRequest) {
   }
 }
 
-// PATCH /api/admin/tracks/[id] — update editable fields (incl. preview window).
+// PATCH /api/admin/tracks/[id] — update editable fields.
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const ADMIN_SECRET = getAdminSecret();
@@ -59,13 +59,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       }
       update.preview_url = p || null;
     } else if (body.preview_url === null) update.preview_url = null;
-    if (body.price != null && body.price !== "") {
-      const p = Number(body.price);
-      if (!Number.isFinite(p) || p < 0) {
-        return NextResponse.json({ error: "Invalid price" }, { status: 400 });
-      }
-      update.price = p;
-    }
     if (typeof body.audio_url === "string" && body.audio_url.trim()) {
       const a = body.audio_url.trim();
       if (a.length > 2048) {
@@ -87,49 +80,8 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       }
       update.track_number = n;
     }
-    if (body.preview_start != null) {
-      const s = Number(body.preview_start);
-      if (Number.isFinite(s) && s >= 0) update.preview_start = s;
-    }
-    if (body.preview_end != null) {
-      const e = Number(body.preview_end);
-      if (Number.isFinite(e) && e >= 0) update.preview_end = e;
-    }
-    if (
-      update.preview_start != null &&
-      update.preview_end != null &&
-      update.preview_end <= update.preview_start
-    ) {
-      update.preview_end = update.preview_start + 30;
-    }
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-    }
-    // Enforce a dedicated preview clip whenever a track goes live. Without
-    // one, /api/tracks/[id]/stream falls back to serving the full audio to
-    // free listeners with only a client-side 30s cap — which is cosmetic
-    // (the signed URL is directly fetchable). Publishing is the right
-    // gate: unpublished tracks aren't served to free listeners anyway.
-    if (update.is_published === true) {
-      // preview_url may come from this same PATCH, or already exist on the row.
-      let effectivePreview: string | null | undefined = update.preview_url;
-      if (effectivePreview === undefined) {
-        const { data: existing } = await supabase
-          .from("tracks")
-          .select("preview_url")
-          .eq("id", id)
-          .maybeSingle();
-        effectivePreview = existing?.preview_url ?? null;
-      }
-      if (!effectivePreview) {
-        return NextResponse.json(
-          {
-            error:
-              "Cannot publish: this track has no preview clip. Generate a preview from the Music Manager before publishing.",
-          },
-          { status: 400 },
-        );
-      }
     }
     const { error } = await supabase.from("tracks").update(update).eq("id", id);
     if (error) throw error;

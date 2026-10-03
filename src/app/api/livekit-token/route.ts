@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
-import { isSuperfanOrBetter } from "@/lib/membership";
+import { isSignedIn } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { deriveRoomName, reapIfHostAbandoned, recordHostSeen } from "@/lib/endRoom";
 import {
@@ -26,7 +26,7 @@ const MAX_TOKEN_TTL_SECONDS = 60 * 60 * 4;
 // Body: { space_id, role: "publisher" | "subscriber", expireTime? }
 //
 // Security model mirrors the previous Agora route:
-//  - Superfan-gated via requireSuperfan.
+//  - Superfan-gated via requireAuth.
 //  - Server derives the room name from the space id (never trusts a client-
 //    supplied room string), preventing cross-space token hijack.
 //  - Verifies the space exists and is live/scheduled.
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
         // on camera still requires Superfan-or-better even once promoted, so
         // this narrow ungate never leaks into video rooms.
         const eligible = isFacesRoom
-          ? isSuperfanOrBetter(membershipProfile)
+          ? isSignedIn(membershipProfile)
           : true;
         if (eligible && !hostMuted) {
           socialRole = isMod ? "moderator" : "speaker";

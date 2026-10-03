@@ -1,10 +1,9 @@
 /**
- * One-off: create a COMPED ARTIST tester account and email a set-password link.
+ * One-off: create an ARTIST tester account and email a set-password link.
  *
  * Target: chidreams28@gmail.com
  *   - auth user (email confirmed, random temp password)
- *   - profiles row: role=artist, membership active/artist, is_comp=true,
- *     billing_exempt=true  (full artist access, billing exempt)
+ *   - profiles row: role=artist
  *   - Supabase Admin generateLink (recovery) -> redirects to /reset-password
  *   - emailed via Resend (subject: "Set up your Melori artist account")
  *
@@ -114,17 +113,12 @@ async function main() {
     console.log(`Created auth user: ${user.id}`);
   }
 
-  // 2) upsert the comped-artist profile
+  // 2) upsert the artist profile
   const profileRow = {
     id: user.id,
     role: "artist",
-    membership_status: "active",
-    membership_tier: "artist",
-    is_comp: true,
-    billing_exempt: true,
     display_name: DISPLAY_NAME,
     full_name: DISPLAY_NAME,
-    membership_updated_at: new Date().toISOString(),
   };
   const { error: profileErr } = await admin
     .from("profiles")
@@ -132,7 +126,7 @@ async function main() {
   if (profileErr) {
     throw new Error(`profile upsert failed: ${profileErr.message}`);
   }
-  console.log("Profile upserted (role=artist, is_comp=true, billing_exempt=true)");
+  console.log("Profile upserted (role=artist)");
 
   // 3) generate a set-password (recovery) link -> /reset-password
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
 
@@ -34,12 +34,12 @@ async function loadOwnedImage(
 }
 
 // PATCH /api/studio/gallery/image/[imageId] — owner/admin only. Sets caption,
-// for_sale, price_cents, order_index.
+// order_index.
 export async function PATCH(
   req: NextRequest,
   props: { params: Promise<{ imageId: string }> },
 ) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const callerIsAdmin = isAdmin(guard.membership.profile);
@@ -60,8 +60,6 @@ export async function PATCH(
 
   let body: {
     caption?: string | null;
-    forSale?: boolean;
-    priceCents?: number | null;
     orderIndex?: number;
   };
   try {
@@ -80,25 +78,6 @@ export async function PATCH(
   if (typeof body.orderIndex === "number" && Number.isInteger(body.orderIndex)) {
     update.order_index = body.orderIndex;
   }
-  if (typeof body.forSale === "boolean") {
-    update.for_sale = body.forSale;
-    if (body.forSale) {
-      const price =
-        typeof body.priceCents === "number" ? body.priceCents : null;
-      if (!Number.isInteger(price) || (price ?? 0) <= 0) {
-        return NextResponse.json(
-          { error: "priceCents must be a positive integer when forSale is true" },
-          { status: 400 },
-        );
-      }
-      update.price_cents = price;
-    } else {
-      update.price_cents = null;
-    }
-  } else if (body.priceCents !== undefined) {
-    const price = typeof body.priceCents === "number" ? body.priceCents : null;
-    update.price_cents = Number.isInteger(price) && (price ?? 0) > 0 ? price : null;
-  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No changes provided" }, { status: 400 });
@@ -108,7 +87,7 @@ export async function PATCH(
     .from("photo_gallery_images")
     .update(update)
     .eq("id", imageId)
-    .select("id, caption, for_sale, price_cents, order_index")
+    .select("id, caption, order_index")
     .single();
 
   if (error || !updated) {
@@ -125,7 +104,7 @@ export async function DELETE(
   req: NextRequest,
   props: { params: Promise<{ imageId: string }> },
 ) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const callerIsAdmin = isAdmin(guard.membership.profile);

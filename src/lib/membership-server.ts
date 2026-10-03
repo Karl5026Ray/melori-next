@@ -3,20 +3,13 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { type MembershipProfile } from "@/lib/membership";
 
-// Server-only membership resolution for route handlers.
+// Server-only account resolution for route handlers.
 //
 // Supabase auth on the client is localStorage-based (no cookies), so the browser
 // must forward its access token as `Authorization: Bearer <token>`. We verify the
-// token with the anon client, then read the caller's membership row with the
-// service-role admin client (bypasses RLS).
-//
-// NOTE: the `profiles` table stores tier + admin flag in a single `role` column
-// (values: 'free' | 'superfan' | 'artist' | 'admin') alongside
-// `membership_status` and `membership_expires_at` (populated by the Stripe
-// members webhook). We read all three: `role` drives tier, and
-// status + expiry drive the access/grace check (hasMembershipAccess) so a
-// lapsed subscription actually loses access while admin-granted members (no
-// expiry) never do.
+// token with the anon client, then read the caller's `role` with the
+// service-role admin client (bypasses RLS). Melori has no paid tiers; role only
+// matters for admin checks.
 
 export interface RequestMembership {
   userId: string | null;
@@ -57,21 +50,12 @@ export async function getRequestMembership(
   const admin = getSupabaseAdmin();
   const { data: row } = await admin
     .from("profiles")
-    .select("role, membership_status, membership_expires_at")
+    .select("role")
     .eq("id", userId)
     .maybeSingle();
 
   const profile: MembershipProfile | null = row
-    ? {
-        role: (row as { role?: string | null }).role ?? "free",
-        membership_tier: (row as { role?: string | null }).role ?? "free",
-        membership_status:
-          (row as { membership_status?: string | null }).membership_status ??
-          null,
-        membership_expires_at:
-          (row as { membership_expires_at?: string | null })
-            .membership_expires_at ?? null,
-      }
+    ? { role: (row as { role?: string | null }).role ?? "free" }
     : null;
 
   return { userId, email, profile };
@@ -80,8 +64,8 @@ export async function getRequestMembership(
 // Guards: return a NextResponse (401/403) when the caller is not authorized,
 // otherwise return the resolved membership so the handler can proceed.
 
-// Auth-only guard: any signed-in user passes (no tier requirement). Used for
-// free-tier read/watch/listen access where publishing is gated separately.
+// Auth-only guard: any signed-in user passes, logged-out callers get a 401.
+// Melori has no paid tiers, so this is the only non-admin guard.
 export async function requireAuth(
   request: Request,
 ): Promise<{ membership: RequestMembership } | NextResponse> {
@@ -90,29 +74,6 @@ export async function requireAuth(
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
   return { membership };
-}
-
-// Paid tiers were removed from Melori, so there is no tier left to check and
-// no /membership page to send anyone to. Both guards below are now exactly
-// requireAuth: signed in passes, logged out gets a 401. They keep their names so
-// the ~25 call sites are untouched by this change; renaming them (and the
-// isSuperfanOrBetter / isArtistSubscriber predicates they used to call) is a
-// separate mechanical pass.
-//
-// This deliberately removes the subscription-expiry enforcement that used to
-// live here — there are no subscriptions left to expire.
-export async function requireSuperfan(
-  request: Request,
-): Promise<{ membership: RequestMembership } | NextResponse> {
-  return requireAuth(request);
-}
-
-// Studio/upload guard. NOTE: this now admits ANY signed-in account, so nothing
-// gates who can publish audio to the platform except moderation after the fact.
-export async function requireArtist(
-  request: Request,
-): Promise<{ membership: RequestMembership } | NextResponse> {
-  return requireAuth(request);
 }
 
 export function isGuardFailure(

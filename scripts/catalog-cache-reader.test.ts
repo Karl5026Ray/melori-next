@@ -86,7 +86,6 @@ console.log("\ncatalog cache reader guard (#280)\n");
 // enough to make the whole route dynamic again.
 const CATALOG_READERS: Array<[string, string]> = [
   ["src/lib/data.ts", "getReleases"],
-  ["src/lib/data.ts", "getStoreProducts"],
   ["src/lib/data.ts", "getFeaturedTrack"],
   ["src/lib/catalog.ts", "loadStudioCatalog"],
   ["src/lib/catalog.ts", "getArtistRefsByProfileId"],

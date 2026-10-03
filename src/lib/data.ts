@@ -2,7 +2,7 @@ import {
   getSupabaseAdmin,
   getSupabaseCatalogReader,
 } from "@/lib/supabase/admin";
-import type { Artist, Release, StoreProduct, Track } from "@/types";
+import type { Artist, Release, Track } from "@/types";
 
 // Server-side data access. These reuse the same Supabase admin client as the
 // API routes to avoid an HTTP round-trip. Never import this into a client
@@ -19,7 +19,6 @@ export interface ReleaseListItem {
   slug: string;
   release_type: Release["release_type"];
   cover_art_url: string | null;
-  price: number;
   release_date: string | null;
   artist: ArtistRef | null;
   genre: string | null;
@@ -36,7 +35,6 @@ interface ReleaseRow {
   slug: string;
   release_type: Release["release_type"];
   cover_art_url: string | null;
-  price: number;
   release_date: string | null;
   artist:
     | { name: string; slug: string; genre: GenreRel }
@@ -83,7 +81,7 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
     supabase
       .from("releases")
       .select(
-        "id, title, slug, release_type, cover_art_url, price, release_date, artist:artists(name, slug, genre:genres(name))",
+        "id, title, slug, release_type, cover_art_url, release_date, artist:artists(name, slug, genre:genres(name))",
       )
       .eq("is_published", true)
       .order("release_date", { ascending: false }),
@@ -101,31 +99,12 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
       slug: row.slug,
       release_type: row.release_type,
       cover_art_url: row.cover_art_url,
-      price: row.price,
       release_date: row.release_date,
       artist: artist ? { name: artist.name, slug: artist.slug } : null,
       genre: genre?.name ?? null,
       trackPlayCounts: playCountsByRelease.get(row.id) ?? {},
     };
   });
-}
-
-// Store products for the homepage store strip. Featured items surface first,
-// then most-recently added, so the homepage always leads with the products
-// Karl has chosen to promote. Failures degrade to an empty list so a store
-// outage never takes down the homepage.
-export async function getStoreProducts(limit = 8): Promise<StoreProduct[]> {
-  const supabase = getSupabaseCatalogReader();
-  const { data, error } = await supabase
-    .from("store_products")
-    .select("*")
-    .eq("is_active", true)
-    .order("is_featured", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return (data as StoreProduct[]) ?? [];
 }
 
 export async function getArtists(): Promise<Artist[]> {
@@ -692,7 +671,7 @@ export async function getReleaseBySlug(slug: string): Promise<{
   const { data: tracks, error: tracksError } = await supabase
     .from("tracks")
     .select(
-      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, price, is_published, play_count, created_at, vps_track_id",
+      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, is_published, play_count, created_at, vps_track_id",
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)

@@ -27,7 +27,5 @@ export interface GalleryImageItem {
   thumbnailUrl: string;
   caption: string | null;
   filename: string | null;
-  forSale: boolean;
-  priceCents: number | null;
   orderIndex: number;
 }

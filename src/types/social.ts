@@ -30,10 +30,6 @@ export interface Profile {
   city?: string | null;
   // Up to 5 clickable links shown on the profile (migration 039).
   social_links?: SocialLink[] | null;
-  // Membership (Supabase profiles). See src/lib/membership.ts for gating rules.
-  membership_tier?: string | null;
-  membership_status?: string | null;
-  membership_expires_at?: string | null;
 }
 
 export type SpaceType = "listening" | "discussion" | "creation" | "dj_set";
@@ -132,7 +128,7 @@ export interface SpaceParticipant {
 
 // Concert Battle is a separate aggregate over a `spaces` room envelope.
 // These API-facing shapes intentionally contain only aggregate/view data; no
-// wallet, gift-sender, or generic-stage authorization information belongs here.
+// per-voter or generic-stage authorization information belongs here.
 export interface ConcertBattle {
   space_id: string;
   initiator_id: string;
@@ -160,10 +156,8 @@ export interface ConcertBattleRound {
   ends_at: string | null;
   finalized_at: string | null;
   winner_id: string | null;
-  initiator_gift_count: number;
-  opponent_gift_count: number;
-  initiator_coins_total: number;
-  opponent_coins_total: number;
+  initiator_votes: number;
+  opponent_votes: number;
 }
 
 export interface ConcertBattleInvite {
@@ -184,16 +178,17 @@ export interface ConcertBattleView {
   opponent: Profile | null;
   viewer_slot: 1 | 2 | null;
   /**
-   * DISPLAY-ONLY gifted-coin totals per competitor, so a viewer joining
-   * mid-battle starts from the real score instead of zero. concert_battle_rounds
-   * remains the authority for round outcomes and the win condition.
+   * Audience vote tally for the battle's CURRENT round, so a viewer joining
+   * mid-round starts from the real count instead of zero. concert_battle_rounds
+   * remains the authority for finished rounds and the win condition.
    */
   scores: {
-    initiator_coins: number;
-    opponent_coins: number;
-    initiator_gifts: number;
-    opponent_gifts: number;
+    round: number;
+    initiator_votes: number;
+    opponent_votes: number;
   };
+  /** The performer the viewer voted for in the current round, if any. */
+  viewer_vote: string | null;
   server_now: string;
 }
 

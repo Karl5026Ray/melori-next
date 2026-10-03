@@ -10,8 +10,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useCanParticipate } from "@/components/social/UpgradePrompt";
-import { isArtistSubscriber } from "@/lib/membership";
+import { useCanParticipate } from "@/components/social/SignInPrompt";
+import { isSignedIn } from "@/lib/membership";
 import LiveRoom, { type LiveMode } from "@/components/social/faces/LiveRoom";
 import type { VideoTier } from "@/lib/livekitVideoClient";
 import { Loader2 } from "lucide-react";
@@ -185,7 +185,7 @@ export default function LiveRoomPage() {
   // Option 1 (freemium): ANY signed-in user may WATCH a live room. Going on
   // camera / speaking is the paid perk, enforced by the token endpoint and by
   // hiding the publish controls for non-Superfans (canPublish below).
-  const tier: VideoTier = isArtistSubscriber(user) ? "artist" : "free";
+  const tier: VideoTier = isSignedIn(user) ? "artist" : "free";
   const hostName =
     room.host?.display_name || (isHost ? "You" : "Host") || "Host";
 

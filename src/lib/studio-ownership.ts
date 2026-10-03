@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // service-role client (bypasses RLS), so ownership MUST be enforced here in
 // application code. `profile_id` (a profiles.id / auth.uid()) is the owner —
 // matching the artists/track_submissions convention. `membership.userId` from
-// requireArtist is that same id.
+// requireAuth is that same id.
 
 // The owner column name, in one place so routes never hardcode the string.
 export const OWNER_COLUMN = "profile_id" as const;
@@ -20,7 +20,7 @@ export async function assertTrackOwnership(
   artistId: string | null,
   columns = "",
 ): Promise<{ owner: string; row: Record<string, any> } | NextResponse> {
-  // requireArtist guarantees a non-null userId before we get here; guard anyway
+  // requireAuth guarantees a non-null userId before we get here; guard anyway
   // so a null owner can never match a null profile_id row.
   if (!artistId) {
     return NextResponse.json({ error: "Track not found" }, { status: 404 });

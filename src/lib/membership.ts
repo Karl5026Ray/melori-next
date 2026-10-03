@@ -1,114 +1,26 @@
-// Shared membership model + gating helpers.
+// Shared account model + gating helpers.
 //
-// Membership lives in Supabase `profiles`. `role` is the SOURCE OF TRUTH:
-//   - role: 'free' | 'superfan' | 'artist' | 'admin'
-//   - membership_status: e.g. 'active'
-//   - membership_tier / membership_expires_at: derived Stripe fields; may be
-//     ABSENT (null) for members whose role was granted directly (e.g. by an admin
-//     via /api/admin/users) rather than through the Stripe flow.
-//
-// Because role is authoritative and is reset to 'free' on cancellation, tier
-// resolution and the "superfan-or-above" gate key off role first (falling back to
-// membership_tier for legacy callers that only carry the derived field). This
-// keeps the client gate (which loads the raw profile row, so it has `role`) and
-// the server gate (membership-server.ts maps role -> membership_tier) in lockstep
-// so the check can't drift again.
+// Melori has no paid tiers, subscriptions or fees. `profiles.role` still holds
+// 'free' | 'superfan' | 'artist' | 'admin' (legacy values), but the only role
+// that changes what someone can do is 'admin'. Every other feature is gated on
+// "is there a signed-in account".
 //
 // This module is pure and client-safe (no server-only imports). Reuse it on both
 // the client (UI gating / CTAs) and the server (route handlers). Server-side
 // request-profile resolution lives in `membership-server.ts`.
 
-export type MembershipTier = "free" | "superfan" | "artist";
-
 export interface MembershipProfile {
   role?: string | null;
-  membership_tier?: string | null;
-  membership_status?: string | null;
-  membership_expires_at?: string | null;
-}
-
-// The effective tier string, preferring `role` (source of truth) and falling
-// back to the derived `membership_tier` for callers that only pass the latter.
-function effectiveTierString(
-  profile: MembershipProfile | null | undefined,
-): string {
-  return (profile?.role ?? profile?.membership_tier ?? "free")
-    .toString()
-    .toLowerCase();
 }
 
 // True when the caller is a platform administrator (profiles.role === 'admin').
 export function isAdmin(profile: MembershipProfile | null | undefined): boolean {
-  return effectiveTierString(profile) === "admin";
+  return (profile?.role ?? "").toString().toLowerCase() === "admin";
 }
 
-export function tierOf(profile: MembershipProfile | null | undefined): MembershipTier {
-  const t = effectiveTierString(profile);
-  if (t === "admin") return "artist"; // admins treated as top tier
-  if (t === "artist") return "artist";
-  if (t === "superfan") return "superfan";
-  return "free";
-}
-
-// Active = status is 'active' (a missing status is treated as active) AND the
-// membership has no expiry, or an expiry in the future.
-export function isActive(profile: MembershipProfile | null | undefined): boolean {
-  if (!profile) return false;
-  const status = (profile.membership_status ?? "active").toLowerCase();
-  if (status !== "active") return false;
-  const expires = profile.membership_expires_at;
-  if (expires) {
-    const ts = new Date(expires).getTime();
-    if (Number.isFinite(ts) && ts < Date.now()) return false;
-  }
-  return true;
-}
-
-// Access policy for PAID-tier gating (enforced server-side). We deliberately do
-// NOT collapse this into isActive() because the two answer different questions:
-// isActive() is the strict "subscription is current" check, while access gating
-// wants to (a) give failed-payment members a grace window during Stripe's
-// dunning retries, and (b) never lock out admin-granted members who have no
-// Stripe expiry at all.
-//
-// Returns true (access allowed) when:
-//   - there's no expiry set (admin-granted / legacy member), OR
-//   - status is 'past_due' (failed payment, still in Stripe's retry window —
-//     keep access until the subscription is actually deleted/canceled), OR
-//   - the expiry is in the future.
-// Returns false only when a Stripe expiry is set AND in the past AND the member
-// isn't in the past_due grace state.
-export function hasMembershipAccess(
-  profile: MembershipProfile | null | undefined,
-): boolean {
-  if (!profile) return false;
-  const status = (profile.membership_status ?? "active").toLowerCase();
-  // Grace: keep access through the failed-payment retry window.
-  if (status === "past_due") return true;
-  const expires = profile.membership_expires_at;
-  if (!expires) return true; // admin-granted / no Stripe expiry -> never expire
-  const ts = new Date(expires).getTime();
-  if (!Number.isFinite(ts)) return true; // unparseable -> fail open (don't lock out)
-  return ts >= Date.now();
-}
-
-// Paid tiers were removed from Melori. There is no Superfan or Artist tier to
-// buy, so both predicates now mean "is there a signed-in account" — anyone with
-// an account gets the feature, and only logged-out visitors are excluded.
-//
-// The names are kept because they are the SINGLE definition shared by the client
-// gate (UpgradePrompt / useCanParticipate) and the server gate
-// (membership-server). Renaming them is a separate mechanical change.
-export function isSuperfanOrBetter(profile: MembershipProfile | null | undefined): boolean {
+// True when there is a signed-in account. This is the single definition shared
+// by the client gate (SignInPrompt / useCanParticipate) and the server gate
+// (membership-server's requireAuth).
+export function isSignedIn(profile: MembershipProfile | null | undefined): boolean {
   return profile != null;
 }
-
-// Studio access. Also account-only now: uploading music no longer requires a
-// paid Artist tier. NOTE: this means any signed-in account can upload audio, so
-// moderation and a takedown path are the only remaining controls.
-export function isArtistSubscriber(profile: MembershipProfile | null | undefined): boolean {
-  return profile != null;
-}
-
-// Seconds of a full track a non-superfan free listener may hear.
-export const FREE_SAMPLE_SECONDS = 30;

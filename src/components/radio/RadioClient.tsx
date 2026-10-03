@@ -66,7 +66,6 @@ export default function RadioClient() {
     duration,
     volume,
     muted,
-    isSample,
     error: playerError,
     playCounts,
     radioMode,
@@ -368,9 +367,6 @@ export default function RadioClient() {
                       {formatCount(displayPlays)}{" "}
                       {displayPlays === 1 ? "play" : "plays"}
                     </p>
-                  )}
-                  {tuned && isSample && (
-                              <p className="mt-1 text-xs text-brand-primary">Preview</p>
                   )}
                 </div>
 

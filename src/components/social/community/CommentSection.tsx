@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   useCanParticipate,
-  UpgradePrompt,
-} from "@/components/social/UpgradePrompt";
+  SignInPrompt,
+} from "@/components/social/SignInPrompt";
 import { authFetch } from "@/lib/authClient";
 import { MemberActions } from "@/components/social/MemberActions";
 import { MessageSquare } from "lucide-react";
@@ -84,8 +84,7 @@ export default function CommentSection({
       return;
     }
 
-    // /membership redirects home now, so sending an unauthenticated caller
-    // there dumped them on the homepage instead of a sign-in form.
+    // An unauthenticated caller goes to the sign-in form.
     if (res.status === 403 || res.status === 401) {
       router.push("/social/auth");
       return;
@@ -139,7 +138,7 @@ export default function CommentSection({
           </form>
         ) : (
           <div className="mb-10">
-            <UpgradePrompt action="comment" />
+            <SignInPrompt action="comment" />
           </div>
         )}
 

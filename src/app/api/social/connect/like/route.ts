@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 import { rateLimit } from "@/lib/rate-limit";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // liked the caller, it's a MATCH: we create the matches row (deduped, ordered
 // pair) and open a 1:1 conversation, then return { matched: true, ... }.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId as string;
 

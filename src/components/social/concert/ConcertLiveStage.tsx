@@ -12,7 +12,7 @@ import {
 import { joinPresence, leavePresence, type SpaceSignal } from "@/lib/pubnubClient";
 import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import {
-  applyConcertGift,
+  applyConcertVoteTally,
   concertFloatOffset,
   concertNoteGlyph,
   concertSideForSlot,
@@ -32,14 +32,9 @@ import {
   formatConcertRoundLabel,
   isConcertPhaseExpired,
 } from "@/lib/concertRounds";
-import type { GiftCatalogItem } from "@/lib/gifting";
 import { ConcertBattleStatusBar } from "./ConcertBattleStatusBar";
 import { ConcertVideoStage, type ConcertCompetitorView } from "./ConcertVideoStage";
-import {
-  ConcertGiftTray,
-  resolveConcertTray,
-  type ConcertTrayGift,
-} from "./ConcertGiftTray";
+import { ConcertVoteTray } from "./ConcertVoteTray";
 import { ConcertGuestList, type ConcertGuest } from "./ConcertGuestList";
 import { ConcertChatPanel } from "./ConcertChatPanel";
 
@@ -69,10 +64,14 @@ export interface ConcertStageView {
   initiator: ConcertStagePerson | null;
   opponent: ConcertStagePerson | null;
   viewer_slot: 1 | 2 | null;
+  /** Audience vote tally for the battle's current round. */
   scores?: {
-    initiator_coins: number;
-    opponent_coins: number;
+    round: number;
+    initiator_votes: number;
+    opponent_votes: number;
   } | null;
+  /** The performer the viewer voted for in the current round, if any. */
+  viewer_vote?: string | null;
 }
 
 interface RosterRow {
@@ -84,16 +83,17 @@ interface RosterRow {
 }
 
 /**
- * The Concert battle stage: two competitor feeds, a coin score bar, an
- * instrument gift tray, the audience roster, and live chat.
+ * The Concert battle stage: two competitor feeds, an audience-vote score bar,
+ * a vote tray, the audience roster, and live chat.
  *
  * Authority boundaries this component deliberately respects:
  *  - Publish permission is decided SERVER-side in /api/livekit-token from the
  *    battle's two identities (see decideConcertPublish). Passing role here only
  *    requests a token; it cannot grant a camera.
- *  - Gift prices come from the server catalog; the tray never sends a price.
- *  - The score bar starts from the server aggregate and is then advanced by
- *    gift signals, so a viewer who joins mid-battle sees the real total.
+ *  - Votes are counted on the server. The score bar starts from the battle
+ *    read and is then replaced by the ABSOLUTE tallies the vote route
+ *    broadcasts, so a viewer who joins mid-round sees the real count and a
+ *    duplicated message cannot inflate it.
  */
 export function ConcertLiveStage({
   view,
@@ -113,19 +113,20 @@ export function ConcertLiveStage({
   const viewerSlot = view.viewer_slot ?? null;
   const isCompetitor = viewerSlot === 1 || viewerSlot === 2;
 
+  const viewScoreRound = view.scores?.round ?? battle.current_round ?? 0;
+  const viewLeft = view.scores?.initiator_votes ?? 0;
+  const viewRight = view.scores?.opponent_votes ?? 0;
   const [scores, setScores] = useState<ConcertScoreState>({
-    left: view.scores?.initiator_coins ?? 0,
-    right: view.scores?.opponent_coins ?? 0,
+    round: viewScoreRound,
+    left: viewLeft,
+    right: viewRight,
   });
   const [floats, setFloats] = useState<readonly ConcertFloatItem[]>([]);
-  const [catalog, setCatalog] = useState<readonly GiftCatalogItem[]>([]);
-  const [walletCoins, setWalletCoins] = useState<number | null>(null);
   const [roster, setRoster] = useState<readonly RosterRow[]>([]);
   const [liveIdentities, setLiveIdentities] = useState<readonly string[]>([]);
-  const [gifterCoins, setGifterCoins] = useState<Record<string, number>>({});
-  const [target, setTarget] = useState<ConcertSide | null>(null);
-  const [pendingSlug, setPendingSlug] = useState<string | null>(null);
-  const [giftError, setGiftError] = useState<string | null>(null);
+  const [votedFor, setVotedFor] = useState<string | null>(view.viewer_vote ?? null);
+  const [pendingVote, setPendingVote] = useState<ConcertSide | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
   const [localVideo, setLocalVideo] = useState<HTMLVideoElement | null>(null);
   const [mirrorLocal, setMirrorLocal] = useState(true);
   const [remoteVideos, setRemoteVideos] = useState<Record<string, HTMLVideoElement>>({});
@@ -165,28 +166,17 @@ export function ConcertLiveStage({
     }, CONCERT_FLOAT_DURATION_MS);
   }, []);
 
-  // ---- catalog + wallet ---------------------------------------------------
+  // ---- re-sync from the battle read ---------------------------------------
+  // A fresh battle read (round change, reconnect) is authoritative for the
+  // round on screen. Broadcast tallies only ever move the CURRENT round, so a
+  // new round resets the bar and the viewer's vote to what the server says.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [catalogRes, walletRes] = await Promise.all([
-        authFetch("/api/gifts", { cache: "no-store" }).catch(() => null),
-        authFetch("/api/gifts/wallet", { cache: "no-store" }).catch(() => null),
-      ]);
-      if (cancelled) return;
-      if (catalogRes?.ok) {
-        const data = await catalogRes.json().catch(() => ({}));
-        setCatalog(Array.isArray(data.gifts) ? data.gifts : []);
-      }
-      if (walletRes?.ok) {
-        const data = await walletRes.json().catch(() => ({}));
-        setWalletCoins(Number(data.balance ?? 0));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setScores({ round: viewScoreRound, left: viewLeft, right: viewRight });
+  }, [viewScoreRound, viewLeft, viewRight]);
+  useEffect(() => {
+    setVotedFor(view.viewer_vote ?? null);
+    setVoteError(null);
+  }, [view.viewer_vote, viewScoreRound]);
 
   // ---- audience roster ---------------------------------------------------
   const loadRoster = useCallback(async () => {
@@ -325,7 +315,7 @@ export function ConcertLiveStage({
     };
   }, [spaceId, performable, isCompetitor]);
 
-  // ---- gift signals -------------------------------------------------------
+  // ---- vote signals -------------------------------------------------------
   useEffect(() => {
     if (!user) return;
     let disposed = false;
@@ -341,19 +331,16 @@ export function ConcertLiveStage({
         if (event.startsWith("concert-")) onBattleChanged?.();
       },
       onSignal: (signal: SpaceSignal) => {
-        if (disposed || signal.type !== "gift" || !signal.gift) return;
-        const side = concertSideForTarget({ targetId: signal.target, ...identities });
-        if (!side) return;
+        if (disposed || signal.type !== "vote") return;
         setScores((prev) =>
-          applyConcertGift(prev, { targetId: signal.target, coins: signal.gift!.price_coins }, identities),
+          applyConcertVoteTally(prev, {
+            round: Number(signal.round),
+            initiatorVotes: Number(signal.initiator_votes),
+            opponentVotes: Number(signal.opponent_votes),
+          }),
         );
-        addFloat(side, giftGlyph(signal.gift.slug));
-        if (signal.uuid) {
-          setGifterCoins((prev) => ({
-            ...prev,
-            [signal.uuid!]: (prev[signal.uuid!] ?? 0) + signal.gift!.price_coins,
-          }));
-        }
+        const side = concertSideForTarget({ targetId: signal.target, ...identities });
+        if (side) addFloat(side, concertNoteGlyph((floatSeq.current += 1)));
       },
     }).catch(() => {});
     return () => {
@@ -362,42 +349,42 @@ export function ConcertLiveStage({
     };
   }, [spaceId, user, identities, addFloat]);
 
-  // ---- sending ------------------------------------------------------------
-  const sendGift = useCallback(
-    async (entry: ConcertTrayGift) => {
-      const gift = entry.gift;
-      const side = target;
-      if (!gift || !side) return;
-      const targetId = side === "left" ? battle.initiator_id : battle.opponent_id;
-      if (!targetId) return;
-      setPendingSlug(entry.instrument.slug);
-      setGiftError(null);
+  // ---- voting -------------------------------------------------------------
+  const castVote = useCallback(
+    async (side: ConcertSide) => {
+      const performerId = side === "left" ? battle.initiator_id : battle.opponent_id;
+      if (!performerId) return;
+      setPendingVote(side);
+      setVoteError(null);
       try {
-        const res = await authFetch("/api/gifts/send", {
+        const res = await authFetch(`/api/concert/battles/${spaceId}/vote`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ space_id: spaceId, target_id: targetId, gift_id: gift.id }),
+          body: JSON.stringify({ performer_id: performerId }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          setGiftError(typeof data.error === "string" ? data.error : "Could not send that gift.");
+          setVoteError(typeof data.error === "string" ? data.error : "Could not record your vote.");
+          if (data.reason === "voting-closed") onBattleChanged?.();
           return;
         }
-        // Optimistic local feedback. The broadcast signal is suppressed for the
-        // local sender, so the score and float must be applied here.
+        setVotedFor(performerId);
         setScores((prev) =>
-          applyConcertGift(prev, { targetId, coins: gift.price_coins }, identities),
+          applyConcertVoteTally(prev, {
+            round: Number(data.round),
+            initiatorVotes: Number(data.initiator_votes),
+            opponentVotes: Number(data.opponent_votes),
+          }),
         );
-        addFloat(side, entry.instrument.emoji);
-        if (typeof data.balance === "number") setWalletCoins(data.balance);
-        else setWalletCoins((prev) => (prev === null ? prev : Math.max(0, prev - gift.price_coins)));
-        void sendComment(entry.instrument.comment);
+        addFloat(side, concertNoteGlyph((floatSeq.current += 1)));
         setHeat((prev) => prev + 1);
+      } catch {
+        setVoteError("Could not record your vote.");
       } finally {
-        setPendingSlug(null);
+        setPendingVote(null);
       }
     },
-    [target, battle.initiator_id, battle.opponent_id, spaceId, identities, addFloat, sendComment],
+    [battle.initiator_id, battle.opponent_id, spaceId, addFloat, onBattleChanged],
   );
 
   // ---- derived views ------------------------------------------------------
@@ -442,28 +429,23 @@ export function ConcertLiveStage({
           isCompetitor:
             row.user_id === battle.initiator_id || row.user_id === battle.opponent_id,
           joinedAt: row.joined_at ?? null,
-          coinsGifted: gifterCoins[row.user_id] ?? 0,
         })),
-    [roster, liveIdentities, battle.initiator_id, battle.opponent_id, gifterCoins],
+    [roster, liveIdentities, battle.initiator_id, battle.opponent_id],
   );
 
-  const tray = useMemo(() => resolveConcertTray(catalog), [catalog]);
+  const votedSide: ConcertSide | null = votedFor
+    ? concertSideForTarget({ targetId: votedFor, ...identities })
+    : null;
 
-  const disabledReason = !user
-    ? "Sign in to send instruments."
+  const voteDisabledReason = !user
+    ? "Sign in to vote."
     : isCompetitor
-      ? "Competitors cannot gift themselves."
-      : view.space.status !== "live"
-        ? "Gifting opens when the battle goes live."
-        : catalog.length > 0 && tray.every((entry) => !entry.gift)
-          ? "Instrument gifts are not available yet."
-          : giftError;
-
-  // Default the gift target to whichever side the viewer is not on.
-  useEffect(() => {
-    if (target || isCompetitor) return;
-    if (battle.initiator_id) setTarget("left");
-  }, [target, isCompetitor, battle.initiator_id]);
+      ? "You are performing. The audience votes each round."
+      : battle.status !== "round_active"
+        ? "Voting opens when a round is live."
+        : !battle.opponent_id
+          ? "Waiting for an opponent."
+          : voteError;
 
   // A slim control band, rendered ONLY when it has something to say. It stays
   // out of the layout during a live round because on a 664px viewport every row
@@ -521,8 +503,8 @@ export function ConcertLiveStage({
       style={{ height: "min(72dvh, 700px)" }}
       data-testid="concert-live-stage"
       onPointerDown={() => {
-        if (!target) return;
-        addFloat(target, concertNoteGlyph((floatSeq.current += 1)));
+        if (!votedSide) return;
+        addFloat(votedSide, concertNoteGlyph((floatSeq.current += 1)));
       }}
     >
       <ConcertBattleStatusBar
@@ -545,15 +527,13 @@ export function ConcertLiveStage({
         floats={floats}
       />
 
-      <ConcertGiftTray
-        tray={tray}
-        target={isCompetitor ? null : target}
-        walletCoins={walletCoins}
-        pendingSlug={pendingSlug}
-        disabledReason={disabledReason}
-        showTargetPicker={!isCompetitor}
-        onTargetChange={setTarget}
-        onSend={(entry) => void sendGift(entry)}
+      <ConcertVoteTray
+        leftName={view.initiator?.display_name || view.initiator?.username || "Left"}
+        rightName={view.opponent?.display_name || view.opponent?.username || "Right"}
+        votedSide={votedSide}
+        pendingSide={pendingVote}
+        disabledReason={voteDisabledReason}
+        onVote={(side) => void castVote(side)}
       />
 
       {/* The social row is a FIXED band, not flex-1. Both it and the video row
@@ -572,22 +552,4 @@ export function ConcertLiveStage({
       </div>
     </div>
   );
-}
-
-/** Emoji for a broadcast gift, falling back to a generic note. */
-function giftGlyph(slug: string): string {
-  switch (slug) {
-    case "battle_guitar":
-      return "🎸";
-    case "battle_piano":
-      return "🎹";
-    case "battle_drum":
-      return "🥁";
-    case "battle_violin":
-      return "🎻";
-    case "battle_saxophone":
-      return "🎷";
-    default:
-      return "🎁";
-  }
 }

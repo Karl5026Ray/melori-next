@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
   filterVisibleMembers,
   safeMemberSearchTerm,
@@ -19,7 +19,7 @@ type Props = { params: Promise<{ spaceId: string }> };
 // source paths apply account, self, bidirectional block, accepted-slot, and
 // room-ban filtering on the server.
 export async function GET(req: NextRequest, { params }: Props) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const viewerId = guard.membership.userId;
   if (!isUuid(viewerId)) {

@@ -40,8 +40,6 @@ export default function robots(): MetadataRoute.Robots {
           "/video",
           "/connect",
           "/featured-artist",
-          "/download-success",
-          "/membership-success",
         ],
       },
     ],

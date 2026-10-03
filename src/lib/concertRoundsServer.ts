@@ -31,7 +31,7 @@ const BATTLE_COLUMNS =
   "space_id, initiator_id, opponent_id, status, current_round, regulation_rounds, round_duration_seconds, phase_started_at, phase_ends_at, winner_id, version";
 
 const ROUND_COLUMNS =
-  "round_number, state, starts_at, ends_at, winner_id, initiator_coins_total, opponent_coins_total";
+  "round_number, state, starts_at, ends_at, winner_id, initiator_votes, opponent_votes";
 
 /**
  * Structural view of the service-role client. Only the query surface this
@@ -104,56 +104,39 @@ export async function loadConcertBattle(
 }
 
 /**
- * Total gift coins each competitor received strictly inside a round's window.
+ * Count the audience votes each competitor received in one round.
  *
- * Per-round windows are the whole point: the running total on the status bar
- * spans the entire battle and would hand every remaining round to whoever won
- * round 1.
+ * Votes are keyed by round number (one row per member per round, enforced by a
+ * unique constraint), so every round is scored on its own votes only. A row
+ * whose performer is not one of the two competitors scores for neither side —
+ * the API and a database trigger both refuse such rows, so this is defence in
+ * depth, not an expected path.
  */
-async function sumRoundCoins(
+export async function countConcertRoundVotes(
   supabase: ConcertDbClient,
   args: {
     spaceId: string;
+    roundNumber: number;
     initiatorId: string;
-    opponentId: string;
-    windowStart: string;
-    windowEnd: string;
+    opponentId: string | null;
   },
-): Promise<{
-  initiatorCoins: number;
-  opponentCoins: number;
-  initiatorGifts: number;
-  opponentGifts: number;
-}> {
+): Promise<{ initiatorVotes: number; opponentVotes: number }> {
   const { data, error } = await supabase
-    .from("gift_sends")
-    .select("target_id, coins_spent, created_at")
+    .from("concert_votes")
+    .select("performer_id")
     .eq("space_id", args.spaceId)
-    .gte("created_at", args.windowStart)
-    .lt("created_at", args.windowEnd);
+    .eq("round_number", args.roundNumber);
   if (error) throw error;
 
-  let initiatorCoins = 0;
-  let opponentCoins = 0;
-  let initiatorGifts = 0;
-  let opponentGifts = 0;
-  const rows = (data ?? []) as Array<{
-    target_id: string | null;
-    coins_spent: number | null;
-  }>;
-  for (const row of rows) {
-    const coins = Math.max(0, Number(row.coins_spent) || 0);
-    if (row.target_id === args.initiatorId) {
-      initiatorCoins += coins;
-      initiatorGifts += 1;
-    } else if (row.target_id === args.opponentId) {
-      opponentCoins += coins;
-      opponentGifts += 1;
+  let initiatorVotes = 0;
+  let opponentVotes = 0;
+  for (const row of (data ?? []) as Array<{ performer_id: string | null }>) {
+    if (row.performer_id === args.initiatorId) initiatorVotes += 1;
+    else if (args.opponentId && row.performer_id === args.opponentId) {
+      opponentVotes += 1;
     }
-    // Gifts with no target, or a target who is not a competitor, are tips to
-    // the room and score for neither side.
   }
-  return { initiatorCoins, opponentCoins, initiatorGifts, opponentGifts };
+  return { initiatorVotes, opponentVotes };
 }
 
 /** Version-guarded battle write. Returns false when another actor won. */
@@ -239,18 +222,17 @@ async function applyFinalize(
   notify: ConcertNotifier,
 ): Promise<ConcertAdvanceOutcome> {
   const opponentId = battle.opponent_id as string;
-  const coins = await sumRoundCoins(supabase, {
+  const votes = await countConcertRoundVotes(supabase, {
     spaceId: battle.space_id,
+    roundNumber: action.roundNumber,
     initiatorId: battle.initiator_id,
     opponentId,
-    windowStart: action.windowStart,
-    windowEnd: action.windowEnd,
   });
   const outcome = resolveConcertRound({
     initiatorId: battle.initiator_id,
     opponentId,
-    initiatorCoins: coins.initiatorCoins,
-    opponentCoins: coins.opponentCoins,
+    initiatorVotes: votes.initiatorVotes,
+    opponentVotes: votes.opponentVotes,
   });
 
   const finalizedAt = new Date().toISOString();
@@ -262,10 +244,8 @@ async function applyFinalize(
       state: outcome.state,
       winner_id: outcome.winnerId,
       finalized_at: finalizedAt,
-      initiator_coins_total: coins.initiatorCoins,
-      opponent_coins_total: coins.opponentCoins,
-      initiator_gift_count: coins.initiatorGifts,
-      opponent_gift_count: coins.opponentGifts,
+      initiator_votes: votes.initiatorVotes,
+      opponent_votes: votes.opponentVotes,
     })
     .eq("space_id", battle.space_id)
     .eq("round_number", action.roundNumber)
@@ -285,6 +265,8 @@ async function applyFinalize(
       event: "concert-round-finalized",
       round: action.roundNumber,
       winner_id: outcome.winnerId,
+      initiator_votes: votes.initiatorVotes,
+      opponent_votes: votes.opponentVotes,
       next: "intermission",
     });
     return {
@@ -305,8 +287,8 @@ async function applyFinalize(
           ...round,
           state: outcome.state,
           winner_id: outcome.winnerId,
-          initiator_coins_total: coins.initiatorCoins,
-          opponent_coins_total: coins.opponentCoins,
+          initiator_votes: votes.initiatorVotes,
+          opponent_votes: votes.opponentVotes,
         }
       : round,
   );

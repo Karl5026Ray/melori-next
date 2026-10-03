@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { concertBattleErrorResponse } from "@/lib/concertBattleApi";
 import { isUuid } from "@/lib/validators";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // Creates the space envelope, initiator participation, and battle aggregate in
 // one service-only SQL transaction. Initiator identity is always token-derived.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const initiatorId = guard.membership.userId;
   if (!isUuid(initiatorId)) {

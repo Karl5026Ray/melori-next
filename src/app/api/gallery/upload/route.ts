@@ -25,7 +25,7 @@ const PREVIEWS_BUCKET = "gallery-previews"; // public
 //   files:   originals[]  (clean full-res → private bucket)
 //            previews[]   (watermarked   → public bucket)
 //            thumbnails[] (watermarked   → public bucket)
-//   parallel arrays: blurHashes[], filenames[], priceCents[], forSale[]
+//   parallel arrays: blurHashes[], filenames[]
 //
 // Uploads land under `${userId}/${galleryId}/${imageId}...`. Returns the public
 // gallery URL so the CLI can print/share it.
@@ -80,8 +80,6 @@ export async function POST(req: NextRequest) {
 
   const blurHashes = form.getAll("blurHashes").map((v) => String(v));
   const filenames = form.getAll("filenames").map((v) => String(v));
-  const priceCents = form.getAll("priceCents").map((v) => String(v));
-  const forSale = form.getAll("forSale").map((v) => String(v));
 
   // Reuse an existing gallery of the same name for this photographer so repeat
   // uploads append to it; otherwise create a fresh one with a unique slug.
@@ -201,10 +199,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const price = Number.parseInt(priceCents[i] ?? "", 10);
-    const saleFlag = /^(1|true|yes)$/i.test(forSale[i] ?? "");
-    const hasValidPrice = Number.isInteger(price) && price > 0;
-
     const { data: imgRow, error: imgErr } = await supabase
       .from("photo_gallery_images")
       .insert({
@@ -216,8 +210,6 @@ export async function POST(req: NextRequest) {
         blur_hash: blurHashes[i] || null,
         filename: filenames[i] || original.name || null,
         order_index: orderBase++,
-        for_sale: saleFlag && hasValidPrice,
-        price_cents: hasValidPrice ? price : null,
       })
       .select("id")
       .single();

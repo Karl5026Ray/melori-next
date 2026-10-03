@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import TrackUploader from "./components/TrackUploader";
 import VideoUploader from "./components/VideoUploader";
 import VideoList from "./components/VideoList";
 import HumanizerWorkspace from "./components/humanizer/HumanizerWorkspace";
 import TrackList from "./components/TrackList";
-import WaveformEditor from "./components/WaveformEditor";
 import ReleaseScheduler from "./components/ReleaseScheduler";
 import ProfilePhotoUploader from "./components/ProfilePhotoUploader";
 import SuperfansPanel from "./components/SuperfansPanel";
@@ -18,7 +17,6 @@ type Tab =
   | "upload"
   | "video"
   | "tracks"
-  | "clip"
   | "humanizer"
   | "superfans"
   | "schedule"
@@ -26,7 +24,6 @@ type Tab =
 
 export default function StudioPage() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   // Editable profile details for the Profile tab. Saved via PATCH
@@ -79,15 +76,6 @@ export default function StudioPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  // Open the 30-second clip maker (WaveformEditor) for a specific track.
-  // Switches to the dedicated "clip" top tab with the chosen track loaded.
-  // The Humanizer tab is a separate, independent surface and must not be
-  // triggered from the per-track Preview button.
-  const handleEditWaveform = useCallback((trackId: string) => {
-    setSelectedTrackId(trackId);
-    setActiveTab("clip");
   }, []);
 
   // Preload current profile photos when the Profile tab opens so the
@@ -173,11 +161,10 @@ export default function StudioPage() {
     { id: "upload", label: "Upload", icon: "📤" },
     { id: "video", label: "Video", icon: "🎬" },
     { id: "tracks", label: "My Tracks", icon: "🎵" },
-    { id: "clip", label: "Clip Maker", icon: "✂️" },
     { id: "humanizer", label: "Humanizer", icon: "🎛️" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
-    { id: "profile", label: "Profile", icon: "\u{1F5BC}\uFE0F" },
+    { id: "profile", label: "Profile", icon: "🖼️" },
   ];
 
   return (
@@ -236,14 +223,14 @@ export default function StudioPage() {
               className="my-2 ml-1 h-6 w-px shrink-0 self-center bg-white/10"
             />
             <span className="flex shrink-0 items-center whitespace-nowrap self-center px-2 text-[11px] font-semibold uppercase tracking-wide text-[#666]">
-              <span className="mr-1.5">{"\uD83D\uDCF8"}</span>
+              <span className="mr-1.5">{"📸"}</span>
               Photography
             </span>
             <Link
               href="/studio/galleries"
               className="px-5 py-4 text-sm font-medium transition-all border-b-2 border-transparent text-[#888] hover:text-white hover:border-white/10 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0"
             >
-              <span>{"\uD83D\uDCF7"}</span>
+              <span>{"📷"}</span>
               Galleries
             </Link>
           </nav>
@@ -258,15 +245,7 @@ export default function StudioPage() {
             <VideoList userId={userId} />
           </>
         )}
-        {activeTab === "tracks" && (
-          <TrackList onEditWaveform={handleEditWaveform} />
-        )}
-        {activeTab === "clip" && (
-          <WaveformEditor
-            trackId={selectedTrackId}
-            onBack={() => setActiveTab("tracks")}
-          />
-        )}
+        {activeTab === "tracks" && <TrackList />}
         {activeTab === "humanizer" && (
           <HumanizerWorkspace canForensic={canForensic} />
         )}

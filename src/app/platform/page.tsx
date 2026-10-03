@@ -34,6 +34,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
+import AgeAttestation, {
+  AGE_ATTESTATION_REQUIRED,
+  ageAttestationMetadata,
+} from "@/components/auth/AgeAttestation";
 import { doorReason } from "@/lib/doorReason";
 import { ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
 
@@ -108,6 +112,8 @@ export default function MeloriDoorPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Required "I am 16 or older" attestation (platform minimum age is 16).
+  const [ageAttested, setAgeAttested] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
@@ -169,13 +175,20 @@ export default function MeloriDoorPage() {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (!ageAttested) {
+      setError(AGE_ATTESTATION_REQUIRED);
+      return;
+    }
 
     setLoading(true);
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { role: "free" }, emailRedirectTo },
+        options: {
+          data: { role: "free", ...ageAttestationMetadata() },
+          emailRedirectTo,
+        },
       });
       if (signUpError) throw signUpError;
 
@@ -331,7 +344,13 @@ export default function MeloriDoorPage() {
               placeholder="Password (min 8 characters)"
               className={inputClass}
             />
-            <button type="submit" disabled={loading} className={ctaClass}>
+            <AgeAttestation
+              checked={ageAttested}
+              onChange={setAgeAttested}
+              termsHref={`${APP_ORIGIN}/terms`}
+              privacyHref={`${APP_ORIGIN}/privacy`}
+            />
+            <button type="submit" disabled={loading || !ageAttested} className={ctaClass}>
               {loading ? "Creating…" : "Create free account"}
             </button>
           </form>

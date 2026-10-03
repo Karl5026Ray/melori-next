@@ -2,9 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugify } from "@/lib/slug";
 
 // `studio_albums` is a side-car over the free-text `studio_tracks.album`
-// column: it gives an album a stable id, a public slug and — the point of this
-// file — a price the artist controls. Track rows still carry the album NAME, so
-// nothing about upload, ordering or the reorder API changes.
+// column: it gives an album a stable id, a public slug, a description and a
+// cover. Track rows still carry the album NAME, so nothing about upload,
+// ordering or the reorder API changes.
 //
 // Rows are created lazily: the first time an artist saves a track into an album
 // name, we materialise the album. Migration 045 backfills everything that
@@ -17,8 +17,6 @@ export interface StudioAlbumRow {
   slug: string;
   description: string | null;
   cover_url: string | null;
-  price_cents: number;
-  currency: string;
 }
 
 export function normalizeAlbumTitle(value: unknown): string | null {
@@ -70,7 +68,7 @@ export async function ensureStudioAlbum(
   if (!title || !profileId) return null;
 
   const columns =
-    "id, profile_id, title, slug, description, cover_url, price_cents, currency";
+    "id, profile_id, title, slug, description, cover_url";
 
   const { data: existing } = await supabase
     .from("studio_albums")

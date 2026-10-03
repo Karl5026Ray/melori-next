@@ -34,7 +34,7 @@ import { useRouter } from "next/navigation";
 import { authReturnPath } from "@/lib/authReturn";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useCanParticipate } from "@/components/social/UpgradePrompt";
+import { useCanParticipate } from "@/components/social/SignInPrompt";
 import { authFetch } from "@/lib/authClient";
 import { ArrowDown, Send, SmilePlus } from "lucide-react";
 import {

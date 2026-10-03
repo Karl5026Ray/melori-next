@@ -164,7 +164,7 @@ export default function StudioPage() {
     { id: "humanizer", label: "Humanizer", icon: "🎛️" },
     { id: "superfans", label: "Superfans", icon: "⭐" },
     { id: "schedule", label: "Schedule", icon: "📅" },
-    { id: "profile", label: "Profile", icon: "\u{1F5BC}️" },
+    { id: "profile", label: "Profile", icon: "🖼️" },
   ];
 
   return (

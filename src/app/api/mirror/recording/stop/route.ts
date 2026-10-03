@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
-import { stopRoomRecording } from "@/lib/livekitServer";
+import { setRoomRecordingFlag, stopRoomRecording } from "@/lib/livekitServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/mirror/recording/stop
-// Host-only. Stops the in-progress recording for a live space and returns the
-// recording's public URL so the client can offer "Post this LIVE to the Mirror?"
+// Host-only. Stops the in-progress recording for a live space, takes the
+// "Recording" banner down for everyone, and lets the client offer "Post this
+// LIVE to the Mirror?". The MP4 stays in the PRIVATE recordings bucket — no URL
+// is returned because none exists until the host posts it (publish) or it is
+// deleted (discard, the "Not now" path).
 //
 // Body: { spaceId: string }
 export async function POST(req: NextRequest) {
@@ -25,7 +28,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
   const { data: space, error: fetchErr } = await supabase
     .from("spaces")
-    .select("id, host_id, recording_egress_id, recording_url, recording_storage_key")
+    .select("id, host_id, livekit_room, recording_egress_id, recording_storage_key")
     .eq("id", spaceId)
     .maybeSingle();
 
@@ -42,11 +45,13 @@ export async function POST(req: NextRequest) {
 
   await supabase.from("spaces").update({ is_recording: false }).eq("id", spaceId);
 
+  // Clear the banner. Best-effort: the room may already be gone (host ended).
+  await setRoomRecordingFlag(space.livekit_room ?? `space_${space.id}`, false).catch(
+    (err) => console.warn("[mirror/recording/stop] banner clear failed", (err as Error)?.message)
+  );
+
   return NextResponse.json({
     ok: true,
-    // The MP4 finalizes asynchronously in storage; the URL is deterministic and
-    // becomes reachable shortly after egress completes.
-    recordingUrl: space.recording_url ?? null,
-    storageKey: space.recording_storage_key ?? null,
+    hasRecording: !!space.recording_storage_key,
   });
 }

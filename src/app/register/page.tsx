@@ -6,6 +6,10 @@ import Link from "next/link";
 import { useIsNativeApp } from "@/components/NativeAppProvider";
 import { supabase } from "@/lib/supabase";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
+import AgeAttestation, {
+  AGE_ATTESTATION_REQUIRED,
+  ageAttestationMetadata,
+} from "@/components/auth/AgeAttestation";
 import { safeNextPath } from "@/lib/mediaSetupMarker";
 
 // /register — the canonical signup surface.
@@ -48,6 +52,8 @@ function RegisterInner() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Required "I am 16 or older" attestation (platform minimum age is 16).
+  const [ageAttested, setAgeAttested] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -98,6 +104,10 @@ function RegisterInner() {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (!ageAttested) {
+      setError(AGE_ATTESTATION_REQUIRED);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -105,7 +115,7 @@ function RegisterInner() {
         email,
         password,
         options: {
-          data: { role: "free" },
+          data: { role: "free", ...ageAttestationMetadata() },
           emailRedirectTo,
         },
       });
@@ -224,7 +234,13 @@ function RegisterInner() {
                 placeholder="Password (min 8 characters)"
                 className={inputClass}
               />
-              <button type="submit" disabled={loading} className={ctaClass}>
+              <AgeAttestation
+                checked={ageAttested}
+                onChange={setAgeAttested}
+                termsHref="/terms"
+                privacyHref="/privacy"
+              />
+              <button type="submit" disabled={loading || !ageAttested} className={ctaClass}>
                 {loading ? "Creating…" : "Create account"}
               </button>
             </form>

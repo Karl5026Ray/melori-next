@@ -11,9 +11,6 @@ type Section =
   | "releases"
   | "tracks"
   | "videos"
-  | "members"
-  | "orders"
-  | "revenue"
   | "artists"
   | "users"
   | "submissions"
@@ -23,16 +20,12 @@ type Section =
   | "health";
 
 interface DashboardStats {
-  totalRevenue: number;
-  totalOrders: number;
   totalMembers: number;
   totalTracks: number;
   totalReleases: number;
   totalArtists?: number;
   totalSpaces?: number;
   pendingSubmissions?: number;
-  memberBreakdown?: Record<string, number>;
-  recentOrders: any[];
 }
 
 // Only expose Supabase-served http(s) URLs in the moderation preview link.
@@ -105,9 +98,6 @@ export default function AdminDashboardPage() {
     { id: "releases", label: "Releases", icon: "💿" },
     { id: "tracks", label: "Tracks", icon: "🎵" },
     { id: "videos", label: "Videos", icon: "🎬" },
-    { id: "members", label: "Members", icon: "👥" },
-    { id: "orders", label: "Orders", icon: "📦" },
-    { id: "revenue", label: "Revenue", icon: "💰" },
     { id: "artists", label: "Artists", icon: "🎤" },
     { id: "donors", label: "Donors", icon: "💛" },
     { id: "settings", label: "Settings", icon: "⚙️" },
@@ -319,9 +309,6 @@ export default function AdminDashboardPage() {
           {section === "releases" && <ReleasesSection />}
           {section === "tracks" && <TracksSection />}
           {section === "videos" && <VideosSection />}
-          {section === "members" && <MembersSection />}
-          {section === "orders" && <OrdersSection />}
-          {section === "revenue" && <RevenueSection />}
           {section === "artists" && <ArtistsSection />}
           {section === "donors" && <DonorsSection />}
           {section === "settings" && <SettingsSection />}
@@ -338,13 +325,6 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   const cards = [
-    {
-      label: "Total Revenue",
-      value: `$${(stats?.totalRevenue || 0).toFixed(2)}`,
-      icon: "💰",
-      color: "text-[#c9a96e]",
-    },
-    { label: "Total Orders", value: stats?.totalOrders || 0, icon: "📦", color: "text-white" },
     { label: "Members", value: stats?.totalMembers || 0, icon: "👥", color: "text-white" },
     { label: "Tracks", value: stats?.totalTracks || 0, icon: "🎵", color: "text-white" },
     { label: "Releases", value: stats?.totalReleases || 0, icon: "💿", color: "text-white" },
@@ -356,7 +336,6 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
       icon: "📥",
       color: (stats?.pendingSubmissions ?? 0) > 0 ? "text-orange-400" : "text-white",
     },
-    { label: "Recent Activity", value: stats?.recentOrders?.length || 0, icon: "🔔", color: "text-white" },
   ];
 
   const handleSeed = async () => {
@@ -456,8 +435,6 @@ type AdminUser = {
   full_name: string | null;
   avatar_url: string | null;
   role: string | null;
-  membership_tier: string | null;
-  membership_status: string | null;
   verified: boolean | null;
   created_at: string;
 };
@@ -548,8 +525,6 @@ function UsersSection() {
               <tr>
                 <th className="text-left py-2 px-2">User</th>
                 <th className="text-left py-2 px-2">Role</th>
-                <th className="text-left py-2 px-2">Tier</th>
-                <th className="text-left py-2 px-2">Status</th>
                 <th className="text-left py-2 px-2">Verified</th>
                 <th className="text-right py-2 px-2">Actions</th>
               </tr>
@@ -573,8 +548,6 @@ function UsersSection() {
                       <option value="admin">admin</option>
                     </select>
                   </td>
-                  <td className="py-2 px-2 capitalize text-[#ccc]">{u.membership_tier ?? "—"}</td>
-                  <td className="py-2 px-2 text-[#ccc]">{u.membership_status ?? "—"}</td>
                   <td className="py-2 px-2">
                     <button
                       onClick={() => patch(u.id, { verified: !u.verified })}
@@ -950,33 +923,6 @@ function VideosSection() {
   );
 }
 
-function MembersSection() {
-  return (
-    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Members</h3>
-      <p className="text-[#888]">Member list from Stripe subscriptions with tier, status, and management actions.</p>
-    </div>
-  );
-}
-
-function OrdersSection() {
-  return (
-    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Orders</h3>
-      <p className="text-[#888]">All purchases with refund capability and export to CSV.</p>
-    </div>
-  );
-}
-
-function RevenueSection() {
-  return (
-    <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Revenue Dashboard</h3>
-      <p className="text-[#888]">70/30 split visualization, monthly trends, artist payouts owed.</p>
-    </div>
-  );
-}
-
 function ArtistsSection() {
   return (
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
@@ -1230,7 +1176,7 @@ function SettingsSection() {
       {/* Site Settings — placeholder sub-panel */}
       <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
         <h3 className="font-semibold mb-4">Site Settings</h3>
-        <p className="text-[#888]">Homepage management, pricing tiers, legal pages, password change.</p>
+        <p className="text-[#888]">Homepage management, legal pages, password change.</p>
       </div>
     </div>
   );
@@ -1240,7 +1186,7 @@ function HealthSection() {
   return (
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
       <h3 className="font-semibold mb-4">System Health</h3>
-      <p className="text-[#888]">Real-time status of Supabase, Stripe, Resend, DNS, storage.</p>
+      <p className="text-[#888]">Real-time status of Supabase, Resend, DNS, storage.</p>
     </div>
   );
 }

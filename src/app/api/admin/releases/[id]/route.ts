@@ -22,7 +22,7 @@ async function verifyAdmin(req: NextRequest) {
 
 // PATCH /api/admin/releases/[id] — update editable release-level fields so an
 // admin has full control over a release: rename it, fix its slug, switch it
-// between single/album/ep, set a price, swap the cover art, and publish or
+// between single/album/ep, swap the cover art, and publish or
 // unpublish it. Only whitelisted fields are accepted; everything else on the
 // body is ignored. Track titles and ordering are handled per-track via
 // /api/admin/tracks/[id].
@@ -80,15 +80,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       }
       update.release_type = rt;
     }
-    if (body.price != null && body.price !== "") {
-      const p = Number(body.price);
-      if (!Number.isFinite(p) || p < 0) {
-        return NextResponse.json({ error: "Invalid price" }, { status: 400 });
-      }
-      update.price = p;
-    } else if (body.price === null || body.price === "") {
-      update.price = null;
-    }
     if (typeof body.cover_art_url === "string") {
       const c = body.cover_art_url.trim();
       if (c.length > 2048) {
@@ -139,10 +130,9 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 }
 
 // DELETE /api/admin/releases/[id] — DESTRUCTIVE: remove a release row. Its
-// tracks and comments cascade automatically (ON DELETE CASCADE). order_items,
-// however, references releases with NO ACTION, so a release that has been
-// purchased cannot be deleted without orphaning order history — we detect that
-// up front and return a clear 409 instead of letting Postgres raise a 500.
+// tracks and comments cascade automatically (ON DELETE CASCADE). If some other
+// table still references the row, Postgres raises a foreign-key violation and
+// we return a clear 409 instead of a 500.
 //
 // DB-row deletion only; storage files (cover art, audio) are left in place.
 export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -163,23 +153,19 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
   }
   try {
     const supabase = getSupabaseAdmin();
-    // Guard: refuse to delete a release that is referenced by order history.
-    const { count, error: countErr } = await supabase
-      .from("order_items")
-      .select("id", { count: "exact", head: true })
-      .eq("release_id", id);
-    if (countErr) throw countErr;
-    if ((count ?? 0) > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "This release has been purchased and is referenced by existing orders, so it can't be deleted. Unpublish it instead to hide it from the site.",
-        },
-        { status: 409 },
-      );
-    }
     const { error } = await supabase.from("releases").delete().eq("id", id);
-    if (error) throw error;
+    if (error) {
+      if ((error as any).code === "23503") {
+        return NextResponse.json(
+          {
+            error:
+              "This release is still referenced by other records, so it can't be deleted. Unpublish it instead to hide it from the site.",
+          },
+          { status: 409 },
+        );
+      }
+      throw error;
+    }
 
     // Public catalog reads on / and /music are cached for 60s; drop that entry
     // now so a deleted release disappears immediately.

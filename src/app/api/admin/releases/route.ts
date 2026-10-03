@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("releases")
       .select(
-        "id, title, slug, release_type, cover_art_url, price, is_published, created_at, artist:artists(name), tracks(id, title, track_number, is_published, duration_seconds)",
+        "id, title, slug, release_type, cover_art_url, is_published, created_at, artist:artists(name), tracks(id, title, track_number, is_published, duration_seconds)",
       )
       .order("created_at", { ascending: false });
 
@@ -62,7 +62,6 @@ export async function GET(req: NextRequest) {
         slug: row.slug,
         release_type: row.release_type,
         cover_art_url: row.cover_art_url,
-        price: row.price,
         is_published: row.is_published,
         artist_name: artist?.name ?? null,
         track_count: tracks.length,

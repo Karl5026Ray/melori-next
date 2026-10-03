@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   isPubNubConfigured,
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
     );
   }
 
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;
   if (!userId) {

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Per-member "notify me when this starts" toggle for a scheduled room, set
 // from the MM Cinema discover screen's STARTING SOON bell.
 //
-// requireAuth, NOT requireSuperfan: setting a reminder is a read-side intent,
+// requireAuth, NOT requireAuth: setting a reminder is a read-side intent,
 // and Melori's participation gate only restricts *writing into a room* —
 // posting, commenting, DMing, taking a stage seat. Making a free member upgrade
 // before they can be told a screening exists would gate the top of the funnel,

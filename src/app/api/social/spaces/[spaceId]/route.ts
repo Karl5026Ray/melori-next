@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isHandRaiseMode } from "@/lib/spacesStage";
 import { endRoomAndTeardown } from "@/lib/endRoom";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 //     hand_raise_mode: "off"|"followed"|"everyone" } -> host hand-raise policy
 export async function PATCH(req: NextRequest, props: { params: Promise<{ spaceId: string }> }) {
   const params = await props.params;
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;
 

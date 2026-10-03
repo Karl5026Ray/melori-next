@@ -38,8 +38,6 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [forSale, setForSale] = useState(false);
-  const [priceDollars, setPriceDollars] = useState("");
 
   const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -177,7 +175,6 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
       // Step 3 — tell the server the raw file is up so it can watermark,
       // upload the preview/thumb, and insert the DB row. Tiny request
       // body, no size concerns.
-      const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
       const finalizeRes = await authFetch(
         `/api/studio/gallery/${galleryId}/images/finalize`,
         {
@@ -186,12 +183,6 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
           body: JSON.stringify({
             imageId: signedBody.imageId,
             filename: item.filename,
-            forSale:
-              forSale && Number.isFinite(priceCents) && priceCents > 0,
-            priceCents:
-              forSale && Number.isFinite(priceCents) && priceCents > 0
-                ? priceCents
-                : null,
           }),
         },
       );
@@ -259,37 +250,6 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   return (
     <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 sm:p-5">
       <div className="flex flex-col gap-3">
-        <label className="flex items-center gap-3 py-1">
-          <input
-            type="checkbox"
-            checked={forSale}
-            onChange={(e) => setForSale(e.target.checked)}
-            className="h-5 w-5 accent-[#ff5500]"
-          />
-          <span className="text-sm text-text-primary">
-            Put these on sale
-          </span>
-        </label>
-
-        {forSale && (
-          <div className="flex items-center gap-2">
-            <span className="text-text-secondary text-sm">$</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              value={priceDollars}
-              onChange={(e) => setPriceDollars(e.target.value)}
-              placeholder="15.00"
-              className="w-28 rounded-xl bg-brand-background border border-brand-border px-3 py-2 text-base text-text-primary focus:outline-none focus:border-brand-primary"
-            />
-            <span className="text-text-secondary text-xs">
-              per photo, applied to this batch
-            </span>
-          </div>
-        )}
-
         <input
           ref={inputRef}
           type="file"

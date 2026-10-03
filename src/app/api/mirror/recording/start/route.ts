@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { recordingConfigured, startRoomRecording } from "@/lib/livekitServer";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 //   returns { ok:false, configured:false } with 200 so the client can tell the
 //   host "recording isn't set up" without treating it as an error.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { membership } = guard;
 

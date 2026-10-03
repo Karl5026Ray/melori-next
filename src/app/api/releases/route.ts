@@ -12,7 +12,7 @@ export async function GET() {
     const { data, error } = await supabaseAdmin
       .from("releases")
       .select(
-        "id, title, slug, release_type, cover_art_url, price, release_date, artist:artists(name, slug)",
+        "id, title, slug, release_type, cover_art_url, release_date, artist:artists(name, slug)",
       )
       .eq("is_published", true)
       .order("release_date", { ascending: false });

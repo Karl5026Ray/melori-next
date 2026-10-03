@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CONNECT_MIN_AGE, ageOn, birthdateCutoff } from "@/lib/age";
+import { guardConnectCaller, isConnectEligible } from "@/lib/connectAgeGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +13,8 @@ export const dynamic = "force-dynamic";
 // (music-taste + preference blend) and sorted best-first.
 //
 // Gated to Superfan+ — Connect is a paid-tier feature.
+// 18+ only: the caller must have a valid 18+ birthdate on their Connect
+// profile (403 otherwise), and candidates without one are never returned.
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
@@ -25,6 +29,17 @@ export async function GET(req: NextRequest) {
   );
 
   const supabase = getSupabaseAdmin();
+  const now = new Date();
+
+  // Caller must be 18+ by the birthdate on their Connect profile.
+  const callerGate = await guardConnectCaller(supabase, me, now);
+  if (callerGate === "no_profile") {
+    return NextResponse.json(
+      { needsProfile: true, candidates: [] },
+      { status: 200 },
+    );
+  }
+  if (callerGate) return callerGate;
 
   // Caller must have opted into Connect (have a dating profile).
   const { data: mine } = await supabase
@@ -66,6 +81,9 @@ export async function GET(req: NextRequest) {
        )`,
     )
     .eq("is_active", true)
+    // 18+ only: no birthdate, or a birthdate after the cutoff, never surfaces.
+    .not("birthdate", "is", null)
+    .lte("birthdate", birthdateCutoff(CONNECT_MIN_AGE, now))
     .limit(limit + excluded.size + 200);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -97,6 +115,8 @@ export async function GET(req: NextRequest) {
   const candidates = (rows ?? []).filter(
     (r) =>
       !excluded.has(r.user_id as string) &&
+      // Belt and braces on top of the SQL cutoff: strict 18+ check in code.
+      isConnectEligible(r.birthdate, now) &&
       genderMatch(r.gender as string | null, r.interested_in),
   );
 
@@ -107,12 +127,7 @@ export async function GET(req: NextRequest) {
         a: me,
         b: c.user_id,
       });
-      const age = c.birthdate
-        ? Math.floor(
-            (Date.now() - new Date(c.birthdate as string).getTime()) /
-              (365.25 * 24 * 3600 * 1000),
-          )
-        : null;
+      const age = ageOn(c.birthdate as string, now);
       return {
         userId: c.user_id,
         headline: c.headline,

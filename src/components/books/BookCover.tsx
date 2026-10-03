@@ -22,8 +22,10 @@ type Props = {
 
 /**
  * Amazon's cover when the book has an ASIN, otherwise a series-coloured title
- * card. If Amazon's image fails to load, it drops back to the title card
- * instead of showing a broken-image icon.
+ * card. Every cover is cropped to the same 2:3 shape (Karl, 2026-10-03: "I need
+ * all of them to be sized in unison") — Kindle, 6x9 and 8.5x11 covers differ.
+ * If Amazon's image fails to load, it drops back to the title card instead of
+ * showing a broken-image icon.
  */
 export default function BookCover({ title, seriesId, seriesName, src, large }: Props) {
   const [failed, setFailed] = useState(false);
@@ -45,7 +47,7 @@ export default function BookCover({ title, seriesId, seriesName, src, large }: P
         alt={`Cover of ${title}`}
         loading={large ? "eager" : "lazy"}
         onError={() => setFailed(true)}
-        className="aspect-[3/4] w-full object-contain object-bottom drop-shadow-xl"
+        className="aspect-[2/3] w-full object-cover shadow-md"
       />
     );
   }
@@ -53,17 +55,17 @@ export default function BookCover({ title, seriesId, seriesName, src, large }: P
   return (
     <div
       aria-hidden
-      className={`flex aspect-[3/4] w-full flex-col justify-between rounded-md bg-gradient-to-br ${
+      className={`flex aspect-[2/3] w-full flex-col justify-between bg-gradient-to-br ${
         GRADIENT[seriesId] ?? "from-zinc-800 to-zinc-900"
-      } p-4 shadow-lg`}
+      } p-2 shadow-md sm:p-3`}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-white/70">
+      <span className="text-[8px] font-semibold uppercase tracking-widest text-white/70 sm:text-[10px]">
         {seriesName}
       </span>
-      <span className={`font-bold leading-tight text-white ${large ? "text-2xl" : "text-lg"}`}>
+      <span className={`font-bold leading-tight text-white ${large ? "text-2xl" : "text-xs sm:text-base"}`}>
         {title}
       </span>
-      <span className="text-[10px] text-white/70">Karl Ray</span>
+      <span className="text-[8px] text-white/70 sm:text-[10px]">Karl Ray</span>
     </div>
   );
 }

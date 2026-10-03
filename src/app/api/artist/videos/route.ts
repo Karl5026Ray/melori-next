@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/artist/videos — list the caller's own native videos.
 export async function GET(req: Request) {
-const guard = await requireArtist(req);
+const guard = await requireAuth(req);
 if (isGuardFailure(guard)) return guard;
 const supabase = getSupabaseAdmin();
 
@@ -33,7 +33,7 @@ return NextResponse.json({ videos: data ?? [] });
 // artist_id is resolved server-side from the session (identity continuity),
 // and file_path is verified to live in the caller's own folder.
 export async function POST(req: Request) {
-const guard = await requireArtist(req);
+const guard = await requireAuth(req);
 if (isGuardFailure(guard)) return guard;
 
 let body: Record<string, unknown>;

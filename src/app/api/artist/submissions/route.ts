@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/artist/submissions — list the caller's own track submissions.
 export async function GET(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const supabase = getSupabaseAdmin();
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 // POST /api/artist/submissions — create a new pending submission after the
 // audio (and optional cover) have been uploaded via /api/artist/upload-url.
 export async function POST(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   let body: Record<string, unknown>;

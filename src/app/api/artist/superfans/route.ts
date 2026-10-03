@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ const MAX_LIMIT = 25;
 // Returns richer detail than the public counterpart (favorite album, most
 // recent listen date) so the Studio dashboard has more to show.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const supabase = getSupabaseAdmin();

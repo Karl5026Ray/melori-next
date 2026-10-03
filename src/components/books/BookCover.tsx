@@ -45,7 +45,7 @@ export default function BookCover({ title, seriesId, seriesName, src, large }: P
         alt={`Cover of ${title}`}
         loading={large ? "eager" : "lazy"}
         onError={() => setFailed(true)}
-        className="aspect-[3/4] w-full rounded-md bg-white/5 object-cover shadow-lg"
+        className="aspect-[3/4] w-full object-contain object-bottom drop-shadow-xl"
       />
     );
   }

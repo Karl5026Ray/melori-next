@@ -17,12 +17,6 @@ export interface NativeAppState {
   isIOS: boolean;
   /** Convenience: true when platform !== "web". */
   isNative: boolean;
-  /**
-   * True when digital-goods purchase UI should be hidden.
-   * Currently means iOS only (Apple rule 3.1.1).
-   * Android keeps the normal Stripe flow.
-   */
-  hidePurchaseUI: boolean;
 }
 
 export function useNativeApp(): NativeAppState {
@@ -39,6 +33,5 @@ export function useNativeApp(): NativeAppState {
     loading,
     isIOS: platform === "ios",
     isNative: platform !== "web",
-    hidePurchaseUI: platform === "ios",
   };
 }

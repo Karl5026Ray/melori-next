@@ -18,7 +18,6 @@ interface AdminRelease {
   slug: string;
   release_type: string;
   cover_art_url: string | null;
-  price: number | null;
   is_published: boolean;
   artist_name: string | null;
   track_count: number;
@@ -98,7 +97,6 @@ export default function AdminReleasesPage() {
       title: r.title,
       slug: r.slug,
       release_type: r.release_type,
-      price: r.price,
     });
   };
 
@@ -108,7 +106,6 @@ export default function AdminReleasesPage() {
     if (typeof draft.slug === "string") patch.slug = draft.slug;
     if (typeof draft.release_type === "string")
       patch.release_type = draft.release_type;
-    patch.price = draft.price === undefined ? null : draft.price;
     const ok = await patchRelease(id, patch);
     if (ok) {
       setEditingId(null);
@@ -424,22 +421,6 @@ export default function AdminReleasesPage() {
                                   <option value="album">album</option>
                                   <option value="ep">ep</option>
                                 </select>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={draft.price ?? ""}
-                                  onChange={(e) =>
-                                    setDraft((d) => ({
-                                      ...d,
-                                      price:
-                                        e.target.value === ""
-                                          ? null
-                                          : Number(e.target.value),
-                                    }))
-                                  }
-                                  placeholder="price"
-                                  className="w-20 px-2 py-1 rounded bg-black/40 border border-white/10 text-xs"
-                                />
                               </div>
                             </div>
                           ) : (
@@ -447,7 +428,6 @@ export default function AdminReleasesPage() {
                               <div className="font-medium">{r.title}</div>
                               <div className="text-xs text-[#666] uppercase">
                                 {r.release_type}
-                                {r.price != null ? ` · $${r.price}` : ""}
                               </div>
                             </div>
                           )}

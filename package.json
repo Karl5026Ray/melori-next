@@ -51,7 +51,6 @@
     "test:concert-rounds": "tsx scripts/concert-rounds.test.ts",
     "verify:concert": "tsx scripts/verify-concert-config.ts",
     "test:auth-cookie": "tsx scripts/auth-cookie-name.test.ts",
-    "test:smoke": "PW_SMOKE=1 playwright test --project=desktop-chromium",
     "test:video-orientation": "tsx scripts/video-orientation.test.ts",
     "test:toolkit": "tsx scripts/toolkit.test.ts",
     "test:spaces-room": "tsx scripts/spaces-room.test.ts"

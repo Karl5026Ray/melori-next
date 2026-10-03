@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // The Matches tab: every mutual match for the caller, newest first, with the
 // other person's profile and the conversation id so they can jump into chat.
 export async function GET(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId as string;
 

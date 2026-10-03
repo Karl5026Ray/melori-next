@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 // (the caller wraps it in a try/catch and always completes sign-out
 // regardless of this route's outcome).
 //
-// Gated on requireAuth rather than requireSuperfan (unlike the single-room
+// Gated on requireAuth rather than requireAuth (unlike the single-room
 // /end/[spaceId] route): this runs unconditionally on every sign-out for
 // every member, including free-tier ones who could never have started a room
 // (the query below just returns zero rows for them), and we still want

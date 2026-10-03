@@ -22,6 +22,7 @@ import {
   Music,
   Clapperboard,
   HeartHandshake,
+  BookOpen,
 } from "lucide-react";
 import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
 
@@ -247,6 +248,15 @@ export default function MobileTabBar() {
     desc: "Karl Ray Photography",
   };
 
+  // Karl's books (2026-10-02). The desktop "For Artists" bar carries Books
+  // under Artist Studio; that bar is hidden below md, so mobile gets a tile.
+  const booksLink: LaunchItem = {
+    label: "Books",
+    href: "/books",
+    icon: <BookOpen className="h-5 w-5" />,
+    desc: "Stories for kids & teens",
+  };
+
   const missionLink: LaunchItem = {
     label: "Mission",
     href: "/mission",
@@ -435,6 +445,7 @@ export default function MobileTabBar() {
                           {renderTile(photographyLink)}
                           {renderTile(signupLink)}
                           {renderTile(missionLink)}
+                          {renderTile(booksLink)}
                         </div>
                       </>
                     )}

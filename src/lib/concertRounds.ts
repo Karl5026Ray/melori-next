@@ -22,10 +22,11 @@
  * the race applies nothing rather than double-advancing.
  *
  * SCORING AUTHORITY. `concert_battle_rounds` owns outcomes. A round is won by
- * whoever received more gift coins inside that round's own window — NOT by the
- * running total on the status bar, which spans the whole battle and is display
- * only. That distinction is the entire reason rounds exist: losing round 1
- * badly must not make rounds 2 and 3 unwinnable.
+ * whoever received more AUDIENCE VOTES in that round: every signed-in member
+ * who is not a competitor gets one vote per round (`concert_votes`, unique per
+ * space + round + voter). Votes are keyed by round number, so every round
+ * starts from zero: losing round 1 badly must not make rounds 2 and 3
+ * unwinnable.
  */
 
 import {
@@ -35,8 +36,8 @@ import {
 } from "./concertBattle";
 
 /**
- * Gap between rounds. Long enough for competitors to see the round result and
- * for the audience's gifts to land visibly, short enough that a battle keeps
+ * Gap between rounds. Long enough for competitors and the audience to see the
+ * round result, short enough that a battle keeps
  * moving. Also comfortably longer than the cron's one-minute worst case is
  * short: the client advance path closes an intermission the instant it expires,
  * and the cron only has to be the backstop.
@@ -47,9 +48,9 @@ export const CONCERT_BATTLE_INTERMISSION_SECONDS = 60;
 export const CONCERT_BATTLE_COMPLETION_REASONS = [
   /** Won more rounds than the other competitor. */
   "regulation",
-  /** Rounds split evenly; decided on total coins across the battle. */
-  "coins_tiebreak",
-  /** Dead even on rounds and on coins. No winner. */
+  /** Rounds split evenly; decided on total votes across the battle. */
+  "votes_tiebreak",
+  /** Dead even on rounds and on votes. No winner. */
   "draw",
 ] as const;
 
@@ -64,8 +65,8 @@ export type ConcertRoundRow = {
   starts_at: string | null;
   ends_at: string | null;
   winner_id: string | null;
-  initiator_coins_total: number;
-  opponent_coins_total: number;
+  initiator_votes: number;
+  opponent_votes: number;
 };
 
 export type ConcertBattleRow = {
@@ -91,9 +92,9 @@ export type StartRoundAction = {
 };
 
 /**
- * A round's window has closed. The caller must total the gift coins each
- * competitor received inside [windowStart, windowEnd) and pass them to
- * `resolveConcertRound`, then apply `next`.
+ * A round's window has closed. The caller must count the votes each competitor
+ * received in this round (votes are only accepted inside [windowStart,
+ * windowEnd)) and pass them to `resolveConcertRound`, then apply `next`.
  */
 export type FinalizeRoundAction = {
   type: "finalize-round";
@@ -229,8 +230,8 @@ export function planConcertBattleTick(input: {
       type: "finalize-round",
       roundNumber: active.round_number,
       // Fall back to the round's end minus its duration if the start was never
-      // recorded: a window that spans the whole battle would credit round 1's
-      // gifts to round 3.
+      // recorded: a window that spans the whole battle would misdescribe the
+      // round.
       windowStart: iso(startsMs ?? endsMs - roundSeconds(battle) * 1_000),
       windowEnd: iso(endsMs),
       next: isLast ? "complete" : "intermission",
@@ -277,18 +278,18 @@ export function planConcertRoundStart(
 }
 
 /**
- * Decide a single round from the coins each competitor received inside that
- * round's window. An exact tie is a real outcome, not an error: the schema has
- * a dedicated `draw` state for it.
+ * Decide a single round from the votes each competitor received in that round.
+ * An exact tie (including no votes at all) is a real outcome, not an error: the
+ * schema has a dedicated `draw` state for it.
  */
 export function resolveConcertRound(input: {
   initiatorId: string;
   opponentId: string;
-  initiatorCoins: number;
-  opponentCoins: number;
+  initiatorVotes: number;
+  opponentVotes: number;
 }): { state: "finalized" | "draw"; winnerId: string | null } {
-  const initiator = Math.max(0, Math.trunc(input.initiatorCoins || 0));
-  const opponent = Math.max(0, Math.trunc(input.opponentCoins || 0));
+  const initiator = Math.max(0, Math.trunc(input.initiatorVotes || 0));
+  const opponent = Math.max(0, Math.trunc(input.opponentVotes || 0));
   if (initiator === opponent) return { state: "draw", winnerId: null };
   return {
     state: "finalized",
@@ -299,7 +300,7 @@ export function resolveConcertRound(input: {
 /**
  * Decide the battle from its finished rounds.
  *
- * Rounds won comes first, because that is what the format promises. Total coins
+ * Rounds won comes first, because that is what the format promises. Total votes
  * only breaks a tie in rounds won — so a competitor who wins two rounds
  * narrowly still beats one who wins a single round by a landslide. Dead even on
  * both is a draw, and a draw stores no winner (the schema requires any winner
@@ -314,21 +315,21 @@ export function resolveConcertBattleOutcome(input: {
   completionReason: ConcertBattleCompletionReason;
   initiatorRoundsWon: number;
   opponentRoundsWon: number;
-  initiatorCoins: number;
-  opponentCoins: number;
+  initiatorVotes: number;
+  opponentVotes: number;
 } {
   const decided = input.rounds.filter(
     (round) => round.state === "finalized" || round.state === "draw",
   );
   let initiatorRoundsWon = 0;
   let opponentRoundsWon = 0;
-  let initiatorCoins = 0;
-  let opponentCoins = 0;
+  let initiatorVotes = 0;
+  let opponentVotes = 0;
   for (const round of decided) {
     if (round.winner_id === input.initiatorId) initiatorRoundsWon += 1;
     else if (round.winner_id === input.opponentId) opponentRoundsWon += 1;
-    initiatorCoins += Math.max(0, Number(round.initiator_coins_total) || 0);
-    opponentCoins += Math.max(0, Number(round.opponent_coins_total) || 0);
+    initiatorVotes += Math.max(0, Number(round.initiator_votes) || 0);
+    opponentVotes += Math.max(0, Number(round.opponent_votes) || 0);
   }
 
   let winnerId: string | null = null;
@@ -337,9 +338,9 @@ export function resolveConcertBattleOutcome(input: {
     winnerId =
       initiatorRoundsWon > opponentRoundsWon ? input.initiatorId : input.opponentId;
     completionReason = "regulation";
-  } else if (initiatorCoins !== opponentCoins) {
-    winnerId = initiatorCoins > opponentCoins ? input.initiatorId : input.opponentId;
-    completionReason = "coins_tiebreak";
+  } else if (initiatorVotes !== opponentVotes) {
+    winnerId = initiatorVotes > opponentVotes ? input.initiatorId : input.opponentId;
+    completionReason = "votes_tiebreak";
   }
 
   return {
@@ -347,9 +348,62 @@ export function resolveConcertBattleOutcome(input: {
     completionReason,
     initiatorRoundsWon,
     opponentRoundsWon,
-    initiatorCoins,
-    opponentCoins,
+    initiatorVotes,
+    opponentVotes,
   };
+}
+
+/** Why a vote was refused. `null` from decideConcertVote means accepted. */
+export type ConcertVoteRefusal =
+  | "voting-closed"
+  | "competitor"
+  | "not-a-performer"
+  | "self-vote";
+
+/**
+ * May this member cast (or change) a vote for this performer right now?
+ *
+ * Rules, in order:
+ *  - voting is open only while the battle is `round_active`, its current round
+ *    row is `active`, and the clock is inside that round's [starts_at, ends_at)
+ *    window;
+ *  - the two competitors do not vote at all (a performer voting would only
+ *    ever be self-interest), which also makes a self-vote impossible;
+ *  - the vote must be for one of the battle's two fixed competitor identities.
+ *
+ * The database enforces one vote per member per round (unique constraint) and
+ * no self-votes (check constraint); this is the readable, testable version the
+ * API route consults first so it can return a useful error.
+ */
+export function decideConcertVote(input: {
+  voterId: string;
+  performerId: string;
+  battle: Pick<
+    ConcertBattleRow,
+    "initiator_id" | "opponent_id" | "status" | "current_round"
+  >;
+  round: Pick<ConcertRoundRow, "round_number" | "state" | "starts_at" | "ends_at"> | null;
+  nowMs: number;
+}): ConcertVoteRefusal | null {
+  const { voterId, performerId, battle, round, nowMs } = input;
+  if (voterId === performerId) return "self-vote";
+  if (voterId === battle.initiator_id || voterId === battle.opponent_id) {
+    return "competitor";
+  }
+  if (
+    !battle.opponent_id ||
+    (performerId !== battle.initiator_id && performerId !== battle.opponent_id)
+  ) {
+    return "not-a-performer";
+  }
+  if (battle.status !== "round_active") return "voting-closed";
+  if (!round || round.state !== "active") return "voting-closed";
+  if (round.round_number !== battle.current_round) return "voting-closed";
+  const startsMs = parse(round.starts_at);
+  const endsMs = parse(round.ends_at);
+  if (startsMs === null || endsMs === null) return "voting-closed";
+  if (nowMs < startsMs || nowMs >= endsMs) return "voting-closed";
+  return null;
 }
 
 /**

@@ -22,7 +22,6 @@ import {
   Music,
   Clapperboard,
   HeartHandshake,
-  BookOpen,
 } from "lucide-react";
 import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
 
@@ -248,15 +247,6 @@ export default function MobileTabBar() {
     desc: "Karl Ray Photography",
   };
 
-  // Karl's books (2026-10-02). The desktop "For Artists" bar carries Books
-  // under Artist Studio; that bar is hidden below md, so mobile gets a tile.
-  const booksLink: LaunchItem = {
-    label: "Books",
-    href: "/books",
-    icon: <BookOpen className="h-5 w-5" />,
-    desc: "Stories for kids & teens",
-  };
-
   const missionLink: LaunchItem = {
     label: "Mission",
     href: "/mission",
@@ -413,6 +403,28 @@ export default function MobileTabBar() {
                         {activeCat ? activeCat.label : "Go anywhere"}
                       </span>
                     </div>
+                    {/* The Melori Band logo, across from "Go anywhere", opens
+                        the Books page (Karl, 2026-10-02). Melori Band is the
+                        platform's own band, so it gets its own colour here
+                        instead of being a plain tile. Hidden inside a
+                        category so the header stays a back button + title. */}
+                    {!activeCat && (
+                      <Link
+                        href="/books"
+                        onClick={() => setLauncherOpen(false)}
+                        aria-label="The Melori Band books"
+                        className="ml-auto mr-1 shrink-0 rounded-lg transition-transform active:scale-95 hover:scale-105"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src="/images/melori-band-logo.svg"
+                          alt="The Melori Band"
+                          width={84}
+                          height={48}
+                          className="h-12 w-auto"
+                        />
+                      </Link>
+                    )}
                     <button
                       aria-label="Close"
                       onClick={() => setLauncherOpen(false)}
@@ -445,7 +457,6 @@ export default function MobileTabBar() {
                           {renderTile(photographyLink)}
                           {renderTile(signupLink)}
                           {renderTile(missionLink)}
-                          {renderTile(booksLink)}
                         </div>
                       </>
                     )}

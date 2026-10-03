@@ -47,30 +47,12 @@ const LOCAL_SUPABASE_ENV = {
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaW5lbWEtdGVzdHMiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMH0.cGxheXdyaWdodC1hbm9uLWtleQ",
 };
 
-// e2e/deploy-smoke.spec.ts is the post-deploy check: it signs in with a REAL
-// account against a REAL deployment. It cannot run in the ordinary suite,
-// where CI serves a local build against placeholder Supabase credentials and
-// no sign-in is possible — it would fail for a reason that has nothing to do
-// with the code under test.
-//
-// So it is excluded from every normal run and is the ONLY thing that runs when
-// PW_SMOKE=1 (see `npm run test:smoke`). Splitting it by env rather than by
-// project keeps `npm run test:e2e` meaning exactly what it meant before.
-const SMOKE = process.env.PW_SMOKE === "1";
-const SMOKE_SPEC = /deploy-smoke\.spec\.ts/;
-
-// Playwright resolves testIgnore PER PROJECT: a project that sets its own
-// replaces the top-level value rather than adding to it. A single global
-// testIgnore therefore did nothing for desktop-chromium, which has one. The
-// exclusion is spelled out per project below for that reason — verified with
-// `npx playwright test --list`, which is the only way to see it.
-//
-// This used to also exclude floating-player and player-tabbar-collision, two
-// mobile-only suites about a draggable transport pill. The pill was deleted on
-// 2026-09-07 and both files went with it; the transport-scope spec that
-// replaced them is viewport-agnostic and runs in both projects on purpose —
-// "no pill anywhere" is a claim about desktop too.
-const DESKTOP_IGNORE = SMOKE ? undefined : /deploy-smoke\.spec\.ts/;
+// The post-deploy smoke spec (deploy-smoke.spec.ts, PW_SMOKE=1) was retired on
+// 2026-10-03 with its workflow. It signed in to production with a dedicated
+// "Smoke_Email" account that showed up on the site; Karl had the account
+// deleted, so the check could only fail. Nothing is excluded per project now.
+// The floating pill and its two suites went on 2026-09-07; transport-scope
+// replaced them and runs in both projects on purpose.
 
 // When pointed at an SSO-protected Vercel preview, send the automation bypass
 // token (Vercel: "Protection Bypass for Automation") so requests aren't
@@ -85,7 +67,6 @@ const extraHTTPHeaders = BYPASS
 
 export default defineConfig({
   testDir: "./e2e",
-  ...(SMOKE ? { testMatch: SMOKE_SPEC } : {}),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   // One retry. The generous retry budget existed for cold Vercel serverless
@@ -115,9 +96,6 @@ export default defineConfig({
       // Force chromium: the iPhone descriptor otherwise pins WebKit, which
       // pulls in extra browser binaries we don't need for a UI regression
       // that only cares about pointer-event semantics and z-index.
-      // The post-deploy smoke spec is desktop-only — running it twice would
-      // double the sign-ins against production for no extra coverage.
-      testIgnore: SMOKE_SPEC,
       use: {
         ...devices["iPhone 13"],
         defaultBrowserType: "chromium",
@@ -126,13 +104,6 @@ export default defineConfig({
     },
     {
       name: "desktop-chromium",
-      // This used to ignore two mobile-only pill suites as well. Both files are
-      // gone (the pill was deleted on 2026-09-07), and the transport-scope spec
-      // that replaced them is meant to run here: "no pill anywhere" and "the
-      // door carries no transport" are claims about desktop too, and the
-      // desktop transport bar only exists at this width. So the only exclusion
-      // left is the post-deploy smoke spec.
-      testIgnore: DESKTOP_IGNORE,
       use: {
         browserName: "chromium",
         viewport: { width: 1440, height: 900 },

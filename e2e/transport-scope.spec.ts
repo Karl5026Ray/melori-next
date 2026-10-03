@@ -23,9 +23,9 @@ import { test, expect } from "@playwright/test";
 // Supabase credentials where getFeaturedTrack() returns null — so in this
 // suite the hero does not exist to test. Asserting it here would either fail
 // for a reason unrelated to the code or, worse, be written loosely enough to
-// pass against an absent hero. They are asserted in e2e/deploy-smoke.spec.ts
-// instead, against a real deployment with a real catalog, which is the only
-// place the question can honestly be asked.
+// pass against an absent hero. They need a real deployment with a real
+// catalog; the post-deploy smoke spec that covered them was retired on
+// 2026-10-03, so check the hero by hand after a release that touches it.
 
 const PILL = '[data-testid="floating-player"]';
 const DESKTOP_BAR = "div.hidden.md\\:block.fixed.bottom-0";

@@ -10,7 +10,7 @@ import {
 } from "@/lib/books";
 
 const description =
-  "The Melori Band picture books, Hikari Discovers activity books, and the Say It Out Loud teen series.";
+  "The Melori Band picture books, the Without The Blacks history series, the Say It Out Loud teen series, and Hikari Discovers activity books.";
 
 export const metadata: Metadata = {
   title: "Books",
@@ -40,10 +40,10 @@ function Cover({
   );
 }
 
-function AmazonButton({ book }: { book: Book }) {
+function AmazonButton({ book, series }: { book: Book; series: BookSeries }) {
   return (
     <a
-      href={buyUrlFor(book)}
+      href={buyUrlFor(book, series.name)}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-block rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-dark"
@@ -67,7 +67,7 @@ function BookCard({ book, series }: { book: Book; series: BookSeries }) {
       {book.blurb && <p className="mt-1 text-sm text-text-secondary">{book.blurb}</p>}
       <div className="mt-auto pt-3">
         {live ? (
-          <AmazonButton book={book} />
+          <AmazonButton book={book} series={series} />
         ) : (
           <span className="inline-block rounded-full border border-brand-border px-4 py-2 text-sm text-text-secondary">
             Coming soon
@@ -88,8 +88,8 @@ export default function BooksPage() {
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
       <h1 className="text-3xl font-bold md:text-4xl">Books</h1>
       <p className="mt-3 max-w-2xl text-text-secondary">
-        Stories for kids and teens about music, kindness, and saying what you
-        feel. Each book links straight to Amazon.
+        Picture books from The Melori Band, history, teen stories and more.
+        Each book links straight to Amazon.
       </p>
 
       {/* Hero: start the series here */}
@@ -111,7 +111,7 @@ export default function BooksPage() {
               {heroSeries.description}
             </p>
             <div className="mt-5">
-              <AmazonButton book={hero} />
+              <AmazonButton book={hero} series={heroSeries} />
             </div>
           </div>
         </div>

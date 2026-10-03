@@ -31,6 +31,8 @@ export type BookSeries = {
   books: Book[];
 };
 
+// Order is Karl's (2026-10-02): The Melori Band is Melori's own band, so its
+// collection leads; Without The Blacks and Say It Out Loud follow.
 export const BOOK_SERIES: BookSeries[] = [
   {
     id: "melori-band",
@@ -77,6 +79,43 @@ export const BOOK_SERIES: BookSeries[] = [
     ],
   },
   {
+    id: "without-the-blacks",
+    name: "Without The Blacks",
+    audience: "History · teens, adults & schools",
+    description:
+      "What Black people built, and how it made everyday life easier for everyone. A three-volume history told in plain language. Facts only.",
+    books: [
+      {
+        title: "The Beginning",
+        badge: "Volume 1",
+        blurb: "From the forming of the continents and the kingdom of Kush to the Middle Passage.",
+      },
+      {
+        title: "The Builders",
+        badge: "Volume 2",
+        blurb: "The inventors and builders whose work runs through daily life.",
+      },
+      {
+        title: "The Rise",
+        badge: "Volume 3",
+      },
+    ],
+  },
+  {
+    id: "say-it-out-loud",
+    name: "Say It Out Loud",
+    audience: "Teen & young adult",
+    description:
+      "Five couples face real relationship problems and talk them through, with each other and not with outsiders. Every story ends with an answer.",
+    books: [
+      {
+        title: "The Table",
+        badge: "Book 1",
+        blurb: "Tobi and Dae, and a family that doesn't approve.",
+      },
+    ],
+  },
+  {
     id: "hikari-discovers",
     name: "Hikari Discovers",
     audience: "Activity books · ages 3–5",
@@ -96,20 +135,6 @@ export const BOOK_SERIES: BookSeries[] = [
       },
     ],
   },
-  {
-    id: "say-it-out-loud",
-    name: "Say It Out Loud",
-    audience: "Teen & young adult",
-    description:
-      "Five couples face real relationship problems and talk them through, with each other and not with outsiders. Every story ends with an answer.",
-    books: [
-      {
-        title: "The Table",
-        badge: "Book 1",
-        blurb: "Tobi and Dae, and a family that doesn't approve.",
-      },
-    ],
-  },
 ];
 
 /** Pull the 10-character ASIN out of an Amazon /dp/ or /gp/product/ link. */
@@ -125,9 +150,17 @@ export function coverUrlFor(book: Book): string | null {
   return asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null;
 }
 
-/** Where the button goes: the book's own page, or an Amazon search for it. */
-export function buyUrlFor(book: Book): string {
+/**
+ * Where the button goes: the book's own page, or an Amazon search for it.
+ * The search includes the series name, since titles like "The Beginning" are
+ * too generic to find on their own.
+ */
+export function buyUrlFor(book: Book, seriesName?: string): string {
   if (book.amazonUrl) return book.amazonUrl;
-  const q = encodeURIComponent(`${book.title} Karl Ray`);
+  const words =
+    seriesName && !book.title.includes(seriesName)
+      ? `${seriesName} ${book.title} Karl Ray`
+      : `${book.title} Karl Ray`;
+  const q = encodeURIComponent(words);
   return `https://www.amazon.com/s?k=${q}&i=stripbooks`;
 }

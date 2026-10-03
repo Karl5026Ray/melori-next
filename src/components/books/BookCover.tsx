@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 // generated and the fallback covers rendered as blank boxes.
 const GRADIENT: Record<string, string> = {
   "melori-band": "from-indigo-900 via-purple-800 to-blue-900",
+  "without-the-blacks": "from-stone-950 via-amber-800 to-yellow-600",
   "hikari-discovers": "from-sky-700 via-cyan-600 to-teal-700",
   "say-it-out-loud": "from-rose-700 via-orange-600 to-amber-600",
 };

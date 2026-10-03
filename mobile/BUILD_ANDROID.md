@@ -331,9 +331,6 @@ App Store Connect once; these guards exist so that cannot recur unnoticed.
 - **Thin-wrapper policy.** Play is more relaxed than Apple here, but the same
   argument applies: Melori is a full streaming/community platform, not a
   repackaged web page.
-- **Purchases.** The app loads the existing Stripe/web checkout. Play's billing
-  policy on digital goods mirrors Apple's; if this is flagged, the options are
-  the same as on iOS (hide purchase entry points on Android via a user-agent
-  check, or integrate Play Billing).
+- **Purchases.** None. Melori sells nothing, so Play Billing does not apply.
 - **Never commit `android/`.** It is generated. Every change that must survive
   belongs in `scripts/configure-android.sh`.

@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from("profiles")
     .select(
-      "id, username, display_name, full_name, avatar_url, role, membership_tier, membership_status, verified, status, suspended_reason, deleted_at, deleted_reason, created_at",
+      "id, username, display_name, full_name, avatar_url, role, verified, status, suspended_reason, deleted_at, deleted_reason, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);

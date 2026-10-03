@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // PATCH /api/admin/accounts/[id]
-// Body: { display_name?, username?, role?, membership_tier?, status? }
+// Body: { display_name?, username?, role?, status? }
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const admin = await requireAdmin(req);
@@ -63,10 +63,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       updates.role = body.role;
       roleChanged = true;
     }
-  }
-
-  if (typeof body.membership_tier === "string") {
-    updates.membership_tier = trimOrNull(body.membership_tier);
   }
 
   let statusChanged: string | null = null;

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/studio/availability — requireArtist. Returns the caller's weekly
+// GET /api/studio/availability — requireAuth. Returns the caller's weekly
 // availability rules.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 
@@ -35,11 +35,11 @@ interface RuleInput {
   isActive?: boolean;
 }
 
-// PUT /api/studio/availability — requireArtist. Replaces the caller's full
+// PUT /api/studio/availability — requireAuth. Replaces the caller's full
 // set of weekly availability rules with the provided list (simplest mental
 // model for a weekly editor UI — no partial PATCH semantics needed here).
 export async function PUT(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

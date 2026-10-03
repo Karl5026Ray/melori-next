@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { isArtistSubscriber, isAdmin } from "@/lib/membership";
+import { isSignedIn, isAdmin } from "@/lib/membership";
 
 // Client-side entry point shown only to artist/admin on the public /gallery
 // index. Supabase auth here is localStorage/cookie-based (no server cookies
@@ -23,12 +23,12 @@ export default function ManageGalleriesLink() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role, membership_status")
+        .select("role")
         .eq("id", session.user.id)
         .maybeSingle();
       if (cancelled) return;
 
-      if (isArtistSubscriber(profile) || isAdmin(profile)) {
+      if (isSignedIn(profile) || isAdmin(profile)) {
         setVisible(true);
       }
     })();

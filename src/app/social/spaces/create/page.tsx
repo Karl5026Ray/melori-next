@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   useCanParticipate,
-  UpgradePrompt,
-} from "@/components/social/UpgradePrompt";
+  SignInPrompt,
+} from "@/components/social/SignInPrompt";
 import { authFetch } from "@/lib/authClient";
 import {
   ArrowLeft,
@@ -184,7 +184,7 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
         </div>
 
         {user && !canParticipate ? (
-          <UpgradePrompt action={concertOnly ? "start a Concert" : "start a Space"} />
+          <SignInPrompt action={concertOnly ? "start a Concert" : "start a Space"} />
         ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -267,7 +267,7 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
                     Versus Battle
                   </p>
                   <p className="mt-1 text-xs text-melori-muted">
-                    Start the Concert room for performers, audience voting, and live gifts.
+                    Start the Concert room for performers and audience voting.
                   </p>
                 </div>
               </div>

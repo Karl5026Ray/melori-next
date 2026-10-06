@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { checkDurableSendLimit } from "@/lib/messagingLimits";
 import { isUuid } from "@/lib/validators";
 import { moderateText, statusForDecision } from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
@@ -77,6 +78,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "You are not a participant in this conversation." },
         { status: 403 },
+      );
+    }
+
+    // Durable rate limit. The in-memory bucket above is per Vercel lambda, so
+    // a client spread across instances never trips it. The database sees
+    // every send (index messages_sender_created_idx, migration 090).
+    const durable = await checkDurableSendLimit(supabase, membership.userId!);
+    if (durable) {
+      return NextResponse.json(
+        { error: "Slow down — you're sending messages too quickly." },
+        { status: 429, headers: { "Retry-After": String(durable.retryAfterSec) } },
       );
     }
 

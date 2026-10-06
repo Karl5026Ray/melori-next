@@ -75,8 +75,9 @@ jobs:
           # (sourceCompatibility/targetCompatibility VERSION_21).
           java-version: "21"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # The hosted ubuntu runner already ships the Android SDK (ANDROID_HOME,
+      # licenses accepted). android-actions/setup-android@v3 fails there because
+      # it runs `sdkmanager tools`, a package that no longer exists.
 
       - name: Setup Node
         uses: actions/setup-node@v4

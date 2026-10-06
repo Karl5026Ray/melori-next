@@ -112,3 +112,20 @@ Patterns to not repeat. Each entry is a correction that cost real time.
 - **Melori pages are named for what they are, not for Karl** (2026-10-02: "I
   didn't need it to say Karl Ray Books, just Books"). Melori is a platform for
   every creator, so page titles and nav labels stay generic.
+
+## Data access
+
+- **A client write policy on a server-only table is pure attack surface.**
+  conversation_members had `INSERT WITH CHECK (user_id = auth.uid())` and an
+  UPDATE policy with the same check. Every real write went through
+  service-role routes, so the policies only let a stranger join any DM by id
+  (and the UPDATE let them re-point their own row at it). Before adding a
+  table, decide who writes it; if the answer is "our API", grant the client
+  SELECT only.
+- **Prove a security hole with a rolled-back probe before claiming it.** A DO
+  block that sets `request.jwt.claims`, `SET LOCAL ROLE authenticated`, tries
+  the attack, then `RAISE EXCEPTION` with the result rolls everything back and
+  still reports what happened.
+- **Supabase MCP DROP/REVOKE statements wait for a human approval.** Unattended
+  they time out at 180s with nothing applied. After one timeout, check the
+  ledger and tell Karl; do not keep resending.

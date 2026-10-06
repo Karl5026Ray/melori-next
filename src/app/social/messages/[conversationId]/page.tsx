@@ -245,6 +245,8 @@ export default function ChatPage() {
   // Load messages + the other participant.
   useEffect(() => {
     if (!user?.id) return;
+    // A different thread opens at its newest message, instantly.
+    lastMessageIdRef.current = null;
 
     // Newest page first. This used to be `ascending … limit(100)`, which
     // showed the OLDEST 100 messages and hid everything newer once a thread
@@ -326,11 +328,20 @@ export default function ChatPage() {
   useEffect(() => {
     const last = messages[messages.length - 1]?.id ?? null;
     if (last !== lastMessageIdRef.current) {
+      const firstLoad = lastMessageIdRef.current === null;
       lastMessageIdRef.current = last;
       // Scroll the message list itself. scrollIntoView also scrolls the
       // WINDOW, which slid this header up under the site's sticky top bar.
       const scroller = scrollerRef.current;
-      if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+      if (scroller) {
+        // Opening a thread: jump straight to the newest message (a smooth
+        // scroll across the whole history gets cut short as photos load).
+        // Re-pin once photos have had a moment to take their space.
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior: firstLoad ? "auto" : "smooth" });
+        if (firstLoad) {
+          setTimeout(() => scroller.scrollTo({ top: scroller.scrollHeight }), 400);
+        }
+      }
     }
   }, [messages]);
 

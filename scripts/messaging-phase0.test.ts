@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 // scripts/messaging-phase0.test.ts
 //
-// Pins the Messages Phase 0 fixes (migration 086). Most of these are WIRING
+// Pins the Messages Phase 0 fixes (migration 090). Most of these are WIRING
 // assertions on purpose — see tasks/lessons.md: "When a fix is wiring, assert
 // on the wiring." A helper that exists but is never called fixes nothing.
 //
@@ -95,7 +95,7 @@ function wiring() {
   const del = read("src/app/api/social/messages/[id]/route.ts");
   expect("delete clears content", del.includes('content: ""'), true);
 
-  const mig = read("supabase/migrations/086_lockdown_messaging_writes.sql");
+  const mig = read("supabase/migrations/090_lockdown_messaging_writes.sql");
   for (const p of [
     "conversation_members_insert_self",
     "conversation_members_update_self",
@@ -104,10 +104,10 @@ function wiring() {
     "messages_insert_self_member",
     "messages_update_own",
   ]) {
-    expect(`086 drops ${p}`, mig.includes(`drop policy if exists ${p}`), true);
+    expect(`090 drops ${p}`, mig.includes(`drop policy if exists ${p}`), true);
   }
-  expect("086 scrub trigger", mig.includes("create trigger messages_scrub_on_delete"), true);
-  expect("086 private channel policies", mig.includes("dm_channels_receive") && mig.includes("dm_channels_send"), true);
+  expect("090 scrub trigger", mig.includes("create trigger messages_scrub_on_delete"), true);
+  expect("090 private channel policies", mig.includes("dm_channels_receive") && mig.includes("dm_channels_send"), true);
 }
 
 (async () => {

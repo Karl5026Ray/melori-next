@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Newest message + unread count per thread, computed in Postgres
-  // (dm_inbox_summary, migration 086). This used to embed EVERY message of
+  // (dm_inbox_summary, migration 090). This used to embed EVERY message of
   // every conversation and reduce them here, so the payload grew without
   // bound as history accumulated.
   const shownIds = (data ?? []).map((c: { id: string }) => c.id);

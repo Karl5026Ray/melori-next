@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     // Durable rate limit. The in-memory bucket above is per Vercel lambda, so
     // a client spread across instances never trips it. The database sees
-    // every send (index messages_sender_created_idx, migration 086).
+    // every send (index messages_sender_created_idx, migration 090).
     const durable = await checkDurableSendLimit(supabase, membership.userId!);
     if (durable) {
       return NextResponse.json(

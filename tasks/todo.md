@@ -375,10 +375,10 @@ Messages (Karl, 2026-10-06).
 
 - [x] Proved on prod (rolled-back probe): any signed-in member could add
       themselves to any conversation and read its history.
-- [x] 086: drop all client write policies on conversations /
+- [x] 090 (was 086): drop all client write policies on conversations /
       conversation_members / messages; revoke writes from anon+authenticated.
       Every legit write is already service-role.
-- [x] 086: typing + call signalling move to PRIVATE realtime channels
+- [x] 090: typing + call signalling move to PRIVATE realtime channels
       (`dm_channels_*` policies on realtime.messages); client joins with
       `private: true`.
 - [x] Deleting a message clears its text (route + DB trigger).
@@ -388,10 +388,11 @@ Messages (Karl, 2026-10-06).
 - [x] Durable DB-backed send + conversation-start limits (`src/lib/messagingLimits.ts`).
 - [x] `_backup_*` tables: RLS enabled (data untouched).
 - [x] `scripts/messaging-phase0.test.ts` in `test:unit`; full suite green, tsc clean.
-- [ ] **Apply 086 to prod BEFORE merging** — the client code needs its
-      policies and RPC. Supabase MCP needs a human approval for the DROP/REVOKE
-      statements; it timed out unattended three times on 2026-10-06.
+- [x] Applied to prod 2026-10-06 via the SQL Editor (ledger 20261006150000,
+      renamed 090_lockdown_messaging_writes). Supabase MCP apply_migration hung
+      on the DROP/REVOKE approval four times; the SQL Editor path worked.
+- [x] Post-apply probe (rolled back): outsider self-insert, row swap and direct
+      post all `permission denied`; outsider refused the typing channel.
 - [ ] After merge, on the Vercel preview/prod: two accounts in one DM — typing
       dots show, a call connects, delete clears text, inbox loads.
-- [ ] Re-run the outsider probe: self-insert must now fail.
-- [ ] Baseline doc of the live messaging schema (after 086 lands).
+- [ ] Baseline doc of the live messaging schema (090 has landed).

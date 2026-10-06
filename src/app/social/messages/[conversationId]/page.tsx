@@ -507,7 +507,7 @@ export default function ChatPage() {
   };
 
   // Typing indicator. PRIVATE channel: only members of this conversation can
-  // join it (realtime.messages policy dm_channels_* in migration 086). It was
+  // join it (realtime.messages policy dm_channels_* in migration 090). It was
   // public before, so anyone holding a conversation id could listen or spoof.
   useEffect(() => {
     if (!user?.id) return;

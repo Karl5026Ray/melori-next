@@ -44,7 +44,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
 
   const { error } = await supabase
     .from("messages")
-    // Clear the text too. Trigger messages_scrub_on_delete (migration 086)
+    // Clear the text too. Trigger messages_scrub_on_delete (migration 090)
     // enforces this in the database; doing it here keeps the intent visible.
     .update({ deleted_at: new Date().toISOString(), content: "" })
     .eq("id", messageId);

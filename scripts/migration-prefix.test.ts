@@ -67,7 +67,14 @@ const KNOWN_UNRESOLVED = new Set<string>([]);
 // file. Each entry needs a reason on the line above it. Empty is the healthy
 // state: every number from the lowest to the highest should have exactly one
 // migration.
-const KNOWN_GAPS = new Set<number>([]);
+const KNOWN_GAPS = new Set<number>([
+  // 086-089 are reserved by open PRs #411 (086_concert_votes, 087_drop_payments),
+  // #412 (088_mirror_recordings_private_bucket) and #413 (089_connect_18_plus).
+  // 090_lockdown_messaging_writes was applied to prod first and merged ahead of
+  // them. Each PR must delete its own numbers from this list when it merges
+  // (the stale-gap check below fails until it does).
+  86, 87, 88, 89,
+]);
 
 let checks = 0;
 let failures = 0;

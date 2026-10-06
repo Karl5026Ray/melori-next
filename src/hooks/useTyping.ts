@@ -7,7 +7,9 @@ export function useTyping(conversationId: string, currentUserId?: string) {
   const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
-    const channel = supabase.channel(`typing:${conversationId}`);
+    const channel = supabase.channel(`typing:${conversationId}`, {
+      config: { private: true, broadcast: { self: false } },
+    });
     channel
       .on("broadcast", { event: "typing" }, (payload) => {
         if (payload.payload.user_id !== currentUserId) {

@@ -34,6 +34,8 @@ export interface Profile {
   membership_tier?: string | null;
   membership_status?: string | null;
   membership_expires_at?: string | null;
+  // Presence heartbeat (POST /api/presence/heartbeat).
+  last_seen_at?: string | null;
 }
 
 export type SpaceType = "listening" | "discussion" | "creation" | "dj_set";

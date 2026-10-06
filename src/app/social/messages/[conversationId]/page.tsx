@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
 import { Message, Profile } from "@/types/social";
@@ -17,6 +18,7 @@ import {
 import { MediaPermissionNotice } from "@/components/media/MediaPermissionNotice";
 import { type CaptureErrorInfo } from "@/lib/mediaCapture";
 import { playNotificationSound } from "@/lib/notifications";
+import { describePresence } from "@/lib/presence";
 import {
   ArrowLeft,
   Phone,
@@ -31,6 +33,10 @@ import Link from "next/link";
 // A message plus its client-side send state. `_status` is only set on messages
 // this client rendered optimistically; it is cleared once the server confirms.
 type ChatMessage = Message & { _status?: "sending" | "failed" };
+
+const PAGE_SIZE = 50;
+
+const MESSAGE_SELECT = `*, sender:profiles(id, display_name, avatar_url, role, verified)`;
 
 // Realtime and the POST response can both deliver the same row, and the sender
 // already has an optimistic copy on screen. Reconcile on the server id first,
@@ -74,6 +80,36 @@ export default function ChatPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  // Re-evaluate "Active now / 5m ago" once a minute.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const typingExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Paging: the thread opens on the NEWEST page and loads older on demand.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const lastMessageIdRef = useRef<string | null>(null);
+  // Throttle: one "typing" broadcast per 2s while typing, plus the stop.
+  const lastTypingSentRef = useRef(0);
+  const sendTyping = useCallback(
+    (typing: boolean) => {
+      const ch = typingChannelRef.current;
+      if (!ch || !user?.id) return;
+      const now = Date.now();
+      if (typing && now - lastTypingSentRef.current < 2000) return;
+      lastTypingSentRef.current = typing ? now : 0;
+      void ch.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { user_id: user.id, typing },
+      });
+    },
+    [user?.id],
+  );
 
   // ---- Calling state --------------------------------------------------------
   const [callSession, setCallSession] = useState<CallSession | null>(null);
@@ -102,16 +138,20 @@ export default function ChatPage() {
   useEffect(() => {
     if (!user?.id) return;
 
+    // Newest page first. This used to be `ascending … limit(100)`, which
+    // showed the OLDEST 100 messages and hid everything newer once a thread
+    // passed 100.
     const fetchMessages = async () => {
       const { data } = await supabase
         .from("messages")
-        .select(
-          `*, sender:profiles(id, display_name, avatar_url, role, verified)`,
-        )
+        .select(MESSAGE_SELECT)
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
-        .limit(100);
-      if (data) setMessages(data as Message[]);
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
+      if (data) {
+        setMessages((data as Message[]).slice().reverse());
+        setHasOlder(data.length === PAGE_SIZE);
+      }
     };
 
     const fetchConversation = async () => {
@@ -177,9 +217,43 @@ export default function ChatPage() {
     };
   }, [conversationId, user]);
 
+  // Scroll to the bottom only when a message lands at the END of the list —
+  // not when an older page is prepended above.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const last = messages[messages.length - 1]?.id ?? null;
+    if (last !== lastMessageIdRef.current) {
+      lastMessageIdRef.current = last;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
+
+  const loadOlder = useCallback(async () => {
+    const oldest = messages.find((m) => !m._status);
+    if (!oldest || loadingOlder) return;
+    setLoadingOlder(true);
+    const scroller = scrollerRef.current;
+    const prevHeight = scroller?.scrollHeight ?? 0;
+    const { data } = await supabase
+      .from("messages")
+      .select(MESSAGE_SELECT)
+      .eq("conversation_id", conversationId)
+      .lt("created_at", oldest.created_at)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE);
+    if (data) {
+      const older = (data as Message[]).slice().reverse();
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        return [...older.filter((m) => !seen.has(m.id)), ...prev];
+      });
+      setHasOlder(data.length === PAGE_SIZE);
+      // Keep the reader's place instead of jumping.
+      requestAnimationFrame(() => {
+        if (scroller) scroller.scrollTop += scroller.scrollHeight - prevHeight;
+      });
+    }
+    setLoadingOlder(false);
+  }, [messages, loadingOlder, conversationId]);
 
   // ---- Calling: set up a session once we know both users --------------------
   useEffect(() => {
@@ -370,11 +444,7 @@ export default function ChatPage() {
     setInput("");
     setSendError(null);
 
-    void supabase.channel(`typing:${conversationId}`).send({
-      type: "broadcast",
-      event: "typing",
-      payload: { user_id: user.id, typing: false },
-    });
+    sendTyping(false);
 
     await postMessage(localId, content);
   };
@@ -433,23 +503,33 @@ export default function ChatPage() {
   const handleInputChange = async (val: string) => {
     setInput(val);
     if (!user) return;
-    await supabase.channel(`typing:${conversationId}`).send({
-      type: "broadcast",
-      event: "typing",
-      payload: { user_id: user.id, typing: val.length > 0 },
-    });
+    sendTyping(val.length > 0);
   };
 
+  // Typing indicator. PRIVATE channel: only members of this conversation can
+  // join it (realtime.messages policy dm_channels_* in migration 090). It was
+  // public before, so anyone holding a conversation id could listen or spoof.
   useEffect(() => {
-    const channel = supabase.channel(`typing:${conversationId}`);
+    if (!user?.id) return;
+    const channel = supabase.channel(`typing:${conversationId}`, {
+      config: { private: true, broadcast: { self: false } },
+    });
     channel
       .on("broadcast", { event: "typing" }, (payload) => {
         if (payload.payload.user_id !== user?.id) {
           setIsTyping(payload.payload.typing);
+          // A closed tab never sends "stopped typing"; expire the dots.
+          if (typingExpiryRef.current) clearTimeout(typingExpiryRef.current);
+          if (payload.payload.typing) {
+            typingExpiryRef.current = setTimeout(() => setIsTyping(false), 6000);
+          }
         }
       })
       .subscribe();
+    typingChannelRef.current = channel;
     return () => {
+      if (typingExpiryRef.current) clearTimeout(typingExpiryRef.current);
+      typingChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [conversationId, user]);
@@ -458,6 +538,9 @@ export default function ChatPage() {
   const isPendingForMe =
     convStatus === "pending" && !!user && requestedBy !== user.id;
   const callActive = callState !== "idle" && callState !== "ended";
+  // Real presence from the heartbeat. This header used to say "Active now"
+  // for everyone, always.
+  const presence = describePresence(otherUser?.last_seen_at, nowTick);
 
   return (
     <div className="flex-1 flex flex-col h-full animate-fade-in">
@@ -474,13 +557,21 @@ export default function ChatPage() {
             className="w-10 h-10 rounded-full object-cover"
             alt=""
           />
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-melori-success rounded-full border-2 border-melori-void" />
+          {presence.online && (
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-melori-success rounded-full border-2 border-melori-void" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-sm truncate">
             {otherUser?.display_name || "Unknown"}
           </h3>
-          <p className="text-xs text-melori-success">Active now</p>
+          {presence.label && (
+            <p
+              className={`text-xs ${presence.online ? "text-melori-success" : "text-melori-muted"}`}
+            >
+              {presence.label}
+            </p>
+          )}
         </div>
 
         {/* Voice call */}
@@ -531,7 +622,19 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={scrollerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {hasOlder && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={loadOlder}
+              disabled={loadingOlder}
+              className="text-xs px-3 py-1.5 rounded-full border border-melori-border text-melori-muted hover:bg-melori-elevated transition disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </button>
+          </div>
+        )}
         {messages.map((msg) => (
           <MessageBubble
             key={msg.id}

@@ -233,7 +233,8 @@ export function defaultCallDeps(): CallDeps {
   return {
     createChannel: (name) =>
       supabase.channel(name, {
-        config: { broadcast: { self: false } },
+        // Private: members of the conversation only (migration 090).
+        config: { private: true, broadcast: { self: false } },
       }) as unknown as SignalChannelLike,
     removeChannel: (channel) => {
       void supabase.removeChannel(channel as unknown as RealtimeChannel);

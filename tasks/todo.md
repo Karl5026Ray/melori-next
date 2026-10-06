@@ -402,3 +402,35 @@ update. Land it with a normal `git push` after an `npm install`.
   (both DELETE routes used to remove the cover unconditionally, which would
   have wiped the album art for every other track); only unreferenced objects
   are deleted.
+
+---
+
+# Messages Phase 0 — lock down DMs before groups (branch `fix/messages-phase0`)
+
+Context: GroupMe-style groups are the next build. Before groups widen who holds
+a conversation id, close what was found in the 2026-10-06 audit. No gifting in
+Messages (Karl, 2026-10-06).
+
+- [x] Proved on prod (rolled-back probe): any signed-in member could add
+      themselves to any conversation and read its history.
+- [x] 090 (was 086): drop all client write policies on conversations /
+      conversation_members / messages; revoke writes from anon+authenticated.
+      Every legit write is already service-role.
+- [x] 090: typing + call signalling move to PRIVATE realtime channels
+      (`dm_channels_*` policies on realtime.messages); client joins with
+      `private: true`.
+- [x] Deleting a message clears its text (route + DB trigger).
+- [x] Thread opens on the newest 50 with "Load earlier messages" (was oldest 100).
+- [x] Inbox uses `dm_inbox_summary` RPC instead of embedding every message.
+- [x] Header shows real presence from last_seen_at (was hardcoded "Active now").
+- [x] Durable DB-backed send + conversation-start limits (`src/lib/messagingLimits.ts`).
+- [x] `_backup_*` tables: RLS enabled (data untouched).
+- [x] `scripts/messaging-phase0.test.ts` in `test:unit`; full suite green, tsc clean.
+- [x] Applied to prod 2026-10-06 via the SQL Editor (ledger 20261006150000,
+      renamed 090_lockdown_messaging_writes). Supabase MCP apply_migration hung
+      on the DROP/REVOKE approval four times; the SQL Editor path worked.
+- [x] Post-apply probe (rolled back): outsider self-insert, row swap and direct
+      post all `permission denied`; outsider refused the typing channel.
+- [ ] After merge, on the Vercel preview/prod: two accounts in one DM — typing
+      dots show, a call connects, delete clears text, inbox loads.
+- [ ] Baseline doc of the live messaging schema (090 has landed).

@@ -48,7 +48,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const { data: others } = await supabase
     .from("conversation_members")
     .select(
-      "user:profiles(id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count)",
+      "user:profiles(id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, last_seen_at)",
     )
     .eq("conversation_id", conversationId)
     .neq("user_id", userId)

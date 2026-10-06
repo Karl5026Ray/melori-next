@@ -134,6 +134,11 @@ export interface JoinVideoOptions {
   // (host/mod approved a stage request via the server SDK). canPublish=true
   // means the viewer may now turn on camera/mic WITHOUT reconnecting.
   onLocalPermissionsChanged?: (canPublish: boolean) => void;
+  // Server-set LiveKit ROOM metadata (raw JSON string), emitted once on connect
+  // and again on every RoomMetadataChanged. Carries the Mirror recording flag
+  // (see src/lib/mirrorRecording.ts) that drives the everyone-sees-it
+  // "Recording" banner. Only the server can write it.
+  onRoomMetadataChange?: (metadata: string | null) => void;
   onReconnecting?: () => void;
   onReconnected?: () => void;
   // Fired when the server FORCIBLY removed the local participant (host ban /
@@ -660,6 +665,12 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
       room.off(RoomEvent.ParticipantPermissionsChanged, onPermChanged),
     );
 
+    // --- Room metadata (recording consent banner) -------------------------
+    const onRoomMetadata = (metadata?: string) =>
+      opts.onRoomMetadataChange?.(metadata ?? null);
+    room.on(RoomEvent.RoomMetadataChanged, onRoomMetadata);
+    session.cleanups.push(() => room.off(RoomEvent.RoomMetadataChanged, onRoomMetadata));
+
     // --- Reconnection + disconnect ---------------------------------------
     const onReconnecting = () => opts.onReconnecting?.();
     const onReconnected = () => opts.onReconnected?.();
@@ -731,6 +742,9 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
     session.identity = creds.identity;
     session.role = creds.role;
     session.tier = tier;
+
+    // Seed the room metadata (recording flag) as soon as we're connected.
+    opts.onRoomMetadataChange?.((room.metadata as string | undefined) ?? null);
 
     // Report the initial autoplay state so the UI can prompt immediately if the
     // browser is holding audio back until a gesture.

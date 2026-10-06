@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { findOrCreateDirectConversation } from "@/lib/direct-conversation";
 import { rateLimit } from "@/lib/rate-limit";
+import { checkDurableStartLimit } from "@/lib/messagingLimits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,17 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
+
+  // Durable cap on opening threads. Every new thread to a non-follower emails
+  // the recipient a request, so this is an email-spam path as well as a
+  // database one; the in-memory bucket above does not hold across lambdas.
+  const capped = await checkDurableStartLimit(supabase, me);
+  if (capped) {
+    return NextResponse.json(
+      { error: "You've started a lot of conversations. Try again later." },
+      { status: 429, headers: { "Retry-After": String(capped.retryAfterSec) } },
+    );
+  }
 
   // Confirm the recipient actually exists before we open a conversation.
   // Otherwise a client passing a random UUID would leave a stray empty 1:1

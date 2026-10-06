@@ -48,9 +48,6 @@ export async function GET(req: NextRequest) {
         user_id,
         last_read_at,
         user:profiles(id, username, display_name, avatar_url, role, verified)
-      ),
-      messages:messages(
-        id, content, created_at, sender_id, deleted_at
       )
     `,
     )
@@ -62,30 +59,40 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Reduce each conversation to what the inbox actually renders: the newest
-  // message plus the caller's unread count. Previously every message of every
-  // conversation was serialised to the client (the list only ever used the
-  // newest one), which made the inbox payload grow without bound.
+  // Newest message + unread count per thread, computed in Postgres
+  // (dm_inbox_summary, migration 086). This used to embed EVERY message of
+  // every conversation and reduce them here, so the payload grew without
+  // bound as history accumulated.
+  const shownIds = (data ?? []).map((c: { id: string }) => c.id);
+  const { data: summary, error: sumErr } = shownIds.length
+    ? await supabase.rpc("dm_inbox_summary", {
+        p_user: userId,
+        p_conv_ids: shownIds,
+      })
+    : { data: [], error: null };
+  if (sumErr) {
+    return NextResponse.json({ error: sumErr.message }, { status: 500 });
+  }
+  const byConv = new Map<string, any>(
+    (summary ?? []).map((r: any) => [r.conversation_id, r]),
+  );
+
+  // Response shape is unchanged: `messages` holds at most the newest message.
   const conversations = (data ?? []).map((conv: any) => {
-    const messages: any[] = conv.messages ?? [];
-    const mine = (conv.members ?? []).find((m: any) => m.user_id === userId);
-    const lastReadAt = mine?.last_read_at
-      ? new Date(mine.last_read_at).getTime()
-      : 0;
-
-    let latest: any = null;
-    let unread = 0;
-    for (const m of messages) {
-      if (m.deleted_at) continue;
-      const at = new Date(m.created_at).getTime();
-      if (!latest || at > new Date(latest.created_at).getTime()) latest = m;
-      if (m.sender_id !== userId && at > lastReadAt) unread += 1;
-    }
-
+    const s = byConv.get(conv.id);
+    const latest = s?.last_message_id
+      ? {
+          id: s.last_message_id,
+          content: s.last_content,
+          created_at: s.last_created_at,
+          sender_id: s.last_sender_id,
+          deleted_at: null,
+        }
+      : null;
     return {
       ...conv,
       messages: latest ? [latest] : [],
-      unread_count: unread,
+      unread_count: s?.unread_count ?? 0,
     };
   });
 

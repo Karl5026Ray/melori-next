@@ -55,7 +55,7 @@
     "test:video-orientation": "tsx scripts/video-orientation.test.ts",
     "test:toolkit": "tsx scripts/toolkit.test.ts",
     "test:spaces-room": "tsx scripts/spaces-room.test.ts",
-    "test:messaging": "tsx scripts/messaging-phase0.test.ts"
+    "test:messaging": "tsx scripts/messaging-phase0.test.ts && tsx scripts/messaging-quickwins.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

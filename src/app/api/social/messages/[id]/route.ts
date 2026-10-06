@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { isUuid } from "@/lib/validators";
+import { MESSAGE_MEDIA_BUCKET } from "@/lib/messageMedia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
 
   const { data: msg } = await supabase
     .from("messages")
-    .select("id, sender_id, deleted_at")
+    .select("id, sender_id, deleted_at, attachments")
     .eq("id", messageId)
     .maybeSingle();
   if (!msg) {
@@ -46,10 +47,20 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
     .from("messages")
     // Clear the text too. Trigger messages_scrub_on_delete (migration 090)
     // enforces this in the database; doing it here keeps the intent visible.
-    .update({ deleted_at: new Date().toISOString(), content: "" })
+    .update({ deleted_at: new Date().toISOString(), content: "", attachments: [] })
     .eq("id", messageId);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Photos go too (the row's attachment list is cleared by the same trigger).
+  const paths = Array.isArray(msg.attachments)
+    ? (msg.attachments as { path?: unknown }[])
+        .map((a) => a?.path)
+        .filter((p): p is string => typeof p === "string")
+    : [];
+  if (paths.length) {
+    await supabase.storage.from(MESSAGE_MEDIA_BUCKET).remove(paths);
   }
 
   return NextResponse.json({ ok: true });

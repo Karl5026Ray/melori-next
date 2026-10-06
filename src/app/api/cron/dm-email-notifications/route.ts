@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { previewText } from "@/lib/messageMedia";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sendDmDigestEmail, type DmDigestThread } from "@/lib/email";
 import { unsubscribeUrl } from "@/lib/notify-tokens";
@@ -223,14 +224,14 @@ async function handle(req: NextRequest) {
         existing.count += 1;
         if (sentAt >= existing.latestAt) {
           existing.latestAt = sentAt;
-          existing.preview = truncate(msg.content);
+          existing.preview = truncate(previewText(msg.content));
         }
       } else {
         p.threads.set(msg.conversation_id, {
           senderId: msg.sender_id,
           count: 1,
           latestAt: sentAt,
-          preview: truncate(msg.content),
+          preview: truncate(previewText(msg.content)),
           isRequest,
         });
       }

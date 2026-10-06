@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
+import { previewText } from "@/lib/messageMedia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,8 @@ export async function GET(req: NextRequest) {
     const latest = s?.last_message_id
       ? {
           id: s.last_message_id,
-          content: s.last_content,
+          // Photo-only messages have no text (migration 092).
+          content: previewText(s.last_content),
           created_at: s.last_created_at,
           sender_id: s.last_sender_id,
           deleted_at: null,

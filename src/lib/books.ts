@@ -103,8 +103,22 @@ export const BOOK_SERIES: BookSeries[] = [
         asin: "B0HL6CCHXV",
         coverId: "91cNhjkJhrL",
       },
-      { title: "Tempo Finds the Beat", badge: "Book 9", live: false },
-      { title: "Roz and All Ten", badge: "Book 10", live: false },
+      {
+        title: "Tempo Finds the Beat",
+        badge: "Book 9",
+        blurb: "A story about listening and teamwork.",
+        // Kindle eBook (Karl, 2026-10-06: these two link to the ebooks).
+        asin: "B0HLXYG57H",
+        coverId: "51e+s5kB2HL",
+      },
+      {
+        title: "Roz and All Ten",
+        badge: "Book 10",
+        blurb: "A story about leadership and sharing.",
+        // Kindle eBook.
+        asin: "B0HFDPJXKQ",
+        coverId: "51amB0TN7NL",
+      },
     ],
   },
   {

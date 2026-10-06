@@ -13,6 +13,7 @@ import { MESSAGE_MEDIA_BUCKET } from "@/lib/messageMedia";
 import { CallOverlay } from "@/components/social/messages/CallOverlay";
 import {
   CallSession,
+  prefetchIceServers,
   formatCallError,
   type CallMode,
   type CallState,
@@ -69,7 +70,10 @@ async function preparePhoto(file: File): Promise<{ blob: Blob; type: string; wid
 
 const PAGE_SIZE = 50;
 
-const MESSAGE_SELECT = `*, sender:profiles(id, display_name, avatar_url, role, verified), reactions:message_reactions(user_id, emoji)`;
+const MESSAGE_SELECT = `*, sender:profiles!messages_sender_id_fkey(id, display_name, avatar_url, role, verified), reactions:message_reactions(user_id, emoji)`;
+// The FK hint on `sender` is deliberate: name the exact join so a future
+// table linking messages to profiles can never make this embed ambiguous
+// (PGRST201 — that took every thread down on 2026-10-06).
 
 // Realtime and the POST response can both deliver the same row, and the sender
 // already has an optimistic copy on screen. Reconcile on the server id first,
@@ -323,7 +327,10 @@ export default function ChatPage() {
     const last = messages[messages.length - 1]?.id ?? null;
     if (last !== lastMessageIdRef.current) {
       lastMessageIdRef.current = last;
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      // Scroll the message list itself. scrollIntoView also scrolls the
+      // WINDOW, which slid this header up under the site's sticky top bar.
+      const scroller = scrollerRef.current;
+      if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
 
@@ -398,6 +405,8 @@ export default function ChatPage() {
     );
     setCallSession(s);
     sessionRef.current = s;
+    // Get relay (TURN) credentials ready before anyone taps call or answers.
+    void prefetchIceServers((url) => authFetch(url));
     // Subscribing is async now; a failure here only means incoming invites
     // won't arrive until the next attempt, so it is surfaced, not thrown.
     // Gated on this still being the mounted session: disposing rejects the
@@ -767,7 +776,10 @@ export default function ChatPage() {
   const presence = describePresence(otherUser?.last_seen_at, nowTick);
 
   return (
-    <div className="flex-1 flex flex-col h-full animate-fade-in">
+    // Fixed to the visible screen (minus the 4rem site header and, on phones,
+    // the bottom tab bar) so only the message list scrolls — the header and
+    // the composer never move.
+    <div className="flex flex-col animate-fade-in h-[calc(100dvh-4rem-var(--mobile-tabbar-clearance))] md:h-[calc(100dvh-4rem-6rem)] min-h-0">
       <div className="border-b border-melori-border p-4 flex items-center gap-3 bg-melori-void/95 backdrop-blur z-10 shrink-0">
         <Link
           href="/social/messages"
@@ -846,7 +858,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
         {hasOlder && (
           <div className="flex justify-center">
             <button

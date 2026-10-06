@@ -61,6 +61,17 @@ expect(
   readFileSync("src/components/social/messages/NewMessageModal.tsx", "utf8").includes("alert("),
   false,
 );
+has(PAGE, "profiles!messages_sender_id_fkey", "sender embed names its FK (no PGRST201 ambiguity)");
+expect("thread never scrolls the window", /\.scrollIntoView\(/.test(readFileSync(PAGE, "utf8")), false);
+has(PAGE, "100dvh-4rem-var(--mobile-tabbar-clearance)", "thread is pinned to the visible screen on phones");
+has(PAGE, "prefetchIceServers(", "thread fetches TURN relay credentials");
+has("src/lib/callClient.ts", "...relayServers", "peer connections use the relay servers");
+has("src/app/api/social/calls/ice/route.ts", "requireAuth(", "relay credentials require sign-in");
+expect(
+  "093 moves reactions.user_id off profiles",
+  readFileSync("supabase/migrations/093_message_reactions_user_fk_auth.sql", "utf8").includes("references auth.users(id)"),
+  true,
+);
 const SQL = readFileSync("supabase/migrations/092_messages_photos_reactions.sql", "utf8");
 expect("092 makes the bucket private", /'message-media',\s*'message-media',\s*false/.test(SQL), true);
 expect("092 keeps reactions out of postgres_changes", SQL.includes("alter publication"), false);

@@ -30,6 +30,8 @@ export interface Profile {
   city?: string | null;
   // Up to 5 clickable links shown on the profile (migration 039).
   social_links?: SocialLink[] | null;
+  // Presence heartbeat (POST /api/presence/heartbeat).
+  last_seen_at?: string | null;
 }
 
 export type SpaceType = "listening" | "discussion" | "creation" | "dj_set";

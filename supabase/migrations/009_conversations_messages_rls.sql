@@ -1,4 +1,10 @@
 -- 009_conversations_messages_rls.sql
+--
+-- NOTE (2026-10-06): this file was NEVER applied to production. The live
+-- messaging schema came from console work plus the ledger entries
+-- social_core_tables, chat_blocks_requests_delete, 042, dm_email_notifications,
+-- 082 and 086. Do not use this file as a picture of the live tables; read the
+-- live catalog (pg_policies / information_schema) before writing a migration.
 -- Bring the ad-hoc conversations / conversation_members / messages tables
 -- (originally created by hand in the Supabase console) under version control
 -- and lock them down with RLS. Also creates track_analytics for the studio

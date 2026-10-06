@@ -905,7 +905,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-melori-border p-4 bg-melori-void shrink-0 mb-28 md:mb-0">
+      <div className="border-t border-melori-border p-4 bg-melori-void shrink-0">
         {isPendingForMe ? (
           <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 text-center">
             <p className="mb-3 text-sm text-text-secondary">

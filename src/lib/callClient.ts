@@ -259,10 +259,45 @@ export interface CallSessionOptions {
   deps?: Partial<CallDeps>;
 }
 
-function iceServers(): RTCIceServer[] {
+// TURN relay servers fetched from /api/social/calls/ice (short-lived
+// credentials). Without a relay, phones on cellular data or behind most home
+// routers can't reach each other and the call rings but never connects.
+let relayServers: RTCIceServer[] = [];
+let relayFetchedAt = 0;
+let relayInflight: Promise<void> | null = null;
+const RELAY_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+/** Fetch (or refresh) TURN relay credentials. Never throws. */
+export function prefetchIceServers(
+  fetcher: (url: string) => Promise<Response>,
+): Promise<void> {
+  if (relayServers.length && Date.now() - relayFetchedAt < RELAY_REFRESH_MS) {
+    return Promise.resolve();
+  }
+  if (relayInflight) return relayInflight;
+  relayInflight = (async () => {
+    try {
+      const res = await fetcher("/api/social/calls/ice");
+      if (!res.ok) return;
+      const j = (await res.json()) as { iceServers?: RTCIceServer[] };
+      if (Array.isArray(j.iceServers) && j.iceServers.length) {
+        relayServers = j.iceServers;
+        relayFetchedAt = Date.now();
+      }
+    } catch {
+      // Direct connections still work on friendly networks.
+    } finally {
+      relayInflight = null;
+    }
+  })();
+  return relayInflight;
+}
+
+export function iceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    ...relayServers,
   ];
   const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
   if (turnUrl) {

@@ -11,20 +11,9 @@ const EXPIRES_IN = 3600;
 
 // GET /api/tracks/[id]/stream — a short-lived signed URL for the track's audio.
 //
-// MUSIC IS FREE, BUT NOT ANONYMOUS. Every signed-in account — free or any other
-// role — gets the full-length master. There is no membership tier, no 30-second
-// sample and no preview window. An unauthenticated request gets 401: the
-// catalog opens at first sign in, not before it.
-//
-// The previous design gated on isSuperfanOrBetter() and, for free listeners,
-// either signed a dedicated `preview_url` clip or — far more commonly, because
-// no preview-rendering worker was ever built — signed the FULL master anyway
-// and asked the browser to stop at 30 seconds. That cap was cosmetic: the
-// signed URL was directly fetchable. So the paywall protected nothing while
-// still costing a real listener the rest of the song.
-//
-// The response keeps its original shape so the client needs no change. `sample`
-// is now always false, which means PlayerProvider never arms its playback cap.
+// MUSIC IS FREE, BUT NOT ANONYMOUS. Every signed-in account gets the
+// full-length master. An unauthenticated request gets 401: the catalog opens at
+// first sign in, not before it.
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
@@ -113,13 +102,6 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json({
       url: playbackUrl,
       expiresIn: EXPIRES_IN,
-      // Retained for client compatibility. Music is free to members, so
-      // playback is never sampled or windowed.
-      sample: false,
-      sampleSeconds: null,
-      previewStart: null,
-      previewEnd: null,
-      dedicatedPreview: false,
     });
   } catch (err) {
     console.error(`GET /api/tracks/${params.id}/stream failed:`, err);

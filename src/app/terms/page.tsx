@@ -62,10 +62,11 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold text-text-primary mb-2">
               Limitation of liability
             </h2>
+            {/* LEGAL REVIEW */}
             <p>
-              MELORI Music is provided &quot;as is.&quot; We&apos;re not liable
-              for downtime, data loss, or disputes between users. Maximum
-              liability is the amount you paid us in the prior 12 months.
+              MELORI Music is provided &quot;as is.&quot; To the fullest extent
+              the law allows, we&apos;re not liable for downtime, data loss, or
+              disputes between users.
             </p>
           </section>
 

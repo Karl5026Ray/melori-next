@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
 
@@ -8,12 +8,12 @@ export const dynamic = "force-dynamic";
 
 const PREVIEWS_BUCKET = "gallery-previews";
 
-// GET /api/studio/gallery/list — requireArtist. Returns the caller's own
+// GET /api/studio/gallery/list — requireAuth. Returns the caller's own
 // galleries (admins see their own galleries too — Phase 1 keeps this scoped
 // to "owned by me"; a future admin-wide view is out of scope) with image
 // counts and a resolved cover URL for the studio grid.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const admin = isAdmin(guard.membership.profile);

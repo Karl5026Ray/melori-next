@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { PUBLIC_CATALOG_TAG } from "@/lib/supabase/admin";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 // track-cleanup edge function fires asynchronously off the INSERT and can
 // flag/remove afterward without disrupting the artist.
 export async function POST(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   let body: Record<string, unknown>;

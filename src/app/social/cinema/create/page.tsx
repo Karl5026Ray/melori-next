@@ -17,8 +17,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import {
   useCanParticipate,
-  UpgradePrompt,
-} from "@/components/social/UpgradePrompt";
+  SignInPrompt,
+} from "@/components/social/SignInPrompt";
 import { authFetch } from "@/lib/authClient";
 import { ArrowLeft, Clapperboard } from "lucide-react";
 import Link from "next/link";
@@ -125,7 +125,7 @@ export default function CreateCinemaPage() {
         </div>
 
         {user && !canParticipate ? (
-          <UpgradePrompt action="start a Cinema room" />
+          <SignInPrompt action="start a Cinema room" />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>

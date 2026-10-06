@@ -10,8 +10,8 @@ import { Music, Mail, Lock, ArrowRight } from "lucide-react";
 // Shared Supabase login surface. Rendered by BOTH the /social/auth gateway and
 // the top-level /login route so there is a single, canonical sign-in form
 // (Google + Apple OAuth, email/password, forgot-password, sign-up link).
-// Account creation lives at /register (tier picker + Stripe flow).
-// Honors ?next= so protected pages (settings/dashboard/superfan) return the
+// Account creation lives at /register (email + password, free).
+// Honors ?next= so protected pages (settings/dashboard) return the
 // user where they were headed.
 function safeNext(next: string | null): string {
   // Only allow same-origin absolute paths to avoid open-redirects.
@@ -92,7 +92,7 @@ function AuthInner() {
           disabled={googleLoading || appleLoading}
           className="w-full flex items-center justify-center gap-2 rounded-xl border border-melori-border bg-melori-elevated py-3 text-sm font-medium transition hover:border-melori-purple/40 disabled:opacity-50 mb-3"
         >
-          {googleLoading ? "Redirecting\u2026" : "Continue with Google"}
+          {googleLoading ? "Redirecting…" : "Continue with Google"}
         </button>
 
         <button
@@ -102,7 +102,7 @@ function AuthInner() {
           className="w-full flex items-center justify-center gap-2 rounded-xl border border-melori-border bg-melori-elevated py-3 text-sm font-medium transition hover:border-melori-purple/40 disabled:opacity-50 mb-4"
         >
           {appleLoading ? (
-            "Redirecting\u2026"
+            "Redirecting…"
           ) : (
             <>
               <svg

@@ -24,7 +24,7 @@ async function verifyAdmin(req: NextRequest) {
 //   { action: "approve" | "reject", notes?: string }
 //
 // On approve: create a lightweight release + track shell so the audio shows up
-// in the catalog. Admin can later fill in cover art, tracklist, price, etc.
+// in the catalog. Admin can later fill in cover art, tracklist, etc.
 // via /admin/tracks. On reject: just mark the row and stash the reviewer note.
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;

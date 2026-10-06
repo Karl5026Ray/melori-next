@@ -27,9 +27,8 @@ export async function requireAdmin(
   if (!membership.userId) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
-  // membership-server maps profiles.role onto MembershipProfile.membership_tier,
-  // and isAdmin() reads role ?? membership_tier — so this stays in lockstep with
-  // the resolver even though the object has no bare `role` field.
+  // membership-server resolves profiles.role onto MembershipProfile.role, which
+  // is what isAdmin() reads.
   if (!isAdmin(membership.profile)) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }

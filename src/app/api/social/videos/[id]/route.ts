@@ -23,7 +23,7 @@ function revalidateVideoPaths() {
 
 // DELETE /api/social/videos/[id] — owner (or admin) deletion of a Mirror post.
 //
-// The guard is requireAuth, not requireArtist: publishing a native post is open
+// The guard is requireAuth, not requireAuth: publishing a native post is open
 // to any signed-in member (POST /api/social/videos), so gating the delete on the
 // artist tier stranded free-tier members with posts they could see a delete
 // button for but never remove. Authorization is the ownership check below plus

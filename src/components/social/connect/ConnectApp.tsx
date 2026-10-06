@@ -42,8 +42,8 @@ export default function ConnectApp() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("discover");
 
-  // gate: 'loading' | 'ok' | 'signin' | 'upgrade'
-  const [gate, setGate] = useState<"loading" | "ok" | "signin" | "upgrade">(
+  // gate: 'loading' | 'ok' | 'signin'
+  const [gate, setGate] = useState<"loading" | "ok" | "signin">(
     "loading",
   );
   const [needsProfile, setNeedsProfile] = useState(false);
@@ -61,7 +61,6 @@ export default function ConnectApp() {
     try {
       const res = await authFetch("/api/social/connect/discover?limit=20");
       if (res.status === 401) return setGate("signin");
-      if (res.status === 403) return setGate("upgrade");
       const data = await res.json();
       setGate("ok");
       if (data.needsProfile) {
@@ -107,7 +106,9 @@ export default function ConnectApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ target_id: targetId, action }),
         });
-        if (res.status === 403) return setGate("upgrade");
+        if (res.status === 401) return setGate("signin");
+        // 403 = blocked pair; the card has already advanced, nothing to show.
+        if (!res.ok) return;
         const data = await res.json();
         if (data.matched) {
           setMatchToast(data.profile);
@@ -153,19 +154,6 @@ export default function ConnectApp() {
       </Centered>
     );
   }
-  if (gate === "upgrade") {
-    return (
-      <Centered>
-        <Heart className="mb-3 h-8 w-8 text-melori-pink" />
-        <h2 className="text-xl font-bold">Sign in to use Connect</h2>
-        <p className="mt-1 max-w-sm text-sm text-melori-muted">
-          Connect lets you meet others who share your music taste, see who likes
-          you, and start conversations.
-        </p>
-        </Centered>
-    );
-  }
-
   // ---- main UI ---------------------------------------------------------------
   return (
     <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pb-24 pt-4">

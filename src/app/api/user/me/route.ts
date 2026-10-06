@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getRequestMembership } from "@/lib/membership-server";
-import { tierOf } from "@/lib/membership";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/user/me — the signed-in user's profile + resolved tier.
+// GET /api/user/me — the signed-in user's profile + role.
 // Caller is identified from the Supabase access token (Authorization: Bearer …).
 // Reads with the service-role client so it never depends on RLS or a page-level
 // select tripping over an optional column — this is the resilient data source
@@ -38,7 +37,6 @@ export async function GET(req: NextRequest) {
     id: userId,
     email,
     role,
-    tier: tierOf({ membership_tier: role }),
     isAdmin: role === "admin",
     profile: {
       id: userId,
@@ -48,10 +46,6 @@ export async function GET(req: NextRequest) {
       avatar_url: row.avatar_url ?? null,
       bio: row.bio ?? null,
       role,
-      membership_status: row.membership_status ?? null,
-      membership_tier: row.membership_tier ?? role,
-      membership_interval: row.membership_interval ?? null,
-      membership_expires_at: row.membership_expires_at ?? null,
       notifications_email: row.notifications_email ?? true,
     },
   });

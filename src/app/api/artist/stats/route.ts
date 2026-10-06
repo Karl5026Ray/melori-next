@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { ensureArtistRow } from "@/lib/artist";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // return zeros and an empty release list so the UI can show a "link my artist
 // profile" prompt.
 export async function GET(req: Request) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const userId = guard.membership.userId!;
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     .eq("profile_id", userId)
     .maybeSingle();
 
-  // Self-heal: the caller passed requireArtist, so they're an artist-tier member.
+  // Self-heal: the caller passed requireAuth, so they're an artist-tier member.
   // If no artists row is linked yet (e.g. role granted before this backfill
   // existed), create one now and re-read so stats populate on first load.
   if (!artist) {

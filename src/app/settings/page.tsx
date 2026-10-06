@@ -23,9 +23,6 @@ type ProfileRow = {
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
-  membership_tier: string | null;
-  membership_status: string | null;
-  membership_expires_at: string | null;
   notifications_email?: boolean | null;
 };
 

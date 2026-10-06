@@ -99,7 +99,7 @@ function CompetitorTile({
         {competitor.isLive ? "Live" : "Off"}
       </span>
 
-      {/* Floating gifts and notes are absolutely positioned so they never
+      {/* Floating votes and notes are absolutely positioned so they never
           contribute to the tile's height budget on a small screen. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         {floats.map((float) => (

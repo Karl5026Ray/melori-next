@@ -20,9 +20,9 @@ export default function PrivacyPage() {
               What we collect
             </h2>
             <p>
-              Email address (for your account and purchase confirmations).
-              Payment info (handled entirely by Stripe — we never see your card
-              number). Basic listening activity (to improve recommendations).
+              Email address (for your account and transactional email). Basic
+              listening activity (to improve recommendations). Melori does not
+              take payments, so we collect no payment information.
             </p>
           </section>
 
@@ -33,7 +33,7 @@ export default function PrivacyPage() {
             <p>
               We don&apos;t sell your data. We don&apos;t track you across the
               web. We don&apos;t share information with third parties except as
-              required to operate the platform (Stripe for payments, Resend for
+              required to operate the platform (for example, Resend for
               transactional email).
             </p>
           </section>

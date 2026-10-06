@@ -1,7 +1,7 @@
 // src/lib/native-app.ts
 //
 // Detects whether the web app is running inside the Melori Music native
-// Capacitor shell (iOS or Android) so purchase UI can be adapted at runtime.
+// Capacitor shell (iOS or Android) so UI can be adapted at runtime.
 //
 // Detection strategy: Capacitor sets window.Capacitor on the global, and the
 // app's User-Agent includes "org.melorimusic.app" (the Capacitor appId).

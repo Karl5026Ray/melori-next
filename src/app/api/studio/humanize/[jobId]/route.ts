@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // application code since this route uses the service-role client).
 export async function GET(req: NextRequest, props: { params: Promise<{ jobId: string }> }) {
   const params = await props.params;
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const userId = guard.membership.userId!;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // Lists the caller's live-room invites. For incoming we only surface pending
 // invites whose room is still live, so ended/stale invites don't clutter.
 export async function GET(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { userId } = guard.membership;
 
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
 // - Only the HOST of the room may invite.
 // - Unique index prevents duplicate pending invites for the same room+pair.
 export async function POST(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const { userId: senderId } = guard.membership;
 

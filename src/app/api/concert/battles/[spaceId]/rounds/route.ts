@@ -86,7 +86,7 @@ export async function POST(req: NextRequest, { params }: Props) {
       );
     }
 
-    // Only the two performers may move the clock. The audience gifts; it does
+    // Only the two performers may move the clock. The audience votes; it does
     // not run the format.
     const slot = getConcertBattleSlot(battle, userId);
     if (!slot) {

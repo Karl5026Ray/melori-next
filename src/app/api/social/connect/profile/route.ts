@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperfan, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ const GENDERS = ["woman", "man", "nonbinary", "other"];
 
 // GET /api/social/connect/profile — the caller's own dating profile (or null).
 export async function GET(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId as string;
 
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 // Body accepts: is_active, birthdate, gender, interested_in[], age_min, age_max,
 // city, headline, prompts[], photos[].
 export async function PUT(req: NextRequest) {
-  const guard = await requireSuperfan(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId as string;
 

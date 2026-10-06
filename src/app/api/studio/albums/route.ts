@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { OWNER_COLUMN } from "@/lib/studio-ownership";
 import { ensureStudioAlbum, normalizeAlbumTitle } from "@/lib/studio-albums";
 
 export const dynamic = "force-dynamic";
 
-// Album pricing for the Artist Studio. Albums themselves are derived from the
-// free-text `studio_tracks.album` column; this route materialises the pricing
+// Album details for the Artist Studio. Albums themselves are derived from the
+// free-text `studio_tracks.album` column; this route materialises the album
 // side-car for every album the caller actually has tracks in, so the dashboard
 // never shows a stale album or misses a brand new one.
 
@@ -16,16 +16,15 @@ interface AlbumSummary {
   id: string;
   title: string;
   slug: string;
-  priceCents: number;
   description: string | null;
   coverUrl: string | null;
   trackCount: number;
   publishedCount: number;
 }
 
-// GET /api/studio/albums — every album the caller has tracks in, with price.
+// GET /api/studio/albums — every album the caller has tracks in.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const supabase = createServiceClient();
@@ -67,7 +66,6 @@ export async function GET(req: NextRequest) {
       id: row.id,
       title: row.title,
       slug: row.slug,
-      priceCents: row.price_cents,
       description: row.description,
       coverUrl: row.cover_url,
       trackCount: entry.total,
@@ -79,11 +77,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ albums });
 }
 
-// PATCH /api/studio/albums — update one album's price/description.
-// Scoped by profile_id so an artist can only reprice their own album, matching
+// PATCH /api/studio/albums — update one album's description.
+// Scoped by profile_id so an artist can only edit their own album, matching
 // the RLS policy in migration 045.
 export async function PATCH(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
   const body = await req.json().catch(() => ({}));
@@ -108,7 +106,7 @@ export async function PATCH(req: NextRequest) {
     .update(update)
     .eq("id", albumId)
     .eq("profile_id", guard.membership.userId)
-    .select("id, slug, price_cents, description")
+    .select("id, slug, description")
     .maybeSingle();
 
   if (error) {

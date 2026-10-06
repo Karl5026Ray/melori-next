@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
   getGoogleOAuthClient,
   GOOGLE_CALENDAR_SCOPES,
@@ -10,12 +10,12 @@ import { signCalendarState } from "@/lib/calendar-oauth-state";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/studio/calendar/connect — requireArtist. Builds the Google OAuth
+// GET /api/studio/calendar/connect — requireAuth. Builds the Google OAuth
 // consent URL for the caller and returns { url } for the client to redirect
 // to. This is a brand-new, separate OAuth flow from Supabase's Google
 // sign-in — it never touches that.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

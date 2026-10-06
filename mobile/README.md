@@ -11,7 +11,7 @@ major version, so API 36 and Capacitor 8 come as a pair. Building needs
 ## Architecture: remote-URL wrapper
 
 Melori is a full server-rendered Next.js app (SSR, API routes, Supabase auth,
-Stripe, LiveKit, VPS rewrites) — it can't be exported to static files. So the
+LiveKit, VPS rewrites) — it can't be exported to static files. So the
 native shell loads the **live site** in a WebView via `server.url` in
 `capacitor.config.json`. Benefits:
 

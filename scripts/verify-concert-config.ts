@@ -26,7 +26,6 @@
 import {
   evaluateConcertReadiness,
   formatConcertReadinessReport,
-  CONCERT_REQUIRED_GIFT_SLUGS,
   type ConcertDbInput,
   type ConcertLiveKitProbe,
 } from "../src/lib/concertReadiness";
@@ -41,55 +40,22 @@ const RUN_LIVE = process.argv.includes("--live");
 async function probeDatabase(): Promise<ConcertDbInput> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  const unknown: ConcertDbInput = {
-    activeGiftSlugs: null,
-    scoreFunctionExists: null,
-    scoreFunctionGrantees: null,
-    giftSendIndexExists: null,
-  };
+  const unknown: ConcertDbInput = { voteTableExists: null };
   if (!url || !key) return unknown;
 
   const { createClient } = await import("@supabase/supabase-js");
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
-  const result: ConcertDbInput = { ...unknown };
-
-  const { data: gifts, error: giftError } = await supabase
-    .from("gifts")
-    .select("slug")
-    .eq("active", true)
-    .in("slug", [...CONCERT_REQUIRED_GIFT_SLUGS]);
-  if (!giftError && gifts) {
-    result.activeGiftSlugs = gifts.map((row: { slug: string }) => row.slug);
-  } else if (giftError) {
-    console.log(`  note  could not read public.gifts: ${giftError.message}`);
+  // A head-only count proves the table exists without reading any votes.
+  const { error } = await supabase
+    .from("concert_votes")
+    .select("id", { count: "exact", head: true });
+  if (!error) return { voteTableExists: true };
+  if (/does not exist|schema cache|could not find/i.test(error.message ?? "")) {
+    return { voteTableExists: false };
   }
-
-  // The function's existence is proven by calling it, not by reading catalog
-  // tables PostgREST does not expose. A random space id returns zero rows,
-  // which is a successful call; only a missing function errors.
-  const { error: rpcError } = await supabase.rpc("concert_battle_gift_totals", {
-    p_space_id: "00000000-0000-0000-0000-000000000000",
-  });
-  if (!rpcError) {
-    result.scoreFunctionExists = true;
-    // Reached with the service role, which is the only role that should hold
-    // EXECUTE. A grant audit needs catalog access this client does not have,
-    // so report the one grantee we proved rather than guessing at others.
-    result.scoreFunctionGrantees = ["service_role"];
-  } else if (/could not find the function|does not exist|schema cache/i.test(rpcError.message)) {
-    result.scoreFunctionExists = false;
-    result.scoreFunctionGrantees = [];
-  } else {
-    console.log(`  note  concert_battle_gift_totals call failed: ${rpcError.message}`);
-  }
-
-  // The index is not visible through PostgREST either. Treat it as unknown
-  // rather than inventing a result: it is an advisory check, so an unknown
-  // never blocks.
-  result.giftSendIndexExists = result.scoreFunctionExists === true ? true : null;
-
-  return result;
+  console.log(`  note  could not read public.concert_votes: ${error.message}`);
+  return unknown;
 }
 
 /** Ask LiveKit whether the configured key/secret pair actually authenticates. */

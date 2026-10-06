@@ -136,7 +136,6 @@ export default function TrackUploader() {
           file_url: audioPublicUrl,
           file_path: audioPath,
           cover_url: coverPublicUrl,
-          price_cents: 0,
           type: state.album ? "album_track" : "single",
           status: "draft",
         }),

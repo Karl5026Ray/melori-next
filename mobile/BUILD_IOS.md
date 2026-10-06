@@ -158,8 +158,8 @@ The wrapper already declares standard HTTPS-only encryption (exempt). If Xcode/A
   a project that was already configured don't undo this — Capacitor doesn't
   touch custom `Info.plist` entries it didn't add — but it costs nothing to
   re-run `npm run sync` anyway since `postsync.sh` is idempotent.)
-- **App Store review risk (thin-wrapper rule):** Apple sometimes rejects apps that are "just a website." Melori is a rich PWA with streaming, accounts, community, live audio, and purchases, which satisfies the "app-like" bar, but if reviewers push back, the reply is: it's a full-featured streaming/community platform, not a repackaged marketing page. Having native status-bar handling + offline fallback (both included here) helps.
-- **In-app purchases:** the app loads your Stripe/web checkout. Under Apple's rules, digital-goods purchases inside the app normally require Apple IAP. Safest v1 posture: the iOS app is stream + discover + community; if a reviewer flags the buy buttons, either (a) apply for the **Reader App** entitlement, or (b) hide purchase buttons on iOS via a user-agent check. Ask me and I'll add the iOS-detection toggle to the web app.
+- **App Store review risk (thin-wrapper rule):** Apple sometimes rejects apps that are "just a website." Melori is a rich PWA with streaming, accounts, community, and live audio, which satisfies the "app-like" bar, but if reviewers push back, the reply is: it's a full-featured streaming/community platform, not a repackaged marketing page. Having native status-bar handling + offline fallback (both included here) helps.
+- **In-app purchases:** none. Melori sells nothing — no subscriptions, tiers, gifts or checkout — so there is no IAP or payment flow for App Review to evaluate.
 - **Push notifications, deep links:** not included in v1. Can be added later.
 - **Minimum iOS version:** Capacitor 8 raises the deployment target to **iOS 15.0** (Capacitor 6 was 13.0). Devices on iOS 13/14 can no longer install new builds.
 - **Android:** now first-class — see **BUILD_ANDROID.md** and `.github/workflows/android-build.yml`.
@@ -167,4 +167,4 @@ The wrapper already declares standard HTTPS-only encryption (exempt). If Xcode/A
 ---
 
 ## If you get stuck
-Tell me the exact Xcode error or the step number, and I'll walk you through it. I can also add the iOS purchase-button toggle or set up a GitHub Actions macOS workflow to automate future builds.
+Tell me the exact Xcode error or the step number, and I'll walk you through it. I can also set up a GitHub Actions macOS workflow to automate future builds.

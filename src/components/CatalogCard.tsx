@@ -7,13 +7,7 @@ import type { CatalogItem } from "@/lib/catalog";
 // self-uploads alike. Replaces ReleaseCard, which could only render the
 // former.
 //
-// NO PRICES, NO BUY BUTTON. Music is free to every member, so a card has
-// nothing to sell. This also retires the data-native-hide treatment that used
-// to wrap the price: that existed solely because a price is a purchase
-// affordance under App Store guideline 3.1.1 and these cards render on
-// ISR-cached pages shared by web and app visitors. With no price in the markup
-// there is nothing for App Review to find and nothing for the pre-paint CSS to
-// hide.
+// Music is free to every member, so a card has nothing to sell.
 //
 // Structural note: the cover and title link to the item, but the ARTIST name
 // is a SIBLING link, not a nested one. Nesting an <a> inside an <a> is invalid

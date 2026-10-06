@@ -1,14 +1,13 @@
 // The unified public catalog.
 //
 // Melori has two music data models that grew independently:
-//   * legacy `releases` + `tracks` — admin-curated, integer ids, DECIMAL
-//     dollar prices, reachable at /albums/<slug>
+//   * legacy `releases` + `tracks` — admin-curated, integer ids, reachable at
+//     /albums/<slug>
 //   * `studio_tracks` (+ the `studio_albums` side-car added in migration 045)
-//     — artist self-uploads, UUID ids, integer-cent prices
+//     — artist self-uploads, UUID ids
 //
-// Until now those two models rendered in two separate places: releases in the
-// catalog grid, self-uploads in a "Latest from Artists" strip below it with no
-// price and no way to buy. Artists reasonably concluded they were invisible.
+// Those two models used to render in two separate places, so artists' own
+// uploads looked invisible next to the curated catalog.
 //
 // This module normalizes both into one `CatalogItem` so every public surface —
 // homepage, /music, artist profiles, search — renders them side by side on
@@ -27,14 +26,6 @@ import type { ArtistRef, ReleaseListItem } from "@/lib/data";
 
 export type CatalogItemKind = "release" | "studio_album" | "studio_track";
 
-// What the Buy button posts to /api/music/checkout. Only ever an identifier —
-// the price is re-read server-side from the row this points at.
-export interface CatalogCheckoutRef {
-  releaseId?: number;
-  studioTrackId?: string;
-  studioAlbumId?: string;
-}
-
 export interface CatalogItem {
   /** Stable React key; ids collide across kinds (integer 1 vs uuid). */
   key: string;
@@ -44,20 +35,10 @@ export interface CatalogItem {
   href: string;
   release_type: "album" | "single" | "ep";
   cover_art_url: string | null;
-  /** Integer cents. null when unknown; 0 means free. */
-  priceCents: number | null;
   release_date: string | null;
   artist: ArtistRef | null;
   genre: string | null;
   trackPlayCounts?: Record<number, number>;
-  checkout: CatalogCheckoutRef | null;
-}
-
-// Legacy prices are DECIMAL dollars in the DB; the catalog speaks cents.
-export function dollarsToCents(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
 }
 
 export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
@@ -69,12 +50,10 @@ export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
     href: `/albums/${release.slug}`,
     release_type: release.release_type,
     cover_art_url: release.cover_art_url,
-    priceCents: dollarsToCents(release.price),
     release_date: release.release_date,
     artist: release.artist,
     genre: release.genre,
     trackPlayCounts: release.trackPlayCounts,
-    checkout: { releaseId: release.id },
   };
 }
 
@@ -119,7 +98,6 @@ interface StudioAlbumRow {
   title: string;
   slug: string;
   cover_url: string | null;
-  price_cents: number | null;
   created_at: string;
 }
 
@@ -131,7 +109,6 @@ interface StudioTrackRow {
   album: string | null;
   genre: string | null;
   cover_url: string | null;
-  price_cents: number | null;
   created_at: string;
 }
 
@@ -157,7 +134,7 @@ async function loadStudioCatalog(limit: number): Promise<{
     supabase
       .from("studio_tracks")
       .select(
-        "id, profile_id, title, artist, album, genre, cover_url, price_cents, created_at",
+        "id, profile_id, title, artist, album, genre, cover_url, created_at",
       )
       .eq("status", "published")
       .eq("moderation_status", "clean")
@@ -165,7 +142,7 @@ async function loadStudioCatalog(limit: number): Promise<{
       .limit(limit),
     supabase
       .from("studio_albums")
-      .select("id, profile_id, title, slug, cover_url, price_cents, created_at")
+      .select("id, profile_id, title, slug, cover_url, created_at")
       .order("created_at", { ascending: false })
       .limit(limit),
   ]);
@@ -203,11 +180,9 @@ export function studioAlbumToCatalogItem(
     href: `/music/album/${album.slug}`,
     release_type: "album",
     cover_art_url: album.cover_url,
-    priceCents: album.price_cents ?? null,
     release_date: album.created_at,
     artist: artist ?? (fallbackArtistName ? { name: fallbackArtistName, slug: "" } : null),
     genre,
-    checkout: { studioAlbumId: album.id },
   };
 }
 
@@ -224,11 +199,9 @@ export function studioTrackToCatalogItem(
     href: `/music/${track.id}`,
     release_type: "single",
     cover_art_url: track.cover_url,
-    priceCents: track.price_cents ?? null,
     release_date: track.created_at,
     artist: artist ?? (fallbackName ? { name: fallbackName, slug: "" } : null),
     genre: track.genre,
-    checkout: { studioTrackId: track.id },
   };
 }
 
@@ -321,7 +294,6 @@ export interface StudioAlbumDetail {
   slug: string;
   description: string | null;
   coverUrl: string | null;
-  priceCents: number;
   artist: ArtistRef | null;
   artistName: string;
   tracks: Array<{
@@ -329,7 +301,6 @@ export interface StudioAlbumDetail {
     title: string;
     duration: number | null;
     coverUrl: string | null;
-    priceCents: number | null;
   }>;
 }
 
@@ -339,7 +310,7 @@ export async function getStudioAlbumBySlug(
   const supabase = getSupabaseAdmin();
   const { data: album, error } = await supabase
     .from("studio_albums")
-    .select("id, profile_id, title, slug, description, cover_url, price_cents")
+    .select("id, profile_id, title, slug, description, cover_url")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -348,7 +319,7 @@ export async function getStudioAlbumBySlug(
 
   const { data: trackRows } = await supabase
     .from("studio_tracks")
-    .select("id, title, duration, cover_url, price_cents, artist, sort_order, created_at")
+    .select("id, title, duration, cover_url, artist, sort_order, created_at")
     .eq("profile_id", row.profile_id)
     .eq("album", row.title)
     .eq("status", "published")
@@ -369,7 +340,6 @@ export async function getStudioAlbumBySlug(
     slug: row.slug,
     description: row.description ?? null,
     coverUrl: row.cover_url ?? tracks.find((t) => t.cover_url)?.cover_url ?? null,
-    priceCents: row.price_cents ?? 999,
     artist: refs.get(row.profile_id) ?? null,
     artistName:
       refs.get(row.profile_id)?.name ||
@@ -380,7 +350,6 @@ export async function getStudioAlbumBySlug(
       title: (t.title as string) ?? "Untitled",
       duration: typeof t.duration === "number" ? t.duration : null,
       coverUrl: (t.cover_url as string | null) ?? null,
-      priceCents: typeof t.price_cents === "number" ? t.price_cents : null,
     })),
   };
 }
@@ -398,7 +367,7 @@ export async function getStudioCatalogForProfile(
     supabase
       .from("studio_tracks")
       .select(
-        "id, profile_id, title, artist, album, genre, cover_url, price_cents, created_at",
+        "id, profile_id, title, artist, album, genre, cover_url, created_at",
       )
       .eq("profile_id", profileId)
       .eq("status", "published")
@@ -406,7 +375,7 @@ export async function getStudioCatalogForProfile(
       .order("created_at", { ascending: false }),
     supabase
       .from("studio_albums")
-      .select("id, profile_id, title, slug, cover_url, price_cents, created_at")
+      .select("id, profile_id, title, slug, cover_url, created_at")
       .eq("profile_id", profileId)
       .order("created_at", { ascending: false }),
   ]);

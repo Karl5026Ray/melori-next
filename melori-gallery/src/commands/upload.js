@@ -56,8 +56,6 @@ async function uploadCommand(filePath, options) {
       galleryName: options.gallery,
       folderName: options.folder,
       clientEmail: options.email,
-      forSale: Boolean(options.forSale),
-      priceCents: options.price ? parseInt(options.price, 10) : null,
       apiKey: config.apiKey,
       apiUrl: config.apiUrl,
     });

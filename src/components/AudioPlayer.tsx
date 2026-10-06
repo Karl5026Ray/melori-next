@@ -121,7 +121,6 @@ function DesktopBar() {
     duration,
     volume,
     error,
-    isSample,
     hasNext,
     hasPrev,
     radioMode,
@@ -147,17 +146,6 @@ function DesktopBar() {
       className="hidden md:block fixed bottom-0 inset-x-0 z-50 overflow-hidden border-t border-brand-border bg-brand-surface/95 backdrop-blur"
       style={{ transform: "translate3d(0,0,0)", willChange: "transform" }}
     >
-      {/* The free-preview upgrade banner used to live here. It announced a
-          30-second preview and a monthly Superfan tier, and it was the most
-          exposed purchase call to action in the product — which is why it
-          carried data-native-hide for App Review.
-
-          Both the preview and the tier are gone: #352 made every track play in
-          full for every member and #357 removed the last of the pricing copy.
-          The stream routes now return sample:false unconditionally, so
-          `sampleEnded` could never become true and this block was already
-          unreachable. Removed rather than left as dead code advertising a
-          product that does not exist. */}
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex flex-col gap-1.5">
         {/* Top row: track info + controls */}
         <div className="flex items-center gap-3">
@@ -177,11 +165,6 @@ function DesktopBar() {
                     {radioMode && (
                       <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
                         Radio
-                      </span>
-                    )}
-                    {isSample && (
-                      <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
-                        Preview
                       </span>
                     )}
                   </p>

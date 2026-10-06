@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sha256Hex } from "@/lib/gallery-auth";
 import { slugify } from "@/lib/slug";
@@ -8,12 +8,12 @@ import { slugify } from "@/lib/slug";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/studio/gallery/create — requireArtist. Creates a photo_galleries
+// POST /api/studio/gallery/create — requireAuth. Creates a photo_galleries
 // row owned by the caller with a unique slug (slugify+random hex, matching
 // the CLI upload route's convention). Optional password is hashed with the
 // SAME sha256Hex scheme /api/gallery/verify checks against.
 export async function POST(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

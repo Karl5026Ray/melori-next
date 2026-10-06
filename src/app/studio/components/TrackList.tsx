@@ -22,10 +22,6 @@ interface Track {
   sort_order: number | null;
 }
 
-interface TrackListProps {
-  onEditWaveform: (trackId: string) => void;
-}
-
 // Normalize an album name for grouping. Null/empty/whitespace all collapse
 // to a single "no album" bucket keyed by null. Matches server-side
 // treatment in POST /api/studio/tracks (trim + fallback to null).
@@ -35,7 +31,7 @@ function normalizeAlbum(album: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-export default function TrackList({ onEditWaveform }: TrackListProps) {
+export default function TrackList() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | Track["status"]>("all");
@@ -48,7 +44,7 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
   const deleteTrack = useCallback(async (trackId: string, title: string) => {
     if (
       !window.confirm(
-        `Delete “${title}” permanently? This removes the master audio, cover art, and preview clip. This cannot be undone.`,
+        `Delete “${title}” permanently? This removes the master audio and cover art. This cannot be undone.`,
       )
     ) {
       return;
@@ -375,8 +371,7 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                             {track.genre && ` • ${track.genre}`}
                           </p>
                           <p className="text-xs text-[#666] mt-1">
-                            {track.preview_url ? "✓ Preview ready" : "⚠ No preview"}
-                            {track.duration && ` • ${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, "0")}`}
+                            {track.duration && `${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, "0")}`}
                           </p>
                         </div>
                       </div>
@@ -398,13 +393,6 @@ export default function TrackList({ onEditWaveform }: TrackListProps) {
                           title="Edit title, artist, album, and genre"
                         >
                           ✏️ Edit
-                        </button>
-                        <button
-                          onClick={() => onEditWaveform(track.id)}
-                          className="px-3 sm:px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"
-                          title="Open the Clip Maker to set this track's 30-second preview"
-                        >
-                          ✂️ Clip Maker
                         </button>
                         <button
                           onClick={() =>

@@ -16,7 +16,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { useCanParticipate, useCanRequestStage } from "@/components/social/UpgradePrompt";
+import { useCanParticipate, useCanRequestStage } from "@/components/social/SignInPrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
 import { authFetch, authHeaders } from "@/lib/authClient";
 import {

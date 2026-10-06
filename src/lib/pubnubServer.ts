@@ -126,22 +126,30 @@ export async function publishSystemSignal(
   }
 }
 
-// Concert gifts are server-authoritative: unlike a reaction, a client may not
-// announce a paid gift merely by having channel write permission. The send-gift
-// route publishes this only after the atomic wallet RPC succeeds. Delivery is
-// intentionally best-effort (the completed ledger entry remains authoritative).
-export async function publishGiftSignal(
+// Concert audience votes are server-authoritative: a client may not announce a
+// vote (or a score) merely by having channel write permission. The vote route
+// publishes the ABSOLUTE per-round tally only after the vote row is written,
+// so a duplicated or reordered message can never inflate a competitor.
+// Delivery is best-effort; the concert_votes table remains authoritative and
+// the battle read returns the same tally.
+export async function publishVoteSignal(
   spaceId: string,
-  payload: Record<string, unknown>,
+  payload: {
+    round: number;
+    initiator_votes: number;
+    opponent_votes: number;
+    /** The performer who just received a vote, for the on-stage float. */
+    target?: string;
+  },
 ): Promise<void> {
   try {
     const pubnub = getPubNubServer();
     await pubnub.publish({
       channel: spaceChannel(spaceId),
-      message: { __signal: true, type: "gift", ...payload },
+      message: { __signal: true, type: "vote", ...payload },
     });
   } catch (err) {
-    console.warn("publishGiftSignal failed", err);
+    console.warn("publishVoteSignal failed", err);
   }
 }
 

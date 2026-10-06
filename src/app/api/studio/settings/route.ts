@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -13,11 +13,11 @@ const DEFAULTS = {
   buffer_minutes: 0,
 };
 
-// GET /api/studio/settings — requireArtist. Returns the caller's booking
+// GET /api/studio/settings — requireAuth. Returns the caller's booking
 // settings, falling back to defaults (no row yet) rather than 404ing so the
 // settings form always has something to render.
 export async function GET(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 
@@ -46,10 +46,10 @@ interface SettingsInput {
   bufferMinutes?: number;
 }
 
-// PUT /api/studio/settings — requireArtist. Upserts the caller's booking
+// PUT /api/studio/settings — requireAuth. Upserts the caller's booking
 // settings row.
 export async function PUT(req: NextRequest) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
 

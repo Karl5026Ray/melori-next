@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireArtist, isGuardFailure } from "@/lib/membership-server";
+import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
 
@@ -34,7 +34,7 @@ export async function PATCH(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const callerIsAdmin = isAdmin(guard.membership.profile);
@@ -130,7 +130,7 @@ export async function DELETE(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requireArtist(req);
+  const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const userId = guard.membership.userId as string;
   const callerIsAdmin = isAdmin(guard.membership.profile);

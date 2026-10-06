@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getConcertBattleSlot } from "@/lib/concertBattle";
 import { isUuid } from "@/lib/validators";
+import { countConcertRoundVotes } from "@/lib/concertRoundsServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +12,8 @@ type Props = { params: Promise<{ spaceId: string }> };
 
 // GET /api/concert/battles/:spaceId
 // A dedicated, authenticated battle read. It returns display state only; invite
-// recipient information is private to the sender/recipient and no presence,
-// wallet, or sender-history data is returned.
+// recipient information is private to the sender/recipient and no presence or
+// per-voter data is returned (the viewer only learns their OWN vote).
 export async function GET(req: NextRequest, { params }: Props) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
@@ -71,25 +72,36 @@ export async function GET(req: NextRequest, { params }: Props) {
       return NextResponse.json({ error: "Concert initiator is unavailable." }, { status: 409 });
     }
 
-    // DISPLAY-ONLY live score. concert_battle_rounds still owns round outcomes;
-    // a failed aggregate degrades to zeroes rather than failing the whole read,
-    // because a missing score must not black out the live stage.
-    let scores = { initiator_coins: 0, opponent_coins: 0, initiator_gifts: 0, opponent_gifts: 0 };
-    const { data: totals, error: totalsError } = await supabase.rpc(
-      "concert_battle_gift_totals",
-      { p_space_id: spaceId },
-    );
-    if (totalsError) {
-      console.error("concert battle gift totals failed", totalsError);
-    } else {
-      const row = Array.isArray(totals) ? totals[0] : totals;
-      if (row) {
+    // Live score: the audience vote tally for the CURRENT round, plus the
+    // viewer's own vote in it. concert_battle_rounds still owns finished
+    // outcomes. A failed count degrades to zeroes rather than failing the
+    // whole read, because a missing score must not black out the live stage.
+    const scoreRound = Number(battle.current_round) || 0;
+    let scores = { round: scoreRound, initiator_votes: 0, opponent_votes: 0 };
+    let viewerVote: string | null = null;
+    if (scoreRound > 0) {
+      try {
+        const tally = await countConcertRoundVotes(supabase, {
+          spaceId,
+          roundNumber: scoreRound,
+          initiatorId: battle.initiator_id,
+          opponentId: battle.opponent_id,
+        });
         scores = {
-          initiator_coins: Number(row.initiator_coins ?? 0),
-          opponent_coins: Number(row.opponent_coins ?? 0),
-          initiator_gifts: Number(row.initiator_gifts ?? 0),
-          opponent_gifts: Number(row.opponent_gifts ?? 0),
+          round: scoreRound,
+          initiator_votes: tally.initiatorVotes,
+          opponent_votes: tally.opponentVotes,
         };
+        const { data: mine } = await supabase
+          .from("concert_votes")
+          .select("performer_id")
+          .eq("space_id", spaceId)
+          .eq("round_number", scoreRound)
+          .eq("voter_id", viewerId)
+          .maybeSingle();
+        viewerVote = (mine as { performer_id?: string } | null)?.performer_id ?? null;
+      } catch (tallyError) {
+        console.error("concert battle vote tally failed", tallyError);
       }
     }
 
@@ -124,6 +136,7 @@ export async function GET(req: NextRequest, { params }: Props) {
         initiator,
         opponent: battle.opponent_id ? profileById.get(battle.opponent_id) ?? null : null,
         scores,
+        viewer_vote: viewerVote,
         viewer_slot: getConcertBattleSlot(battle, viewerId),
         viewer_capabilities: {
           can_select_opponent:

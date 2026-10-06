@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import SampleEditor from "./SampleEditor";
 import TrackUploadPanel from "./TrackUploadPanel";
 import { validateAudioFile, probeDuration } from "./uploadHelpers";
 
@@ -11,27 +10,14 @@ interface AdminTrack {
   id: number;
   title: string;
   audio_url: string | null;
-  preview_start: number;
-  preview_end: number;
   duration_seconds: number | null;
-  price: number | null;
   is_published: boolean;
   release_id: number | null;
   release_title: string | null;
   artist_name: string | null;
 }
 
-type View = "list" | "upload" | "sample";
-
-// Draft for a new upload that is waiting for its sample window to be set.
-interface UploadDraft {
-  title: string;
-  releaseId: string;
-  publish: boolean;
-  audioPath: string; // storage path saved into tracks.audio_url
-  audioSignedUrl: string; // playable URL for the editor
-  duration: number | null;
-}
+type View = "list" | "upload";
 
 export default function AdminTracksPage() {
   const router = useRouter();
@@ -50,14 +36,6 @@ export default function AdminTracksPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
-
-  // Sample editor state (used for both new uploads and editing existing tracks)
-  const [draft, setDraft] = useState<UploadDraft | null>(null);
-  const [editing, setEditing] = useState<AdminTrack | null>(null);
-  const [editUrl, setEditUrl] = useState<string | null>(null);
-  const [savingSample, setSavingSample] = useState(false);
-
-  const savingDraftRef = useRef(false);
 
   const loadTracks = useCallback(async () => {
     setLoading(true);
@@ -129,117 +107,30 @@ export default function AdminTracksPage() {
       setProgress(70);
       const duration = await probeDuration(file);
 
-      // Get a signed read URL so the sample editor can decode the audio.
-      const signRes = await fetch("/api/admin/sign-download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, bucket: "audio-files" }),
-      });
-      const { url: audioSignedUrl } = await signRes.json();
-
-      setProgress(100);
-      setDraft({
-        title: title.trim(),
-        releaseId,
-        publish,
-        audioPath: path,
-        audioSignedUrl,
-        duration,
-      });
-      setView("sample");
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Upload failed.");
-      setUploading(false);
-      setProgress(0);
-    }
-  };
-
-  const saveNewTrack = async (start: number, end: number) => {
-    if (!draft || savingDraftRef.current) return;
-    savingDraftRef.current = true;
-    setSavingSample(true);
-    try {
       const res = await fetch("/api/admin/tracks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: draft.title,
-          release_id: draft.releaseId || null,
-          audio_url: draft.audioPath,
-          duration_seconds: draft.duration,
-          preview_start: start,
-          preview_end: end,
-          is_published: draft.publish,
+          title: title.trim(),
+          release_id: releaseId || null,
+          audio_url: path,
+          duration_seconds: duration,
+          is_published: publish,
         }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Create failed");
       }
-      setDraft(null);
+      setProgress(100);
       resetUpload();
       setView("list");
       await loadTracks();
     } catch (err: any) {
-      alert(err?.message ?? "Could not save track.");
-    } finally {
-      savingDraftRef.current = false;
-      setSavingSample(false);
-    }
-  };
-
-  const openSampleEditor = async (track: AdminTrack) => {
-    if (!track.audio_url) {
-      alert("This track has no audio file to edit.");
-      return;
-    }
-    setEditing(track);
-    setEditUrl(null);
-    setView("sample");
-    try {
-      const res = await fetch("/api/admin/sign-download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: track.audio_url, bucket: "audio-files" }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.url) {
-        // Common cause: admin_session expired (401). Surface the real reason
-        // so the admin knows to re-login instead of staring at a blank editor.
-        throw new Error(
-          body?.error ??
-            (res.status === 401
-              ? "Admin session expired \u2014 please re-open the Admin dashboard."
-              : `sign-download ${res.status}`),
-        );
-      }
-      setEditUrl(body.url);
-    } catch (err: any) {
-      alert(err?.message ?? "Could not load audio for editing.");
-      setView("list");
-      setEditing(null);
-    }
-  };
-
-  const saveExistingSample = async (start: number, end: number) => {
-    if (!editing) return;
-    setSavingSample(true);
-    try {
-      const res = await fetch(`/api/admin/tracks/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preview_start: start, preview_end: end }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      setEditing(null);
-      setEditUrl(null);
-      setView("list");
-      await loadTracks();
-    } catch {
-      alert("Could not save sample window.");
-    } finally {
-      setSavingSample(false);
+      console.error(err);
+      alert(err?.message ?? "Upload failed.");
+      setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -347,7 +238,7 @@ export default function AdminTracksPage() {
                   <tr className="text-left text-[#888] border-b border-white/[0.06]">
                     <th className="px-5 py-3 font-medium">Title</th>
                     <th className="px-5 py-3 font-medium">Artist</th>
-                    <th className="px-5 py-3 font-medium">Sample</th>
+                    <th className="px-5 py-3 font-medium">Length</th>
                     <th className="px-5 py-3 font-medium">Published</th>
                     <th className="px-5 py-3 font-medium text-right">Actions</th>
                   </tr>
@@ -364,7 +255,7 @@ export default function AdminTracksPage() {
                       </td>
                       <td className="px-5 py-3 text-[#ccc]">{t.artist_name ?? "—"}</td>
                       <td className="px-5 py-3 text-[#ccc]">
-                        {fmt(t.preview_start)} – {fmt(t.preview_end)}
+                        {fmt(t.duration_seconds)}
                       </td>
                       <td className="px-5 py-3">
                         <button
@@ -393,12 +284,6 @@ export default function AdminTracksPage() {
                             }`}
                           >
                             Upload
-                          </button>
-                          <button
-                            onClick={() => openSampleEditor(t)}
-                            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs hover:border-[#c9a96e]/40"
-                          >
-                            Edit sample
                           </button>
                           <button
                             onClick={() => deleteTrack(t)}
@@ -527,63 +412,11 @@ export default function AdminTracksPage() {
             >
               {uploading
                 ? `Uploading… ${progress}%`
-                : "Upload & set 30-sec sample →"}
+                : "Upload track →"}
             </button>
           </div>
         )}
 
-        {view === "sample" && (
-          <div className="max-w-4xl mx-auto space-y-5">
-            <div>
-              <button
-                onClick={() => {
-                  setDraft(null);
-                  setEditing(null);
-                  setEditUrl(null);
-                  resetUpload();
-                  setView("list");
-                }}
-                className="text-sm text-[#888] hover:text-[#c9a96e]"
-              >
-                ← Back to tracks
-              </button>
-              <h2 className="text-2xl font-bold mt-2">
-                {editing ? editing.title : draft?.title}
-              </h2>
-              <p className="text-[#888] text-sm">
-                Drag the fixed 30-second window to choose what free listeners hear.
-              </p>
-            </div>
-
-            {draft ? (
-              <SampleEditor
-                audioUrl={draft.audioSignedUrl}
-                initialStart={0}
-                saving={savingSample}
-                onSave={saveNewTrack}
-                onCancel={() => {
-                  setDraft(null);
-                  resetUpload();
-                  setView("list");
-                }}
-              />
-            ) : editing && editUrl ? (
-              <SampleEditor
-                audioUrl={editUrl}
-                initialStart={editing.preview_start ?? 0}
-                saving={savingSample}
-                onSave={saveExistingSample}
-                onCancel={() => {
-                  setEditing(null);
-                  setEditUrl(null);
-                  setView("list");
-                }}
-              />
-            ) : (
-              <div className="text-center py-16 text-[#888]">Loading audio…</div>
-            )}
-          </div>
-        )}
       </main>
     </div>
   );

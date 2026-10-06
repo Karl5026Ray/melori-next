@@ -5,8 +5,8 @@ import { ImagePlus, Loader2, Trash2, Play, X, GripVertical } from "lucide-react"
 import { authFetch } from "@/lib/authClient";
 
 // Owner-facing, editable media gallery shown on the user's own profile page.
-// Photos OR vertical videos, up to a tier-based slot count (server-enforced):
-//   free -> 4, superfan -> 20, artist -> 20.
+// Photos OR vertical videos, up to a fixed slot count (server-enforced, 20
+// for every account).
 // Uploads use the same signed-URL flow as banners/avatars:
 //   POST (sign) -> PUT file to storage -> PATCH (persist row).
 
@@ -17,7 +17,7 @@ type Item = {
   sort_order: number;
 };
 
-// Generous ceilings; the storage bucket + tier count are the real guards.
+// Generous ceilings; the storage bucket + slot count are the real guards.
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024; // 12MB
 const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // 60MB
 

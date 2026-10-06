@@ -169,11 +169,13 @@ export default function ChatPage() {
   const toggleReaction = useCallback(
     async (messageId: string, emoji: string) => {
       if (!user?.id) return;
-      // Optimistic flip.
+      // Optimistic flip; remember what was there so a failure can undo it.
+      let before: { user_id: string; emoji: string }[] | undefined;
       setMessages((prev) =>
         prev.map((m) => {
           if (m.id !== messageId) return m;
           const list = m.reactions ?? [];
+          before = list;
           const has = list.some((r) => r.user_id === user.id && r.emoji === emoji);
           return {
             ...m,
@@ -183,13 +185,21 @@ export default function ChatPage() {
           };
         }),
       );
-      const res = await authFetch(`/api/social/messages/${messageId}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji }),
-      });
-      const j = await res.json().catch(() => ({}) as any);
-      if (res.ok && Array.isArray(j.reactions)) {
+      const restore = () =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, reactions: before ?? [] } : m)),
+        );
+      try {
+        const res = await authFetch(`/api/social/messages/${messageId}/reactions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ emoji }),
+        });
+        const j = await res.json().catch(() => ({}) as any);
+        if (!res.ok || !Array.isArray(j.reactions)) {
+          restore();
+          return;
+        }
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, reactions: j.reactions } : m)),
         );
@@ -198,6 +208,8 @@ export default function ChatPage() {
           event: "reaction",
           payload: { user_id: user.id, message_id: messageId },
         });
+      } catch {
+        restore();
       }
     },
     [user?.id],

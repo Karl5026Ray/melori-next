@@ -233,7 +233,7 @@ export function defaultCallDeps(): CallDeps {
   return {
     createChannel: (name) =>
       supabase.channel(name, {
-        // Private: members of the conversation only (migration 086).
+        // Private: members of the conversation only (migration 090).
         config: { private: true, broadcast: { self: false } },
       }) as unknown as SignalChannelLike,
     removeChannel: (channel) => {

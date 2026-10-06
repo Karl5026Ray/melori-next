@@ -65,6 +65,7 @@ has(PAGE, "profiles!messages_sender_id_fkey", "sender embed names its FK (no PGR
 expect("thread never scrolls the window", /\.scrollIntoView\(/.test(readFileSync(PAGE, "utf8")), false);
 has(PAGE, "100dvh-4rem-var(--mobile-tabbar-clearance)", "thread is pinned to the visible screen on phones");
 expect("composer has no leftover tab-bar margin", readFileSync(PAGE, "utf8").includes("mb-28"), false);
+has(PAGE, 'behavior: firstLoad ? "auto" : "smooth"', "a thread opens at the newest message");
 has(PAGE, "prefetchIceServers(", "thread fetches TURN relay credentials");
 has("src/lib/callClient.ts", "...relayServers", "peer connections use the relay servers");
 has("src/app/api/social/calls/ice/route.ts", "requireAuth(", "relay credentials require sign-in");

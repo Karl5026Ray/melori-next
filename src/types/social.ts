@@ -221,6 +221,10 @@ export interface Message {
   created_at: string;
   is_edited: boolean;
   deleted_at?: string | null;
+  /** Photos (migration 092). Paths in the private message-media bucket. */
+  attachments?: { type: "image"; path: string; width?: number; height?: number }[];
+  /** Reactions (migration 092), embedded by the thread query. */
+  reactions?: { user_id: string; emoji: string }[];
 }
 
 export interface SocialVideo {

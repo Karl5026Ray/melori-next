@@ -25,6 +25,7 @@ export function NewMessageModal({ onClose }: { onClose: () => void }) {
   const [results, setResults] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +53,7 @@ export function NewMessageModal({ onClose }: { onClose: () => void }) {
 
   const startChat = async (id: string) => {
     setStarting(id);
+    setError(null);
     const res = await authFetch("/api/social/conversations/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -64,7 +66,7 @@ export function NewMessageModal({ onClose }: { onClose: () => void }) {
       if (cid) router.push(`/social/messages/${cid}`);
     } else {
       const j = await res.json().catch(() => ({}));
-      alert(j.error ?? "Could not start conversation.");
+      setError(j.error ?? "Could not start conversation.");
       setStarting(null);
     }
   };
@@ -101,6 +103,15 @@ export function NewMessageModal({ onClose }: { onClose: () => void }) {
             />
           </div>
         </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="mx-3 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+          >
+            {error}
+          </p>
+        )}
 
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {loading ? (

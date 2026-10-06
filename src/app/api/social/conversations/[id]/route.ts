@@ -48,12 +48,14 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const { data: others } = await supabase
     .from("conversation_members")
     .select(
-      "user:profiles(id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, last_seen_at)",
+      "last_read_at, user:profiles(id, username, display_name, avatar_url, role, bio, verified, followers_count, following_count, last_seen_at)",
     )
     .eq("conversation_id", conversationId)
     .neq("user_id", userId)
     .limit(1);
   const otherUser = others?.[0]?.user ?? null;
+  // Drives the "Seen" receipt under the caller's latest message.
+  const otherLastReadAt = (others?.[0] as { last_read_at?: string | null } | undefined)?.last_read_at ?? null;
 
   // Block in either direction.
   let blocked = false;
@@ -72,6 +74,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   return NextResponse.json({
     conversation: conv,
     other_user: otherUser,
+    other_last_read_at: otherLastReadAt,
     blocked,
   });
 }

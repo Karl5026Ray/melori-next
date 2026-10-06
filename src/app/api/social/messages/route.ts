@@ -3,8 +3,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { checkDurableSendLimit } from "@/lib/messagingLimits";
+import { validateAttachments, MESSAGE_MEDIA_BUCKET } from "@/lib/messageMedia";
 import { isUuid } from "@/lib/validators";
-import { moderateText, statusForDecision } from "@/lib/moderation";
+import { moderateText, moderateImage, statusForDecision } from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
@@ -39,7 +40,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const conversationId = String(body.conversation_id ?? "").trim();
     const content = String(body.content ?? "").trim();
-    if (!conversationId || !content) {
+    const hasAttachments = Array.isArray(body.attachments) && body.attachments.length > 0;
+    // A message is text, photos, or both (migration 092).
+    if (!conversationId || (!content && !hasAttachments)) {
       return NextResponse.json(
         { error: "conversation_id and content are required" },
         { status: 400 },
@@ -59,6 +62,16 @@ export async function POST(req: NextRequest) {
         { error: `Message must be ${MAX_MESSAGE_CHARS} characters or fewer.` },
         { status: 400 },
       );
+    }
+    // Photos must sit in THIS conversation's folder and the SENDER's own
+    // sub-folder — the same path the upload-url route issued.
+    const attachments = validateAttachments(
+      body.attachments,
+      conversationId,
+      membership.userId!,
+    );
+    if (typeof attachments === "string") {
+      return NextResponse.json({ error: attachments }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -114,13 +127,45 @@ export async function POST(req: NextRequest) {
     // refused (not permitted); other harmful content is delivered but flagged
     // for admin review. Fails safe: if moderation is unavailable the message
     // sends normally.
-    const mod = await moderateText(content);
+    // Text and every photo are screened; the worst result wins. Photos are
+    // read through a 5-minute signed URL (the bucket is private). A photo that
+    // was never actually uploaded fails here rather than sending a broken
+    // message.
+    const imageUrls: string[] = [];
+    for (const att of attachments) {
+      const { data: signed } = await supabase.storage
+        .from(MESSAGE_MEDIA_BUCKET)
+        .createSignedUrl(att.path, 300);
+      if (!signed?.signedUrl) {
+        return NextResponse.json(
+          { error: "A photo didn't finish uploading. Please try again." },
+          { status: 400 },
+        );
+      }
+      imageUrls.push(signed.signedUrl);
+    }
+    const results = await Promise.all([
+      content ? moderateText(content) : Promise.resolve(null),
+      ...imageUrls.map((u) => moderateImage(u)),
+    ]);
+    const rank = { clean: 0, flag: 1, quarantine: 2 } as const;
+    const mod =
+      results
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .sort((x, y) => rank[y.decision] - rank[x.decision])[0] ??
+      ({ decision: "clean", reason: null, categories: null, degraded: false } as const);
     if (mod.decision === "quarantine") {
+      // Refused photos are not kept.
+      if (attachments.length) {
+        await supabase.storage
+          .from(MESSAGE_MEDIA_BUCKET)
+          .remove(attachments.map((a) => a.path));
+      }
       await recordModeration({
         contentType: "message",
         authorId: membership.userId,
         result: mod,
-        excerpt: content,
+        excerpt: content || `[${attachments.length} photo(s)]`,
       });
       return NextResponse.json(
         {
@@ -138,6 +183,7 @@ export async function POST(req: NextRequest) {
         conversation_id: conversationId,
         sender_id: membership.userId,
         content,
+        attachments,
         moderation_status: moderationStatus,
         moderation_reason: mod.reason,
       })
@@ -155,7 +201,7 @@ export async function POST(req: NextRequest) {
         contentId: data.id,
         authorId: membership.userId,
         result: mod,
-        excerpt: content,
+        excerpt: content || `[${attachments.length} photo(s)]`,
       });
     }
 

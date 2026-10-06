@@ -8,6 +8,8 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 import { authFetch } from "@/lib/authClient";
 import { Message, Profile } from "@/types/social";
 import { MessageBubble } from "@/components/social/messages/MessageBubble";
+import { EmojiPicker } from "@/components/social/messages/EmojiPicker";
+import { MESSAGE_MEDIA_BUCKET } from "@/lib/messageMedia";
 import { CallOverlay } from "@/components/social/messages/CallOverlay";
 import {
   CallSession,
@@ -32,11 +34,42 @@ import Link from "next/link";
 
 // A message plus its client-side send state. `_status` is only set on messages
 // this client rendered optimistically; it is cleared once the server confirms.
-type ChatMessage = Message & { _status?: "sending" | "failed" };
+type ChatMessage = Message & {
+  _status?: "sending" | "failed";
+  /** Object URLs for photos still uploading/sending (optimistic preview). */
+  _localUrls?: string[];
+};
+
+type Attachment = NonNullable<Message["attachments"]>[number];
+
+// Shrink photos before upload: long edge 1600px, JPEG ~85%. Phone photos are
+// 3–12 MB; this lands them around 200–500 KB with no visible loss in a chat.
+// GIFs are sent as-is so they keep moving.
+async function preparePhoto(file: File): Promise<{ blob: Blob; type: string; width: number; height: number }> {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) throw new Error("That file isn't a photo we can send.");
+  const { width, height } = bitmap;
+  if (file.type === "image/gif") {
+    bitmap.close();
+    return { blob: file, type: file.type, width, height };
+  }
+  const scale = Math.min(1, 1600 / Math.max(width, height));
+  const w = Math.round(width * scale);
+  const h = Math.round(height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  const blob: Blob = await new Promise((res, rej) =>
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error("Could not read photo"))), "image/jpeg", 0.85),
+  );
+  return { blob, type: "image/jpeg", width: w, height: h };
+}
 
 const PAGE_SIZE = 50;
 
-const MESSAGE_SELECT = `*, sender:profiles(id, display_name, avatar_url, role, verified)`;
+const MESSAGE_SELECT = `*, sender:profiles(id, display_name, avatar_url, role, verified), reactions:message_reactions(user_id, emoji)`;
 
 // Realtime and the POST response can both deliver the same row, and the sender
 // already has an optimistic copy on screen. Reconcile on the server id first,
@@ -73,6 +106,12 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [input, setInput] = useState("");
+  // When the other person last read this chat — drives "Seen".
+  const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [convStatus, setConvStatus] = useState<string>("accepted");
@@ -107,6 +146,71 @@ export default function ChatPage() {
         event: "typing",
         payload: { user_id: user.id, typing },
       });
+    },
+    [user?.id],
+  );
+
+  // Mark the chat read on the server, and tell the other member (private
+  // channel) so their "Seen" appears without a reload.
+  const markRead = useCallback(() => {
+    void authFetch(`/api/social/conversations/${conversationId}/read`, {
+      method: "PATCH",
+      keepalive: true,
+    });
+    if (user?.id) {
+      void typingChannelRef.current?.send({
+        type: "broadcast",
+        event: "read",
+        payload: { user_id: user.id, at: new Date().toISOString() },
+      });
+    }
+  }, [conversationId, user?.id]);
+
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!user?.id) return;
+      // Optimistic flip; remember what was there so a failure can undo it.
+      let before: { user_id: string; emoji: string }[] | undefined;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m;
+          const list = m.reactions ?? [];
+          before = list;
+          const has = list.some((r) => r.user_id === user.id && r.emoji === emoji);
+          return {
+            ...m,
+            reactions: has
+              ? list.filter((r) => !(r.user_id === user.id && r.emoji === emoji))
+              : [...list, { user_id: user.id, emoji }],
+          };
+        }),
+      );
+      const restore = () =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, reactions: before ?? [] } : m)),
+        );
+      try {
+        const res = await authFetch(`/api/social/messages/${messageId}/reactions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ emoji }),
+        });
+        const j = await res.json().catch(() => ({}) as any);
+        if (!res.ok || !Array.isArray(j.reactions)) {
+          restore();
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, reactions: j.reactions } : m)),
+        );
+        void typingChannelRef.current?.send({
+          type: "broadcast",
+          event: "reaction",
+          payload: { user_id: user.id, message_id: messageId },
+        });
+      } catch {
+        restore();
+      }
     },
     [user?.id],
   );
@@ -163,6 +267,7 @@ export default function ChatPage() {
       if (!res.ok) return;
       const j = await res.json();
       if (j.other_user) setOtherUser(j.other_user as Profile);
+      setOtherLastReadAt(j.other_last_read_at ?? null);
       setBlocked(!!j.blocked);
       if (j.conversation) {
         setConvStatus(j.conversation.status ?? "accepted");
@@ -191,10 +296,7 @@ export default function ChatPage() {
           if (payload.eventType === "INSERT") {
             const incoming = payload.new as Message;
             setMessages((prev) => mergeIncoming(prev, incoming));
-            void authFetch(
-              `/api/social/conversations/${conversationId}/read`,
-              { method: "PATCH", keepalive: true },
-            );
+            markRead();
           } else if (payload.eventType === "UPDATE") {
             // Soft-delete / edits.
             setMessages((prev) =>
@@ -209,9 +311,7 @@ export default function ChatPage() {
       )
       .subscribe();
 
-    void authFetch(`/api/social/conversations/${conversationId}/read`, {
-      method: "PATCH",
-    });
+    markRead();
     return () => {
       supabase.removeChannel(channel);
     };
@@ -375,7 +475,7 @@ export default function ChatPage() {
   // action, so the text is never silently lost (it used to be a blocking browser
   // dialog that dismissed and dropped the message).
   const postMessage = useCallback(
-    async (localId: string, content: string) => {
+    async (localId: string, content: string, attachments: Attachment[] = []) => {
       const markFailed = (message: string) => {
         setSendError(message);
         setMessages((prev) =>
@@ -392,6 +492,7 @@ export default function ChatPage() {
           body: JSON.stringify({
             conversation_id: conversationId,
             content,
+            attachments,
           }),
         });
         const j = await res.json().catch(() => ({}) as any);
@@ -413,7 +514,9 @@ export default function ChatPage() {
             return prev.filter((m) => m.id !== localId);
           }
           return prev.map((m) =>
-            m.id === localId ? { ...m, ...saved, _status: undefined } : m,
+            m.id === localId
+              ? { ...m, ...saved, reactions: [], _status: undefined }
+              : m,
           );
         });
       } catch {
@@ -423,8 +526,8 @@ export default function ChatPage() {
     [conversationId],
   );
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const content = input.trim();
     if (!content || !user) return;
 
@@ -443,20 +546,110 @@ export default function ChatPage() {
     ]);
     setInput("");
     setSendError(null);
+    setEmojiOpen(false);
 
     sendTyping(false);
 
     await postMessage(localId, content);
   };
 
+  // Photos: shrink in the browser, upload each to a one-time signed URL in the
+  // private message-media bucket, then send one message carrying them (plus
+  // whatever text is in the box). Up to 4 per message.
+  const sendPhotos = async (files: FileList | null) => {
+    if (!files?.length || !user || uploading) return;
+    const picked = Array.from(files).slice(0, 4);
+    const content = input.trim();
+    const localId = `local-${crypto.randomUUID()}`;
+    const localUrls = picked.map((f) => URL.createObjectURL(f));
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content,
+        created_at: new Date().toISOString(),
+        is_edited: false,
+        attachments: picked.map(() => ({ type: "image" as const, path: "" })),
+        _localUrls: localUrls,
+        _status: "sending",
+      },
+    ]);
+    setInput("");
+    setSendError(null);
+    setUploading(true);
+    try {
+      const attachments: Attachment[] = [];
+      for (const file of picked) {
+        const photo = await preparePhoto(file);
+        const urlRes = await authFetch("/api/social/messages/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            content_type: photo.type,
+            size: photo.blob.size,
+          }),
+        });
+        const u = await urlRes.json().catch(() => ({}) as any);
+        if (!urlRes.ok) throw new Error(u?.error ?? "Could not upload photo.");
+        const { error: upErr } = await supabase.storage
+          .from(MESSAGE_MEDIA_BUCKET)
+          .uploadToSignedUrl(u.path, u.token, photo.blob, { contentType: photo.type });
+        if (upErr) throw new Error("Could not upload photo.");
+        attachments.push({ type: "image", path: u.path, width: photo.width, height: photo.height });
+      }
+      setMessages((prev) =>
+        prev.map((m) => (m.id === localId ? { ...m, attachments } : m)),
+      );
+      await postMessage(localId, content, attachments);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Could not send photo.");
+      setMessages((prev) =>
+        prev.map((m) => (m.id === localId ? { ...m, _status: "failed" as const } : m)),
+      );
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  // Insert an emoji at the cursor.
+  const insertEmoji = (emoji: string) => {
+    const el = inputRef.current;
+    const start = el?.selectionStart ?? input.length;
+    const end = el?.selectionEnd ?? input.length;
+    const next = input.slice(0, start) + emoji + input.slice(end);
+    setInput(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = start + emoji.length;
+      el?.setSelectionRange(pos, pos);
+    });
+  };
+
+  // Grow the box with its text, up to ~6 lines.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [input]);
+
   const retryMessage = useCallback(
-    (localId: string, content: string) => {
+    (localId: string, content: string, attachments: Attachment[] = []) => {
+      // A photo that never finished uploading has no path to resend.
+      if (attachments.some((a) => !a.path)) {
+        setSendError("That photo didn't upload. Remove it and pick it again.");
+        return;
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === localId ? { ...m, _status: "sending" as const } : m,
         ),
       );
-      void postMessage(localId, content);
+      void postMessage(localId, content, attachments);
     },
     [postMessage],
   );
@@ -525,6 +718,28 @@ export default function ChatPage() {
           }
         }
       })
+      // "Seen": the other member just read the chat.
+      .on("broadcast", { event: "read" }, (payload) => {
+        if (payload.payload.user_id !== user?.id && payload.payload.at) {
+          setOtherLastReadAt(payload.payload.at);
+        }
+      })
+      // A reaction changed on a message — re-read that message's reactions.
+      .on("broadcast", { event: "reaction" }, (payload) => {
+        const id = payload.payload.message_id;
+        if (payload.payload.user_id === user?.id || typeof id !== "string") return;
+        void supabase
+          .from("message_reactions")
+          .select("user_id, emoji")
+          .eq("message_id", id)
+          .then(({ data }) => {
+            if (data) {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === id ? { ...m, reactions: data } : m)),
+              );
+            }
+          });
+      })
       .subscribe();
     typingChannelRef.current = channel;
     return () => {
@@ -538,6 +753,15 @@ export default function ChatPage() {
   const isPendingForMe =
     convStatus === "pending" && !!user && requestedBy !== user.id;
   const callActive = callState !== "idle" && callState !== "ended";
+  // "Seen" goes under my most recent sent message, once the other person's
+  // read time has passed it.
+  const lastMine = [...messages]
+    .reverse()
+    .find((m) => m.sender_id === user?.id && !m._status && !m.deleted_at);
+  const lastSeenMineId =
+    lastMine && otherLastReadAt && new Date(otherLastReadAt) >= new Date(lastMine.created_at)
+      ? lastMine.id
+      : null;
   // Real presence from the heartbeat. This header used to say "Active now"
   // for everyone, always.
   const presence = describePresence(otherUser?.last_seen_at, nowTick);
@@ -640,11 +864,14 @@ export default function ChatPage() {
             key={msg.id}
             message={msg}
             isMe={msg.sender_id === user?.id}
+            myId={user?.id}
             onDelete={deleteMessage}
+            onReact={toggleReaction}
+            seen={msg.id === lastSeenMineId}
             status={msg._status}
             onRetry={
               msg._status === "failed"
-                ? () => retryMessage(msg.id, msg.content)
+                ? () => retryMessage(msg.id, msg.content, msg.attachments ?? [])
                 : undefined
             }
           />
@@ -702,28 +929,59 @@ export default function ChatPage() {
               </p>
             )}
             <form onSubmit={sendMessage} className="flex items-end gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              hidden
+              onChange={(e) => void sendPhotos(e.target.files)}
+            />
             <button
               type="button"
-              className="p-3 text-melori-muted hover:text-melori-text transition"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              aria-label="Send a photo"
+              title="Send a photo (up to 4)"
+              className="p-3 text-melori-muted hover:text-melori-text transition disabled:opacity-40"
             >
               <PlusCircle className="w-5 h-5" />
             </button>
-            <div className="flex-1 min-w-0 bg-melori-elevated border border-melori-border rounded-2xl flex items-center px-4">
-              <input
-                type="text"
+            <div className="relative flex-1 min-w-0 bg-melori-elevated border border-melori-border rounded-2xl flex items-end px-4">
+              <textarea
+                ref={inputRef}
+                rows={1}
                 value={input}
                 onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter sends; Shift+Enter starts a new line.
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void sendMessage();
+                  }
+                }}
                 placeholder={`Message ${otherUser?.display_name || ""}...`}
-                className="flex-1 min-w-0 bg-transparent py-3 text-sm focus:outline-none"
+                aria-label="Message"
+                className="flex-1 min-w-0 resize-none bg-transparent py-3 text-sm leading-5 focus:outline-none"
               />
               <button
                 type="button"
-                className="p-2 text-melori-muted hover:text-melori-text transition"
+                onClick={() => setEmojiOpen((v) => !v)}
+                aria-label="Add emoji"
+                aria-expanded={emojiOpen}
+                className="p-2 mb-0.5 text-melori-muted hover:text-melori-text transition"
               >
                 <Smile className="w-5 h-5" />
               </button>
+              {emojiOpen && (
+                <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />
+              )}
             </div>
-            <button type="submit" className="p-3 btn-primary rounded-full shadow-lg">
+            <button
+              type="submit"
+              aria-label="Send"
+              className="p-3 btn-primary rounded-full shadow-lg"
+            >
               <Send className="w-5 h-5" />
             </button>
             </form>

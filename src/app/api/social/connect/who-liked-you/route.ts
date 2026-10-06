@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { filterConnectEligibleIds, guardConnectCaller } from "@/lib/connectAgeGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,12 +13,21 @@ export const dynamic = "force-dynamic";
 //
 // Returns people who liked/superliked the caller and whom the caller has NOT
 // yet swiped (i.e. pending inbound interest → a match waiting to happen).
+// 18+ only: the caller must pass the Connect age gate, and likers without a
+// valid 18+ Connect birthdate are hidden.
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
   const me = guard.membership.userId as string;
 
   const supabase = getSupabaseAdmin();
+  const now = new Date();
+
+  const callerGate = await guardConnectCaller(supabase, me, now);
+  if (callerGate === "no_profile") {
+    return NextResponse.json({ likers: [], count: 0 });
+  }
+  if (callerGate) return callerGate;
 
   // Everyone who liked me.
   const { data: inbound, error } = await supabase
@@ -46,9 +56,15 @@ export async function GET(req: NextRequest) {
     handled.add(b.blocked_id as string);
   }
 
-  const pending = (inbound ?? []).filter(
+  const unhandled = (inbound ?? []).filter(
     (r) => !handled.has(r.liker_id as string),
   );
+  const eligible = await filterConnectEligibleIds(
+    supabase,
+    unhandled.map((r) => r.liker_id as string),
+    now,
+  );
+  const pending = unhandled.filter((r) => eligible.has(r.liker_id as string));
 
   if (pending.length === 0) {
     return NextResponse.json({ likers: [], count: 0 });

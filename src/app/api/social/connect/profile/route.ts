@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { connectAgeResponse, decideConnectBirthdate } from "@/lib/connectAgeGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,13 @@ export async function GET(req: NextRequest) {
 // PUT /api/social/connect/profile — create or update (opt in to Connect).
 // Body accepts: is_active, birthdate, gender, interested_in[], age_min, age_max,
 // city, headline, prompts[], photos[].
+//
+// 18+ GATE: every write (create, activate, any update) needs a valid birthdate
+// showing 18+ — from the body, the Connect profile on file, or the main
+// profile. Under 18 / missing → 403 with a `code` the UI keys off. A
+// birthdate already saved on the Connect profile is locked: a different one
+// in the body is refused (403 connect_birthdate_locked), never applied. See
+// src/lib/connectAgeGate.ts.
 export async function PUT(req: NextRequest) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
@@ -40,8 +48,6 @@ export async function PUT(req: NextRequest) {
   const patch: Record<string, unknown> = { user_id: me };
 
   if (typeof body.is_active === "boolean") patch.is_active = body.is_active;
-  if (typeof body.birthdate === "string" && body.birthdate)
-    patch.birthdate = body.birthdate;
   if (typeof body.gender === "string" && GENDERS.includes(body.gender))
     patch.gender = body.gender;
   if (Array.isArray(body.interested_in)) {
@@ -82,7 +88,7 @@ export async function PUT(req: NextRequest) {
   // across both surfaces below.
   const { data: existing } = await supabase
     .from("dating_profiles")
-    .select("user_id")
+    .select("user_id, birthdate")
     .eq("user_id", me)
     .maybeSingle();
 
@@ -92,10 +98,19 @@ export async function PUT(req: NextRequest) {
     .eq("id", me)
     .maybeSingle();
 
+  // --- 18+ gate (server-side, before anything is written) -----------------
+  const decision = decideConnectBirthdate({
+    requested: body.birthdate,
+    stored: (existing?.birthdate as string | null | undefined) ?? null,
+    main: (mainProfile?.birth_date as string | null | undefined) ?? null,
+    now: new Date(),
+  });
+  if (!decision.ok) return connectAgeResponse(decision);
+  patch.birthdate = decision.birthdate;
+
   if (!existing) {
-    // First-time join: seed unset fields from the main profile.
-    if (patch.birthdate == null && mainProfile?.birth_date)
-      patch.birthdate = mainProfile.birth_date;
+    // First-time join: seed unset fields from the main profile. (Birthdate is
+    // already resolved by the age gate above.)
     if (patch.city == null && mainProfile?.city)
       patch.city = mainProfile.city;
     if (patch.photos == null) {

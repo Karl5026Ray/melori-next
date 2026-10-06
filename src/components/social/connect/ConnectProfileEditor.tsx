@@ -26,12 +26,18 @@ interface DatingProfile {
 // Slide-over editor for the caller's Connect profile + match preferences.
 // Photos are uploaded to Supabase Storage via the existing upload endpoint
 // pattern; here we accept URLs already produced by that flow to keep v1 lean.
+// Melori Connect is 18+. The birthdate is required, and once it's saved on the
+// Connect profile it is shown read-only — the server refuses to change it
+// (403 connect_birthdate_locked). The server is the age gate; this form only
+// asks for the date and relays the server's answer.
 export default function ConnectProfileEditor({
   onClose,
   onSaved,
+  onUnderAge,
 }: {
   onClose: () => void;
   onSaved: () => void;
+  onUnderAge?: () => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,6 +45,7 @@ export default function ConnectProfileEditor({
 
   const [isActive, setIsActive] = useState(true);
   const [birthdate, setBirthdate] = useState("");
+  const [birthdateLocked, setBirthdateLocked] = useState(false);
   const [gender, setGender] = useState<string>("");
   const [interestedIn, setInterestedIn] = useState<string[]>([
     "woman",
@@ -63,6 +70,7 @@ export default function ConnectProfileEditor({
           if (profile) {
             setIsActive(profile.is_active ?? true);
             setBirthdate(profile.birthdate ?? "");
+            setBirthdateLocked(Boolean(profile.birthdate));
             setGender(profile.gender ?? "");
             setInterestedIn(
               profile.interested_in ?? ["woman", "man", "nonbinary"],
@@ -114,6 +122,10 @@ export default function ConnectProfileEditor({
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
+        if (res.status === 403 && d.code === "connect_under_18") {
+          onUnderAge?.();
+          return;
+        }
         setError(d.error || "Could not save. Try again.");
         return;
       }
@@ -167,11 +179,19 @@ export default function ConnectProfileEditor({
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Birthdate">
+              <Field label="Birthdate (18+)">
                 <input
                   type="date"
+                  required
                   value={birthdate}
                   onChange={(e) => setBirthdate(e.target.value)}
+                  readOnly={birthdateLocked}
+                  aria-readonly={birthdateLocked}
+                  title={
+                    birthdateLocked
+                      ? "Your Connect birthdate can't be changed."
+                      : "Melori Connect is for members 18 and over."
+                  }
                   className="input"
                 />
               </Field>

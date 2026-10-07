@@ -32,6 +32,13 @@ export async function GET(req: NextRequest) {
 
   const keyId = process.env.CLOUDFLARE_TURN_KEY_ID?.trim();
   const token = process.env.CLOUDFLARE_TURN_KEY_API_TOKEN?.trim();
+  // A TURN key id is 32 hex chars and its token is a single word. Anything
+  // else (a pasted curl command, an account API token, stray spaces) is a
+  // setup mistake: say so plainly instead of sending it to Cloudflare.
+  if (keyId && token && (!/^[0-9a-f]{32}$/i.test(keyId) || /\s/.test(token))) {
+    console.error("[calls/ice] CLOUDFLARE_TURN_KEY_ID / _API_TOKEN look malformed — re-paste them from Cloudflare → Realtime → TURN Server");
+    return NextResponse.json({ iceServers: [], relay: false });
+  }
   if (!keyId || !token) {
     return NextResponse.json({ iceServers: [], relay: false });
   }
@@ -58,7 +65,9 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (err) {
-    console.error("[calls/ice] TURN request failed", err);
+    // Log the error TYPE only. Some fetch errors echo request headers, and the
+    // Authorization header carries the TURN API token.
+    console.error("[calls/ice] TURN request failed:", err instanceof Error ? err.name : "unknown");
     return NextResponse.json({ iceServers: [], relay: false });
   }
 }

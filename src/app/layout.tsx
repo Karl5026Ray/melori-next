@@ -84,6 +84,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        {/* impact.com site-ownership verification. Impact's snippet uses a
+            `value` attribute (not `content`), so it's emitted verbatim here
+            rather than via metadata.other. */}
+        <meta
+          name="impact-site-verification"
+          {...({ value: "542b2cac-ff57-49fd-a8f9-daacddc8c54f" } as Record<string, string>)}
+        />
+      </head>
       <body className="font-sans bg-brand-background text-text-primary min-h-screen flex flex-col overflow-x-hidden">
         <script dangerouslySetInnerHTML={{ __html: NATIVE_BOOTSTRAP }} />
         <NativeAppProvider>

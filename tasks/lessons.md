@@ -137,3 +137,13 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   for its own direct tile, with the new product taking its slot. It was read
   as dropping Mirror from the Social row with no home. When a request moves
   something, name both the old spot and the new spot back to Karl.
+
+## Applying migrations
+
+- **When apply_migration comes back "cancelled", the approval never reached
+  Karl** (four times on 11 Oct, from his phone). Don't retry in a loop. Give
+  him the SQL in a chat code block (copy button) for the Supabase SQL Editor
+  in his phone browser, remind him the role dropdown must say postgres and to
+  tap Run (and "Run this query" on the destructive-ops warning), verify with
+  a read query, then add the ledger row to supabase_migrations.schema_migrations
+  so list_migrations matches the repo.

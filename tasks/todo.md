@@ -1,4 +1,4 @@
-# MM Auditions, 11 Oct 2026 (BUILT on feat/mm-auditions; migration 094 NOT yet applied)
+# MM Auditions, 11 Oct 2026 (BUILT on feat/mm-auditions; migration 094 APPLIED to prod 11 Oct)
 
 Karl: a room for directors to run table reads and auditions. Three types:
 Table Read (everyone reads together), Audition (lobby, called in one at a
@@ -91,9 +91,12 @@ Cinema (no cross-imports; spaces-room.test isolation check extended).
   on a stub of the live schema, 18/18 (scripts/auditions-rls.pg.mjs, run
   with pglite); Vercel preview build READY (local build can't reach Google
   Fonts from the sandbox).
-- NOT verified: anything live. apply_migration on ouvovhwizsuhjxxmccex was
-  not approved (twice), so production has no 094. DO NOT MERGE before 094 is
-  applied: the create route writes spaces.is_private.
+- 094 applied 11 Oct by Karl in the Supabase SQL Editor (apply_migration
+  via MCP was cancelled 4x: the approval never reached his phone). Verified
+  live: is_private column, 5 tables, 5 policies, 3 helpers, new format CHECK
+  (keeps live_*), private audition-docs bucket, new spaces/participants
+  policies; anon reads run without error. Ledger row added by hand
+  (20261011213900 094_mm_auditions) so list_migrations shows it — no drift.
 - Still to test once 094 is live, on the preview with two accounts: open
   private audition -> join by code -> lobby -> let in -> camera both ways ->
   share PDF -> page turn follows -> record/stop/download -> End deletes takes

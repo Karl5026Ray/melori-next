@@ -39,7 +39,7 @@ import AgeAttestation, {
   ageAttestationMetadata,
 } from "@/components/auth/AgeAttestation";
 import { doorReason } from "@/lib/doorReason";
-import { ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
+import { BookOpen, ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
 
 // What a stranger can look at before joining (outside review, 2 Oct 2026: the
 // door was "Create your account" and a form, with no proof anything was behind
@@ -57,6 +57,14 @@ const DOOR_CARDS = [
     icon: RadioTower,
     title: "MM Spaces",
     line: "Live audio rooms. Drop in and listen, or ask for the mic.",
+  },
+  // Books second (Karl, 11 Oct 2026): the books are Melori's only revenue and
+  // /books is public, so the door is the one place every stranger can find them.
+  {
+    href: "/books",
+    icon: BookOpen,
+    title: "Books",
+    line: "Picture books, teen stories and history from The Melori Band and Karl Ray.",
   },
   {
     href: "/cinema",

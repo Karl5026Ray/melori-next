@@ -108,7 +108,10 @@ export default async function HomePage() {
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
             <Link href="/music" className="rounded-full bg-brand-primary px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary/90">Explore Music</Link>
-            <Link href="/register" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Create a Profile</Link>
+            {/* Books replaced "Create a Profile" (Karl, 2026-10-11): visitors get
+                a profile on entry, and the books are Melori's only revenue, so
+                this slot sends people to the shelves instead. */}
+            <Link href="/books" className="rounded-full border border-brand-primary px-7 py-3 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary hover:text-white">Books</Link>
             <ShareButton />
           </div>
         </div>

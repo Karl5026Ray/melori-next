@@ -11,6 +11,7 @@ import {
   type RoomMediaRole,
 } from "@/lib/roomMediaPolicy";
 import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
+import { isAuditionFormat } from "@/lib/auditions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -126,6 +127,34 @@ export async function POST(req: NextRequest) {
           { error: "You were removed from this room", banned: true },
           { status: 403 },
         );
+      }
+    }
+
+    // MM AUDITIONS GATE: only the director and ADMITTED actors get a token at
+    // all. Lobby, invited, denied and strangers are refused here, whatever
+    // their space_participants row says (anyone can write their own row in an
+    // open room, so that table can't be the door). Admitted readers are put on
+    // stage server-side, so a reconnect keeps their seat even after the
+    // LiveKit webhook reset their participant row on disconnect.
+    if (isAuditionFormat(space.room_format) && space.host_id !== userId) {
+      const { data: access } = await supabase
+        .from("space_access")
+        .select("status")
+        .eq("space_id", space.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (access?.status !== "admitted") {
+        return NextResponse.json(
+          { error: "Waiting for the director to let you in", lobby: access?.status === "lobby" },
+          { status: 403 },
+        );
+      }
+      const { error: seatErr } = await supabase.from("space_participants").upsert(
+        { space_id: space.id, user_id: userId, role: "speaker", left_at: null, has_raised_hand: false },
+        { onConflict: "space_id,user_id" },
+      );
+      if (seatErr) {
+        return NextResponse.json({ error: "Could not seat you in the room" }, { status: 503 });
       }
     }
 

@@ -96,18 +96,23 @@ create table if not exists public.audition_room_state (
 );
 
 -- 7. Recordings ---------------------------------------------------------------
--- One row per take. The MP4 lands in the PRIVATE mirror-recordings bucket via
--- LiveKit egress (same pipeline as Mirror, migration 088) and is NEVER copied
--- to a public bucket: /api/mirror/recording/publish refuses audition rooms.
--- Only the director can list or play them (server routes, signed URLs).
+-- One row per take, at most 3 per session (Karl, 11 Oct). The MP4 lands in the
+-- PRIVATE mirror-recordings bucket via LiveKit egress (same pipeline as Mirror,
+-- migration 088) and is NEVER copied to a public bucket:
+-- /api/mirror/recording/publish refuses audition rooms. Only the director can
+-- list, play or download them (server routes, signed URLs). Takes are DELETED
+-- when the session ends: by the director's End, or by
+-- /api/cron/audition-cleanup for rooms that end any other way.
+-- downloaded_at only drives the "not downloaded yet" warning on End.
 create table if not exists public.audition_recordings (
   id          uuid primary key default gen_random_uuid(),
   space_id    uuid not null references public.spaces(id) on delete cascade,
   egress_id   text not null,
   storage_key text not null,
   started_by  uuid references public.profiles(id) on delete set null,
-  started_at  timestamptz not null default now(),
-  stopped_at  timestamptz
+  started_at    timestamptz not null default now(),
+  stopped_at    timestamptz,
+  downloaded_at timestamptz
 );
 create index if not exists audition_recordings_space_idx
   on public.audition_recordings (space_id, started_at desc);

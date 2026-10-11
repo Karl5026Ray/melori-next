@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { AUDITION_ROOM_FORMATS } from "@/lib/auditions";
 import { SpaceCard } from "@/components/social/spaces/SpaceCard";
 import { Plus, Radio, CalendarClock } from "lucide-react";
 import Link from "next/link";
@@ -32,7 +33,12 @@ async function getSpaces(tab: Tab) {
     // nullable and has no default — rooms predating it hold NULL — and in SQL
     // `NULL <> 'cinema'` evaluates to NULL, not true, so a bare .neq() would
     // silently drop every legacy room from this list.
-    .or(`room_format.is.null,room_format.neq.${CINEMA_ROOM_FORMAT}`)
+    //
+    // MM Auditions rooms (table_read / audition / callback) are excluded the
+    // same way: they live at /social/auditions.
+    .or(
+      `room_format.is.null,room_format.not.in.(${[CINEMA_ROOM_FORMAT, ...AUDITION_ROOM_FORMATS].join(",")})`,
+    )
     .order(tab === "scheduled" ? "scheduled_at" : "created_at", {
       ascending: tab === "scheduled",
     })

@@ -76,6 +76,19 @@ Cinema (no cross-imports; spaces-room.test isolation check extended).
 - [ ] D4. Preview deploy: two accounts, lobby -> admit -> camera -> page turn;
       third account with room id but no code is refused
 
+## Recordings (Karl, 11 Oct)
+- Record button, director only. Max 3 takes per session. Director can play
+  and download. ALL takes + uploads deleted when the session ends (End, or
+  /api/cron/audition-cleanup every 15 min for any other ending). Karl: "I
+  don't want to have to pay for someone else's stuff" — strict, no retention.
+- REC banner for everyone (room metadata flag, Illinois all-party consent);
+  Mirror's recording routes refuse audition rooms.
+
+## Next build: casting calls in Mirror (Karl, 11 Oct)
+- Directors post a casting call card to Mirror that links to an OPEN audition.
+  Needs scheduled sessions first, and a new non-video Mirror post type.
+  Private rooms never linked publicly ("submit materials" instead).
+
 ## Out of scope (phase 2)
 Recording/replays (LiveKit egress cost), scheduling, callback notes/ratings.
 

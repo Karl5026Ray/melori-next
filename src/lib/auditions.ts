@@ -217,3 +217,33 @@ export function canReadFile(input: {
   if (input.isDirector || input.ownerId === input.userId) return true;
   return input.kind === "script" && input.isAdmitted;
 }
+
+// ---- Recordings ---------------------------------------------------------------
+// Karl, 11 Oct: three takes per session, downloadable by the director, deleted
+// when the session ends.
+
+export const MAX_RECORDINGS_PER_SESSION = 3;
+
+export type RecordingStartDecision =
+  | { ok: true }
+  | { ok: false; reason: "already-recording" | "limit-reached" | "room-ended" };
+
+export function canStartRecording(input: {
+  roomStatus: string;
+  isRecording: boolean;
+  takesSoFar: number;
+}): RecordingStartDecision {
+  if (input.roomStatus === "ended") return { ok: false, reason: "room-ended" };
+  if (input.isRecording) return { ok: false, reason: "already-recording" };
+  if (input.takesSoFar >= MAX_RECORDINGS_PER_SESSION) {
+    return { ok: false, reason: "limit-reached" };
+  }
+  return { ok: true };
+}
+
+/** Takes the director would lose by ending now. */
+export function undownloadedTakes(
+  takes: ReadonlyArray<{ downloaded_at: string | null }>,
+): number {
+  return takes.filter((t) => !t.downloaded_at).length;
+}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAuditionFormat } from "@/lib/auditions";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
@@ -45,12 +46,18 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
   const { data: space, error: fetchErr } = await supabase
     .from("spaces")
-    .select("id, host_id, status, livekit_room, is_recording, recording_egress_id")
+    .select("id, host_id, status, room_format, livekit_room, is_recording, recording_egress_id")
     .eq("id", spaceId)
     .maybeSingle();
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
   if (!space) return NextResponse.json({ error: "Space not found" }, { status: 404 });
+  // MM Auditions takes run through /api/auditions/[id]/recording: capped at
+  // three, never published, deleted when the session ends. The Mirror flow
+  // must not touch them (it would bypass the cap, or post actors publicly).
+  if (isAuditionFormat(space.room_format)) {
+    return NextResponse.json({ error: "Audition recordings stay private" }, { status: 403 });
+  }
   if (space.host_id !== membership.userId) {
     return NextResponse.json({ error: "Only the host can record this room" }, { status: 403 });
   }

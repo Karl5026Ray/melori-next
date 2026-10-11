@@ -51,11 +51,12 @@ test("tapping Chat in the tab bar while signed out reaches the explained door", 
 test("the door shows what's inside, below the form", async ({ page }) => {
   await page.goto("/platform");
   const cards = page.getByTestId("door-cards").getByRole("link");
-  await expect(cards).toHaveCount(3);
-  // Spaces leads; every card goes to a public page on the app origin.
+  await expect(cards).toHaveCount(4);
+  // Spaces leads, Books second; every card goes to a public page on the app origin.
   const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute("href")));
   expect(hrefs).toEqual([
     "https://melorimusic.org/spaces",
+    "https://melorimusic.org/books",
     "https://melorimusic.org/cinema",
     "https://melorimusic.org/artists",
   ]);

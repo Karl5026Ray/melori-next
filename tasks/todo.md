@@ -1,3 +1,71 @@
+# MM Auditions, 11 Oct 2026 (PLAN, awaiting Karl's OK)
+
+Karl: a private room for directors to run table reads and auditions. Three
+types: Table Read (everyone reads together), Audition (lobby, called in one at
+a time), Callback (Audition, shortlist only). Mirror leaves the Social row and
+becomes its own For You destination, freeing the slot.
+
+Built as room_formats on the existing `spaces` engine (roles, bans, stage
+queue, LiveKit, teardown shared), with its own screen and route libs like
+Cinema (no cross-imports; spaces-room.test isolation check extended).
+
+## Facts from the code (main 5571c9e)
+- No private rooms exist anywhere. Token route and roster GET check only auth
+  + bans: anyone with a room id can join. Must be fixed for Auditions.
+- Leaks: /api/mirror/live lists EVERY live room; Spaces list filters
+  `neq cinema` only. Both must exclude audition formats (allowlist).
+- Camera is granted only to `live_*` formats (roomMediaPolicy.ts:224).
+- `spaces` / `space_participants` base tables + RLS are not in the repo.
+  Read live RLS before writing the migration.
+- Social nav capped at 4 (socialNav.ts); MobileTabBar + navContexts are
+  hand-copied lists.
+- No PDF upload exists. Model the bucket on 092 message-media.
+- Next migration prefix 094; confirm against live ledger first.
+
+## A. Database (094_mm_auditions.sql)
+- [ ] A0. list_migrations + read live RLS on spaces/space_participants
+- [ ] A1. room_format CHECK: re-list all 8 existing + table_read, audition,
+      callback
+- [ ] A2. `spaces.is_private bool default false`, `invite_code text unique`
+- [ ] A3. `space_access (space_id, user_id, status: invited|lobby|admitted|
+      denied, character_name)` with RLS: host/mod manage, user reads own row
+- [ ] A4. `space_scripts (space_id, storage_path, page_count, current_page)`;
+      private bucket `audition-docs`, PDF only, 15 MB, member-only read policy
+- [ ] A5. Realtime on current_page so the director turns pages for the room
+
+## B. Server
+- [ ] B1. Create API: accept the 3 formats; private by default; mint invite code
+- [ ] B2. Join-by-code route: valid code -> space_access row (lobby for
+      audition/callback-open, admitted for table_read). Callback: code alone
+      is not enough, must be pre-invited
+- [ ] B3. livekit-token + participants GET: private rooms require admitted
+      row (host/mods exempt). Lobby users get NO LiveKit token
+- [ ] B4. Director actions: admit / send back to lobby / deny; assign character
+- [ ] B5. Media policy branch: admitted readers get mic + camera
+- [ ] B6. Script upload-url + signed read + set page routes
+- [ ] B7. Exclude audition formats from /api/mirror/live and Spaces list;
+      add to roomStatus, cron reminders path, admin list
+
+## C. UI (src/app/social/auditions, src/components/social/auditions)
+- [ ] C1. /social/auditions: my rooms + "Join with code"
+- [ ] C2. Create page: pick type, title, upload sides (optional)
+- [ ] C3. Room screen: video grid with character name on tiles, script panel
+      (director pager, readers follow), lobby list for director
+- [ ] C4. Lobby waiting screen for actors
+- [ ] C5. Nav: MM Auditions replaces Mirror in SOCIAL_NAV_ITEMS, MobileTabBar,
+      Sidebar icon, navContexts; Mirror gets its own entry point (see Q1)
+
+## D. Verify
+- [ ] D1. npm run test:unit (all suites) + new auditions tests (format
+      routing, isolation, private-room token refusal, list exclusion)
+- [ ] D2. tsc + build
+- [ ] D3. Apply migration on a Supabase branch first, then prod
+- [ ] D4. Preview deploy: two accounts, lobby -> admit -> camera -> page turn;
+      third account with room id but no code is refused
+
+## Out of scope (phase 2)
+Recording/replays (LiveKit egress cost), scheduling, callback notes/ratings.
+
 # Door conversion + privacy gaps, 2 Oct 2026 (A, B done; C next)
 
 Source: an outside review of melorimusic.org, checked against the live site

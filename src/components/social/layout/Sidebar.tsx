@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/social/providers/AuthProvider";
-import { SOCIAL_NAV_ITEMS } from "@/lib/socialNav";
+import { MIRROR_NAV_ITEM, SOCIAL_NAV_ITEMS } from "@/lib/socialNav";
 import {
   Radio,
   Video,
@@ -13,6 +13,7 @@ import {
   Plus,
   Sparkles,
   Clapperboard,
+  Drama,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ import {
 // canonical list is reordered or relabelled in socialNav.ts.
 const SOCIAL_ICONS: Record<string, LucideIcon> = {
   "/social/mirror": Sparkles,
+  "/social/auditions": Drama,
   "/social/live": Video,
   "/social/spaces": Radio,
   "/social/cinema": Clapperboard,
@@ -37,6 +39,8 @@ const SOCIAL_ICONS: Record<string, LucideIcon> = {
 // different set in the top-bar dropdown. Deriving keeps every surface honest.
 const navItems = [
   { href: "/social/profile", label: "Profile", icon: User },
+  // Mirror sits outside the Social group now (its slot went to MM Auditions).
+  { href: MIRROR_NAV_ITEM.href, label: MIRROR_NAV_ITEM.label, icon: Sparkles },
   ...SOCIAL_NAV_ITEMS.map((item) => ({
     href: item.href,
     label: item.label,

@@ -46,6 +46,7 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         { label: "Radio", href: "/social/radio" },
         { label: "MM Spaces", href: "/social/spaces" },
         { label: "MM Faces", href: "/social/live" },
+        { label: "MM Auditions", href: "/social/auditions" },
         { label: "Comments", href: "/social/community" },
         // Social video clips (distinct from music Videos under /video). Was
         // orphaned — reachable only from the mobile launcher — so surface it

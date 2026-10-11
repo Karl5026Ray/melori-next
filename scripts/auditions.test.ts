@@ -113,6 +113,30 @@ for (const v of ["live_solo", "live_duo", "live_group", "cinema", "versus_battle
   expect(`room_format check keeps ${v}`, migration.includes(`'${v}'`), true);
 }
 
+console.log("Navigation (Karl, 11 Oct)");
+{
+  // Imported lazily so the pure checks above don't depend on nav modules.
+  const nav = read("src/lib/socialNav.ts");
+  const social = nav.slice(nav.indexOf("SOCIAL_NAV_ITEMS"), nav.indexOf("];", nav.indexOf("SOCIAL_NAV_ITEMS")));
+  expect("Social group has MM Auditions", social.includes("/social/auditions"), true);
+  expect("Social group no longer holds Mirror", social.includes("/social/mirror"), false);
+  expect("Social group still capped at 4", (social.match(/href:/g) ?? []).length, 4);
+  const tabBar = read("src/components/MobileTabBar.tsx");
+  const bar = tabBar.indexOf("MIRROR_NAV_ITEM.href");
+  const goAnywhere = tabBar.indexOf('"Go anywhere"}');
+  expect("M menu has the Mirror bar", bar > 0, true);
+  expect("Mirror bar sits above Go anywhere", bar > 0 && bar < goAnywhere, true);
+  expect("M menu Social lists MM Auditions", tabBar.includes('label: "MM Auditions", href: "/social/auditions"'), true);
+  expect("desktop header links Mirror directly", read("src/components/Header.tsx").includes("MIRROR_NAV_ITEM.href"), true);
+  expect("sidebar keeps Mirror", read("src/components/social/layout/Sidebar.tsx").includes("MIRROR_NAV_ITEM.href"), true);
+}
+
+console.log("Isolation");
+for (const f of ["AuditionRoomScreen.tsx", "AuditionStage.tsx", "DirectorPanel.tsx", "Materials.tsx", "ScriptViewer.tsx", "api.ts"]) {
+  const src = read(`src/components/social/auditions/${f}`);
+  expect(`${f} imports nothing from Spaces/Cinema components`, /components\/social\/(spaces|cinema)\//.test(src), false);
+}
+
 if (failures) {
   console.error(`\n${failures} check(s) failed`);
   process.exit(1);

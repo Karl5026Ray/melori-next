@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { signOutThisDevice } from "@/lib/authSession";
-import { SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
+import { MIRROR_NAV_ITEM, SOCIAL_NAV_ITEMS, isSocialNavCurrent } from "@/lib/socialNav";
 import { UnreadMessagesBadge } from "@/components/social/messages/UnreadMessagesBadge";
 
 type NavItem = { label: string; href: string };
@@ -370,6 +370,19 @@ export default function Header() {
               </Link>
             </>
           )}
+
+          {/* Melori Mirror is its own destination (it gave its Social slot to
+             MM Auditions), so it gets a direct link, like the bar across the
+             top of the M menu. */}
+          <Link
+            href={MIRROR_NAV_ITEM.href}
+            aria-current={isSocialNavCurrent(pathname, MIRROR_NAV_ITEM.href) ? "page" : undefined}
+            className={`rounded-md px-3 py-1.5 transition-colors hover:text-brand-primary ${
+              isSocialNavCurrent(pathname, MIRROR_NAV_ITEM.href) ? "text-brand-primary" : "text-text-secondary"
+            }`}
+          >
+            Mirror
+          </Link>
 
           {/* Top-bar app dropdowns (desktop) mirroring the center M menu:
              Social ▾, Radio, Photography ▾, Profile. */}

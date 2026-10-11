@@ -1,9 +1,14 @@
 # MM Auditions, 11 Oct 2026 (PLAN, awaiting Karl's OK)
 
-Karl: a private room for directors to run table reads and auditions. Three
-types: Table Read (everyone reads together), Audition (lobby, called in one at
-a time), Callback (Audition, shortlist only). Mirror leaves the Social row and
-becomes its own For You destination, freeing the slot.
+Karl: a room for directors to run table reads and auditions. Three types:
+Table Read (everyone reads together), Audition (lobby, called in one at a
+time), Callback (Audition, shortlist only). The DIRECTOR chooses per room:
+OPEN (listed on /social/auditions, anyone signed in can enter the lobby) or
+PRIVATE (invite code / named invites only). Files move through the room:
+headshots, reels, scripts/sides (11 Oct correction).
+Nav (Karl, 11 Oct): Mirror moves OUT of the M menu's Social category to its
+own direct tile (its own For You destination, like Radio); MM Auditions takes
+its slot in the Social category.
 
 Built as room_formats on the existing `spaces` engine (roles, bans, stage
 queue, LiveKit, teardown shared), with its own screen and route libs like
@@ -26,11 +31,16 @@ Cinema (no cross-imports; spaces-room.test isolation check extended).
 - [ ] A0. list_migrations + read live RLS on spaces/space_participants
 - [ ] A1. room_format CHECK: re-list all 8 existing + table_read, audition,
       callback
-- [ ] A2. `spaces.is_private bool default false`, `invite_code text unique`
+- [ ] A2. `spaces.is_private bool` (director's choice at create; audition
+      formats only), `invite_code text unique`
 - [ ] A3. `space_access (space_id, user_id, status: invited|lobby|admitted|
       denied, character_name)` with RLS: host/mod manage, user reads own row
-- [ ] A4. `space_scripts (space_id, storage_path, page_count, current_page)`;
-      private bucket `audition-docs`, PDF only, 15 MB, member-only read policy
+- [ ] A4. `audition_files (space_id, owner_id, kind: script|headshot|resume|
+      reel, storage_path | external_url, page_count, current_page)`;
+      private bucket `audition-docs`. Scripts: director uploads, every
+      admitted reader sees. Headshots/resumes/reels: actor submits, only
+      director + mods see. Reels default to a link (YouTube/Vimeo); upload
+      cap TBD by Karl (storage cost)
 - [ ] A5. Realtime on current_page so the director turns pages for the room
 
 ## B. Server
@@ -52,8 +62,11 @@ Cinema (no cross-imports; spaces-room.test isolation check extended).
 - [ ] C3. Room screen: video grid with character name on tiles, script panel
       (director pager, readers follow), lobby list for director
 - [ ] C4. Lobby waiting screen for actors
-- [ ] C5. Nav: MM Auditions replaces Mirror in SOCIAL_NAV_ITEMS, MobileTabBar,
-      Sidebar icon, navContexts; Mirror gets its own entry point (see Q1)
+- [ ] C5. Nav: MM Auditions replaces Mirror in the Social category
+      (SOCIAL_NAV_ITEMS, MobileTabBar, Sidebar icon); Mirror becomes a direct
+      M-menu tile; navContexts updated
+- [ ] C6. Actor "Submit materials" sheet (headshot, resume, reel link) and a
+      director "Submissions" panel per actor
 
 ## D. Verify
 - [ ] D1. npm run test:unit (all suites) + new auditions tests (format

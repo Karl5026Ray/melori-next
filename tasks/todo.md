@@ -1,3 +1,117 @@
+# MM Auditions, 11 Oct 2026 (BUILT on feat/mm-auditions; migration 094 APPLIED to prod 11 Oct)
+
+Karl: a room for directors to run table reads and auditions. Three types:
+Table Read (everyone reads together), Audition (lobby, called in one at a
+time), Callback (Audition, shortlist only). The DIRECTOR chooses per room:
+OPEN (listed on /social/auditions, anyone signed in can enter the lobby) or
+PRIVATE (invite code / named invites only). Files move through the room:
+headshots, reels, scripts/sides (11 Oct correction).
+Nav (Karl, 11 Oct): Mirror moves OUT of the M menu's Social category to its
+own direct tile (its own For You destination, like Radio); MM Auditions takes
+its slot in the Social category.
+
+Built as room_formats on the existing `spaces` engine (roles, bans, stage
+queue, LiveKit, teardown shared), with its own screen and route libs like
+Cinema (no cross-imports; spaces-room.test isolation check extended).
+
+## Facts from the code (main 5571c9e)
+- No private rooms exist anywhere. Token route and roster GET check only auth
+  + bans: anyone with a room id can join. Must be fixed for Auditions.
+- Leaks: /api/mirror/live lists EVERY live room; Spaces list filters
+  `neq cinema` only. Both must exclude audition formats (allowlist).
+- Camera is granted only to `live_*` formats (roomMediaPolicy.ts:224).
+- `spaces` / `space_participants` base tables + RLS are not in the repo.
+  Read live RLS before writing the migration.
+- Social nav capped at 4 (socialNav.ts); MobileTabBar + navContexts are
+  hand-copied lists.
+- No PDF upload exists. Model the bucket on 092 message-media.
+- Next migration prefix 094; confirm against live ledger first.
+
+## A. Database (094_mm_auditions.sql)
+- [ ] A0. list_migrations + read live RLS on spaces/space_participants
+- [ ] A1. room_format CHECK: re-list all 8 existing + table_read, audition,
+      callback
+- [ ] A2. `spaces.is_private bool` (director's choice at create; audition
+      formats only), `invite_code text unique`
+- [ ] A3. `space_access (space_id, user_id, status: invited|lobby|admitted|
+      denied, character_name)` with RLS: host/mod manage, user reads own row
+- [ ] A4. `audition_files (space_id, owner_id, kind: script|headshot|resume|
+      reel, storage_path | external_url, page_count, current_page)`;
+      private bucket `audition-docs`. Scripts: director uploads, every
+      admitted reader sees. Headshots/resumes/reels: actor submits, only
+      director + mods see. Reels default to a link (YouTube/Vimeo); upload
+      cap TBD by Karl (storage cost)
+- [ ] A5. Realtime on current_page so the director turns pages for the room
+
+## B. Server
+- [ ] B1. Create API: accept the 3 formats; private by default; mint invite code
+- [ ] B2. Join-by-code route: valid code -> space_access row (lobby for
+      audition/callback-open, admitted for table_read). Callback: code alone
+      is not enough, must be pre-invited
+- [ ] B3. livekit-token + participants GET: private rooms require admitted
+      row (host/mods exempt). Lobby users get NO LiveKit token
+- [ ] B4. Director actions: admit / send back to lobby / deny; assign character
+- [ ] B5. Media policy branch: admitted readers get mic + camera
+- [ ] B6. Script upload-url + signed read + set page routes
+- [ ] B7. Exclude audition formats from /api/mirror/live and Spaces list;
+      add to roomStatus, cron reminders path, admin list
+
+## C. UI (src/app/social/auditions, src/components/social/auditions)
+- [ ] C1. /social/auditions: my rooms + "Join with code"
+- [ ] C2. Create page: pick type, title, upload sides (optional)
+- [ ] C3. Room screen: video grid with character name on tiles, script panel
+      (director pager, readers follow), lobby list for director
+- [ ] C4. Lobby waiting screen for actors
+- [ ] C5. Nav: MM Auditions replaces Mirror in the Social category
+      (SOCIAL_NAV_ITEMS, MobileTabBar, Sidebar icon); Mirror becomes a direct
+      M-menu tile; navContexts updated
+- [ ] C6. Actor "Submit materials" sheet (headshot, resume, reel link) and a
+      director "Submissions" panel per actor
+
+## D. Verify
+- [ ] D1. npm run test:unit (all suites) + new auditions tests (format
+      routing, isolation, private-room token refusal, list exclusion)
+- [ ] D2. tsc + build
+- [ ] D3. Apply migration on a Supabase branch first, then prod
+- [ ] D4. Preview deploy: two accounts, lobby -> admit -> camera -> page turn;
+      third account with room id but no code is refused
+
+## Recordings (Karl, 11 Oct)
+- Record button, director only. Max 3 takes per session. Director can play
+  and download. ALL takes + uploads deleted when the session ends (End, or
+  /api/cron/audition-cleanup every 15 min for any other ending). Karl: "I
+  don't want to have to pay for someone else's stuff" — strict, no retention.
+- REC banner for everyone (room metadata flag, Illinois all-party consent);
+  Mirror's recording routes refuse audition rooms.
+
+## Review (11 Oct)
+- Built: migration 094, 8 API routes + cleanup cron, room/lobby/create/home
+  screens, pdf.js script viewer, M-menu Mirror bar, nav swap.
+- Verified: tsc clean; full test:unit green (new test:auditions); RLS for 094
+  on a stub of the live schema, 18/18 (scripts/auditions-rls.pg.mjs, run
+  with pglite); Vercel preview build READY (local build can't reach Google
+  Fonts from the sandbox).
+- 094 applied 11 Oct by Karl in the Supabase SQL Editor (apply_migration
+  via MCP was cancelled 4x: the approval never reached his phone). Verified
+  live: is_private column, 5 tables, 5 policies, 3 helpers, new format CHECK
+  (keeps live_*), private audition-docs bucket, new spaces/participants
+  policies; anon reads run without error. Ledger row added by hand
+  (20261011213900 094_mm_auditions) so list_migrations shows it — no drift.
+- Still to test once 094 is live, on the preview with two accounts: open
+  private audition -> join by code -> lobby -> let in -> camera both ways ->
+  share PDF -> page turn follows -> record/stop/download -> End deletes takes
+  and files; third account with the room id but no code gets nothing.
+- Needs LiveKit egress env (already used by Mirror) for the record button;
+  without it the button reports "Recording isn't set up".
+
+## Next build: casting calls in Mirror (Karl, 11 Oct)
+- Directors post a casting call card to Mirror that links to an OPEN audition.
+  Needs scheduled sessions first, and a new non-video Mirror post type.
+  Private rooms never linked publicly ("submit materials" instead).
+
+## Out of scope (phase 2)
+Recording/replays (LiveKit egress cost), scheduling, callback notes/ratings.
+
 # Door conversion + privacy gaps, 2 Oct 2026 (A, B done; C next)
 
 Source: an outside review of melorimusic.org, checked against the live site

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AUDITION_ROOM_FORMATS } from "@/lib/auditions";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import {
@@ -52,6 +53,10 @@ export async function GET(req: NextRequest) {
          )`,
       )
       .eq("status", "live")
+      // MM Auditions rooms are never advertised in the live ring, open or
+      // private: actors on camera in a casting room aren't a public show.
+      // (or/is.null keeps legacy NULL-format rooms; see the Spaces list.)
+      .or(`room_format.is.null,room_format.not.in.(${AUDITION_ROOM_FORMATS.join(",")})`)
       .order("participant_count", { ascending: false })
       .order("last_activity_at", { ascending: false })
       .limit(20);

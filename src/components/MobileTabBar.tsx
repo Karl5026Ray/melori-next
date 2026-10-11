@@ -22,8 +22,9 @@ import {
   Music,
   Clapperboard,
   HeartHandshake,
+  Drama,
 } from "lucide-react";
-import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
+import { CONNECT_NAV_ITEM, MIRROR_NAV_ITEM } from "@/lib/socialNav";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -34,7 +35,9 @@ import { CONNECT_NAV_ITEM } from "@/lib/socialNav";
  *   - Center M button (here)  = everything else, as fast button presses:
  *       Music, Artists, Radio, Melori Connect (direct), then the one
  *       navigation category:
- *         • Social       — Melori Mirror, MM Faces, MM Spaces, MM Cinema
+ *         • Social       — MM Auditions, MM Faces, MM Spaces, MM Cinema
+ *       Melori Mirror is not a tile: it is the thin translucent bar across the
+ *       very top of the menu, above "Go anywhere" (Karl, 2026-10-11).
  *       then Photography, Sign up and Mission as direct tiles.
  *
  *     Signup was itself a category of four tier deep-links until /register
@@ -216,7 +219,7 @@ export default function MobileTabBar() {
       label: "Social",
       icon: <Sparkles className="h-5 w-5" />,
       items: [
-        { label: "Melori Mirror", href: "/social/mirror", icon: <Sparkles className="h-5 w-5" />, desc: "For-you feed" },
+        { label: "MM Auditions", href: "/social/auditions", icon: <Drama className="h-5 w-5" />, desc: "Table reads & auditions" },
         { label: "MM Faces", href: "/social/live", icon: <Video className="h-5 w-5" />, desc: "Live video" },
         { label: "MM Spaces", href: "/social/spaces", icon: <RadioTower className="h-5 w-5" />, desc: "Live audio rooms" },
         { label: "MM Cinema", href: "/social/cinema", icon: <Clapperboard className="h-5 w-5" />, desc: "Premieres & screenings" },
@@ -384,6 +387,20 @@ export default function MobileTabBar() {
               return (
                 <>
                   <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-brand-muted" />
+                  {/* Melori Mirror: its own destination, a thin translucent bar
+                      straight across the top, above Go anywhere and the
+                      Melori Band (Karl, 2026-10-11). Top level only, so a
+                      category screen keeps its back button + title header. */}
+                  {!activeCat && (
+                    <Link
+                      href={MIRROR_NAV_ITEM.href}
+                      onClick={() => setLauncherOpen(false)}
+                      className="mb-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold tracking-wide text-text-primary backdrop-blur-md transition-colors hover:bg-white/10 active:bg-white/15"
+                    >
+                      <Sparkles className="h-4 w-4 text-brand-primary" aria-hidden />
+                      {MIRROR_NAV_ITEM.label}
+                    </Link>
+                  )}
                   <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {activeCat ? (

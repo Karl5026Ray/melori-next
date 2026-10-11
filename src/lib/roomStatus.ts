@@ -1,3 +1,4 @@
+import { auditionRoomHref, isAuditionFormat } from "@/lib/auditions";
 export type LivePresenceKind =
   | "faces_live"
   | "concert_live"
@@ -49,6 +50,20 @@ export function getLiveRoomPresentation(room: {
       icon: "mic",
       tone: "teal",
       href: `/social/concert/${room.id}`,
+    };
+  }
+
+  // Normally filtered out before it gets here (/api/mirror/live excludes
+  // audition rooms), but if one ever arrives it must link to Auditions, not
+  // fall through to the Spaces default.
+  if (isAuditionFormat(room.room_format)) {
+    return {
+      kind: "spaces_live",
+      label: "Space",
+      ariaLabel: "Audition room",
+      icon: "video",
+      tone: "purple",
+      href: auditionRoomHref(room.id),
     };
   }
 

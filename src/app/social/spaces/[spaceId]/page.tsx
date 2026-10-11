@@ -6,6 +6,7 @@
 // the viewer in the right product.
 
 import { redirect } from "next/navigation";
+import { auditionRoomHref, isAuditionFormat } from "@/lib/auditions";
 import { supabase } from "@/lib/supabase";
 import { CINEMA_ROOM_FORMAT } from "@/lib/cinema";
 import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
@@ -37,6 +38,9 @@ export default async function SpaceRoomPage({
   }
   if (data?.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
     redirect(`/social/concert/${spaceId}`);
+  }
+  if (isAuditionFormat(data?.room_format)) {
+    redirect(auditionRoomHref(spaceId));
   }
 
   return <SpacesRoomScreen spaceId={spaceId} />;

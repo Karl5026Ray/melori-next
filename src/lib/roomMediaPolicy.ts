@@ -9,6 +9,7 @@ import {
   getConcertBattleSlot,
   type ConcertBattleStatus,
 } from "@/lib/concertBattle";
+import { isAuditionFormat } from "@/lib/auditions";
 
 export const CINEMA_CAMERA_SLOT_COUNT = 3 as const;
 
@@ -221,9 +222,13 @@ export function decideRoomPublish(input: RoomMediaInput): RoomMediaDecision {
     return { allowedSources: [], cameraSlot: null, reason: "host-muted" };
   }
 
-  const isFaces = String(input.roomFormat ?? "").startsWith("live_");
+  // MM Faces and MM Auditions are video rooms. Who is ON STAGE in an audition
+  // room is decided upstream by space_access (only admitted readers and the
+  // director get a speaker role), so camera here is safe.
+  const isVideoRoom =
+    String(input.roomFormat ?? "").startsWith("live_") || isAuditionFormat(input.roomFormat);
   const allowedSources = requested.filter(
-    (source) => source === "microphone" || (source === "camera" && isFaces),
+    (source) => source === "microphone" || (source === "camera" && isVideoRoom),
   );
   return {
     allowedSources,

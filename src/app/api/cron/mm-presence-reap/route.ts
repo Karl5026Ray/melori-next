@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isAuditionFormat } from "@/lib/auditions";
 import {
   isPubNubConfigured,
   getChannelOccupancy,
@@ -125,7 +126,7 @@ async function handle(req: NextRequest) {
   // Pull the full live set once. Both passes below operate on it.
   const { data: spaces, error } = await supabase
     .from("spaces")
-    .select("id, status, last_activity_at, created_at")
+    .select("id, status, last_activity_at, created_at, room_format")
     .eq("status", "live");
 
   if (error) {
@@ -174,6 +175,11 @@ async function handle(req: NextRequest) {
     const alreadyEnded = new Set(staleEndedIds);
     const candidates = liveRooms.filter((s) => {
       if (alreadyEnded.has(s.id)) return false;
+      // MM Auditions rooms never join PubNub presence (LiveKit video + the
+      // heartbeat route only), so zero occupancy would end every one of them.
+      // They are still covered by the staleness pass above and the host-
+      // abandoned reaper in the token/heartbeat routes.
+      if (isAuditionFormat(s.room_format)) return false;
       const lastActive = s.last_activity_at ?? s.created_at;
       // Keep rooms whose last activity is within the grace window.
       return !lastActive || lastActive <= graceCutoff;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refusePrivateRoomRead } from "@/lib/auditions.server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { rateLimit } from "@/lib/rate-limit";
@@ -26,6 +27,9 @@ export async function GET(
   if (!spaceId || !isUuid(spaceId)) {
     return NextResponse.json({ reactions: [] });
   }
+  // Private MM Auditions rooms: roster/chat only for the host and admitted.
+  const privateRefusal = await refusePrivateRoomRead(spaceId, guard.membership.userId!);
+  if (privateRefusal) return privateRefusal;
 
   try {
     const supabase = getSupabaseAdmin();

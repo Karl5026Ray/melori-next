@@ -7,7 +7,10 @@ export type SocialNavItem = { label: string; href: string };
 //
 // The group is capped at FOUR items on purpose: a 390x844 phone can't show a
 // fifth without wrapping or shrinking the touch targets. So Connect gave up
-// its slot to MM Cinema.
+// its slot to MM Cinema, and (Karl, 11 Oct 2026) Melori Mirror gave its slot
+// to MM Auditions. Mirror did not lose its place: it became its own
+// destination (MIRROR_NAV_ITEM), shown as a full-width bar across the top of
+// the M menu and as its own entry on desktop.
 //
 // Connect is not in this group, but it is no longer parked: it now has a
 // permanent home in the MORE group (the local nav bar's More context and the
@@ -15,11 +18,17 @@ export type SocialNavItem = { label: string; href: string };
 // below stays the single place that label + href are defined, so every surface
 // that links to Connect reads it from here.
 export const SOCIAL_NAV_ITEMS: SocialNavItem[] = [
-  { label: "Melori Mirror", href: "/social/mirror" },
+  { label: "MM Auditions", href: "/social/auditions" },
   { label: "MM Faces", href: "/social/live" },
   { label: "MM Spaces", href: "/social/spaces" },
   { label: "MM Cinema", href: "/social/cinema" },
 ];
+
+/** Melori Mirror — the For-you feed, its own destination outside the Social group. */
+export const MIRROR_NAV_ITEM: SocialNavItem = {
+  label: "Melori Mirror",
+  href: "/social/mirror",
+};
 
 /**
  * Melori Connect's entry point. Rendered in the MORE group on both the local

@@ -129,3 +129,11 @@ Patterns to not repeat. Each entry is a correction that cost real time.
 - **Supabase MCP DROP/REVOKE statements wait for a human approval.** Unattended
   they time out at 180s with nothing applied. After one timeout, check the
   ledger and tell Karl; do not keep resending.
+
+## Requirements
+
+- **Restate nav moves as "X leaves A, goes to B" before planning.** "Mirror
+  would become its own space" meant Mirror leaves the M menu's Social category
+  for its own direct tile, with the new product taking its slot. It was read
+  as dropping Mirror from the Social row with no home. When a request moves
+  something, name both the old spot and the new spot back to Karl.

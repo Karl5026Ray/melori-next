@@ -91,6 +91,10 @@ const DOOR_PATH = "/platform";
 const PUBLIC_EXACT = new Set([
   "/about",
   "/account-info",
+  // Google Play's Data safety form requires the account-deletion URL to be
+  // reachable signed out — people who can no longer sign in use its email
+  // fallback. Exact match only: /account itself stays gated.
+  "/account/delete",
   "/admin",
   "/artists",
   "/books",

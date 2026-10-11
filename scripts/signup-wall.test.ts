@@ -71,6 +71,7 @@ const PUBLIC: [string, string][] = [
   ["/support", "support"],
   ["/mission", "the mission page"],
   ["/account-info", "the native account-info page"],
+  ["/account/delete", "the Google Play account-deletion page"],
 
   // Runs its own JWT gate; adding it to the door locks Karl out.
   ["/admin", "the admin login page"],

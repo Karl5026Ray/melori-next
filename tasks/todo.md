@@ -1,4 +1,4 @@
-# MM Auditions, 11 Oct 2026 (PLAN, awaiting Karl's OK)
+# MM Auditions, 11 Oct 2026 (BUILT on feat/mm-auditions; migration 094 NOT yet applied)
 
 Karl: a room for directors to run table reads and auditions. Three types:
 Table Read (everyone reads together), Audition (lobby, called in one at a
@@ -83,6 +83,23 @@ Cinema (no cross-imports; spaces-room.test isolation check extended).
   don't want to have to pay for someone else's stuff" — strict, no retention.
 - REC banner for everyone (room metadata flag, Illinois all-party consent);
   Mirror's recording routes refuse audition rooms.
+
+## Review (11 Oct)
+- Built: migration 094, 8 API routes + cleanup cron, room/lobby/create/home
+  screens, pdf.js script viewer, M-menu Mirror bar, nav swap.
+- Verified: tsc clean; full test:unit green (new test:auditions); RLS for 094
+  on a stub of the live schema, 18/18 (scripts/auditions-rls.pg.mjs, run
+  with pglite); Vercel preview build READY (local build can't reach Google
+  Fonts from the sandbox).
+- NOT verified: anything live. apply_migration on ouvovhwizsuhjxxmccex was
+  not approved (twice), so production has no 094. DO NOT MERGE before 094 is
+  applied: the create route writes spaces.is_private.
+- Still to test once 094 is live, on the preview with two accounts: open
+  private audition -> join by code -> lobby -> let in -> camera both ways ->
+  share PDF -> page turn follows -> record/stop/download -> End deletes takes
+  and files; third account with the room id but no code gets nothing.
+- Needs LiveKit egress env (already used by Mirror) for the record button;
+  without it the button reports "Recording isn't set up".
 
 ## Next build: casting calls in Mirror (Karl, 11 Oct)
 - Directors post a casting call card to Mirror that links to an OPEN audition.

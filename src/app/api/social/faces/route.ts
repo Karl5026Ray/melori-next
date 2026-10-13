@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       .select(
         `id, title, topic, room_format, status, host_id, participant_count,
          max_capacity, duration_minutes, created_at, host_last_seen_at,
-         host:profiles(id, display_name, avatar_url, role, verified)`,
+         host:profiles!spaces_host_id_fkey(id, display_name, avatar_url, role, verified)`,
       )
       .in("room_format", ["live_solo", "live_duo", "live_group"])
       .eq("status", "live")

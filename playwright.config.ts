@@ -1,8 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Minimal Playwright setup. The suite is intentionally small — we only ship
-// tests where a broken behaviour has previously reached production. The
-// floating player regression (PR #103) is the first such case.
+// tests where a broken behaviour has previously reached production.
 //
 // BASE_URL override lets you point the same tests at a Vercel preview URL:
 //   BASE_URL=https://melori-next-git-<branch>-melori.vercel.app pnpm test:e2e
@@ -48,7 +47,8 @@ const LOCAL_SUPABASE_ENV = {
 };
 
 // The post-deploy smoke spec (deploy-smoke.spec.ts, PW_SMOKE=1) was retired on
-// 2026-10-03 with its workflow. It signed in to production with a dedicated
+// 2026-10-03; its workflow (.github/workflows/deploy-smoke.yml) was left behind
+// and failed on every production deploy until it was removed on 2026-10-13. It signed in to production with a dedicated
 // "Smoke_Email" account that showed up on the site; Karl had the account
 // deleted, so the check could only fail. Nothing is excluded per project now.
 // The floating pill and its two suites went on 2026-09-07; transport-scope

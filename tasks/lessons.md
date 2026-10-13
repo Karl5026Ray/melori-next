@@ -147,3 +147,12 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   tap Run (and "Run this query" on the destructive-ops warning), verify with
   a read query, then add the ledger row to supabase_migrations.schema_migrations
   so list_migrations matches the repo.
+
+## CI
+
+- **Retiring a test means retiring its runner too.** On 2026-10-03 the deploy
+  smoke spec and its `test:smoke` script were removed, but
+  `.github/workflows/deploy-smoke.yml` stayed. It failed on every production
+  deploy for ten days ("Missing script: test:smoke") and was misread as a
+  merge accident. When removing a spec, grep `.github/workflows` for it and
+  delete or update every caller, plus any secrets only it used.

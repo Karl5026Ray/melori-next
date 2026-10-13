@@ -4,7 +4,7 @@ import {
   advanceConcertBattle,
   type ConcertAdvanceOutcome,
 } from "@/lib/concertRoundsServer";
-import { publishSystemSignal } from "@/lib/pubnubServer";
+import { publishSystemSignal } from "@/lib/roomSignalsServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

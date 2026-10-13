@@ -113,7 +113,6 @@ export default function PrivacyPage() {
               <li>Supabase — database, sign-in and file storage</li>
               <li>Vercel and Cloudflare — hosting, security and content moderation screening</li>
               <li>LiveKit — live audio and video rooms</li>
-              <li>PubNub — online presence</li>
               <li>Resend — account email</li>
               <li>Telnyx — phone verification for going live</li>
               <li>Google and Apple — only if you sign in with them</li>

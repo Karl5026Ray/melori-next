@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { decideConcertVote, type ConcertVoteRefusal } from "@/lib/concertRounds";
 import { countConcertRoundVotes } from "@/lib/concertRoundsServer";
-import { publishVoteSignal } from "@/lib/pubnubServer";
+import { publishVoteSignal } from "@/lib/roomSignalsServer";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUuid } from "@/lib/validators";
 
@@ -32,7 +32,7 @@ const REFUSAL: Record<ConcertVoteRefusal, { status: number; error: string }> = {
 // finished round, a future round, or for anyone but the two performers.
 //
 // After the write, the absolute tally for the round is recounted from the
-// table and broadcast over PubNub so every viewer's score bar updates. The
+// table and broadcast over Supabase Realtime so every viewer's score bar updates. The
 // response carries the same tally so the voter updates immediately.
 export async function POST(req: NextRequest, { params }: Props) {
   const guard = await requireAuth(req);

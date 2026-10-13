@@ -18,7 +18,7 @@
 // Sources reflect Melori's real providers:
 //   supabase.co (auth/db/storage/realtime),
 //   *.livekit.cloud + wss (audio/video),
-//   *.pubnub.com (presence), google/gstatic (OAuth + fonts),
+//   google/gstatic (OAuth + fonts),
 //   static.cloudflareinsights.com (Cloudflare Web Analytics beacon).
 const CSP_ENFORCED = [
   "default-src 'self'",
@@ -36,11 +36,11 @@ const CSP_ENFORCED = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  // XHR/WebSocket egress: Supabase, LiveKit, PubNub + generic wss.
+  // XHR/WebSocket egress: Supabase, LiveKit + generic wss.
   // blob: is required by the shared audio player: it fetches the unlock clip and
   // streamed track data as blob URLs, and XHR/fetch to a blob: URL is governed by
   // connect-src (not media-src). Without it the homepage radio fails to start.
-  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://*.livekit.cloud wss://*.livekit.cloud https://*.pubnub.com wss://*.pubnub.com",
+  "connect-src 'self' blob: https: wss: https://*.supabase.co wss://*.supabase.co https://*.livekit.cloud wss://*.livekit.cloud",
   // data: covers the tiny inline silent clip the player uses to unlock autoplay
   // on iOS, which was being blocked on / and /music.
   "media-src 'self' data: blob: https:",

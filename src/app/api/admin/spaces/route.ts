@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAdmin, isAdminGuardFailure } from "@/lib/admin-panel";
-import { isPubNubConfigured, getChannelOccupancy } from "@/lib/pubnubServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,9 +8,9 @@ export const dynamic = "force-dynamic";
 // GET /api/admin/spaces?status=live|scheduled|all
 //
 // Admin-only listing of Spaces for the moderation panel, so an admin can see
-// every live/dormant room and shut it down. Returns host display info plus the
-// live PubNub occupancy (when configured) so a dormant room — live in the DB
-// but with a ghost/stuck presence — is visible and actionable.
+// every live/dormant room and shut it down. Returns host display info plus how
+// many people the database has in each live room (open space_participants
+// rows), so a room that is live but empty stands out.
 export async function GET(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (isAdminGuardFailure(admin)) return admin;
@@ -47,22 +46,26 @@ export async function GET(req: NextRequest) {
 
   const spaces = data ?? [];
 
-  // Enrich live rooms with true PubNub occupancy so dormant/ghost rooms stand
-  // out. Best-effort and gentle: only for the rooms shown, sequential, and any
-  // read failure just reports null (unknown) rather than failing the list.
-  const pubnubOn = isPubNubConfigured();
-  const enriched = [];
-  for (const s of spaces) {
-    let occupancy: number | null = null;
-    if (pubnubOn && s.status === "live") {
-      try {
-        occupancy = await getChannelOccupancy(s.id);
-      } catch {
-        occupancy = null;
-      }
+  // One query for every live room shown; a failure reports null (unknown)
+  // rather than failing the list.
+  const liveIds = spaces.filter((s) => s.status === "live").map((s) => s.id);
+  const counts = new Map<string, number>();
+  let countsOk = true;
+  if (liveIds.length > 0) {
+    const { data: rows, error: countErr } = await supabase
+      .from("space_participants")
+      .select("space_id")
+      .in("space_id", liveIds)
+      .is("left_at", null);
+    if (countErr) countsOk = false;
+    for (const r of rows ?? []) {
+      counts.set(r.space_id, (counts.get(r.space_id) ?? 0) + 1);
     }
-    enriched.push({ ...s, occupancy });
   }
+  const enriched = spaces.map((s) => ({
+    ...s,
+    occupancy: s.status === "live" && countsOk ? counts.get(s.id) ?? 0 : null,
+  }));
 
   return NextResponse.json({ ok: true, spaces: enriched });
 }

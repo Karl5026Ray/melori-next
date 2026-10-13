@@ -237,7 +237,7 @@ group("isHostAbandoned — grace period boundary behavior", () => {
 
 // ---------------------------------------------------------------------------
 // Idempotency guard — endRoomAndTeardown() and reapIfHostAbandoned() must
-// never run the LiveKit teardown / PubNub signal a second time for a room
+// never run the LiveKit teardown / room signal a second time for a room
 // that is already 'ended'. The real implementation enforces this via a
 // guarded DB update (`.eq("status", "live")` / the `end_space_now` RPC's
 // internal guard) so two concurrent callers can never both "win" — but that

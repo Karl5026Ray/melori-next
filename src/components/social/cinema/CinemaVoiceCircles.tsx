@@ -73,7 +73,7 @@ function VoiceCircle({
   const body = (
     <>
       <span
-        className={`relative grid shrink-0 place-items-center ${
+        className={`relative block shrink-0 ${
           compact ? "h-7 w-7 sm:h-9 sm:w-9" : "h-9 w-9 sm:h-11 sm:w-11"
         }`}
       >

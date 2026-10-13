@@ -12,6 +12,7 @@ import {
 import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 import {
   applyStagePermissions,
+  isSupersededSession,
   revokePublishedSources,
   livekitConfigured,
   type SocialRole,
@@ -198,6 +199,15 @@ export async function POST(req: NextRequest) {
     const identity = event.participant?.identity ?? "";
     if (!identity) {
       return NextResponse.json({ ok: true, ignored: "no-identity" });
+    }
+
+    // A planned reconnect (brought on stage / sent back to the audience) opens
+    // the new session before LiveKit reports the old one gone. If this person
+    // is already back under a different session, this event is stale: marking
+    // them left would drop them from the roster and the client would then
+    // disconnect for real.
+    if (await isSupersededSession(roomName, identity, event.participant?.sid)) {
+      return NextResponse.json({ ok: true, ignored: "superseded-session" });
     }
 
     // Host dropped: let the DB pick a successor (or gracefully end). This also

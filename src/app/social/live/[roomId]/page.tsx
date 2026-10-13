@@ -56,7 +56,7 @@ export default function LiveRoomPage() {
         .select(
           `id, title, topic, room_format, status, host_id, duration_minutes,
            max_capacity, host_settings,
-           host:profiles(id, display_name, avatar_url)`,
+           host:profiles!spaces_host_id_fkey(id, display_name, avatar_url)`,
         )
         .eq("id", roomId)
         .maybeSingle();

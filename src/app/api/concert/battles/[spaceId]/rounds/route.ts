@@ -6,7 +6,7 @@ import {
   advanceConcertBattle,
   startConcertBattleRounds,
 } from "@/lib/concertRoundsServer";
-import { publishSystemSignal } from "@/lib/pubnubServer";
+import { publishSystemSignal } from "@/lib/roomSignalsServer";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUuid } from "@/lib/validators";
 

@@ -9,7 +9,7 @@ import {
   ensureVideoAudio,
   type RemoteVideo,
 } from "@/lib/livekitVideoClient";
-import { joinPresence, leavePresence, type SpaceSignal } from "@/lib/pubnubClient";
+import { joinPresence, leavePresence, type SpaceSignal } from "@/lib/roomSignalsClient";
 import { useRoomComments } from "@/components/social/rooms/useRoomComments";
 import {
   applyConcertVoteTally,

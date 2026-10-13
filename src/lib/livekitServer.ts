@@ -276,6 +276,25 @@ export async function endLiveKitRoom(roomName: string): Promise<void> {
   }
 }
 
+// Is `identity` connected to `roomName` right now under a session other than
+// `departedSid`? A client that reconnects on purpose (taken on stage, sent back
+// to the audience) opens its new session before LiveKit reports the old one
+// left, so a participant_left for the old sid must not mark the person gone.
+// Fails open (false) so a LiveKit API hiccup never strands a real leaver.
+export async function isSupersededSession(
+  roomName: string,
+  identity: string,
+  departedSid: string | undefined,
+): Promise<boolean> {
+  if (!roomName || !identity || !departedSid) return false;
+  try {
+    const current = await client().getParticipant(roomName, identity);
+    return Boolean(current?.sid) && current.sid !== departedSid;
+  } catch {
+    return false;
+  }
+}
+
 // Forcibly disconnect a participant from a live room right now (host ban /
 // kick). LiveKit sends the client a Disconnected event with reason
 // PARTICIPANT_REMOVED and will NOT auto-reconnect it. Best-effort: a participant

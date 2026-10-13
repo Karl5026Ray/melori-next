@@ -188,8 +188,9 @@ jobs:
                 /^-----BEGIN [A-Z0-9 ]+-----$/ || /^-----END [A-Z0-9 ]+-----$/ { next }
                 { print }
               ' \
-            | tr -d '[:space:]' \
-            | base64 --decode > "$KEYSTORE"
+            | tr -- '-_' '+/' \
+            | tr -cd 'A-Za-z0-9+/=' \
+            | base64 --decode > "$KEYSTORE" 2>/dev/null || true
           chmod 600 "$KEYSTORE"
           # Sanity check that we decoded a real keystore, not truncated base64.
           # The password goes in via -storepass:env so it never appears in the

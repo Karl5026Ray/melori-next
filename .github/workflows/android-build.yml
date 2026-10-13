@@ -179,8 +179,13 @@ jobs:
           KEYSTORE="$RUNNER_TEMP/upload-keystore.jks"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" \
             | awk '
-                { sub(/\r$/, "") }
-                $0 == "-----BEGIN CERTIFICATE-----" || $0 == "-----END CERTIFICATE-----" { next }
+                {
+                  sub(/\r$/, "")
+                  sub(/^\xef\xbb\xbf/, "")
+                  sub(/^[[:space:]]+/, "")
+                  sub(/[[:space:]]+$/, "")
+                }
+                /^-----BEGIN [A-Z0-9 ]+-----$/ || /^-----END [A-Z0-9 ]+-----$/ { next }
                 { print }
               ' \
             | tr -d '[:space:]' \
@@ -191,10 +196,8 @@ jobs:
           # process arguments.
           if ! keytool -list -keystore "$KEYSTORE" \
                  -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null 2>&1; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a readable keystore," \
-                 "or ANDROID_KEYSTORE_PASSWORD is wrong. Re-encode the .jks with" \
-                 "[Convert]::ToBase64String([IO.File]::ReadAllBytes('...')) — certutil" \
-                 "output includes headers and line breaks and will not work."
+            echo "::error::ANDROID_KEYSTORE_BASE64 must contain a valid base64-encoded .jks, and ANDROID_KEYSTORE_PASSWORD must be correct." \
+                 "Re-encode the .jks with [Convert]::ToBase64String([IO.File]::ReadAllBytes('...')) and update the secret."
             exit 1
           fi
           echo "Keystore decoded OK"

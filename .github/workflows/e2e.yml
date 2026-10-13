@@ -1,8 +1,14 @@
 name: E2E (Playwright)
 
-# Runs the mobile FloatingPlayer regression suite (e2e/floating-player.spec.ts)
-# on every PR and on pushes to main. This is the safety net for PR #103 —
-# any revert of the AudioPlayer.tsx fixes will fail these tests before merge.
+# Runs the Playwright suite in e2e/ (mobile-chromium project) on every PR and
+# on pushes to main: transport-scope, Spaces, Cinema, Concert, media setup and
+# the signed-out teasers.
+#
+# The floating player and its floating-player.spec.ts were removed on
+# 2026-09-07. The job is still NAMED "Mobile FloatingPlayer @ 390x844" only
+# because that exact name is a required status check in branch protection.
+# Renaming it here without updating protection in the same change blocks every
+# PR forever ("Expected - Waiting for status to be reported").
 #
 # The suite builds and serves the CHECKED-OUT COMMIT inside the runner.
 #
@@ -14,9 +20,8 @@ name: E2E (Playwright)
 # regression would pass against good code. Testing the commit under test is the
 # only thing that makes this check mean anything.
 #
-# The build runs against placeholder Supabase credentials: the suite seeds its
-# own track into localStorage and never reads the catalog, and the client
-# bundle only needs the NEXT_PUBLIC_* pair to be present and well-formed in
+# The build runs against placeholder Supabase credentials: the specs mock the
+# requests they depend on, and the client bundle only needs the NEXT_PUBLIC_* pair to be present and well-formed in
 # order to hydrate. Repo secrets override them when configured.
 
 on:
@@ -42,6 +47,7 @@ concurrency:
 
 jobs:
   playwright:
+    # Name kept for branch protection - see the header note before renaming.
     name: Mobile FloatingPlayer @ 390x844
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -54,7 +60,7 @@ jobs:
 
       # The workflow must always report because its job is required. Filter the
       # expensive suite here so documentation-only PRs receive a passing check.
-      - name: Decide whether this change can affect the player
+      - name: Decide whether this change can affect the app
         id: scope
         env:
           EVENT: ${{ github.event_name }}
@@ -84,7 +90,7 @@ jobs:
           CHANGED="$(git diff --name-only "$RANGE" || true)"
           if [ -z "$CHANGED" ]; then
             echo "relevant=false" >> "$GITHUB_OUTPUT"
-            echo "No files changed - nothing for the player suite to test."
+            echo "No files changed - nothing for the browser suite to test."
             exit 0
           fi
 
@@ -96,7 +102,7 @@ jobs:
 
           if [ -z "$RELEVANT" ]; then
             echo "relevant=false" >> "$GITHUB_OUTPUT"
-            echo "Docs / images only - the player suite cannot be affected."
+            echo "Docs / images only - the browser suite cannot be affected."
           else
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             echo "Runtime files changed - running the suite."
@@ -156,7 +162,7 @@ jobs:
 
       - name: Skipped - no runtime files changed
         if: steps.scope.outputs.relevant != 'true'
-        run: echo "Docs / image only change. The player suite has nothing to exercise, so this check passes without running it."
+        run: echo "Docs / image only change. The browser suite has nothing to exercise, so this check passes without running it."
 
       # Uploads screenshots, videos, and traces on failure so we can diagnose
       # regressions without re-running locally.

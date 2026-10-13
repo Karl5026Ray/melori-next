@@ -6,6 +6,8 @@ import {
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAdminSecretKey } from "@/lib/admin-secret";
+import { isNativeUserAgent } from "@/lib/nativePlatform";
+import { isHiddenInNativeApp } from "@/lib/nativeHidden";
 
 // Do NOT fall back to a hard-coded secret — the previous fallback string was
 // public in this repo, so a misconfigured production env would let anyone
@@ -310,6 +312,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const platformRoute = routePlatformHost(request, pathname);
   if (platformRoute) return platformRoute;
+
+  // Web-only features (see src/lib/nativeHidden.ts): inside the native app
+  // these paths bounce to home, so a deep link can't reach them either.
+  if (
+    isHiddenInNativeApp(pathname) &&
+    isNativeUserAgent(request.headers.get("user-agent"))
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
 
   // The door. Everything that is not on the public allowlist above requires a
   // session.

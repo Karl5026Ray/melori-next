@@ -42,7 +42,7 @@ export type ConcertDbClient = { from: (table: string) => any };
 
 /**
  * Realtime fan-out for a transition. Injected rather than imported so this
- * module stays testable in a plain Node script: the PubNub server client is
+ * module stays testable in a plain Node script: the room-signal server client is
  * `server-only` and cannot be loaded outside the Next runtime. Routes pass
  * `publishSystemSignal`; tests pass nothing and assert on the writes.
  */

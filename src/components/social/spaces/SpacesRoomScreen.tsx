@@ -10,7 +10,7 @@
 //
 // What the two products still share is plumbing: the `spaces` /
 // `space_participants` / `space_comments` tables, the moderation and ban
-// routes, LiveKit and PubNub.
+// routes, LiveKit and room-signals.
 //
 // Layout, top to bottom on a phone: one header line, the stage (host + up to
 // SPACES_SPEAKER_LIMIT speakers with live speaking rings), the listeners, the
@@ -32,10 +32,10 @@ import {
   ensureAudioPlayback as agoraEnsureAudio,
 } from "@/lib/livekitClient";
 import {
-  joinPresence as pubnubJoin,
-  leavePresence as pubnubLeave,
-  publishSignal as pubnubPublishSignal,
-} from "@/lib/pubnubClient";
+  joinPresence as roomJoin,
+  leavePresence as roomLeave,
+  publishSignal as roomPublishSignal,
+} from "@/lib/roomSignalsClient";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { sortStageQueue } from "@/lib/stageQueue";
@@ -215,7 +215,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
-  // disconnect reason or the PubNub "space-ended" system signal. Shows a calm
+  // disconnect reason or the room-signals "space-ended" system signal. Shows a calm
   // banner briefly before navigating away, instead of silently bouncing.
   const [roomEnded, setRoomEnded] = useState(false);
   // Real-time set of user_ids currently speaking (LiveKit identity == user id).
@@ -227,7 +227,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   // Monotonic counter so simultaneous reactions get unique React keys even if
   // they share a millisecond timestamp (fan-out can burst several at once).
   const reactionSeqRef = useRef(0);
-  // Mirror of `participants` for use inside the PubNub signal callback, which
+  // Mirror of `participants` for use inside the room-signals signal callback, which
   // lives in an effect that must NOT re-subscribe every time the list changes
   // (that would tear down + rebuild presence). The ref stays current without
   // being a dependency.
@@ -604,7 +604,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     // the host just switched hand-raise mode to "off") so we never leave the
     // hand shown as raised when it wasn't actually recorded.
     setHasRaisedHand(newHand);
-    void pubnubPublishSignal(spaceId, { type: "hand", raised: newHand });
+    void roomPublishSignal(spaceId, { type: "hand", raised: newHand });
     try {
       const res = await authFetch(`/api/social/spaces/${spaceId}/raise-hand`, {
         method: "POST",
@@ -848,7 +848,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   }, [isHost, spaceId, router]);
 
   // Spawn a floating emoji burst locally. Used both for the local user's own
-  // reactions and for reactions received from other participants over PubNub.
+  // reactions and for reactions received from other participants over room-signals.
   // Fades after ~2s. The seq counter guarantees a unique React key.
   const spawnReaction = useCallback((emoji: string) => {
     const key = `${Date.now()}-${reactionSeqRef.current++}:${emoji}`;
@@ -859,12 +859,12 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   }, []);
 
   // Lightweight in-room reactions (host + audience). Show it locally right away
-  // (optimistic), then fan it out to the whole room over PubNub so everyone
+  // (optimistic), then fan it out to the whole room over room-signals so everyone
   // sees it instantly. Purely visual — never persisted.
   const sendReaction = useCallback(
     (emoji: string) => {
       spawnReaction(emoji);
-      void pubnubPublishSignal(spaceId, { type: "reaction", emoji });
+      void roomPublishSignal(spaceId, { type: "reaction", emoji });
     },
     [spaceId, spawnReaction],
   );
@@ -893,13 +893,13 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   );
 
   // Per-person reaction: animate over the target's avatar locally, then fan out
-  // over PubNub carrying the target's user id so everyone sees it on that
+  // over room-signals carrying the target's user id so everyone sees it on that
   // avatar. Purely visual — never persisted.
   const sendReactionTo = useCallback(
     (targetId: string, emoji: string) => {
       spawnTargetedReaction(targetId, emoji);
       pushActivityRef.current?.(user?.id, emoji, targetId);
-      void pubnubPublishSignal(spaceId, {
+      void roomPublishSignal(spaceId, {
         type: "reaction",
         emoji,
         target: targetId,
@@ -927,7 +927,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     [user?.id],
   );
 
-  // The PubNub subscription effect is deliberately not re-run when the ticker
+  // The room-signals subscription effect is deliberately not re-run when the ticker
   // helper changes identity — resubscribing on every render would drop and
   // rejoin presence. Read it through a ref instead.
   const pushActivityRef = useRef<typeof pushActivity | null>(null);
@@ -1165,19 +1165,17 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     });
   }, [user, isJoined, participants]);
 
-  // ---- PubNub presence lifecycle -------------------------------------------
-  // Runs ALONGSIDE Supabase Realtime (which still drives the participant list
-  // and is_speaking). PubNub exists purely so the SERVER gets a reliable
-  // occupancy signal: when the last person leaves — or their tab crashes and
-  // PubNub times them out — the presence webhook ends the room immediately.
-  // The client never ends the room itself; it just joins/leaves presence and
-  // shows a best-effort "here now" count.
+  // ---- Room signals lifecycle (Supabase Realtime) ---------------------------
+  // Private channels room:<id> / room-sys:<id> (see roomSignalsClient.ts):
+  // peer reactions and raise-hand, the "here now" count, and server notices
+  // (space-ended, host-changed). Additive only: the participant list still
+  // comes from the database, and a channel failure never blocks the room.
   useEffect(() => {
     if (!isJoined || !user) return;
     let cancelled = false;
     (async () => {
       try {
-        await pubnubJoin({
+        await roomJoin({
           spaceId,
           uuid: user.id,
           onPresence: (state) => {
@@ -1240,16 +1238,16 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
               setTimeout(() => setPeerHandToast(null), 2600);
             }
           },
-          onError: (err) => console.warn("pubnub presence", err),
+          onError: (err) => console.warn("room signals", err),
         });
       } catch (err) {
-        // PubNub is additive — never block the room on a presence failure.
-        console.warn("pubnub join failed", err);
+        // room-signals is additive — never block the room on a presence failure.
+        console.warn("room signals join failed", err);
       }
     })();
     return () => {
       cancelled = true;
-      void pubnubLeave();
+      void roomLeave();
     };
   }, [isJoined, user?.id, spaceId, router, spawnReaction, spawnTargetedReaction]);
 
@@ -1293,9 +1291,8 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           );
         }
         await agoraLeave();
-        // Explicit PubNub leave → immediate `leave` presence event → webhook
-        // fires now instead of waiting for the presence timeout.
-        await pubnubLeave();
+        // Untrack right away so the "here now" count drops for everyone.
+        await roomLeave();
       } catch {
         /* best-effort */
       }
@@ -1311,11 +1308,11 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     };
   }, [isJoined, spaceId]);
 
-  // Component unmount → leave Agora + PubNub presence cleanly.
+  // Component unmount → leave Agora + room-signals presence cleanly.
   useEffect(() => {
     return () => {
       void agoraLeave();
-      void pubnubLeave();
+      void roomLeave();
     };
   }, []);
 
@@ -1656,7 +1653,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
         </div>
       )}
 
-      {/* Someone raised a hand (instant via PubNub). */}
+      {/* Someone raised a hand (instant via room-signals). */}
       {peerHandToast && canModerate && (
         <div className="pointer-events-none fixed inset-x-0 safe-bottom-offset-44 z-30 flex justify-center">
           <span

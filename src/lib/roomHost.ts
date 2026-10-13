@@ -5,14 +5,14 @@ import {
   livekitConfigured,
   revokePublishedSources,
 } from "@/lib/livekitServer";
-import { publishSystemSignal } from "@/lib/pubnubServer";
+import { publishSystemSignal } from "@/lib/roomSignalsServer";
 import { deriveRoomName, endRoomAndTeardown, teardownRoomOnly } from "@/lib/endRoom";
 import { decideRoomPublish, type CinemaReservation } from "@/lib/roomMediaPolicy";
 
 // Server-authoritative HOST auto-promotion.
 //
 // Called from the places that detect a host leaving (the /leave beacon route and
-// the PubNub presence webhook). The DB decides the successor atomically via the
+// the room-empty backstop). The DB decides the successor atomically via the
 // promote_next_host() RPC (029) — a FOR UPDATE lock on the spaces row means only
 // ONE concurrent caller performs the transfer even if several host-left signals
 // land at once. This module just mirrors the DB outcome onto LiveKit + notifies
@@ -159,7 +159,7 @@ async function onGracefulEnd(
 
 // Forcefully end a Space regardless of occupancy. Used by the admin "Shut down"
 // control for dormant/stuck rooms that the empty-room reaper can't catch
-// (e.g. a ghost participant keeps PubNub occupancy > 0). Unlike the empty-room
+// (e.g. a ghost roster row keeps the room looking occupied). Unlike the empty-room
 // backstop, this does NOT check occupancy — an admin has explicitly decided the
 // room must close.
 //

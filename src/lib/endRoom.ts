@@ -1,7 +1,7 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { endLiveKitRoom, livekitConfigured } from "@/lib/livekitServer";
-import { publishSystemSignal } from "@/lib/pubnubServer";
+import { publishSystemSignal } from "@/lib/roomSignalsServer";
 import {
   deriveRoomName,
   isHostAbandoned,
@@ -109,7 +109,7 @@ export async function teardownRoomOnly(
 // never torn down twice and stragglers never get double-notified.
 //
 // Best-effort by design: the DB transition is authoritative and always
-// resolves first. LiveKit teardown and the PubNub signal are side effects
+// resolves first. LiveKit teardown and the room signal are side effects
 // that must never be allowed to fail the caller's request (a host clicking
 // "End" must always succeed even if LiveKit is down), so both are wrapped and
 // only logged on failure.
@@ -185,7 +185,7 @@ export async function endRoomAndTeardown(
 //
 // This intentionally does NOT replace the existing occupancy-based reapers in
 // /api/cron/mm-presence-reap (staleness on spaces.last_activity_at, which is
-// bumped by ANY participant, and the PubNub empty-room backstop). Those solve
+// bumped by ANY participant, and the empty-room backstop). Those solve
 // a different problem ("is anyone home") on a much longer clock (2h stale
 // default). This one specifically targets a HOST who has gone quiet even
 // though other participants may still be present, on a short clock, because a

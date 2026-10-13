@@ -1,62 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAuditionFormat } from "@/lib/auditions";
-import {
-  isPubNubConfigured,
-  getChannelOccupancy,
-  publishSystemSignal,
-} from "@/lib/pubnubServer";
+import { publishSystemSignal } from "@/lib/roomSignalsServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // GET/POST /api/cron/mm-presence-reap
 //
-// BACKSTOP for the PubNub presence webhook.
-// -----------------------------------------
-// The room-vanish guarantee is normally delivered instantly by the PubNub
-// presence webhook (POST /api/pubnub/presence-webhook): when a channel's
-// occupancy hits zero, the room ends immediately. But a webhook can be missed
-// — PubNub Function misconfigured/undeployed, a transient delivery failure, or
-// PubNub coalescing the final `leave`/`timeout`. Without a backstop, such a
-// room would linger as "live" until the 30-minute idle reaper
-// (reap_idle_spaces) eventually caught it.
+// Ends live rooms nobody is using. (PubNub presence was removed on 13 Oct
+// 2026; the database roster is now the occupancy source.) Two passes:
 //
-// This cron closes that gap far sooner: for every room the DB still thinks is
-// live, it asks PubNub for the TRUE current occupancy (hereNow) and ends any
-// room that is genuinely empty — exactly the webhook's logic, run on a
-// schedule. It is the reconciliation twin of the webhook, so ephemerality
-// still holds even if webhooks never fire at all.
+//   PASS 1 — STALENESS REAPER: ends any live room whose last_activity_at is
+//            older than MM_SPACE_STALE_MINUTES (default 120, floored at 30).
+//            The definitive backstop for stuck rooms whose roster never empties
+//            (e.g. a tab that crashed before it could leave).
+//   PASS 2 — EMPTY-ROOM BACKSTOP: ends a live room whose roster had people
+//            and now has none open, once it is past the grace window. Leaves
+//            are recorded by the leave route and by the LiveKit webhook's
+//            participant_left, so an emptied room closes within minutes.
 //
-// Two passes run each invocation:
-//   PASS 1 — STALENESS REAPER (occupancy-independent): ends any live room whose
-//            last_activity_at is older than MM_SPACE_STALE_MINUTES (default
-//            120, floored at 30). This is the definitive backstop for dormant/
-//            stuck rooms where a ghost presence keeps occupancy > 0 forever, so
-//            they never read as empty. Runs even when PubNub is unconfigured.
-//   PASS 2 — EMPTY-ROOM BACKSTOP: the original occupancy reconciliation, ending
-//            genuinely empty rooms quickly. Skipped when PubNub is unconfigured.
-//
-// Grace period: a freshly-created live room may have no one subscribed to its
-// PubNub presence channel yet (the host is still opening the tab / minting a
-// token). We skip rooms whose last activity is within GRACE_SECONDS so we
-// never kill a room before its occupants have had a chance to register
-// presence. `last_activity_at` is bumped by the 60s client heartbeat; we fall
-// back to `created_at` for rooms that haven't heartbeat yet.
+// Grace period: a brand-new room may not have written its host's roster row
+// yet, so rooms whose last activity is within GRACE_SECONDS are skipped.
+// `last_activity_at` is bumped by the 60s client heartbeat; we fall back to
+// `created_at` for rooms that haven't heartbeat yet.
 //
 // Auth: same shared-secret model as /api/cron/mm-social-prune —
 // `x-cron-secret: $CRON_SECRET` or `Authorization: Bearer $CRON_SECRET`.
 
-// Don't touch rooms younger/quieter than this — gives occupants time to join
-// PubNub presence before we'd ever consider them empty. Comfortably larger
+// Don't touch rooms younger/quieter than this — gives occupants time to land
+// on the roster before we'd ever consider the room empty. Comfortably larger
 // than the client's 60s heartbeat.
 const GRACE_SECONDS = 120;
 
 // STALENESS REAPER threshold. Any live room whose last_activity_at (heartbeat-
 // driven, falling back to created_at) is older than this is force-ended
-// REGARDLESS of PubNub occupancy. This catches dormant/stuck rooms that a
-// ghost presence keeps from ever reading as empty — the class of room the
-// occupancy backstop below can't close. Configurable via env so it can be
+// REGARDLESS of the roster. This catches dormant/stuck rooms whose roster
+// never empties — the class of room the empty-room backstop below can't close. Configurable via env so it can be
 // tuned without a redeploy; defaults to 120 min. A minimum floor keeps a
 // mis-set env from aggressively killing active rooms.
 const DEFAULT_STALE_MINUTES = 120;
@@ -144,9 +124,8 @@ async function handle(req: NextRequest) {
   // ---------------------------------------------------------------------------
   // PASS 1 — STALENESS REAPER (occupancy-independent).
   // End any live room whose last activity is older than the stale threshold,
-  // no matter what PubNub occupancy says. This is the definitive backstop for
-  // dormant/stuck rooms a ghost presence keeps from ever reading as empty, and
-  // it runs even when PubNub is not configured at all.
+  // no matter what the roster says. This is the definitive backstop for
+  // dormant/stuck rooms whose roster never empties.
   // ---------------------------------------------------------------------------
   const staleCutoffMs = now - staleSeconds() * 1000;
   const staleRooms = liveRooms.filter((s) => {
@@ -163,52 +142,49 @@ async function handle(req: NextRequest) {
   }
 
   // ---------------------------------------------------------------------------
-  // PASS 2 — EMPTY-ROOM OCCUPANCY BACKSTOP (unchanged behaviour).
-  // Reconciliation twin of the PubNub presence webhook: end rooms that are
-  // genuinely empty far sooner than the coarse idle reaper. Skipped entirely
-  // when PubNub isn't configured (no presence to read). Rooms already ended in
-  // Pass 1 are excluded.
+  // PASS 2 — EMPTY-ROOM BACKSTOP (database roster).
   // ---------------------------------------------------------------------------
-  let checkedForOccupancy = 0;
-  if (isPubNubConfigured()) {
-    const graceCutoff = new Date(now - GRACE_SECONDS * 1000).toISOString();
-    const alreadyEnded = new Set(staleEndedIds);
-    const candidates = liveRooms.filter((s) => {
-      if (alreadyEnded.has(s.id)) return false;
-      // MM Auditions rooms never join PubNub presence (LiveKit video + the
-      // heartbeat route only), so zero occupancy would end every one of them.
-      // They are still covered by the staleness pass above and the host-
-      // abandoned reaper in the token/heartbeat routes.
-      if (isAuditionFormat(s.room_format)) return false;
-      const lastActive = s.last_activity_at ?? s.created_at;
-      // Keep rooms whose last activity is within the grace window.
-      return !lastActive || lastActive <= graceCutoff;
-    });
-    checkedForOccupancy = candidates.length;
+  const graceCutoff = new Date(now - GRACE_SECONDS * 1000).toISOString();
+  const alreadyEnded = new Set(staleEndedIds);
+  const candidates = liveRooms.filter((s) => {
+    if (alreadyEnded.has(s.id)) return false;
+    // MM Auditions rooms keep their own lobby/admit lifecycle; they are still
+    // covered by the staleness pass above and the host-abandoned reaper in
+    // the token/heartbeat routes.
+    if (isAuditionFormat(s.room_format)) return false;
+    const lastActive = s.last_activity_at ?? s.created_at;
+    return !lastActive || lastActive <= graceCutoff;
+  });
+  const checkedForOccupancy = candidates.length;
 
-    // Sequential to keep PubNub hereNow() call volume gentle; the live-room set
-    // is small in practice.
-    for (const s of candidates) {
-      let occupancy = 0;
-      try {
-        occupancy = await getChannelOccupancy(s.id);
-      } catch {
-        // Can't confirm emptiness → do NOT end here. The staleness pass above
-        // is now the guaranteed upper bound, so a transient PubNub blip can
-        // never keep a room alive forever regardless.
-        continue;
+  if (candidates.length > 0) {
+    const { data: rosterRows, error: rosterErr } = await supabase
+      .from("space_participants")
+      .select("space_id, left_at")
+      .in("space_id", candidates.map((s) => s.id));
+    // Can't read the roster → can't confirm emptiness → end nothing here. The
+    // staleness pass is still the guaranteed upper bound.
+    if (!rosterErr) {
+      const joined = new Set<string>();
+      const occupied = new Set<string>();
+      for (const r of rosterRows ?? []) {
+        joined.add(r.space_id);
+        if (!r.left_at) occupied.add(r.space_id);
       }
-      if (occupancy > 0) continue;
-
-      if (await endRoom(supabase, s.id, "empty-backstop")) {
-        endedIds.push(s.id);
+      for (const s of candidates) {
+        // Only rooms that people joined and then all left. A room nobody ever
+        // rostered into (some formats don't write roster rows) is left to the
+        // staleness pass rather than guessed at.
+        if (!joined.has(s.id) || occupied.has(s.id)) continue;
+        if (await endRoom(supabase, s.id, "empty-backstop")) {
+          endedIds.push(s.id);
+        }
       }
     }
   }
 
   return NextResponse.json({
     ok: true,
-    pubnub: isPubNubConfigured(),
     live: liveRooms.length,
     staleThresholdMinutes: Math.floor(staleSeconds() / 60),
     staleEnded: staleEndedIds.length,

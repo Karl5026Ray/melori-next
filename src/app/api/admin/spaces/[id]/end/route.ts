@@ -13,13 +13,13 @@ export const dynamic = "force-dynamic";
 //
 // Admin override to forcefully shut down a live/dormant Space. This exists for
 // rooms the empty-room reaper (mm-presence-reap cron + end_space_now) can't
-// catch — e.g. a ghost participant keeps PubNub occupancy > 0, so the room
+// catch — e.g. a ghost roster row keeps the room looking occupied, so the room
 // never reads as "empty" and lingers as live. An admin explicitly deciding to
 // close it bypasses the occupancy check entirely.
 //
 // Auth: standard admin model (Supabase access token → requireAdmin), matching
 // the rest of /api/admin/*. The teardown itself (DB end + LiveKit deleteRoom +
-// PubNub signal) runs with the service-role client inside endSpaceAsAdmin.
+// room signal) runs with the service-role client inside endSpaceAsAdmin.
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ id: string }> },

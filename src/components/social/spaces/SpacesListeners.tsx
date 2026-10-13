@@ -47,7 +47,7 @@ export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListen
       {listeners.length === 0 ? (
         <p className="text-xs text-melori-muted">No listeners yet. Share the room link.</p>
       ) : (
-        <div className="grid grid-cols-6 gap-x-1.5 gap-y-2">
+        <div className="grid grid-cols-6 gap-x-2 gap-y-3">
           {visible.map((participant) => {
             const name =
               participant.user?.display_name || participant.user?.username || "Listener";
@@ -60,7 +60,7 @@ export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListen
                 aria-label={`${name}${participant.has_raised_hand ? ", hand raised" : ""}`}
                 className="flex min-w-0 flex-col items-center gap-0.5"
               >
-                <span className="relative grid h-10 w-10 place-items-center">
+                <span className="relative block h-12 w-12">
                   {participant.user?.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -97,7 +97,7 @@ export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListen
               aria-label={`${hidden} more listening. See all`}
               className="flex min-w-0 flex-col items-center gap-0.5"
             >
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-melori-elevated text-xs font-bold text-melori-text">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-melori-elevated text-xs font-bold text-melori-text">
                 +{hidden}
               </span>
               <span className="text-[10px] text-melori-muted">more</span>

@@ -3,7 +3,7 @@
 // SpacesStage — who is talking in an MM Spaces room.
 //
 // The host first, then up to SPACES_SPEAKER_LIMIT speakers, as circles that
-// wrap four to a row. Each circle has a teal ring that grows and brightens with
+// wrap three to a row. Each circle has a teal ring that grows and brightens with
 // the person's live loudness (LiveKit audioLevel, sampled in livekitClient),
 // a red mic badge when muted, and the host / moderator label under the name.
 // Tapping anyone opens their person sheet (follow, react, and for the host or a
@@ -55,9 +55,9 @@ function StageCircle({
       data-seat-role={isHost ? "host" : "speaker"}
       data-speaking={ring.active ? "true" : "false"}
       aria-label={`${name}, ${role}${muted ? ", muted" : ring.active ? ", speaking" : ""}`}
-      className="flex min-w-0 flex-col items-center gap-1 rounded-xl py-1 transition hover:bg-white/[0.03]"
+      className="flex min-w-0 flex-col items-center gap-2.5 rounded-xl py-1 transition hover:bg-white/[0.03]"
     >
-      <span className="relative grid h-14 w-14 shrink-0 place-items-center sm:h-16 sm:w-16">
+      <span className="relative block h-20 w-20 shrink-0 sm:h-24 sm:w-24">
         <span
           aria-hidden
           data-testid="spaces-speaking-ring"
@@ -75,7 +75,7 @@ function StageCircle({
           <img src={user.avatar_url} alt="" className="h-full w-full rounded-full object-cover" />
         ) : (
           <span
-            className="grid h-full w-full place-items-center rounded-full text-lg font-bold text-white"
+            className="grid h-full w-full place-items-center rounded-full text-2xl font-bold text-white"
             style={{ backgroundColor: spacesAvatarColor(participant.user_id) }}
           >
             {spacesInitials(name)}
@@ -84,9 +84,9 @@ function StageCircle({
         {muted && (
           <span
             data-testid="spaces-muted-badge"
-            className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-melori-void bg-melori-elevated"
+            className="absolute -bottom-0.5 -right-0.5 grid h-7 w-7 place-items-center rounded-full border-2 border-melori-void bg-melori-elevated"
           >
-            <MicOff className="h-3 w-3 text-melori-danger" aria-hidden />
+            <MicOff className="h-3.5 w-3.5 text-melori-danger" aria-hidden />
           </span>
         )}
         {bursts.length > 0 && (
@@ -100,7 +100,7 @@ function StageCircle({
         )}
       </span>
       <span className="flex max-w-full flex-col items-center leading-tight">
-        <span className="max-w-full truncate text-xs font-semibold text-melori-text">{name}</span>
+        <span className="max-w-full truncate text-sm font-semibold text-melori-text">{name}</span>
         <span
           className={`text-[10px] ${
             isHost ? "text-melori-accent" : role === "Moderator" ? "text-melori-teal" : "text-melori-muted"
@@ -124,7 +124,7 @@ export function SpacesStage({
 }: SpacesStageProps) {
   return (
     <section aria-label="Stage" data-testid="spaces-stage" className="shrink-0">
-      <div className="grid grid-cols-4 gap-x-2 gap-y-2">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-4 pt-2">
         {speakers.map((participant) => {
           const id = participant.user?.id ?? participant.user_id;
           return (
@@ -144,10 +144,10 @@ export function SpacesStage({
             onClick={onOpenSeat}
             data-testid="spaces-open-seat"
             aria-label={`Open seat. ${raisedHandCount} raised ${raisedHandCount === 1 ? "hand" : "hands"}`}
-            className="flex min-w-0 flex-col items-center gap-1 rounded-xl py-1"
+            className="flex min-w-0 flex-col items-center gap-2.5 rounded-xl py-1"
           >
-            <span className="relative grid h-14 w-14 place-items-center rounded-full border-2 border-dashed border-white/15 text-melori-muted sm:h-16 sm:w-16">
-              <Plus className="h-5 w-5" aria-hidden />
+            <span className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-white/15 text-melori-muted sm:h-24 sm:w-24">
+              <Plus className="h-6 w-6" aria-hidden />
               {raisedHandCount > 0 && (
                 <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-melori-pink px-1 text-[11px] font-bold text-white">
                   {raisedHandCount}

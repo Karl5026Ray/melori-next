@@ -73,7 +73,8 @@ const DOOR_PATH = "/platform";
 //
 // The four groups, and why each is public:
 //   1. The advertising  — the photography gallery, Karl's own introduction and
-//      his books (/books, which only links out to Amazon),
+//      his books (/books, which only links out to Amazon), his song catalog
+//      (/catalog, which only links out to each song's streaming page),
 //      plus a page for each live room describing what happens inside it. This
 //      is the surface that has to be findable by a stranger.
 //   2. The artists      — read-only profile pages. Gating these would hide
@@ -98,6 +99,7 @@ const PUBLIC_EXACT = new Set([
   "/admin",
   "/artists",
   "/books",
+  "/catalog",
   "/cinema",
   "/faces",
   "/forgot-password",

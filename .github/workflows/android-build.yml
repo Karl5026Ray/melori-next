@@ -177,7 +177,14 @@ jobs:
           # RUNNER_TEMP, not the workspace: nothing here can be swept up by an
           # artifact upload or committed by a later step.
           KEYSTORE="$RUNNER_TEMP/upload-keystore.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | awk '
+                { sub(/\r$/, "") }
+                $0 == "-----BEGIN CERTIFICATE-----" || $0 == "-----END CERTIFICATE-----" { next }
+                { print }
+              ' \
+            | tr -d '[:space:]' \
+            | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           # Sanity check that we decoded a real keystore, not truncated base64.
           # The password goes in via -storepass:env so it never appears in the

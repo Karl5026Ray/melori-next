@@ -191,9 +191,9 @@ base64 -i melori-upload.jks
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\melori-upload.jks")) | Set-Clipboard
 ```
 
-Do **not** use `certutil -encode` on Windows: it wraps the output in
-`-----BEGIN CERTIFICATE-----` headers and hard line breaks, which do not decode
-back to a valid keystore.
+The workflow accepts the `-----BEGIN CERTIFICATE-----` and
+`-----END CERTIFICATE-----` wrapper produced by `certutil -encode` on Windows.
+Raw base64 is preferred; do not include any other headers or formatting.
 
 ### Optional secret
 

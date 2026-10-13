@@ -18,6 +18,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getNavContext } from "./navContexts";
+import { useNativeApp } from "@/hooks/useNativeApp";
+import { isHiddenInNativeApp } from "@/lib/nativeHidden";
 
 /** True when a nav item should show as the current page. */
 function isActive(pathname: string, href: string): boolean {
@@ -33,7 +35,12 @@ const FADE = 28;
 
 export default function LocalNav() {
   const pathname = usePathname() ?? "/";
-  const ctx = getNavContext(pathname);
+  const rawCtx = getNavContext(pathname);
+  const { isNative } = useNativeApp();
+  // Inside the native app, drop web-only destinations (src/lib/nativeHidden.ts).
+  const ctx = isNative
+    ? { ...rawCtx, items: rawCtx.items.filter((i) => !isHiddenInNativeApp(i.href)) }
+    : rawCtx;
 
   // Track whether the scroller can scroll further left / right so we only fade
   // the edge(s) that actually have hidden content (no fade at the very start

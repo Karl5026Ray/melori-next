@@ -84,8 +84,13 @@ check(
     !nav.includes('label: "Home",\n      href: "/",'),
 );
 check(
-  "the four quick tiles get four columns, matching the category row below",
-  nav.includes('<div className="grid grid-cols-4 gap-2">\n                          {quickLinks.map(renderTile)}'),
+  "the four quick tiles get four columns on the web, matching the category row below",
+  nav.includes('${visibleQuickLinks.length === 3 ? "grid-cols-3" : "grid-cols-4"} gap-2') &&
+    nav.includes("{visibleQuickLinks.map(renderTile)}"),
+);
+check(
+  "inside the native app, web-only tiles (Connect) drop out of the quick row",
+  nav.includes("quickLinks.filter((l) => !isHiddenInNativeApp(l.href))"),
 );
 check(
   "a tile pointing at / is active only ON /, never on every page",

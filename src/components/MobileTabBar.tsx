@@ -25,6 +25,8 @@ import {
   Drama,
 } from "lucide-react";
 import { CONNECT_NAV_ITEM, MIRROR_NAV_ITEM } from "@/lib/socialNav";
+import { useNativeApp } from "@/hooks/useNativeApp";
+import { isHiddenInNativeApp } from "@/lib/nativeHidden";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -93,6 +95,7 @@ function YouIcon() {
 
 export default function MobileTabBar() {
   const pathname = usePathname();
+  const { isNative } = useNativeApp();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -211,6 +214,13 @@ export default function MobileTabBar() {
       desc: "Match on music",
     },
   ];
+
+  // Inside the native app, web-only destinations (Melori Connect — see
+  // src/lib/nativeHidden.ts) drop out of the row; the grid narrows to three
+  // so there's no empty slot.
+  const visibleQuickLinks = isNative
+    ? quickLinks.filter((l) => !isHiddenInNativeApp(l.href))
+    : quickLinks;
 
   // Expandable categories — each opens its own list of fast button presses.
   const categories: LaunchCat[] = [
@@ -465,8 +475,10 @@ export default function MobileTabBar() {
                             grid-cols-5 while a Home tile sat here; Home came
                             back out, so the row is four again and matches the
                             category row below it. */}
-                        <div className="grid grid-cols-4 gap-2">
-                          {quickLinks.map(renderTile)}
+                        <div
+                          className={`grid ${visibleQuickLinks.length === 3 ? "grid-cols-3" : "grid-cols-4"} gap-2`}
+                        >
+                          {visibleQuickLinks.map(renderTile)}
                         </div>
                         {/* Category buttons and the direct Mission link */}
                         <div className="mt-3 grid grid-cols-4 gap-2">

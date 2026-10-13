@@ -243,7 +243,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
         .select(
           `
           *,
-          host:profiles(id, display_name, avatar_url, role, verified)
+          host:profiles!spaces_host_id_fkey(id, display_name, avatar_url, role, verified)
         `
         )
         .eq("id", spaceId)
@@ -1202,7 +1202,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
               void supabase
                 .from("spaces")
                 .select(
-                  `*, host:profiles(id, display_name, avatar_url, role, verified)`,
+                  `*, host:profiles!spaces_host_id_fkey(id, display_name, avatar_url, role, verified)`,
                 )
                 .eq("id", spaceId)
                 .single()

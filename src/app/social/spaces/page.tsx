@@ -20,7 +20,7 @@ async function getSpaces(tab: Tab) {
     .select(
       `
       *,
-      host:profiles(id, display_name, avatar_url, role, verified)
+      host:profiles!spaces_host_id_fkey(id, display_name, avatar_url, role, verified)
     `,
     )
     .eq("status", tab === "scheduled" ? "scheduled" : "live")

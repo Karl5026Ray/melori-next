@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 const SELECT = `
   id, title, status, room_format, genre, scheduled_at, created_at,
   participant_count, host_id,
-  host:profiles(id, username, display_name, avatar_url, role, verified)
+  host:profiles!spaces_host_id_fkey(id, username, display_name, avatar_url, role, verified)
 `;
 
 /**

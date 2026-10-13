@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       `
       id, title, topic, type, room_format, status, host_id,
       created_at, last_activity_at, scheduled_at, ended_at, hearts_count,
-      host:profiles(id, display_name, avatar_url, role, verified)
+      host:profiles!spaces_host_id_fkey(id, display_name, avatar_url, role, verified)
     `,
     )
     .order("created_at", { ascending: false })

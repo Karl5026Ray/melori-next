@@ -2,9 +2,10 @@
 
 // SpacesListeners — the audience strip under the Spaces stage.
 //
-// Small colored circles with first names, capped at SPACES_LISTENERS_VISIBLE so
-// a 300-person room never pushes the chat off a phone screen; the rest are one
-// "+N" circle that opens the full listener list. A raised hand shows as an
+// Colored circles with first names. The strip takes the free height between the
+// stage and the chat and scrolls (Karl, 13 Oct 2026: the audience looked
+// cramped); past SPACES_LISTENERS_VISIBLE the rest are one "+N" circle that
+// opens the full listener list. A raised hand shows as an
 // amber badge so the host can spot it without opening anything.
 //
 // Spaces' own component (Karl, 2 Oct 2026: no shared room code with Cinema).
@@ -13,8 +14,8 @@ import { Hand } from "lucide-react";
 import type { SpaceParticipant } from "@/types/social";
 import { spacesAvatarColor, spacesInitials } from "@/lib/spacesAvatar";
 
-/** Two rows of circles on a 390px phone. */
-export const SPACES_LISTENERS_VISIBLE = 11;
+/** Five rows of six on a phone; the strip scrolls if the screen is short. */
+export const SPACES_LISTENERS_VISIBLE = 30;
 
 interface SpacesListenersProps {
   listeners: readonly SpaceParticipant[];
@@ -28,8 +29,8 @@ export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListen
   const hidden = listeners.length - visible.length;
 
   return (
-    <section aria-label="Listeners" data-testid="spaces-listeners" className="shrink-0">
-      <div className="flex items-center justify-between pb-1.5">
+    <section aria-label="Listeners" data-testid="spaces-listeners" className="flex min-h-[7.5rem] flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between pb-1.5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-melori-muted">
           {listeners.length} listening
         </p>
@@ -47,7 +48,7 @@ export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListen
       {listeners.length === 0 ? (
         <p className="text-xs text-melori-muted">No listeners yet. Share the room link.</p>
       ) : (
-        <div className="grid grid-cols-6 gap-x-2 gap-y-3">
+        <div className="grid min-h-0 grid-cols-6 content-start gap-x-2 gap-y-3 overflow-y-auto pb-1">
           {visible.map((participant) => {
             const name =
               participant.user?.display_name || participant.user?.username || "Listener";

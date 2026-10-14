@@ -76,9 +76,20 @@ export async function PATCH(
     return NextResponse.json({ error: "Space not found" }, { status: 404 });
   }
 
+  const body = await req.json().catch(() => ({}));
+
+  // A guest stepping themselves down to the audience (Karl, 13 Oct 2026: tap
+  // your own seat to free it for someone else). Only that exact change, only
+  // for yourself, never the host: everything else still needs host/mod.
+  const selfStepDown =
+    params.userId === callerId &&
+    space.host_id !== callerId &&
+    body?.role === "audience" &&
+    Object.keys(body).length === 1;
+
   // Authorize: host, or a badged moderator of this space.
   const isHost = space.host_id === callerId;
-  let callerIsMod = isHost;
+  let callerIsMod = isHost || selfStepDown;
   if (!callerIsMod) {
     const { data: callerRow } = await supabase
       .from("space_participants")
@@ -92,11 +103,9 @@ export async function PATCH(
   if (!callerIsMod) {
     return NextResponse.json({ error: "Host or moderator only" }, { status: 403 });
   }
-  if (params.userId === callerId) {
+  if (params.userId === callerId && !selfStepDown) {
     return NextResponse.json({ error: "Cannot moderate yourself" }, { status: 400 });
   }
-
-  const body = await req.json().catch(() => ({}));
   const updates: Record<string, unknown> = {};
 
   if (typeof body.host_muted === "boolean") {

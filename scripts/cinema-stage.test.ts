@@ -165,8 +165,13 @@ expect(
   roomScreen.includes("chat={") &&
     roomScreen.includes("<CinemaChat") &&
     roomScreen.includes("onDelete={(id) => void deleteComment(id)}") &&
-    roomScreen.includes("composer={user && isJoined ? commentComposer : undefined}"),
-  "Cinema mounts the persistent chat panel with delete and the composer",
+    // Was composer={user && isJoined ? commentComposer : undefined} on the
+    // chat panel. Since 13 Oct 2026 the composer sits in the bottom dock
+    // (inside the isJoined block) so the floating chat stream has no box.
+    !roomScreen.includes("composer={") &&
+    roomScreen.includes('data-testid="cinema-composer-row"') &&
+    /data-testid="cinema-composer-row"[\s\S]{0,120}\{commentComposer\}/.test(roomScreen),
+  "Cinema mounts the persistent chat with delete, and the composer in the dock",
 );
 expect(
   !cinemaChat.includes("slice(-5)") && !cinemaChat.includes("TTL") && cinemaChat.includes('role="log"'),

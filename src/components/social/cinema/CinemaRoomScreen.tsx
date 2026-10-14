@@ -92,7 +92,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // Cinema's two bottom sheets: the raised-hands queue (host / moderators) and
   // the host's leave choice (hand off vs end for everyone). One state so they
   // can never both be open, sharing one focus-contained dialog below.
-  const [cinemaSheet, setCinemaSheet] = useState<null | "hands" | "leave" | "report">(null);
+  const [cinemaSheet, setCinemaSheet] = useState<null | "hands" | "leave" | "report" | "stepdown">(null);
   // What the report sheet is about: the room, or one chat message.
   const [reportTarget, setReportTarget] = useState<
     { kind: "space" } | { kind: "chat"; message: ChatComment } | null
@@ -100,7 +100,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const [reportSending, setReportSending] = useState(false);
   const cinemaSheetReturnFocusRef = useRef<HTMLElement | null>(null);
   const cinemaSheetDialogRef = useRef<HTMLElement>(null);
-  const openCinemaSheet = useCallback((sheet: "hands" | "leave" | "report") => {
+  const openCinemaSheet = useCallback((sheet: "hands" | "leave" | "report" | "stepdown") => {
     cinemaSheetReturnFocusRef.current =
       typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
     setCinemaSheet(sheet);
@@ -1054,6 +1054,60 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     };
   }, [user, hostIdForFollow]);
 
+  // Who the host follows among the people in the room, so the audience rail can
+  // put them right after raised hands (Clubhouse-style layout, 13 Oct 2026).
+  // Each person is looked up once per room: a later joiner adds one small
+  // `in (...)` query for the new ids only. Follows are publicly readable; any
+  // failure leaves the set as it is, and the rail falls back to roster order.
+  const [hostFollowedIds, setHostFollowedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const hostFollowCheckedRef = useRef<{ key: string; ids: Set<string> }>({ key: "", ids: new Set() });
+  const hostIdForRail = space?.host_id ?? null;
+  const roomIdsKey = participants
+    .filter((p) => !p.left_at && p.user_id !== hostIdForRail)
+    .map((p) => p.user_id)
+    .join(",");
+  useEffect(() => {
+    if (!hostIdForRail || !roomIdsKey) return;
+    const roomKey = `${spaceId}:${hostIdForRail}`;
+    if (hostFollowCheckedRef.current.key !== roomKey) {
+      hostFollowCheckedRef.current = { key: roomKey, ids: new Set() };
+      setHostFollowedIds(new Set());
+    }
+    const checked = hostFollowCheckedRef.current.ids;
+    const pending = roomIdsKey.split(",").filter((id) => id && !checked.has(id));
+    if (pending.length === 0) return;
+    pending.forEach((id) => checked.add(id));
+    let cancelled = false;
+    // Chunked so a packed room never builds an over-long request URL.
+    const chunks: string[][] = [];
+    for (let index = 0; index < pending.length; index += 100) {
+      chunks.push(pending.slice(index, index + 100));
+    }
+    void Promise.all(
+      chunks.map((ids) =>
+        supabase
+          .from("follows")
+          .select("following_id")
+          .eq("follower_id", hostIdForRail)
+          .in("following_id", ids),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        const found = results.flatMap(({ data, error }) =>
+          error || !data ? [] : (data as { following_id: string }[]).map((row) => row.following_id),
+        );
+        if (found.length === 0) return;
+        setHostFollowedIds((prev) => new Set([...prev, ...found]));
+      })
+      .catch(() => {
+        // Silent: the rail keeps roster order.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId, hostIdForRail, roomIdsKey]);
+
   // Report the room or one chat message: the moderation queue, plus an email
   // to Karl (see /api/social/report). Replaced an alert() that sent nothing.
   const submitReport = useCallback(
@@ -1410,12 +1464,38 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       setModTarget(participant);
       return;
     }
+    // A guest tapping their own seat can step down to free it (Karl, 13 Oct
+    // 2026), so someone else can ask for the space.
+    if (!isHost && participant.user_id === user?.id && participant.role === "speaker") {
+      openCinemaSheet("stepdown");
+      return;
+    }
     setReactTarget(participant);
   };
 
-  // The one composer for every room format, so there is a single send path.
-  // Spaces docks it in the control bar; Cinema puts it at the foot of the chat
-  // panel under the stage, where the conversation it belongs to is visible.
+  const stepDownToAudience = async () => {
+    if (!user) return;
+    try {
+      const res = await authFetch(`/api/social/spaces/${spaceId}/participants/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "audience" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setShareToast(data?.error ?? "Couldn't step down");
+      } else {
+        setShareToast("You're in the audience now");
+      }
+    } catch {
+      setShareToast("Network error");
+    }
+    setTimeout(() => setShareToast(null), 2200);
+  };
+
+  // The one composer, so there is a single send path. Since the Clubhouse-style
+  // layout (13 Oct 2026) it sits in the bottom dock, above Leave quietly, so
+  // the floating chat stream above it needs no box.
   const commentComposer = (
     <form
       onSubmit={submitComment}
@@ -1757,6 +1837,37 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                         </ul>
                       )}
                     </>
+                  ) : cinemaSheet === "stepdown" ? (
+                    <>
+                      <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
+                        Step down to the audience?
+                      </h2>
+                      <p id="cinema-sheet-description" className="mt-1 text-sm text-melori-muted">
+                        Your seat opens up so someone else can ask for it. You keep listening and
+                        can raise your hand again any time.
+                      </p>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          data-cinema-dialog-initial-focus
+                          data-testid="cinema-step-down-confirm"
+                          onClick={() => {
+                            closeCinemaSheet();
+                            void stepDownToAudience();
+                          }}
+                          className="min-h-11 rounded-xl bg-melori-purple px-4 text-sm font-semibold text-white"
+                        >
+                          Step down
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeCinemaSheet}
+                          className="min-h-11 rounded-xl px-4 text-sm font-medium text-melori-muted hover:bg-white/5"
+                        >
+                          Stay on stage
+                        </button>
+                      </div>
+                    </>
                   ) : cinemaSheet === "report" ? (
                     <>
                       <h2 id="cinema-sheet-heading" className="text-base font-semibold text-melori-text">
@@ -1857,8 +1968,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   }
                   audience={
                     <CinemaVoiceCircles
-                      compact
                       audience={cinemaAudience}
+                      followedByHost={hostFollowedIds}
                       levels={cinemaAudioLevels}
                       onReactToParticipant={isHost ? setModTarget : setReactTarget}
                       reactionBursts={targetedReactions}
@@ -1875,7 +1986,6 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                         setReportTarget({ kind: "chat", message });
                         openCinemaSheet("report");
                       }}
-                      composer={user && isJoined ? commentComposer : undefined}
                     />
                   }
                 />
@@ -2148,6 +2258,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
              therefore sit as a compact icon to the LEFT of the field rather
              than taking the primary slot. "End space" is not duplicated here
              — it lives in the header's overflow menu. */}
+          {/* The room chat's composer, right above the dock row. */}
+          {user && (
+            <div className="max-w-2xl mx-auto flex px-4 pt-1.5 md:px-6" data-testid="cinema-composer-row">
+              {commentComposer}
+            </div>
+          )}
+
           <div
             data-testid="cinema-control-dock"
             className="max-w-2xl mx-auto px-4 md:px-6 flex items-center gap-2 pt-1.5 min-h-[56px]"

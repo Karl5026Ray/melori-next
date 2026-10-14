@@ -11,6 +11,7 @@ import {
   VOICE_ROW_COUNT,
   audioLevelsChanged,
   normalizeAudioLevel,
+  orderVoiceRail,
   partitionVoiceAudience,
   splitVoiceRows,
   voiceRing,
@@ -163,6 +164,29 @@ const confirmedSpeaker = voiceRing({ level: 0, speaking: true, muted: false });
 check(
   "a confirmed speaker gets a visible ring before a level has arrived",
   confirmedSpeaker.active && confirmedSpeaker.opacity > 0.4,
+);
+
+// --- Audience rail order -----------------------------------------------------
+const railRoster = [
+  { user_id: "a", has_raised_hand: false },
+  { user_id: "b", has_raised_hand: false },
+  { user_id: "c", has_raised_hand: true },
+  { user_id: "d", has_raised_hand: false },
+  { user_id: "e", has_raised_hand: true },
+];
+const railIds = (followed: Set<string>) =>
+  orderVoiceRail(railRoster, followed).map((p) => p.user_id).join("");
+check(
+  "the rail puts raised hands first, then people the host follows, then the rest",
+  railIds(new Set(["d", "e"])) === "cedab",
+);
+check(
+  "with no follow data the rail is roster order with hands on top",
+  railIds(new Set()) === "ceabd",
+);
+check(
+  "ordering the rail never drops or duplicates anyone",
+  orderVoiceRail(railRoster, new Set(["a", "b", "c", "d", "e"])).length === railRoster.length,
 );
 
 if (failures > 0) {

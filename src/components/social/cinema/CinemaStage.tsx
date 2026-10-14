@@ -4,7 +4,9 @@
 //
 // Cinema is audio-only (Karl, 1 Oct 2026). The host and up to two guests sit
 // here as large voice circles with a live volume ring and a mute badge; there
-// are no camera tiles any more. A seat is "who the host has put on stage",
+// are no camera tiles any more. Since the Clubhouse-style layout (13 Oct 2026)
+// the circles are 88px on a phone (112px from sm): the seats are the room's
+// faces, and the listeners moved to a side rail so the seats could grow. A seat is "who the host has put on stage",
 // the same `role` Spaces uses — see src/lib/cinemaStage.ts for the ordering
 // and the two-guest cap the server enforces.
 //
@@ -56,12 +58,12 @@ function AudioSeat({
         data-seat={isHostSeat ? "host" : `guest-${seatIndex}`}
         data-seat-empty="true"
         aria-label={isHostSeat ? "Host seat, empty" : `Open guest seat. ${hint}`}
-        className="flex min-w-0 flex-col items-center gap-1 rounded-xl py-0.5 disabled:cursor-default"
+        className="flex min-w-0 flex-col items-center gap-3 rounded-xl py-1 disabled:cursor-default"
       >
-        <span className="grid h-12 w-12 place-items-center rounded-full border-2 border-dashed border-white/15 text-white/30 sm:h-16 sm:w-16">
-          <Plus className="h-5 w-5" aria-hidden />
+        <span className="grid h-[88px] w-[88px] place-items-center rounded-full border-2 border-dashed border-white/15 text-white/30 sm:h-28 sm:w-28">
+          <Plus className="h-7 w-7" aria-hidden />
         </span>
-        <span className="max-w-full truncate text-xs text-white/40">{hint}</span>
+        <span className="max-w-full truncate text-sm text-white/40">{hint}</span>
       </button>
     );
   }
@@ -80,13 +82,15 @@ function AudioSeat({
       data-seat={isHostSeat ? "host" : `guest-${seatIndex}`}
       data-speaking={ring.active ? "true" : "false"}
       aria-label={`${name}, ${roleLabel}${muted ? ", muted" : ring.active ? ", speaking" : ""}`}
-      className="flex min-w-0 flex-col items-center gap-1 rounded-xl py-0.5 transition hover:bg-white/[0.03]"
+      className="flex min-w-0 flex-col items-center gap-3 rounded-xl py-1 transition hover:bg-white/[0.03]"
     >
-      <span className="relative grid h-12 w-12 shrink-0 place-items-center sm:h-16 sm:w-16">
+      {/* The ring is absolute inside a `relative block` box, never a centered
+          grid: a grid container re-centres the scaled ring off the avatar. */}
+      <span className="relative block h-[88px] w-[88px] shrink-0 sm:h-28 sm:w-28">
         <span
           aria-hidden
           data-testid="cinema-seat-ring"
-          className="pointer-events-none absolute -inset-1 rounded-full border-2 border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
+          className="pointer-events-none absolute -inset-1.5 rounded-full border-[3px] border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
           style={{ transform: `scale(${ring.scale})`, opacity: ring.opacity }}
         />
         <span
@@ -105,7 +109,7 @@ function AudioSeat({
           />
         ) : (
           <span
-            className="grid h-full w-full place-items-center rounded-full text-base font-bold text-white"
+            className="grid h-full w-full place-items-center rounded-full text-2xl font-bold text-white sm:text-3xl"
             style={{ backgroundColor: cinemaAvatarColor(participant.user_id) }}
           >
             {cinemaInitials(name)}
@@ -114,14 +118,14 @@ function AudioSeat({
         {muted && (
           <MicOff
             data-testid="cinema-seat-muted"
-            className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-cinema-void p-0.5 text-red-400"
+            className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-cinema-void p-1 text-red-400 sm:h-8 sm:w-8"
             aria-hidden
           />
         )}
         {bursts.length > 0 && (
-          <span className="pointer-events-none absolute inset-x-0 -top-4 z-20 flex justify-center gap-1">
+          <span className="pointer-events-none absolute inset-x-0 -top-5 z-20 flex justify-center gap-1">
             {bursts.map((reaction) => (
-              <span key={reaction} className="animate-slide-up text-base leading-none">
+              <span key={reaction} className="animate-slide-up text-xl leading-none">
                 {reaction.slice(reaction.indexOf(":") + 1) || "❤️"}
               </span>
             ))}
@@ -129,7 +133,7 @@ function AudioSeat({
         )}
       </span>
       <span className="flex max-w-full flex-col items-center leading-tight">
-        <span className="max-w-full truncate text-xs font-semibold text-white/90">{name}</span>
+        <span className="max-w-full truncate text-sm font-semibold text-white/90">{name}</span>
         <span
           className={`text-[10px] uppercase tracking-[0.14em] ${
             isHostSeat ? "text-melori-accent" : "text-white/45"

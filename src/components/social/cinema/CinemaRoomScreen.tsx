@@ -15,6 +15,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRoomRoster } from "@/lib/rooms/useRoomRoster";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate, useCanRequestStage } from "@/components/social/SignInPrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
@@ -25,12 +26,14 @@ import {
   leaveVideoRoom,
   setMicEnabled as setCinemaMicEnabled,
 } from "@/lib/livekitVideoClient";
+import { RoomStatusBanner, useRoomConnection } from "@/components/social/RoomStatusBanner";
 import {
   joinPresence as roomJoin,
   leavePresence as roomLeave,
   publishSignal as roomPublishSignal,
 } from "@/lib/roomSignalsClient";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { useRoomBackgroundMode } from "@/lib/native/roomBackground";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useRoomComments, type ChatComment } from "@/components/social/rooms/useRoomComments";
@@ -85,7 +88,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const exitHrefRef = useRef(exitHref);
   exitHrefRef.current = exitHref;
 
-  const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
+  // The live roster: loaded once, then kept current from realtime payloads
+  // (src/lib/rooms/useRoomRoster.ts) instead of a full refetch per change.
+  // `rosterLoaded` tells "not back yet" apart from "came back empty".
+  const {
+    participants,
+    rosterLoaded,
+    hiddenAudienceCount,
+  } = useRoomRoster({ spaceId, selfId: user?.id ?? null });
   // Identity -> 0..1 microphone level, sampled from LiveKit. Drives the volume
   // rings on Cinema's audio seats and voice circles.
   const [cinemaAudioLevels, setCinemaAudioLevels] = useState<Record<string, number>>({});
@@ -167,8 +177,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
   // IS in the room gets treated as a stranger for the first few hundred ms.
-  // That was the flash of "Join Space" on every entry.
-  const [rosterLoaded, setRosterLoaded] = useState(false);
+  // That was the flash of "Join Space" on every entry. `rosterLoaded` (from
+  // useRoomRoster above) is the signal that tells them apart.
   const [isJoined, setIsJoined] = useState(false);
   // Set when a join attempt actually failed, so the auto-join effect stops
   // retrying into the same error and the room can offer a manual retry rather
@@ -221,7 +231,12 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     emoji: string;
     target: string;
   } | null>(null);
-  const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
+  // LiveKit connection state for the in-room banner: connect/token failure
+  // (auto-retry, then Retry), reconnecting, connection lost (Rejoin), removed,
+  // and browser-blocked audio (Tap to enable sound). See roomConnectionStatus.ts.
+  const roomConn = useRoomConnection();
+  const roomConnDispatch = roomConn.dispatch;
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
   // disconnect reason or the room-signals "space-ended" system signal. Shows a calm
@@ -266,45 +281,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       setIsLoading(false);
     };
 
-    const fetchParticipants = async () => {
-      const { data } = await supabase
-        .from("space_participants")
-        .select(
-          `
-          *,
-          user:profiles(id, display_name, avatar_url, role, verified)
-        `
-        )
-        .eq("space_id", spaceId)
-        .is("left_at", null)
-        .order("joined_at", { ascending: true });
-
-      if (data) setParticipants(data as SpaceParticipant[]);
-      setRosterLoaded(true);
-    };
-
     fetchSpace();
-    fetchParticipants();
-
-    const channel = supabase
-      .channel(`space:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "space_participants",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        () => {
-          fetchParticipants();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [spaceId]);
 
   // Mirror the roster into local join state. This used to be a one-way latch
@@ -488,6 +465,13 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // since those callbacks depend on it.
   const myRole = participants.find((p) => p.user_id === user?.id && !p.left_at)?.role ?? null;
   const canSpeakNow = canSpeak(myRole);
+  // Android app: keep room audio (and an on-stage mic) alive with the screen
+  // locked. No-op on the web and iOS. See src/lib/native/roomBackground.ts.
+  useRoomBackgroundMode({
+    active: isJoined && !roomEnded,
+    publishing: canSpeakNow && !isMuted,
+    onLeave: () => void handleLeave(),
+  });
   const handRaiseMode = space?.hand_raise_mode ?? "everyone";
   // "followed" hand-raise mode: only people the host follows may raise a hand.
   // The raise-hand route re-checks this server-side.
@@ -1170,8 +1154,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       onAudioLevels: (levels) => {
         if (!cancelled) setCinemaAudioLevels(levels);
       },
-      onReconnecting: () => !cancelled && setReconnecting(true),
-      onReconnected: () => !cancelled && setReconnecting(false),
+      onReconnecting: () => {
+        if (!cancelled) roomConnDispatch({ type: "reconnecting" });
+      },
+      onReconnected: () => {
+        if (!cancelled) roomConnDispatch({ type: "reconnected" });
+      },
+      onConnectionLost: () => {
+        if (!cancelled) roomConnDispatch({ type: "disconnected" });
+      },
+      onRemoved: () => {
+        if (!cancelled) roomConnDispatch({ type: "removed" });
+      },
+      onAudioPlaybackChanged: (canPlay) => {
+        if (!cancelled) roomConnDispatch({ type: "audio-playback", canPlay });
+      },
       onRoomEnded: () => {
         if (cancelled) return;
         setRoomEnded(true);
@@ -1184,10 +1181,16 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
         console.warn("cinema LiveKit join error", err);
       },
     })
+      .then(() => {
+        if (!cancelled) roomConnDispatch({ type: "connected" });
+      })
       .catch((err) => {
         if (/NotAllowedError|Permission|permission denied/i.test((err as Error).message ?? "")) {
           setMicDenied(true);
         }
+        // Token or connect failure: show it (and auto-retry with backoff)
+        // instead of leaving the user looking joined in silence.
+        if (!cancelled) roomConnDispatch({ type: "join-failed", error: err });
       });
 
     return () => {
@@ -1205,6 +1208,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
     space?.type,
     participants.find((participant) => participant.user_id === user?.id)?.role,
     router,
+    // Retry / Rejoin / auto-retry bump this to re-request a token and reconnect.
+    roomConn.attempt,
   ]);
 
   // ---- Room signals lifecycle (Supabase Realtime) ---------------------------
@@ -1302,7 +1307,15 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       }).catch(() => undefined);
     ping();
     heartbeatRef.current = setInterval(ping, 60_000);
+    // Mobile WebViews freeze timers in the background, so the interval above
+    // goes quiet while the app is backgrounded. Beat the moment we're visible
+    // again (the server also checks LiveKit before reaping a quiet host).
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     };
@@ -1571,7 +1584,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               {space.title}
             </h1>
             <p className="truncate text-xs text-melori-muted tabular-nums">
-              {cinemaAudience.length} listening · {cinemaSeatUserIds.size} on stage ·{" "}
+              {cinemaAudience.length + hiddenAudienceCount} listening · {cinemaSeatUserIds.size} on stage ·{" "}
               {hostProfile?.display_name ?? "Host"}
             </p>
           </div>
@@ -1969,6 +1982,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   audience={
                     <CinemaVoiceCircles
                       audience={cinemaAudience}
+                      unloadedCount={hiddenAudienceCount}
                       followedByHost={hostFollowedIds}
                       levels={cinemaAudioLevels}
                       onReactToParticipant={isHost ? setModTarget : setReactTarget}
@@ -2222,14 +2236,21 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
 
           {/* Cinema's room is one non-scrolling viewport, so its connection and
               microphone notices ride on the dock rather than below the fold. */}
-          {(reconnecting || micDenied) && (
+          <RoomStatusBanner
+            state={roomConn.state}
+            onRetry={roomConn.retry}
+            onEnableSound={() => {
+              void ensureVideoAudio().then(() =>
+                roomConnDispatch({ type: "audio-playback", canPlay: true }),
+              );
+            }}
+          />
+          {micDenied && (
             <p
               role="status"
               className="max-w-2xl mx-auto px-4 md:px-6 pt-2 text-center text-xs text-yellow-200"
             >
-              {reconnecting
-                ? "Reconnecting to audio…"
-                : "Microphone access was blocked. Allow it in your browser settings to speak."}
+              Microphone access was blocked. Allow it in your browser settings to speak.
             </p>
           )}
 

@@ -156,6 +156,9 @@ export interface JoinVideoOptions {
   // can play. `canPlay === false` means the UI must show a tap-to-unmute
   // affordance and call ensureVideoAudio() from that user gesture.
   onAudioPlaybackChanged?: (canPlay: boolean) => void;
+  // Fired on a final Disconnected that is neither a room end nor a kick (the
+  // SDK gave up reconnecting). Falls back to onError when not provided.
+  onConnectionLost?: () => void;
   onError?: (err: Error) => void;
 }
 
@@ -237,7 +240,12 @@ async function fetchToken(spaceId: string, role: VideoRole) {
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
-    throw new Error(detail?.error || `token request failed (${res.status})`);
+    // status/banned let the UI tell a ban or an ended room from a network
+    // failure (see classifyJoinFailure in roomConnectionStatus.ts).
+    throw Object.assign(new Error(detail?.error || `token request failed (${res.status})`), {
+      status: res.status,
+      banned: detail?.banned === true,
+    });
   }
   return res.json() as Promise<{
     token: string;
@@ -702,6 +710,14 @@ export async function joinVideoRoom(opts: JoinVideoOptions): Promise<void> {
         void room.localParticipant?.setCameraEnabled?.(false).catch(() => undefined);
         void room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => undefined);
         opts.onRoomEnded?.();
+        return;
+      }
+      if (classification === "removed" && opts.onRemoved) {
+        opts.onRemoved();
+        return;
+      }
+      if (opts.onConnectionLost) {
+        opts.onConnectionLost();
         return;
       }
       opts.onError?.(new Error("Disconnected from live room"));

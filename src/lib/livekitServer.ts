@@ -295,6 +295,29 @@ export async function isSupersededSession(
   }
 }
 
+// Is `identity` connected to `roomName` right now? Used by the host-abandonment
+// reaper (endRoom.ts) so a host whose heartbeat stalled in a backgrounded
+// mobile WebView is not mistaken for one who left. Returns "unknown" on any
+// error other than a clean not-found, so callers can fail safe (not reap).
+// When LiveKit isn't configured there is no media session to consult, so the
+// heartbeat is the only signal and we report "absent" (previous behaviour).
+export async function getParticipantPresence(
+  roomName: string,
+  identity: string,
+): Promise<"present" | "absent" | "unknown"> {
+  if (!livekitConfigured()) return "absent";
+  if (!roomName || !identity) return "unknown";
+  try {
+    const p = await client().getParticipant(roomName, identity);
+    return p?.identity ? "present" : "absent";
+  } catch (err) {
+    const msg = (err as Error)?.message ?? "";
+    if (/not found|does not exist|no participant/i.test(msg)) return "absent";
+    console.warn("[livekitServer] getParticipant failed", msg);
+    return "unknown";
+  }
+}
+
 // Forcibly disconnect a participant from a live room right now (host ban /
 // kick). LiveKit sends the client a Disconnected event with reason
 // PARTICIPANT_REMOVED and will NOT auto-reconnect it. Best-effort: a participant

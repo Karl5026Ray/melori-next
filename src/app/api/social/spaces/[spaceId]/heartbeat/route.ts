@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ spaceId:
   // reap_idle_spaces() from ever cleaning up abandoned rooms.
   const { data: space } = await supabase
     .from("spaces")
-    .select("id, host_id, status, host_last_seen_at")
+    .select("id, host_id, status, livekit_room, host_last_seen_at")
     .eq("id", params.spaceId)
     .maybeSingle();
   if (!space) {

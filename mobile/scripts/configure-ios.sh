@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Configure the generated iOS project: OAuth callback URL scheme + the media
+# Configure the generated iOS project: OAuth callback URL scheme, the media
 # capture usage descriptions WKWebView requires before it will expose
-# navigator.mediaDevices.
+# navigator.mediaDevices, and the `audio` background mode live rooms need.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -148,4 +148,49 @@ for key in required:
     print(f"    verified {key}")
 PY
 
-echo "iOS project configured: OAuth callback scheme + media capture usage descriptions registered."
+echo "==> Registering UIBackgroundModes=audio in $INFO_PLIST"
+
+# Live rooms (MM Spaces / Cinema / Faces) must keep playing when the screen
+# locks or the user switches apps. Without the `audio` background mode iOS
+# suspends the app, and WKWebView's WebRTC playback stops within seconds.
+# Only `audio` is declared: `voip` is reserved by App Review for apps using
+# CallKit/PushKit, which Melori does not, and claiming it gets builds rejected.
+# Known WebKit limitation: WKWebView may still mute getUserMedia microphone
+# capture while the app is backgrounded, so a speaker on stage can go silent
+# with the screen locked even though listening continues.
+python3 - "$INFO_PLIST" <<'PY'
+import plistlib
+import sys
+
+path = sys.argv[1]
+with open(path, "rb") as fh:
+    plist = plistlib.load(fh)
+
+modes = plist.get("UIBackgroundModes") or []
+if not isinstance(modes, list):
+    raise SystemExit(f"error: UIBackgroundModes in {path} is not an array")
+if "audio" in modes:
+    print("    already declared, skipping")
+    sys.exit(0)
+plist["UIBackgroundModes"] = modes + ["audio"]
+with open(path, "wb") as fh:
+    plistlib.dump(plist, fh)
+print("    added audio background mode")
+PY
+
+python3 - "$INFO_PLIST" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as fh:
+    plist = plistlib.load(fh)
+modes = plist.get("UIBackgroundModes") or []
+if "audio" not in modes:
+    raise SystemExit(
+        "error: UIBackgroundModes does not contain 'audio' after patching.\n"
+        "       Live room audio would stop as soon as the screen locks."
+    )
+print(f"    verified UIBackgroundModes: {', '.join(modes)}")
+PY
+
+echo "iOS project configured: OAuth callback scheme, media capture usage descriptions and background audio registered."

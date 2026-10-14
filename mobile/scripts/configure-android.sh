@@ -19,6 +19,8 @@
 #   4. The autoVerify App Links intent-filter for https://melorimusic.org, plus
 #      the org.melorimusic.app:// intent-filter the OAuth callback comes back on
 #   5. A release signing config driven by android/key.properties or env vars
+#   6. The live-room foreground service (local MeloriRoomAudio plugin from
+#      native/android/), registered in MainActivity, plus KeepRunning=true
 #
 # Usage:
 #   bash scripts/configure-android.sh                # everything
@@ -99,7 +101,22 @@ PERMISSIONS=(
   android.permission.POST_NOTIFICATIONS
   android.permission.FOREGROUND_SERVICE
   android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
+  android.permission.FOREGROUND_SERVICE_MICROPHONE
+  android.permission.WAKE_LOCK
 )
+
+# The live-room foreground service (keeps LiveKit audio alive with the screen
+# off / app backgrounded) is a small local Capacitor plugin. Its source is
+# version-controlled under native/android/ and copied into the generated
+# project here, because android/ itself is regenerated on every sync.
+NATIVE_SRC="$MOBILE_DIR/native/android"
+APP_PACKAGE_DIR="org/melorimusic/app"
+ROOM_AUDIO_PKG="org.melorimusic.app.roomaudio"
+ROOM_AUDIO_SERVICE="$ROOM_AUDIO_PKG.RoomAudioService"
+ROOM_AUDIO_PLUGIN="$ROOM_AUDIO_PKG.MeloriRoomAudioPlugin"
+JAVA_DIR="$ANDROID_DIR/app/src/main/java"
+MAIN_ACTIVITY="$JAVA_DIR/$APP_PACKAGE_DIR/MainActivity.java"
+CORDOVA_CONFIG="$RES_DIR/xml/config.xml"
 
 ICONS_ONLY=0
 if [ "${1:-}" = "--icons-only" ]; then
@@ -449,6 +466,95 @@ open(path, "w").write(text)
 print(f"    permissions added: {len(missing)} (total {len(permissions)})")
 PY
 
+# --- 3b. Live-room background audio (foreground service plugin) --------------
+# Without a foreground service Android freezes/kills the backgrounded process
+# and the WebView's WebRTC audio stops when the screen locks. See
+# native/android/java/org/melorimusic/app/roomaudio/RoomAudioService.java and
+# src/lib/native/roomBackground.ts (the page side).
+echo "==> Installing live-room foreground service"
+[ -d "$NATIVE_SRC/java" ] || die "$NATIVE_SRC/java not found"
+[ -f "$MAIN_ACTIVITY" ] || die "$MAIN_ACTIVITY not found; the Capacitor template or appId changed and this script needs updating"
+
+mkdir -p "$JAVA_DIR" "$RES_DIR"
+cp -R "$NATIVE_SRC/java/." "$JAVA_DIR/"
+cp -R "$NATIVE_SRC/res/." "$RES_DIR/"
+
+python3 - "$MANIFEST" "$ROOM_AUDIO_SERVICE" <<'PY2'
+import sys
+
+path, service = sys.argv[1], sys.argv[2]
+text = open(path).read()
+if f'android:name="{service}"' not in text:
+    if "</application>" not in text:
+        raise SystemExit("error: </application> not found in manifest; script needs updating")
+    # microphone|mediaPlayback: Android 14+ requires every type the service
+    # will ever claim to be declared here; the service picks the subset at
+    # runtime (microphone only when RECORD_AUDIO is granted and the user is
+    # on stage). exported=false: only our own plugin and notification start it.
+    text = text.replace(
+        "</application>",
+        f"""
+        <service
+            android:name="{service}"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaPlayback" />
+    </application>""",
+        1,
+    )
+    open(path, "w").write(text)
+    print("    service declared")
+else:
+    print("    service already declared")
+PY2
+
+# Local plugins are not auto-discovered by `cap sync` (that only covers npm
+# packages), so MainActivity has to register it before super.onCreate().
+python3 - "$MAIN_ACTIVITY" "$ROOM_AUDIO_PLUGIN" <<'PY2'
+import re, sys
+
+path, plugin = sys.argv[1], sys.argv[2]
+text = open(path).read()
+if "melori-room-audio-plugin" in text:
+    print("    MainActivity already registers the plugin")
+    sys.exit(0)
+
+body = f"""public class MainActivity extends BridgeActivity {{
+    // melori-room-audio-plugin (injected by scripts/configure-android.sh)
+    @Override
+    public void onCreate(android.os.Bundle savedInstanceState) {{
+        registerPlugin({plugin}.class);
+        super.onCreate(savedInstanceState);
+    }}
+}}"""
+text, n = re.subn(r"public class MainActivity extends BridgeActivity\s*\{\s*\}", body, text, count=1)
+if n != 1:
+    raise SystemExit(
+        "error: MainActivity is not the empty Capacitor template "
+        "('public class MainActivity extends BridgeActivity {}'); "
+        "scripts/configure-android.sh needs updating to register MeloriRoomAudioPlugin"
+    )
+open(path, "w").write(text)
+print("    MainActivity registers MeloriRoomAudioPlugin")
+PY2
+
+# KeepRunning=true is Capacitor's default and is what stops it calling
+# webView.onPause()/pauseTimers() when the activity pauses (Bridge.onPause ->
+# MockCordovaWebViewImpl.handlePause). Pin it so a future default change or a
+# stray Cordova preference cannot silently mute rooms on screen lock.
+[ -f "$CORDOVA_CONFIG" ] || die "$CORDOVA_CONFIG not found (cap sync writes it)"
+python3 - "$CORDOVA_CONFIG" <<'PY2'
+import re, sys
+
+path = sys.argv[1]
+text = open(path).read()
+text = re.sub(r'\s*<preference\s+name="KeepRunning"[^>]*/>', "", text)
+if "</widget>" not in text:
+    raise SystemExit("error: </widget> not found in res/xml/config.xml; script needs updating")
+text = text.replace("</widget>", '  <preference name="KeepRunning" value="true" />\n</widget>', 1)
+open(path, "w").write(text)
+print("    KeepRunning=true pinned in res/xml/config.xml")
+PY2
+
 # --- 4. Release signing config ------------------------------------------------
 # android/app/build.gradle is generated, so the signing config is injected here
 # rather than committed. Credentials come from android/key.properties (local,
@@ -551,9 +657,42 @@ grep -q 'android:autoVerify="true"' "$MANIFEST" || { echo "error: App Links inte
 grep -q "android:scheme=\"$AUTH_SCHEME\"" "$MANIFEST" || { echo "error: OAuth callback scheme $AUTH_SCHEME missing from manifest" >&2; failures=1; }
 grep -q "$APP_HOST" "$MANIFEST" || { echo "error: manifest missing host $APP_HOST" >&2; failures=1; }
 grep -q "melori-signing-config" "$APP_GRADLE" || { echo "error: signing config missing" >&2; failures=1; }
+
+# Live-room foreground service: every piece must be present or rooms go silent
+# on screen lock (or, worse, the app crashes when the service starts).
+while IFS= read -r -d '' src; do
+  rel="${src#"$NATIVE_SRC"/}"
+  case "$rel" in
+    java/*) dest="$JAVA_DIR/${rel#java/}" ;;
+    res/*)  dest="$RES_DIR/${rel#res/}" ;;
+    *) continue ;;
+  esac
+  cmp -s "$src" "$dest" || { echo "error: $dest missing or differs from $src" >&2; failures=1; }
+done < <(find "$NATIVE_SRC" -type f -print0)
+python3 - "$MANIFEST" "$ROOM_AUDIO_SERVICE" <<'PY2' || failures=1
+import sys, xml.etree.ElementTree as ET
+
+ns = "{http://schemas.android.com/apk/res/android}"
+path, service = sys.argv[1], sys.argv[2]
+app = ET.parse(path).getroot().find("application")
+matches = [s for s in (app.findall("service") if app is not None else []) if s.get(ns + "name") == service]
+if len(matches) != 1:
+    raise SystemExit(f"error: expected exactly one <service {service}> inside <application>, found {len(matches)}")
+types = set((matches[0].get(ns + "foregroundServiceType") or "").split("|"))
+if not {"microphone", "mediaPlayback"} <= types:
+    raise SystemExit(f"error: {service} foregroundServiceType is {sorted(types)}, needs microphone|mediaPlayback")
+if matches[0].get(ns + "exported") != "false":
+    raise SystemExit(f"error: {service} must be android:exported=false")
+PY2
+grep -q "registerPlugin($ROOM_AUDIO_PLUGIN.class)" "$MAIN_ACTIVITY" \
+  || { echo "error: MainActivity does not register $ROOM_AUDIO_PLUGIN" >&2; failures=1; }
+grep -q '<preference name="KeepRunning" value="true" />' "$CORDOVA_CONFIG" \
+  || { echo "error: KeepRunning=true missing from $CORDOVA_CONFIG; the WebView would pause on screen lock" >&2; failures=1; }
+[ "$(grep -c 'name="KeepRunning"' "$CORDOVA_CONFIG")" = "1" ] \
+  || { echo "error: conflicting KeepRunning preferences in $CORDOVA_CONFIG" >&2; failures=1; }
 grep -q "meloriVersionCode" "$APP_GRADLE" || { echo "error: versionCode is not driven by -PmeloriVersionCode; Play would reject the second upload as a duplicate" >&2; failures=1; }
 grep -q "meloriVersionName" "$APP_GRADLE" || { echo "error: versionName is not driven by -PmeloriVersionName" >&2; failures=1; }
 
 [ "$failures" -eq 0 ] || die "configure-android.sh verification failed"
 
-echo "Android project configured: SDK $MIN_SDK/$COMPILE_SDK/$TARGET_SDK, $(( ${#DENSITIES[@]} * 3 )) icons, App Links + permissions applied."
+echo "Android project configured: SDK $MIN_SDK/$COMPILE_SDK/$TARGET_SDK, $(( ${#DENSITIES[@]} * 3 )) icons, App Links + permissions + live-room foreground service applied."

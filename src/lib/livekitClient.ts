@@ -34,7 +34,6 @@ import {
   type AudioProfile,
 } from "@/lib/audioProfile";
 import { assertCaptureSupported } from "@/lib/mediaCapture";
-import { supabase } from "@/lib/supabase";
 import { classifyDisconnectReason } from "@/lib/roomDisconnect";
 
 type AnyRoom = any;
@@ -60,7 +59,7 @@ export interface JoinOptions {
   // Full set of currently-active speaker identities (LiveKit identity == auth
   // user id). Emitted on every ActiveSpeakersChanged so the UI can show the
   // speaking ring for EVERYONE and clear it when they stop — this is the
-  // primary, real-time driver (the DB is_speaking write is only a fallback).
+  // only driver: speaking state is never written to the database.
   onActiveSpeakersChange?: (identities: string[]) => void;
   // Continuous per-identity microphone loudness, 0..1 (local included),
   // sampled every SPACES_LEVEL_INTERVAL_MS. ActiveSpeakersChanged is only an
@@ -167,22 +166,11 @@ async function fetchToken(spaceId: string, role: LiveKitRole) {
   }>;
 }
 
-let lastSpeakingWrite = 0;
-async function writeLocalSpeaking(spaceId: string, identity: string, speaking: boolean) {
-  const now = Date.now();
-  if (now - lastSpeakingWrite < 500) return;
-  lastSpeakingWrite = now;
-  try {
-    await supabase
-      .from("space_participants")
-      .update({ is_speaking: speaking })
-      .eq("space_id", spaceId)
-      .eq("user_id", identity)
-      .is("left_at", null);
-  } catch {
-    // Presence write is best-effort; audio must not depend on it.
-  }
-}
+// Speaking state is never written to the database. Every client already gets
+// ActiveSpeakersChanged from LiveKit and drives the rings from that; the old
+// `is_speaking` write (up to 2/s per speaker) made every listener refetch the
+// whole roster on each one. The column stays, unused. Pinned by
+// scripts/room-roster.test.ts.
 
 export async function joinChannel(opts: JoinOptions): Promise<void> {
   // Re-join cleanly if already connected somewhere.
@@ -238,7 +226,6 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       prevSpeakingIds = speakingIds;
       const localSpeaking = speakingIds.has(creds.identity);
       opts.onLocalSpeakingChange?.(localSpeaking);
-      void writeLocalSpeaking(opts.spaceId, creds.identity, localSpeaking);
     };
     room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
     session.cleanups.push(() => room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers));

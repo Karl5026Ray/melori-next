@@ -20,6 +20,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRoomRoster } from "@/lib/rooms/useRoomRoster";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanRequestStage } from "@/components/social/SignInPrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
@@ -80,7 +81,14 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   const exitHref = SPACES_HOME;
   const exitHrefRef = useRef(exitHref);
 
-  const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
+  // The live roster: loaded once, then kept current from realtime payloads
+  // (src/lib/rooms/useRoomRoster.ts) instead of a full refetch per change.
+  // `rosterLoaded` tells "not back yet" apart from "came back empty".
+  const {
+    participants,
+    rosterLoaded,
+    hiddenAudienceCount,
+  } = useRoomRoster({ spaceId, selfId: user?.id ?? null });
   // Identity -> 0..1 microphone level, sampled from LiveKit (livekitClient).
   // Drives the speaking rings on the stage.
   const [audioLevels, setAudioLevels] = useState<Record<string, number>>({});
@@ -162,8 +170,8 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
   // IS in the room gets treated as a stranger for the first few hundred ms.
-  // That was the flash of "Join Space" on every entry.
-  const [rosterLoaded, setRosterLoaded] = useState(false);
+  // That was the flash of "Join Space" on every entry. `rosterLoaded` (from
+  // useRoomRoster above) is the signal that tells them apart.
   const [isJoined, setIsJoined] = useState(false);
   // Set when a join attempt actually failed, so the auto-join effect stops
   // retrying into the same error and the room can offer a manual retry rather
@@ -263,45 +271,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
       setIsLoading(false);
     };
 
-    const fetchParticipants = async () => {
-      const { data } = await supabase
-        .from("space_participants")
-        .select(
-          `
-          *,
-          user:profiles(id, display_name, avatar_url, role, verified)
-        `
-        )
-        .eq("space_id", spaceId)
-        .is("left_at", null)
-        .order("joined_at", { ascending: true });
-
-      if (data) setParticipants(data as SpaceParticipant[]);
-      setRosterLoaded(true);
-    };
-
     fetchSpace();
-    fetchParticipants();
-
-    const channel = supabase
-      .channel(`space:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "space_participants",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        () => {
-          fetchParticipants();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [spaceId]);
 
   // Mirror the roster into local join state. This used to be a one-way latch
@@ -1493,7 +1463,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
             {space.title}
           </h1>
           <p className="truncate text-xs text-melori-muted tabular-nums">
-            {listeners.length} listening · {stage.length} on stage · {hostName} · {format.label}
+            {listeners.length + hiddenAudienceCount} listening · {stage.length} on stage · {hostName} · {format.label}
           </p>
         </div>
         <button
@@ -1658,6 +1628,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
 
         <SpacesListeners
           listeners={listeners}
+          unloadedCount={hiddenAudienceCount}
           onSelect={setPersonTarget}
           onShowAll={() => openSheet("listeners")}
         />
@@ -1818,7 +1789,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <h2 id="spaces-sheet-heading" className="text-base font-semibold text-melori-text">
-                      {listeners.length} listening
+                      {listeners.length + hiddenAudienceCount} listening
                     </h2>
                     <p id="spaces-sheet-description" className="mt-0.5 text-xs text-melori-muted">
                       Tap someone to follow them{canModerate ? " or invite them to speak" : ""}.

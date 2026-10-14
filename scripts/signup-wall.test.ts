@@ -22,7 +22,8 @@
 //
 // Run:  npx tsx scripts/signup-wall.test.ts
 
-import { isPublicPath, teaserFor } from "@/proxy";
+import { gateRedirectTarget, isPublicPath, teaserFor } from "@/proxy";
+import { safeNextPath } from "@/lib/mediaSetupMarker";
 import { doorReason } from "@/lib/doorReason";
 
 let checks = 0;
@@ -214,6 +215,53 @@ if (!isPublicPath("/gallerylistings") && isPublicPath("/gallery/x")) {
   ok("/gallery/ matches children without matching /gallerylistings");
 } else {
   bad("the /gallery prefix matches a sibling route it should not");
+}
+
+// ---------------------------------------------------------------------------
+// The wall keeps the destination (14 Oct 2026). A member whose cookie Safari
+// evicted tapped a shared Cinema room link and lost the room: the redirect to
+// the teaser dropped it. The target must carry ?next= and the teaser/door must
+// be able to send them straight back.
+
+const ROOM = "/social/cinema/2b8535f1-f9b0-4faa-86d6-2362aeec64b9";
+const roomTarget = new URL(gateRedirectTarget(ROOM), "https://melorimusic.org");
+if (roomTarget.pathname === "/cinema") ok("a Cinema room link still lands on the Cinema teaser");
+else bad(`a Cinema room link landed on ${roomTarget.pathname}`);
+if (roomTarget.searchParams.get("next") === ROOM) ok("the room travels along as ?next=");
+else bad(`?next= was ${JSON.stringify(roomTarget.searchParams.get("next"))}`);
+if (safeNextPath(roomTarget.searchParams.get("next")) === ROOM) {
+  ok("the guard the teaser and the door use accepts the room path");
+} else {
+  bad("safeNextPath rejected the room path, so nobody gets back to the room");
+}
+
+const withQuery = new URL(gateRedirectTarget("/social/spaces/abc", "?invite=1"), "https://x.test");
+if (withQuery.searchParams.get("next") === "/social/spaces/abc?invite=1") {
+  ok("the link's own query string survives inside ?next=");
+} else {
+  bad("the link's query string was lost or leaked into the teaser URL");
+}
+
+// The chat door already has ?reason=; next must be added, not replace it.
+const chat = new URL(gateRedirectTarget("/social/messages/42"), "https://x.test");
+if (chat.pathname === "/platform" && chat.searchParams.get("reason") === "chat" &&
+    chat.searchParams.get("next") === "/social/messages/42") {
+  ok("the chat door keeps ?reason=chat and gains ?next=");
+} else {
+  bad(`chat door target was ${chat.pathname}${chat.search}`);
+}
+
+const plain = new URL(gateRedirectTarget("/settings"), "https://x.test");
+if (plain.pathname === "/platform" && plain.searchParams.get("next") === "/settings") {
+  ok("a route with no teaser goes to the door with ?next=");
+} else {
+  bad(`/settings target was ${plain.pathname}${plain.search}`);
+}
+
+// ?next= is attacker-controllable on the teaser URL; the guard must hold.
+for (const evil of ["https://evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)"]) {
+  if (safeNextPath(evil, "") === "") ok(`refuses ${JSON.stringify(evil)} as a return path`);
+  else bad(`accepted ${JSON.stringify(evil)} as a return path`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

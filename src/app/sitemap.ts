@@ -39,6 +39,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/cinema`,    lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/radio`,     lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/register`,  lastModified: now, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${SITE_URL}/android`,   lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/support`,   lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/privacy`,   lastModified: now, changeFrequency: "yearly",  priority: 0.3 },
     { url: `${SITE_URL}/terms`,     lastModified: now, changeFrequency: "yearly",  priority: 0.3 },

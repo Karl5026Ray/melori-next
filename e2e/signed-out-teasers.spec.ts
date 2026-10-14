@@ -78,7 +78,7 @@ test("a signed-out room link keeps the room for after sign-in", async ({ page })
     "href",
     `/social/auth${carried}`,
   );
-  await expect(page.getByRole("link", { name: /create your free account/i })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: /create your free account/i }).first()).toHaveAttribute(
     "href",
     `/register${carried}`,
   );

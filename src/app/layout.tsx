@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import "./native-app.css";
 import Header from "@/components/Header";
+import AndroidBetaBanner from "@/components/android/AndroidBetaBanner";
 import Footer from "@/components/Footer";
 import AudioPlayer from "@/components/AudioPlayer";
 import MainContent from "@/components/MainContent";
@@ -100,6 +101,10 @@ export default function RootLayout({
             {/* Native-only: catches the OAuth deep link back from the system
                 browser. Renders nothing and does nothing on the web. */}
             <NativeAuthListener />
+            {/* Android web visitors only (never in the app, never iOS/desktop):
+                a dismissible "join the Android beta" strip. It sits above the
+                sticky header so it scrolls away instead of eating screen. */}
+            <AndroidBetaBanner />
             <Header />
             {/* Bottom clearance is route-aware: the main page clears the tab bar
                AND the transport, every other space only clears the tab bar. */}

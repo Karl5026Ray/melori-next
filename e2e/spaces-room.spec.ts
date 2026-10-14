@@ -262,14 +262,15 @@ test.describe("MM Spaces room", () => {
     // A listener gets no "invite up" seat.
     await expect(page.getByTestId("spaces-open-seat")).toHaveCount(0);
 
-    // Listeners: capped strip with a "+N"; the raised hand is listed first.
+    // Listeners: a scrolling strip capped at 29 circles plus a "+N"
+    // (SPACES_LISTENERS_VISIBLE = 30); the raised hand is listed first.
     await expect(page.getByTestId("spaces-listeners")).toContainText("43 listening");
     const listenerCircles = page.getByTestId("spaces-listener");
-    expect(await listenerCircles.count()).toBeLessThanOrEqual(10);
+    expect(await listenerCircles.count()).toBeLessThanOrEqual(29);
     await expect(listenerCircles.first()).toHaveAttribute("aria-label", /hand raised/);
     await expect(page.getByTestId("spaces-listeners-overflow")).toBeVisible();
 
-    // Chat: persistent, with the composer inside it, tall enough to read.
+    // Chat: the newest six lines in the room, with the composer under them.
     const chat = page.getByTestId("spaces-chat");
     await expect(chat).toBeVisible();
     await expect(page.getByTestId("spaces-chat-line")).toHaveCount(6);

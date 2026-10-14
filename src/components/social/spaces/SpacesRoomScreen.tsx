@@ -31,6 +31,7 @@ import {
   setRole as agoraSetRole,
   ensureAudioPlayback as agoraEnsureAudio,
 } from "@/lib/livekitClient";
+import { RoomStatusBanner, useRoomConnection } from "@/components/social/RoomStatusBanner";
 import {
   joinPresence as roomJoin,
   leavePresence as roomLeave,
@@ -212,7 +213,12 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     emoji: string;
     target: string;
   } | null>(null);
-  const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
+  // LiveKit connection state for the in-room banner: connect/token failure
+  // (auto-retry, then Retry), reconnecting, connection lost (Rejoin), removed,
+  // and browser-blocked audio (Tap to enable sound). See roomConnectionStatus.ts.
+  const roomConn = useRoomConnection();
+  const roomConnDispatch = roomConn.dispatch;
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
   // disconnect reason or the room-signals "space-ended" system signal. Shows a calm
@@ -1106,7 +1112,21 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           onAudioLevels: (levels) => {
             if (!cancelled) setAudioLevels(levels);
           },
-          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),
+          onReconnecting: () => {
+            if (!cancelled) roomConnDispatch({ type: "reconnecting" });
+          },
+          onReconnected: () => {
+            if (!cancelled) roomConnDispatch({ type: "reconnected" });
+          },
+          onConnectionLost: () => {
+            if (!cancelled) roomConnDispatch({ type: "disconnected" });
+          },
+          onRemoved: () => {
+            if (!cancelled) roomConnDispatch({ type: "removed" });
+          },
+          onAudioPlaybackChanged: (canPlay) => {
+            if (!cancelled) roomConnDispatch({ type: "audio-playback", canPlay });
+          },
           onRoomEnded: () => {
             if (cancelled) return;
             setRoomEnded(true);
@@ -1124,6 +1144,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           },
         });
         if (cancelled) await agoraLeave();
+        else roomConnDispatch({ type: "connected" });
       } catch (err) {
         if (
           /NotAllowedError|Permission|permission denied/i.test(
@@ -1133,6 +1154,9 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           setMicDenied(true);
         }
         console.warn("agora join failed", err);
+        // Token or connect failure: show it (and auto-retry with backoff)
+        // instead of leaving the user looking joined in silence.
+        if (!cancelled) roomConnDispatch({ type: "join-failed", error: err });
       }
     })();
     return () => {
@@ -1147,6 +1171,8 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     space?.agora_channel,
     spaceId,
     participants.find((p) => p.user_id === user?.id)?.role,
+    // Retry / Rejoin / auto-retry bump this to re-request a token and reconnect.
+    roomConn.attempt,
   ]);
 
   // React to role changes without a full rejoin when we're already connected.
@@ -1260,7 +1286,15 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
       }).catch(() => undefined);
     ping();
     heartbeatRef.current = setInterval(ping, 60_000);
+    // Mobile WebViews freeze timers in the background, so the interval above
+    // goes quiet while the app is backgrounded. Beat the moment we're visible
+    // again (the server also checks LiveKit before reaping a quiet host).
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     };
@@ -2006,11 +2040,18 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
 
       {isJoined && (
         <div className="shrink-0 border-t border-melori-border bg-melori-void pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2">
-          {(reconnecting || micDenied) && (
+          <RoomStatusBanner
+            state={roomConn.state}
+            onRetry={roomConn.retry}
+            onEnableSound={() => {
+              void agoraEnsureAudio().then(() =>
+                roomConnDispatch({ type: "audio-playback", canPlay: true }),
+              );
+            }}
+          />
+          {micDenied && (
             <p role="status" className="mx-auto max-w-2xl px-4 pb-1 text-center text-xs text-melori-warning">
-              {reconnecting
-                ? "Reconnecting to audio…"
-                : "Microphone access was blocked. Allow it in your browser settings to speak."}
+              Microphone access was blocked. Allow it in your browser settings to speak.
             </p>
           )}
           {activity && (

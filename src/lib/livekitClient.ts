@@ -80,6 +80,16 @@ export interface JoinOptions {
   // state instead of a scary generic error. Local mic/tracks are already
   // stopped by the time this fires.
   onRoomEnded?: () => void;
+  // Fired when this participant was kicked/banned (PARTICIPANT_REMOVED).
+  // LiveKit will not reconnect. Falls back to onError when not provided.
+  onRemoved?: () => void;
+  // Fired on a final Disconnected that is neither a room end nor a kick: the
+  // SDK has given up reconnecting. The UI should offer "Rejoin" instead of
+  // leaving a reconnecting notice up forever. Falls back to onError.
+  onConnectionLost?: () => void;
+  // false = the browser is holding remote audio back until a user gesture;
+  // show "Tap to enable sound" and call ensureAudioPlayback() from the tap.
+  onAudioPlaybackChanged?: (canPlay: boolean) => void;
   onError?: (err: Error) => void;
 }
 
@@ -141,7 +151,12 @@ async function fetchToken(spaceId: string, role: LiveKitRole) {
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
-    throw new Error(detail?.error || `token request failed (${res.status})`);
+    // status/banned let the UI tell a ban or an ended room from a network
+    // failure (see classifyJoinFailure in roomConnectionStatus.ts).
+    throw Object.assign(new Error(detail?.error || `token request failed (${res.status})`), {
+      status: res.status,
+      banned: detail?.banned === true,
+    });
   }
   return res.json() as Promise<{
     token: string;
@@ -183,10 +198,11 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
   const capture = captureDefaultsFor(profile);
   const publish = publishDefaultsFor(profile, AudioPresets);
 
+  let room: AnyRoom = null;
   try {
     const creds = await fetchToken(opts.spaceId, opts.role);
 
-    const room: AnyRoom = new Room({
+    room = new Room({
       adaptiveStream: true,
       dynacast: true,
       // Tuned publish defaults so speakers sound right for the room type.
@@ -265,10 +281,14 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
         opts.onRoomEnded?.();
         return;
       }
-      // "removed" (kicked) has no dedicated Spaces UI state today (unlike
-      // Faces' `removed` overlay) — out of scope to add one here per the
-      // brief's constraint against changing moderation/ban UX, so it still
-      // reports through onError, matching current behaviour.
+      if (classification === "removed" && opts.onRemoved) {
+        opts.onRemoved();
+        return;
+      }
+      if (classification === "error" && opts.onConnectionLost) {
+        opts.onConnectionLost();
+        return;
+      }
       opts.onError?.(new Error("Disconnected from space"));
     };
     room.on(RoomEvent.Disconnected, onDisconnected);
@@ -292,7 +312,10 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       try {
         const p = el.play?.();
         if (p && typeof p.catch === "function") {
-          p.catch((e: unknown) => console.warn("[spaces] remote audio autoplay blocked", e));
+          p.catch((e: unknown) => {
+            console.warn("[spaces] remote audio autoplay blocked", e);
+            opts.onAudioPlaybackChanged?.(false);
+          });
         }
       } catch (e) {
         console.warn("[spaces] remote audio play() failed", e);
@@ -350,7 +373,19 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       });
     }
 
+    // Browser autoplay gate. LiveKit flips room.canPlaybackAudio and fires this
+    // whenever playback is blocked/unblocked; the UI shows "Tap to enable
+    // sound" while it is false (Faces/Cinema already did this; Spaces did not).
+    const onAudioPlayback = () => opts.onAudioPlaybackChanged?.(!!room.canPlaybackAudio);
+    if (RoomEvent.AudioPlaybackStatusChanged) {
+      room.on(RoomEvent.AudioPlaybackStatusChanged, onAudioPlayback);
+      session.cleanups.push(() =>
+        room.off(RoomEvent.AudioPlaybackStatusChanged, onAudioPlayback),
+      );
+    }
+
     await room.connect(creds.url, creds.token, { autoSubscribe: true });
+    onAudioPlayback();
 
     // Attach any remote audio tracks that were already subscribed before our
     // handler was registered (e.g. participants already in the room on join).
@@ -381,6 +416,19 @@ export async function joinChannel(opts: JoinOptions): Promise<void> {
       session.localAudioTrack = true;
     }
   } catch (err) {
+    // A failed token request / connect never became the session: drop its
+    // listeners and socket so a retry starts clean instead of stacking them.
+    if (session.room !== room) {
+      session.cleanups.forEach((fn) => {
+        try {
+          fn();
+        } catch {
+          /* ignore */
+        }
+      });
+      session.cleanups = [];
+      void room?.disconnect?.().catch?.(() => undefined);
+    }
     opts.onError?.(err as Error);
     throw err;
   }

@@ -35,6 +35,7 @@ import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoM
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { classifyJoinFailure } from "@/lib/roomConnectionStatus";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
@@ -415,7 +416,16 @@ export default function LiveRoom({
       }).catch(() => undefined);
     ping();
     const interval = setInterval(ping, 60_000);
-    return () => clearInterval(interval);
+    // Mobile WebViews freeze timers in the background; beat as soon as the
+    // app is visible again (the server also checks LiveKit before reaping).
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
   }, [user, spaceId]);
 
   // Connect to the LiveKit room once the viewer is cleared to join (no
@@ -492,7 +502,11 @@ export default function LiveRoom({
             }
           },
           onError: (e) => {
-            if (!cancelled) setError(e.message);
+            if (cancelled) return;
+            // A final disconnect also lands here: drop the spinner so the
+            // error card isn't stacked on a "Reconnecting…" that never ends.
+            setReconnecting(false);
+            setError(e.message);
           },
         });
         if (cancelled) return;
@@ -510,7 +524,11 @@ export default function LiveRoom({
           }, durationMinutes * 60 * 1000);
         }
       } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? "Could not join the live room");
+        if (cancelled) return;
+        // A room ban comes back from the token route as 403 {banned}: show the
+        // removed screen, not a generic error.
+        if (classifyJoinFailure(e) === "removed") setRemoved(true);
+        else setError(e?.message ?? "Could not join the live room");
       } finally {
         if (!cancelled) setConnecting(false);
       }

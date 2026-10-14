@@ -32,9 +32,11 @@ export function deriveRoomName(space: SpaceRoomRow): string {
 
 // How long the host can go unseen before the room is considered abandoned and
 // eligible for reaping. 120s: comfortably longer than one missed 60s room
-// heartbeat (see page.tsx's `ping` interval) so a single dropped beat / brief
-// iOS WebView backgrounding never triggers a false reap, but short enough that
-// a genuinely abandoned room does not strand its remaining occupants for long.
+// heartbeat (see page.tsx's `ping` interval) so a single dropped beat never
+// triggers a false reap, but short enough that a genuinely abandoned room does
+// not strand its remaining occupants for long. A stale beat alone is NOT
+// enough to reap: decideHostReap() below also requires the host to be gone
+// from LiveKit, which is what keeps a backgrounded mobile host's room alive.
 export const HOST_GRACE_PERIOD_SECONDS = 120;
 
 // Pure predicate, unit-testable without a DB: is a host whose last-seen
@@ -55,4 +57,34 @@ export function isHostAbandoned(
   // Exactly at the boundary is NOT yet abandoned — the room becomes eligible
   // the instant elapsed time exceeds the grace period, not when it equals it.
   return elapsedSeconds > graceSeconds;
+}
+
+// Is the host still connected to the room's LiveKit session right now?
+//   "present" — LiveKit reports the host's identity in the room.
+//   "absent"  — LiveKit answered and the host (or the whole room) is gone.
+//   "unknown" — we could not ask (API error, timeout). Never grounds for a reap.
+export type HostLiveKitPresence = "present" | "absent" | "unknown";
+
+// What reapIfHostAbandoned should do with a live room:
+//   "keep"    — host is within grace, or we can't tell; touch nothing.
+//   "refresh" — the beat is stale but the host is still in LiveKit (a mobile
+//               WebView suspends JS timers in the background while the audio
+//               session keeps the connection up). Stamp host_last_seen_at.
+//   "reap"    — stale beat AND confirmed gone from LiveKit. End the room.
+export type HostReapDecision = "keep" | "refresh" | "reap";
+
+// Pure predicate behind the lazy host-abandonment reaper. The heartbeat alone
+// is not proof of absence: Android/iOS throttle or freeze setInterval once the
+// app is backgrounded, so a host who is still live (and still heard) stops
+// beating after a minute or two. The LiveKit connection is the ground truth.
+export function decideHostReap(
+  hostLastSeenAt: string | null,
+  presence: HostLiveKitPresence,
+  now: Date = new Date(),
+  graceSeconds: number = HOST_GRACE_PERIOD_SECONDS,
+): HostReapDecision {
+  if (!isHostAbandoned(hostLastSeenAt, now, graceSeconds)) return "keep";
+  if (presence === "present") return "refresh";
+  if (presence === "absent") return "reap";
+  return "keep"; // fail safe: a LiveKit outage must never end live rooms
 }

@@ -34,6 +34,7 @@ import {
 import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoMirror";
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
+import { useRoomRoster } from "@/lib/rooms/useRoomRoster";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
@@ -524,91 +525,45 @@ export default function LiveRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spaceId, isHost, hostId, tier, durationMinutes, consentGate]);
 
-  // Host: load raise-hand requests + the audience roster. Reads through the
-  // server route (service role) so it never depends on the anon client's RLS for
-  // other users' rows, then splits locally into raised-hand "requests" and the
-  // rest of the guest list. Kept fresh by BOTH Supabase realtime AND a slow poll
-  // — the poll is the safety net for environments where space_participants isn't
-  // in the realtime publication, which is why raised hands weren't reaching the
-  // host live.
-  useEffect(() => {
-    if (!isHost) return;
-    let active = true;
-    const load = async () => {
-      try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const { participants } = await res.json();
-        if (!active) return;
-        // Only guests actually still connected to LiveKit — a dropped guest's DB
-        // row lingers until the webhook reaps it, so filter by live presence.
-        const guests = (participants ?? []).filter(
-          (p: any) => p.role === "audience" && isPresent(p.user_id),
-        );
-        // Oldest request first (src/lib/stageQueue.ts) — the roster comes back
-        // in join order, which is not the order hands went up.
-        setRequests(
-          sortStageQueue(guests.filter((p: any) => p.has_raised_hand)).map(
-            (p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar }),
-          ),
-        );
-        setAudience(
-          guests.map((p: any) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })),
-        );
-      } catch {
-        /* transient — the poll or realtime will retry */
-      }
-    };
-    void load();
-    const poll = setInterval(load, 8000);
-    const ch = supabase
-      .channel(`faces_requests:${spaceId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "space_participants", filter: `space_id=eq.${spaceId}` },
-        () => void load(),
-      )
-      .subscribe();
-    return () => {
-      active = false;
-      clearInterval(poll);
-      void supabase.removeChannel(ch);
-    };
-  }, [isHost, spaceId, presentVersion, isPresent]);
-
-  // In-room roster ("who's here"): every active participant with a name +
-  // avatar, for the tappable Users badge sheet. Read through the server route
-  // (service role) so it isn't gated by the anon client's RLS. Refreshed when
-  // LiveKit reports a join/leave (viewerCount changes) and on a slow poll — the
-  // poll is the safety net when space_participants isn't in the realtime feed.
+  // Who's here, the host's raise-hand requests and the guest list, all from one
+  // live roster (src/lib/rooms/useRoomRoster.ts): loaded once, kept current
+  // from realtime payloads, with a jittered ~60s resync as the safety net. This
+  // replaced a full-roster poll every 10s per viewer (plus an 8s poll and a
+  // refetch-per-change for the host), which grew with every viewer in the room.
+  // Rows are intersected with LiveKit presence (isPresent) so a dropped viewer
+  // leaves the lists immediately instead of lingering until their DB row is
+  // reaped; `presentVersion` re-derives on every LiveKit join/leave.
+  const { participants: rosterRows } = useRoomRoster({
+    spaceId,
+    selfId: user?.id ?? null,
+    enabled: Boolean(user),
+  });
   useEffect(() => {
     if (!user) return;
-    let active = true;
-    const load = async () => {
-      try {
-        const res = await authFetch(`/api/social/spaces/${spaceId}/participants`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const { participants } = await res.json();
-        if (!active) return;
-        // Show only people still connected to LiveKit so a dropped viewer leaves
-        // the "who's here" sheet immediately instead of lingering until their DB
-        // presence row is reaped.
-        setRoster((participants ?? []).filter((p: any) => isPresent(p.user_id)));
-      } catch {
-        /* transient — the poll will retry */
-      }
-    };
-    void load();
-    const poll = setInterval(load, 10000);
-    return () => {
-      active = false;
-      clearInterval(poll);
-    };
-  }, [user, spaceId, viewerCount, presentVersion, isPresent]);
+    const present = rosterRows
+      .filter((p) => isPresent(p.user_id))
+      .map((p) => ({
+        user_id: p.user_id,
+        name: p.user?.display_name || p.user?.username || "Guest",
+        avatar: p.user?.avatar_url ?? null,
+        role: p.role ?? "audience",
+        has_raised_hand: Boolean(p.has_raised_hand),
+        stage_requested_at: p.stage_requested_at ?? null,
+      }));
+    setRoster(present);
+    if (!isHost) return;
+    const guests = present.filter((p) => p.role === "audience");
+    // Oldest request first (src/lib/stageQueue.ts) — the roster comes back
+    // in join order, which is not the order hands went up.
+    setRequests(
+      sortStageQueue(guests.filter((p) => p.has_raised_hand)).map((p) => ({
+        user_id: p.user_id,
+        name: p.name,
+        avatar: p.avatar,
+      })),
+    );
+    setAudience(guests.map((p) => ({ user_id: p.user_id, name: p.name, avatar: p.avatar })));
+  }, [user, isHost, rosterRows, presentVersion, isPresent]);
 
   // Guest: watch my own row — when host promotes me to speaker, go on camera.
   useEffect(() => {
@@ -754,7 +709,7 @@ export default function LiveRoom({
           // Optimistic: drop the just-approved guest from the local requests
           // list so the panel fades to only the guests still waiting. If they
           // were the last one, close the panel entirely so it stops covering
-          // the stage. Realtime + poll will reconcile authoritatively.
+          // the stage. The live roster will reconcile authoritatively.
           setRequests((prev) => {
             const nextReqs = prev.filter((r) => r.user_id !== guestId);
             if (nextReqs.length === 0 && prev.length > 0) {
@@ -781,7 +736,7 @@ export default function LiveRoom({
   // Demote an on-camera guest to audience. Server-authoritative: the PATCH
   // route flips their LiveKit publish permission off (camera/mic stop for
   // everyone) and persists role=audience so any rejoin is subscriber-only. We
-  // reflect the role locally so the roster updates before the next poll.
+  // reflect the role locally so the roster updates before realtime lands.
   const removeGuest = useCallback(
     async (guestId: string) => {
       setRoster((r) =>

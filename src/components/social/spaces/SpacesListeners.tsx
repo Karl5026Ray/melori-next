@@ -21,18 +21,26 @@ interface SpacesListenersProps {
   listeners: readonly SpaceParticipant[];
   onSelect: (participant: SpaceParticipant) => void;
   onShowAll: () => void;
+  /** Listeners in the room but not loaded (the roster caps the audience). */
+  unloadedCount?: number;
 }
 
-export function SpacesListeners({ listeners, onSelect, onShowAll }: SpacesListenersProps) {
-  const overflow = listeners.length > SPACES_LISTENERS_VISIBLE;
+export function SpacesListeners({
+  listeners,
+  onSelect,
+  onShowAll,
+  unloadedCount = 0,
+}: SpacesListenersProps) {
+  const total = listeners.length + unloadedCount;
+  const overflow = total > SPACES_LISTENERS_VISIBLE;
   const visible = overflow ? listeners.slice(0, SPACES_LISTENERS_VISIBLE - 1) : listeners;
-  const hidden = listeners.length - visible.length;
+  const hidden = total - visible.length;
 
   return (
     <section aria-label="Listeners" data-testid="spaces-listeners" className="flex min-h-[7.5rem] flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between pb-1.5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-melori-muted">
-          {listeners.length} listening
+          {total} listening
         </p>
         {listeners.length > 0 && (
           <button

@@ -25,6 +25,8 @@ import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 interface CinemaVoiceCirclesProps {
   audience: SpaceParticipant[];
+  /** Audience members in the room but not loaded (the roster caps at 200). */
+  unloadedCount?: number;
   /** Identity (auth user id) -> 0..1 microphone level, sampled from LiveKit. */
   levels?: Record<string, number>;
   onReactToParticipant?: (participant: SpaceParticipant) => void;
@@ -160,6 +162,7 @@ export function CinemaVoiceCircles({
   onReactToParticipant,
   reactionBursts,
   followedByHost = NO_FOLLOWS,
+  unloadedCount = 0,
 }: CinemaVoiceCirclesProps) {
   const ordered = useMemo(
     () => orderVoiceRail(audience, followedByHost),
@@ -173,7 +176,7 @@ export function CinemaVoiceCircles({
       aria-label="Cinema voice audience"
     >
       <p className="shrink-0 pb-1.5 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-white/45 tabular-nums">
-        {audience.length} watching
+        {audience.length + unloadedCount} watching
       </p>
       {/* A plain list in its own scroll column. The thin WebKit/Blink thumb is
           styled to stay visible; iOS falls back to its native overflow

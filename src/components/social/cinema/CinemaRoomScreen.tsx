@@ -15,6 +15,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRoomRoster } from "@/lib/rooms/useRoomRoster";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanParticipate, useCanRequestStage } from "@/components/social/SignInPrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
@@ -85,7 +86,14 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   const exitHrefRef = useRef(exitHref);
   exitHrefRef.current = exitHref;
 
-  const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
+  // The live roster: loaded once, then kept current from realtime payloads
+  // (src/lib/rooms/useRoomRoster.ts) instead of a full refetch per change.
+  // `rosterLoaded` tells "not back yet" apart from "came back empty".
+  const {
+    participants,
+    rosterLoaded,
+    hiddenAudienceCount,
+  } = useRoomRoster({ spaceId, selfId: user?.id ?? null });
   // Identity -> 0..1 microphone level, sampled from LiveKit. Drives the volume
   // rings on Cinema's audio seats and voice circles.
   const [cinemaAudioLevels, setCinemaAudioLevels] = useState<Record<string, number>>({});
@@ -167,8 +175,8 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
   // IS in the room gets treated as a stranger for the first few hundred ms.
-  // That was the flash of "Join Space" on every entry.
-  const [rosterLoaded, setRosterLoaded] = useState(false);
+  // That was the flash of "Join Space" on every entry. `rosterLoaded` (from
+  // useRoomRoster above) is the signal that tells them apart.
   const [isJoined, setIsJoined] = useState(false);
   // Set when a join attempt actually failed, so the auto-join effect stops
   // retrying into the same error and the room can offer a manual retry rather
@@ -266,45 +274,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
       setIsLoading(false);
     };
 
-    const fetchParticipants = async () => {
-      const { data } = await supabase
-        .from("space_participants")
-        .select(
-          `
-          *,
-          user:profiles(id, display_name, avatar_url, role, verified)
-        `
-        )
-        .eq("space_id", spaceId)
-        .is("left_at", null)
-        .order("joined_at", { ascending: true });
-
-      if (data) setParticipants(data as SpaceParticipant[]);
-      setRosterLoaded(true);
-    };
-
     fetchSpace();
-    fetchParticipants();
-
-    const channel = supabase
-      .channel(`space:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "space_participants",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        () => {
-          fetchParticipants();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [spaceId]);
 
   // Mirror the roster into local join state. This used to be a one-way latch
@@ -1571,7 +1541,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
               {space.title}
             </h1>
             <p className="truncate text-xs text-melori-muted tabular-nums">
-              {cinemaAudience.length} listening · {cinemaSeatUserIds.size} on stage ·{" "}
+              {cinemaAudience.length + hiddenAudienceCount} listening · {cinemaSeatUserIds.size} on stage ·{" "}
               {hostProfile?.display_name ?? "Host"}
             </p>
           </div>
@@ -1969,6 +1939,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                   audience={
                     <CinemaVoiceCircles
                       audience={cinemaAudience}
+                      unloadedCount={hiddenAudienceCount}
                       followedByHost={hostFollowedIds}
                       levels={cinemaAudioLevels}
                       onReactToParticipant={isHost ? setModTarget : setReactTarget}

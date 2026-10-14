@@ -168,6 +168,9 @@ console.log("\nwiring");
   expect(hook.includes(".limit(audienceCap)") && hook.includes('count: "exact"'), "hook caps the audience query and counts it exactly");
   expect(hook.includes("nextResyncDelay()") && hook.includes("visibilitychange"), "hook resyncs on a jittered timer and on tab return");
   expect(/setTimeout\(flush, ROSTER_COALESCE_MS\)/.test(hook), "hook coalesces realtime bursts");
+  expect(hook.includes("ok = !stage.error && !audience.error"), "a snapshot needs both the stage and audience queries");
+  expect(hook.includes("if (ok && !cancelled) setLoadedKey(syncKey)"), "a failed load never marks the roster as loaded");
+  expect(/FAILED_SYNC_RETRY_MS = (\d[\d_]*)/.test(hook) && Number(hook.match(/FAILED_SYNC_RETRY_MS = ([\d_]+)/)![1].replace(/_/g, "")) > Number(hook.match(/MIN_SYNC_GAP_MS = ([\d_]+)/)![1].replace(/_/g, "")), "a failed load retries after the minimum sync gap, so the retry is not skipped");
 
   for (const [name, path] of [
     ["Spaces", "src/components/social/spaces/SpacesRoomScreen.tsx"],

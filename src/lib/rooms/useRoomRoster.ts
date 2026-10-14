@@ -37,6 +37,9 @@ import {
 export const ROSTER_PROFILE_COLUMNS = "id, display_name, username, avatar_url, role, verified";
 /** Don't full-sync more often than this from tab focus / reconnect churn. */
 const MIN_SYNC_GAP_MS = 5_000;
+// Must stay above MIN_SYNC_GAP_MS, or the retry would be skipped as too soon
+// and the resync chain would stop.
+const FAILED_SYNC_RETRY_MS = 6_000;
 
 export interface UseRoomRosterOptions {
   spaceId: string;
@@ -126,7 +129,7 @@ export function useRoomRoster({
       void loadMissingProfiles();
     };
 
-    const scheduleResync = () => {
+    const scheduleResync = (delayMs = nextResyncDelay()) => {
       if (resyncTimer) clearTimeout(resyncTimer);
       resyncTimer = setTimeout(() => {
         resyncTimer = null;
@@ -136,7 +139,7 @@ export function useRoomRoster({
           return;
         }
         void fullSync();
-      }, nextResyncDelay());
+      }, delayMs);
     };
 
     const fullSync = async (force = false) => {
@@ -144,6 +147,7 @@ export function useRoomRoster({
       if (!force && Date.now() - lastSyncAt < MIN_SYNC_GAP_MS) return;
       syncing = true;
       lastSyncAt = Date.now();
+      let ok = false;
       try {
         const select = `*, user:profiles(${ROSTER_PROFILE_COLUMNS})`;
         const base = () =>
@@ -165,7 +169,10 @@ export function useRoomRoster({
         const selfQuery = selfId ? base().eq("user_id", selfId).limit(1) : null;
         const [stage, audience, self] = await Promise.all([stageQuery, audienceQuery, selfQuery]);
         if (cancelled) return;
-        const ok = !stage.error || !audience.error;
+        // Both halves must come back: a snapshot built from only one of them
+        // would wipe the other half of the room (e.g. every speaker) until the
+        // next resync.
+        ok = !stage.error && !audience.error;
         if (ok) {
           const lists = [stage.data, audience.data, self?.data] as Array<SpaceParticipant[] | null>;
           for (const list of lists) {
@@ -179,10 +186,14 @@ export function useRoomRoster({
           pending = [];
           void loadMissingProfiles();
         }
-        if (!cancelled) setLoadedKey(syncKey);
+        // Only mark loaded once a real roster came back, so "not back yet" is
+        // never collapsed into "came back empty" (which would let a
+        // reconnecting speaker be re-joined as audience).
+        if (ok && !cancelled) setLoadedKey(syncKey);
       } finally {
         syncing = false;
-        if (!cancelled) scheduleResync();
+        // A failed load retries soon instead of waiting for the next resync.
+        if (!cancelled) scheduleResync(ok ? undefined : FAILED_SYNC_RETRY_MS);
       }
     };
     resyncRef.current = () => void fullSync();

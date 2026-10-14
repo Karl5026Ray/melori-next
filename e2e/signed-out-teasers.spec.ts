@@ -11,7 +11,9 @@ test.use({ viewport: { width: 390, height: 664 } });
 
 test("signed-out /music lands on the public Music page", async ({ page }) => {
   await page.goto("/music");
-  await expect(page).toHaveURL(/\/listen$/);
+  // The wall keeps the destination as ?next= (14 Oct 2026) so a member whose
+  // cookie was evicted is forwarded straight back to it.
+  await expect(page).toHaveURL(/\/listen\?next=%2Fmusic$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "All the music, free to members",
   );
@@ -28,7 +30,7 @@ test("signed-out /music lands on the public Music page", async ({ page }) => {
 
 test("signed-out /social/messages explains itself on the door", async ({ page }) => {
   await page.goto("/social/messages");
-  await expect(page).toHaveURL(/\/platform\?reason=chat$/);
+  await expect(page).toHaveURL(/\/platform\?reason=chat&next=%2Fsocial%2Fmessages$/);
   await expect(page.getByTestId("door-reason")).toHaveText("Sign in to see your messages.");
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
 });
@@ -44,7 +46,7 @@ test("tapping Chat in the tab bar while signed out reaches the explained door", 
   const chat = page.getByRole("link", { name: "Chat" });
   test.skip((await chat.count()) === 0, "tab bar not shown on this page at this width");
   await chat.first().click();
-  await expect(page).toHaveURL(/\/platform\?reason=chat$/);
+  await expect(page).toHaveURL(/\/platform\?reason=chat&next=%2Fsocial%2Fmessages$/);
   await expect(page.getByTestId("door-reason")).toBeVisible();
 });
 
@@ -64,4 +66,20 @@ test("the door shows what's inside, below the form", async ({ page }) => {
   const button = await page.getByRole("button", { name: "Create free account" }).boundingBox();
   const firstCard = await cards.first().boundingBox();
   expect(button && firstCard && firstCard.y > button.y).toBeTruthy();
+});
+
+test("a signed-out room link keeps the room for after sign-in", async ({ page }) => {
+  const room = "/social/cinema/2b8535f1-f9b0-4faa-86d6-2362aeec64b9";
+  await page.goto(room);
+  await expect(page).toHaveURL(/\/cinema\?next=/);
+  // No session here, so the teaser stays put and both buttons carry the room.
+  const carried = `?next=${encodeURIComponent(room)}`;
+  await expect(page.getByRole("link", { name: "Already a member? Sign in" })).toHaveAttribute(
+    "href",
+    `/social/auth${carried}`,
+  );
+  await expect(page.getByRole("link", { name: /create your free account/i })).toHaveAttribute(
+    "href",
+    `/register${carried}`,
+  );
 });

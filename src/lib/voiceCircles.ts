@@ -120,6 +120,28 @@ export function splitVoiceRows<T>(items: readonly T[], rows = VOICE_ROW_COUNT): 
 }
 
 /**
+ * Order Cinema's audience rail (13 Oct 2026): raised hands first, then the
+ * people the host follows, then everyone else. Inside each group roster order
+ * is kept, so a circle only moves when that person's group changes (they raise
+ * or lower a hand, or the follow lookup arrives) and never because they talk.
+ * An empty `followedByHost` (lookup pending or failed) is plain roster order
+ * with hands on top.
+ */
+export function orderVoiceRail<
+  T extends { user_id: string; has_raised_hand?: boolean | null },
+>(audience: readonly T[], followedByHost: ReadonlySet<string>): T[] {
+  const hands: T[] = [];
+  const followed: T[] = [];
+  const rest: T[] = [];
+  for (const participant of audience) {
+    if (participant.has_raised_hand) hands.push(participant);
+    else if (followedByHost.has(participant.user_id)) followed.push(participant);
+    else rest.push(participant);
+  }
+  return [...hands, ...followed, ...rest];
+}
+
+/**
  * Ring geometry for one voice circle.
  *
  * `scale` grows the ring outward with loudness and `opacity` brings it in from

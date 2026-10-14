@@ -1,33 +1,26 @@
 "use client";
 
-// CinemaVoiceCircles — the voice-only audience beneath the Cinema stage.
+// CinemaVoiceCircles — the listeners' rail beside the room chat.
 //
-// Cinema has exactly three live-video seats (host + two guests). Everyone else
-// is voice-only, and this is where they live: three balanced rows of circular
-// avatars, each wrapped in a volume ring that grows and brightens with how loud
-// that person actually is.
+// Cinema has three seats (host + two guests). Everyone else is a listener, and
+// this is where they live. History: three balanced rows of circles (Sept 2026),
+// then one compact strip with a "+N" chip when the chat took the space under
+// the stage (1 Oct 2026). The Clubhouse-style layout (13 Oct 2026) moves them
+// to a narrow rail on the right of the lower region: a vertical list of 44px
+// circles with names, raised hands first, then people the host follows, then
+// everyone else (see orderVoiceRail). The rail scrolls inside its own column,
+// so a packed room can never push the shared screen, the seats or the dock
+// out of the viewport, and nobody is hidden behind a "+N" any more.
 //
-// It replaces a single horizontally scrolling strip, which showed roughly five
-// people at a time and hid the rest of the room behind a swipe. Three rows show
-// far more of the room at a glance, and the ring makes it obvious who is talking
-// without anyone having to read names. A very large room is capped and the
-// remainder collapses into one "+N" chip, because the screen, the seats, and
-// this block all have to share a single non-scrolling viewport.
-//
-// Loudness comes from LiveKit's per-participant `audioLevel`, sampled in
-// livekitVideoClient and passed down as `levels`. The ring falls back to the
-// coarse ActiveSpeakersChanged flag when a level has not arrived yet, so a
-// speaker is never silently un-ringed. All of the math lives in
-// @/lib/voiceCircles so it can be tested without a room.
+// Every circle wears a volume ring driven by LiveKit's per-participant
+// `audioLevel` (sampled in livekitVideoClient, passed as `levels`). The ring
+// falls back to the ActiveSpeakersChanged flag when a level has not arrived, so
+// a speaker is never silently un-ringed. The math lives in @/lib/voiceCircles.
 
-import { MicOff } from "lucide-react";
+import { useMemo } from "react";
+import { Hand, MicOff } from "lucide-react";
 import { SpaceParticipant } from "@/types/social";
-import {
-  partitionVoiceAudience,
-  splitVoiceRows,
-  voiceRing,
-  VOICE_ROW_COUNT,
-} from "@/lib/voiceCircles";
+import { orderVoiceRail, voiceRing } from "@/lib/voiceCircles";
 import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 interface CinemaVoiceCirclesProps {
@@ -36,30 +29,22 @@ interface CinemaVoiceCirclesProps {
   levels?: Record<string, number>;
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   reactionBursts?: Record<string, string[]>;
-  /**
-   * One row instead of three. The podcast layout (1 Oct 2026) gives the space
-   * under the stage to the room chat, so listeners become a single strip with
-   * a "+N" chip rather than three rows competing with the chat for height.
-   */
-  compact?: boolean;
+  /** user ids the host follows; empty while loading or if the lookup failed. */
+  followedByHost?: ReadonlySet<string>;
 }
 
-// How many listener circles one compact row holds on a phone before the rest
-// fold into the "+N" chip (the chip takes one of these places).
-export const COMPACT_VOICE_CIRCLES = 7;
+const NO_FOLLOWS: ReadonlySet<string> = new Set();
 
 function VoiceCircle({
   participant,
   level,
   onReactToParticipant,
   bursts,
-  compact = false,
 }: {
   participant: SpaceParticipant;
   level: number;
   onReactToParticipant?: (participant: SpaceParticipant) => void;
   bursts: string[];
-  compact?: boolean;
 }) {
   const user = participant.user;
   const muted = Boolean(participant.is_muted || participant.host_muted);
@@ -72,14 +57,12 @@ function VoiceCircle({
 
   const body = (
     <>
-      <span
-        className={`relative block shrink-0 ${
-          compact ? "h-7 w-7 sm:h-9 sm:w-9" : "h-9 w-9 sm:h-11 sm:w-11"
-        }`}
-      >
-        {/* Volume ring. Scale and opacity are driven by the live level, so this
-            is one element that breathes rather than a canned keyframe loop —
-            a quiet circle is perfectly still. */}
+      {/* The ring is absolute inside a `relative block` box, never a centered
+          grid container: a grid re-centres the scaled ring off the avatar. */}
+      <span className="relative block h-11 w-11 shrink-0">
+        {/* Volume ring. Scale and opacity follow the live level, so this is one
+            element that breathes rather than a canned keyframe loop; a quiet
+            circle is perfectly still. */}
         <span
           aria-hidden
           data-testid="cinema-voice-ring"
@@ -105,18 +88,25 @@ function VoiceCircle({
           />
         ) : (
           <span
-            className="grid h-full w-full place-items-center rounded-full text-[10px] font-bold text-white"
+            className="grid h-full w-full place-items-center rounded-full text-xs font-bold text-white"
             style={{ backgroundColor: cinemaAvatarColor(participant.user_id) }}
           >
             {cinemaInitials(name)}
           </span>
         )}
 
-        {muted && (
-          <MicOff
-            className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-cinema-void p-0.5 text-white/45"
-            aria-label={`${name} is muted`}
+        {participant.has_raised_hand ? (
+          <Hand
+            className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-cinema-void p-0.5 text-melori-warning"
+            aria-label={`${name} raised a hand`}
           />
+        ) : (
+          muted && (
+            <MicOff
+              className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-cinema-void p-0.5 text-white/45"
+              aria-label={`${name} is muted`}
+            />
+          )
         )}
 
         {bursts.length > 0 && (
@@ -130,43 +120,37 @@ function VoiceCircle({
         )}
       </span>
 
-      {/* Phones have to fit a big screen, three live seats, and three rows of
-          listeners in one non-scrolling viewport, and three lines of tiny names
-          is what pushes that budget over. The ring and the avatar carry the
-          meaning there; the name returns at sm and stays available to screen
-          readers either way. */}
       <span
-        className={
-          compact
-            ? "sr-only"
-            : "sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px]"
-        }
+        className={`block w-full truncate text-[10px] leading-tight ${
+          ring.active ? "text-white/85" : "text-white/50"
+        }`}
       >
-        <span className={ring.active ? "sm:text-white/80" : "sm:text-white/40"}>{name}</span>
+        {name}
       </span>
     </>
   );
 
-  const className =
-    "group flex min-w-0 flex-col items-center gap-1 text-center transition";
+  const className = "flex w-full min-w-0 shrink-0 flex-col items-center gap-1 text-center transition";
 
   if (!onReactToParticipant) {
     return (
-      <div className={className} data-testid="cinema-voice-circle">
+      <li className={className} data-testid="cinema-voice-circle">
         {body}
-      </div>
+      </li>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={() => onReactToParticipant(participant)}
-      aria-label={`React to ${name}`}
-      className={`${className} hover:opacity-90`}
-      data-testid="cinema-voice-circle"
-    >
-      {body}
-    </button>
+    <li className="w-full min-w-0 shrink-0">
+      <button
+        type="button"
+        onClick={() => onReactToParticipant(participant)}
+        aria-label={`React to ${name}`}
+        className={`${className} hover:opacity-90`}
+        data-testid="cinema-voice-circle"
+      >
+        {body}
+      </button>
+    </li>
   );
 }
 
@@ -175,99 +159,43 @@ export function CinemaVoiceCircles({
   levels,
   onReactToParticipant,
   reactionBursts,
-  compact = false,
+  followedByHost = NO_FOLLOWS,
 }: CinemaVoiceCirclesProps) {
-  // A packed room is capped so the rows cannot grow tall enough to push the
-  // shared screen out of the viewport; the remainder becomes one chip.
-  const { visible, hiddenCount } = compact
-    ? partitionVoiceAudience(audience, COMPACT_VOICE_CIRCLES)
-    : partitionVoiceAudience(audience);
-  const rows = splitVoiceRows(visible, compact ? 1 : VOICE_ROW_COUNT);
-
-  const renderRows = () => (
-    <div className={compact ? "flex min-w-0 flex-1 flex-col" : "flex flex-col gap-1.5 sm:gap-2"}>
-      {rows.map((row, rowIndex) => (
-        <div
-          key={`voice-row-${rowIndex}`}
-          data-testid="cinema-voice-row"
-          // Rows wrap rather than scroll: a very large room compresses into
-          // more circles per line instead of hiding people off-screen.
-          className={
-            compact
-              ? "flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1"
-              : "flex flex-wrap items-start justify-center gap-x-2.5 gap-y-1.5 sm:gap-x-3"
-          }
-        >
-          {row.map((participant) => {
-            const identity = participant.user?.id ?? participant.user_id;
-            return (
-              <VoiceCircle
-                key={participant.id}
-                participant={participant}
-                level={levels?.[participant.user_id] ?? 0}
-                onReactToParticipant={onReactToParticipant}
-                bursts={reactionBursts?.[identity] ?? []}
-                compact={compact}
-              />
-            );
-          })}
-          {hiddenCount > 0 && rowIndex === rows.length - 1 && (
-            <span
-              data-testid="cinema-voice-overflow"
-              className="flex min-w-0 flex-col items-center gap-1 text-center"
-            >
-              <span
-                className={`grid shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-[10px] font-semibold text-white/55 ${
-                  compact ? "h-7 w-7 sm:h-9 sm:w-9" : "h-9 w-9 sm:h-11 sm:w-11 sm:text-[11px]"
-                }`}
-              >
-                +{hiddenCount}
-              </span>
-              <span
-                className={
-                  compact
-                    ? "sr-only"
-                    : "sr-only sm:not-sr-only sm:max-w-full sm:truncate sm:text-[10px] sm:text-white/40"
-                }
-              >
-                listening
-              </span>
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
+  const ordered = useMemo(
+    () => orderVoiceRail(audience, followedByHost),
+    [audience, followedByHost],
   );
 
   return (
     <section
-      className="shrink-0"
+      className="flex min-h-0 w-[72px] shrink-0 flex-col"
       data-testid="cinema-voice-circles"
       aria-label="Cinema voice audience"
     >
-      {/* Compact (Cinema's podcast layout): the count rides on the same line
-          as the circles, so the listeners cost one short line of height. */}
-      <div
-        className={
-          compact
-            ? "flex items-center gap-2 px-1"
-            : "flex items-center justify-between px-1 pb-1.5"
-        }
+      <p className="shrink-0 pb-1.5 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-white/45 tabular-nums">
+        {audience.length} watching
+      </p>
+      {/* A plain list in its own scroll column. The thin WebKit/Blink thumb is
+          styled to stay visible; iOS falls back to its native overflow
+          scroll indicator. */}
+      <ul
+        data-testid="cinema-voice-rail"
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain pb-1 pr-0.5 pt-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-[3px]"
+        style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.25) transparent" }}
       >
-        <p className="shrink-0 text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
-          {compact ? `${audience.length} listening` : `Listening · ${audience.length}`}
-        </p>
-        {!compact && <p className="text-[10px] text-white/30">Tap a circle to react</p>}
-        {compact && audience.length > 0 && renderRows()}
-      </div>
-
-      {compact ? null : audience.length === 0 ? (
-        <p className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-white/35">
-          No one listening yet.
-        </p>
-      ) : (
-        renderRows()
-      )}
+        {ordered.map((participant) => {
+          const identity = participant.user?.id ?? participant.user_id;
+          return (
+            <VoiceCircle
+              key={participant.id}
+              participant={participant}
+              level={levels?.[participant.user_id] ?? 0}
+              onReactToParticipant={onReactToParticipant}
+              bursts={reactionBursts?.[identity] ?? []}
+            />
+          );
+        })}
+      </ul>
     </section>
   );
 }

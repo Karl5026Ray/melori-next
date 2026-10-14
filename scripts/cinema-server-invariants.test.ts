@@ -192,26 +192,29 @@ check(
     cinemaCanvas.includes("{seats}") &&
     cinemaScreen.includes('data-testid="cinema-fullscreen-control"'),
 );
+// SUPERSEDED 13 Oct 2026 — was "the voice audience is rows of volume-ringed
+// circles", which pinned one compact row capped by a "+N" chip and banned any
+// overflow scroll. Karl's Clubhouse-style layout moves the listeners to a
+// narrow rail beside the chat: a vertical list that scrolls in its OWN column.
+// The intent is kept: every listener (and no seat holder) gets a ringed
+// circle, and the listeners can never push the screen, the seats or the dock
+// out of the viewport — the rail is bounded by the lower region (min-h-0,
+// flex-1) and only the rail itself scrolls.
 check(
-  "the voice audience is rows of volume-ringed circles and excludes every fixed seat identity",
+  "the voice audience is a rail of volume-ringed circles, bounded and scrolling in its own column",
   cinemaPage.includes("const cinemaSeatUserIds = new Set(") &&
     cinemaPage.includes("const cinemaAudience = withSpeaking.filter(") &&
+    cinemaPage.includes("followedByHost={hostFollowedIds}") &&
+    cinemaPage.includes('.eq("follower_id", hostIdForRail)') &&
     cinemaVoiceCircles.includes('data-testid="cinema-voice-circles"') &&
-    cinemaVoiceCircles.includes('data-testid="cinema-voice-row"') &&
+    cinemaVoiceCircles.includes('data-testid="cinema-voice-rail"') &&
     cinemaVoiceCircles.includes('data-testid="cinema-voice-ring"') &&
-    // Was the literal splitVoiceRows(visible, VOICE_ROW_COUNT). Cinema now
-    // renders the listeners as one compact row (the chat took the space under
-    // the stage), so the row count is chosen by the `compact` prop.
-    cinemaVoiceCircles.includes("splitVoiceRows(visible, compact ? 1 : VOICE_ROW_COUNT)") &&
-    cinemaPage.includes("compact\n                      audience={cinemaAudience}") &&
-    // Nothing in this block hides people behind a scroll the way the old single
-    // strip did; a packed room is capped and the rest becomes one visible chip,
-    // so the block can never push the shared screen out of the viewport.
-    cinemaVoiceCircles.includes("flex flex-wrap") &&
+    cinemaVoiceCircles.includes("orderVoiceRail(audience, followedByHost)") &&
+    cinemaVoiceCircles.includes("w-[72px]") &&
+    cinemaVoiceCircles.includes("min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto") &&
     !cinemaVoiceCircles.includes("overflow-x-auto") &&
-    !cinemaVoiceCircles.includes("overflow-y-auto") &&
-    cinemaVoiceCircles.includes("partitionVoiceAudience(audience)") &&
-    cinemaVoiceCircles.includes('data-testid="cinema-voice-overflow"'),
+    cinemaCanvas.includes('data-testid="cinema-lower-region"') &&
+    cinemaCanvas.includes("flex min-h-0 flex-1 items-stretch"),
 );
 check(
   "volume rings are driven by real sampled LiveKit loudness, not a canned animation",
@@ -224,10 +227,17 @@ check(
 // faded each comment after 8 s on top of the film. Karl asked for the empty
 // bottom of the room to hold the chat: it is now a persistent, scrollable log
 // in its own band under the stage, with host / moderator / author delete.
+// Updated 13 Oct 2026: the room shows the newest CINEMA_CHAT_STREAM_LINES as
+// a floating stream (no box) and the whole persistent log lives one tap away in
+// a bottom sheet. Still not an overlay on the film and still never fading
+// messages out of existence.
 check(
-  "Cinema chat is a persistent log in its own band, not an overlay on the screen",
+  "Cinema chat is a persistent log in its own region, not an overlay on the screen",
   cinemaChat.includes('role="log"') &&
     cinemaChat.includes('data-testid="cinema-chat"') &&
+    cinemaChat.includes('data-testid="cinema-chat-sheet"') &&
+    cinemaChat.includes("comments.slice(-CINEMA_CHAT_STREAM_LINES)") &&
+    cinemaChat.includes("WebkitMaskImage") &&
     !cinemaChat.includes("slice(-5)") &&
     !cinemaChat.includes("absolute bottom-2 left-2") &&
     cinemaCanvas.includes("{chat}") &&

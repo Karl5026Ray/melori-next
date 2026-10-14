@@ -38,6 +38,24 @@ function storagePathFromUrl(url: string): string | null {
   return url.slice(idx + marker.length);
 }
 
+// A Replace briefly needs one extra row: the new item is saved before the old
+// one is deleted. When the client names a row it owns as `replace_id`, allow
+// max + 1 for that single insert. The gallery still settles at max.
+async function slotLimitFor(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  replaceId: unknown,
+): Promise<number> {
+  if (typeof replaceId !== "string" || !replaceId) return MAX_SLOTS;
+  const { data } = await supabase
+    .from("profile_gallery")
+    .select("id")
+    .eq("id", replaceId)
+    .eq("profile_id", userId)
+    .maybeSingle();
+  return data ? MAX_SLOTS + 1 : MAX_SLOTS;
+}
+
 export async function GET(req: Request) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
@@ -70,7 +88,9 @@ export async function POST(req: Request) {
   const guard = await requireAuth(req);
   if (isGuardFailure(guard)) return guard;
 
-  const { filename, contentType } = await req.json().catch(() => ({}) as any);
+  const { filename, contentType, replace_id } = await req
+    .json()
+    .catch(() => ({}) as any);
   if (!filename || typeof filename !== "string") {
     return NextResponse.json({ error: "filename is required" }, { status: 400 });
   }
@@ -89,6 +109,7 @@ export async function POST(req: Request) {
   const userId = guard.membership.userId!;
   const max = MAX_SLOTS;
   const supabase = getSupabaseAdmin();
+  const limit = await slotLimitFor(supabase, userId, replace_id);
 
   const { count, error: countError } = await supabase
     .from("profile_gallery")
@@ -98,7 +119,7 @@ export async function POST(req: Request) {
     console.error("Gallery count error:", countError);
     return NextResponse.json({ error: countError.message }, { status: 500 });
   }
-  if ((count ?? 0) >= max) {
+  if ((count ?? 0) >= limit) {
     return NextResponse.json(
       { error: `Your gallery is full (max ${max} slots).` },
       { status: 400 },
@@ -172,11 +193,12 @@ export async function PATCH(req: Request) {
     );
   }
 
+  const limit = await slotLimitFor(supabase, userId, body?.replace_id);
   const { count } = await supabase
     .from("profile_gallery")
     .select("id", { count: "exact", head: true })
     .eq("profile_id", userId);
-  if ((count ?? 0) >= max) {
+  if ((count ?? 0) >= limit) {
     return NextResponse.json(
       { error: `Your gallery is full (max ${max} slots).` },
       { status: 400 },

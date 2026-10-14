@@ -26,10 +26,6 @@ type ProfileRow = {
   notifications_email?: boolean | null;
 };
 
-type GalleryPhoto = { id: string; image_url: string; sort_order: number };
-
-const MAX_GALLERY = 12;
-
 export default function SettingsPage() {
   const router = useRouter();
   const [state, setState] = useState<
@@ -59,10 +55,6 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
 
-  // Photo gallery
-  const [gallery, setGallery] = useState<GalleryPhoto[]>([]);
-  const [galleryBusy, setGalleryBusy] = useState(false);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // Artist banner (artist role only) — artists.cover_image_url
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
@@ -109,8 +101,6 @@ export default function SettingsPage() {
       setNotifEmail(p?.notifications_email !== false); // default true
       setState("ready");
 
-      // Gallery is available to every signed-in account now that tiers are gone.
-      void loadGallery();
       // Banner is available to every signed-in user (profiles.banner_url).
       void loadBanner();
     } catch (err: any) {
@@ -262,101 +252,6 @@ export default function SettingsPage() {
       setError(err?.message ?? "Could not update password.");
     } finally {
       setSavingPassword(false);
-    }
-  };
-
-  const loadGallery = async (): Promise<void> => {
-    try {
-      const res = await authFetch("/api/user/gallery");
-      if (!res.ok) return;
-      const { photos } = (await res.json()) as { photos: GalleryPhoto[] };
-      setGallery(Array.isArray(photos) ? photos : []);
-    } catch {
-      /* non-fatal */
-    }
-  };
-
-  const handlePickGalleryPhoto = () => galleryInputRef.current?.click();
-
-  const handleGalleryFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    setSuccess(null);
-    if (!file.type.startsWith("image/")) {
-      setError("Please choose an image file.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Photo must be 5 MB or smaller.");
-      return;
-    }
-    if (gallery.length >= MAX_GALLERY) {
-      setError(`Gallery is full (max ${MAX_GALLERY} photos).`);
-      return;
-    }
-
-    setGalleryBusy(true);
-    try {
-      const urlRes = await authFetch("/api/user/gallery", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
-      });
-      if (!urlRes.ok) {
-        const d = await urlRes.json().catch(() => ({}));
-        throw new Error(d.error ?? "Could not get upload URL");
-      }
-      const { signedUrl, publicUrl } = await urlRes.json();
-
-      const putRes = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-      });
-      if (!putRes.ok) throw new Error("Upload failed — please try again.");
-
-      const saveRes = await authFetch("/api/user/gallery", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicUrl }),
-      });
-      if (!saveRes.ok) {
-        const d = await saveRes.json().catch(() => ({}));
-        throw new Error(d.error ?? "Could not save photo");
-      }
-      const { photo } = (await saveRes.json()) as { photo: GalleryPhoto };
-      setGallery((prev) => [...prev, photo]);
-      setSuccess("Photo added.");
-    } catch (err: any) {
-      setError(err?.message ?? "Photo upload failed.");
-    } finally {
-      setGalleryBusy(false);
-      if (galleryInputRef.current) galleryInputRef.current.value = "";
-    }
-  };
-
-  const handleRemoveGalleryPhoto = async (id: string) => {
-    setError(null);
-    setSuccess(null);
-    setGalleryBusy(true);
-    try {
-      const res = await authFetch("/api/user/gallery", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Could not remove photo");
-      }
-      setGallery((prev) => prev.filter((p) => p.id !== id));
-    } catch (err: any) {
-      setError(err?.message ?? "Could not remove photo.");
-    } finally {
-      setGalleryBusy(false);
     }
   };
 
@@ -706,59 +601,21 @@ export default function SettingsPage() {
         {/* Camera & microphone — asked once at go-live, changed here. */}
         <CameraMicSettings />
 
-        {/* Photo Gallery */}
+        {/* Photos live on the profile Photos tab (add, replace, reorder,
+            up to 20). One editor, no second copy here. */}
         {canManage && (
           <section className="mb-8 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Photo Gallery</h2>
-              <span className="text-xs text-[#888]">
-                {gallery.length}/{MAX_GALLERY}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
-              {gallery.map((photo) => (
-                <div
-                  key={photo.id}
-                  className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-black/40"
-                >
-                  <img
-                    src={photo.image_url}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveGalleryPhoto(photo.id)}
-                    disabled={galleryBusy}
-                    aria-label="Remove photo"
-                    className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white text-lg leading-none hover:bg-red-500/80 disabled:opacity-50"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {gallery.length < MAX_GALLERY && (
-                <button
-                  type="button"
-                  onClick={handlePickGalleryPhoto}
-                  disabled={galleryBusy}
-                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-xs text-[#888] hover:border-[#c9a96e]/50 hover:text-[#c9a96e] transition disabled:opacity-50"
-                >
-                  <Camera className="h-5 w-5" />
-                  {galleryBusy ? "Working…" : "Add photo"}
-                </button>
-              )}
-            </div>
-            <p className="mt-3 text-xs text-[#666]">
-              Up to {MAX_GALLERY} photos · images only · 5 MB max each.
+            <h2 className="text-lg font-semibold">Profile photos</h2>
+            <p className="mt-1 text-sm text-[#888]">
+              Add, replace and reorder up to 20 photos or videos.
             </p>
-            <input
-              ref={galleryInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleGalleryFileChange}
-            />
+            <Link
+              href="/social/profile"
+              className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-full border border-white/15 px-5 text-sm font-medium hover:border-[#c9a96e]/50 hover:text-[#c9a96e] transition"
+            >
+              <Camera className="h-4 w-4" />
+              Manage your photos on your profile
+            </Link>
           </section>
         )}
 

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "@/lib/authClient";
 import ProfileContentTile, { TileContent } from "./ProfileContentTile";
+import ProfileGalleryEditor from "@/components/social/ProfileGalleryEditor";
 
 // The full profile experience: a sticky tab bar (Instagram/Facebook style) with
 // content that swaps in place. Public tabs work for any profile; private tabs
@@ -80,6 +81,9 @@ export default function ProfileTabs({
   const [active, setActive] = useState<TabKey>("photos");
   const [data, setData] = useState<TabsData | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped after the owner edits their gallery so counts + grid refetch.
+  const [reloadKey, setReloadKey] = useState(0);
+  const refresh = useCallback(() => setReloadKey((k) => k + 1), []);
 
   // Base aggregate (profile content + counts).
   useEffect(() => {
@@ -100,7 +104,7 @@ export default function ProfileTabs({
     return () => {
       alive = false;
     };
-  }, [userId]);
+  }, [userId, reloadKey]);
 
   const isOwner = data?.isOwner ?? isOwnerHint;
   const tabs = TAB_META.filter((t) => !t.ownerOnly || isOwner);
@@ -153,6 +157,7 @@ export default function ProfileTabs({
             userId={userId}
             onEditProfile={onEditProfile}
             onOpenContent={onOpenContent}
+            onGalleryChanged={refresh}
           />
         )}
       </div>
@@ -167,6 +172,7 @@ function TabBody({
   userId,
   onEditProfile,
   onOpenContent,
+  onGalleryChanged,
 }: {
   active: TabKey;
   data: TabsData | null;
@@ -174,6 +180,7 @@ function TabBody({
   userId: string;
   onEditProfile?: () => void;
   onOpenContent?: (content: TileContent, type: "video" | "photo") => void;
+  onGalleryChanged?: () => void;
 }) {
   if (!data) return null;
 
@@ -187,6 +194,12 @@ function TabBody({
         />
       );
     case "photos":
+      // The owner edits in place (add, replace, reorder, delete); visitors get
+      // the read-only grid. The editor reads /api/user/gallery itself and tells
+      // us when it changed so the tab count and visitor grid stay in sync.
+      if (isOwner) {
+        return <ProfileGalleryEditor onChanged={onGalleryChanged} />;
+      }
       return (
         <Grid
           empty="No photos yet."

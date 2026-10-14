@@ -35,6 +35,7 @@ import { shouldMirrorTile, mirrorTransform, type FacingMode } from "@/lib/videoM
 import { authFetch } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { useRoomBackgroundMode } from "@/lib/native/roomBackground";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import FacesLiveChat from "@/components/social/faces/FacesLiveChat";
@@ -381,6 +382,15 @@ export default function LiveRoom({
     }
     await finishLeave();
   }, [isHost, isRecording, finishLeave]);
+
+  // Android app: keep room audio (and an on-camera mic) alive with the screen
+  // locked. No-op on the web and iOS. No notification "Leave" for the host,
+  // whose leave ends the broadcast. See src/lib/native/roomBackground.ts.
+  useRoomBackgroundMode({
+    active: consentGate === "ok" && !connecting && !error && !removed && !roomEnded,
+    publishing: onCamera && micOn,
+    onLeave: isHost ? undefined : () => void handleLeave(),
+  });
 
   // Ensure a participant row exists for anyone who joins (audience by default;
   // host row is 'host'). Enables the raise-hand / promote flow.

@@ -37,6 +37,7 @@ import {
   publishSignal as roomPublishSignal,
 } from "@/lib/roomSignalsClient";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { useRoomBackgroundMode } from "@/lib/native/roomBackground";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useSpaceChat, type SpaceChatMessage } from "@/components/social/spaces/useSpaceChat";
@@ -467,6 +468,13 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   // since those callbacks depend on it.
   const myRole = participants.find((p) => p.user_id === user?.id && !p.left_at)?.role ?? null;
   const canSpeakNow = canSpeak(myRole);
+  // Android app: keep room audio (and an on-stage mic) alive with the screen
+  // locked. No-op on the web and iOS. See src/lib/native/roomBackground.ts.
+  useRoomBackgroundMode({
+    active: isJoined && !roomEnded,
+    publishing: canSpeakNow && !isMuted,
+    onLeave: () => void handleLeave(),
+  });
   const handRaiseMode = space?.hand_raise_mode ?? "everyone";
   const canRaiseHandNow =
     canRequestStage &&

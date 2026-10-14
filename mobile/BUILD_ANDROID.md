@@ -92,7 +92,10 @@ script re-applies everything the release needs:
   adaptive foreground is not simply the square artwork
 - The LiveKit / media-playback permissions (`RECORD_AUDIO`, `CAMERA`,
   `MODIFY_AUDIO_SETTINGS`, `BLUETOOTH_CONNECT`, `POST_NOTIFICATIONS`,
-  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`)
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`,
+  `FOREGROUND_SERVICE_MICROPHONE`, `WAKE_LOCK`)
+- The live-room foreground service — see [Background audio in live
+  rooms](#background-audio-in-live-rooms)
 - The `autoVerify` App Links intent-filter for `https://melorimusic.org`
 - The release signing config
 
@@ -137,6 +140,42 @@ To open the project in Android Studio instead:
 ```bash
 npm run open:android
 ```
+
+---
+
+### Background audio in live rooms
+
+Without a foreground service Android freezes a backgrounded app, so room audio
+in MM Spaces / Cinema / Faces stopped when the screen locked. The fix is a
+small **local Capacitor plugin**, `MeloriRoomAudio`, whose source lives in
+`native/android/` (version-controlled, unlike `android/`).
+`configure-android.sh` copies it into the generated project, declares
+`RoomAudioService` with `foregroundServiceType="microphone|mediaPlayback"`,
+registers the plugin in `MainActivity`, pins Capacitor's `KeepRunning=true`
+(so the WebView is never `onPause()`d), and fails the build if any of that is
+missing.
+
+The page drives it from `src/lib/native/roomBackground.ts`
+(`useRoomBackgroundMode` in the three room screens): on join it asks for
+notification + Bluetooth permission, then starts the service — `mediaPlayback`
+for listeners, `microphone` added only while you are on stage and unmuted and
+`RECORD_AUDIO` is granted. It stops on leave / room end. It is a no-op on the
+web, on iOS, and on older app builds that lack the plugin.
+
+A third-party plugin (`@capawesome-team/capacitor-android-foreground-service`)
+was evaluated and not used: it restarts the service with
+`startForegroundService()` on every change, which Android 12+ refuses from the
+background, and it cannot check `RECORD_AUDIO` before claiming the microphone
+type — on Android 14 both of those crash the app.
+
+iOS gets `UIBackgroundModes = audio` from `configure-ios.sh`. Playback keeps
+going with the screen locked there; WKWebView may still mute the *microphone*
+in the background (a WebKit limitation no native setting fixes).
+
+**Device test (Android 14+):** join a Space as a listener → lock the screen →
+audio keeps playing and a "Melori — in a live room" notification shows. Get
+promoted, unmute, lock → others still hear you. Tap **Leave room** on the
+notification → you leave and the notification goes away.
 
 ---
 

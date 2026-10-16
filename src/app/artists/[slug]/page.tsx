@@ -6,7 +6,9 @@ import ArtistDiscography from "@/components/ArtistDiscography";
 import ProfileGallery from "@/components/ProfileGallery";
 import { MemberActions } from "@/components/social/MemberActions";
 import { SocialAuthProvider } from "@/components/social/providers/AuthProvider";
+import JsonLd from "@/components/JsonLd";
 import { getArtistBySlug } from "@/lib/data";
+import { SITE_URL } from "@/lib/site";
 import {
   getStudioCatalogForProfile,
   type CatalogItem,
@@ -24,8 +26,12 @@ export async function generateMetadata(
   if (!data) return { title: "Artist not found" };
 
   const { artist, releases } = data;
+  // The search-result sentence (migration 098) first; the bio is still what
+  // the page shows.
   const description =
-    artist.bio ?? `Discover music by ${artist.name} on MELORI Music.`;
+    artist.seo_description ??
+    artist.bio ??
+    `Discover music by ${artist.name} on MELORI Music.`;
   const cover =
     artist.cover_image_url ??
     artist.avatar_url ??
@@ -36,6 +42,7 @@ export async function generateMetadata(
   return {
     title: artist.name,
     description,
+    alternates: { canonical: `/artists/${artist.slug}` },
     openGraph: { title: artist.name, description, type: "profile", images },
     twitter: { title: artist.name, description, images },
   };
@@ -78,6 +85,23 @@ export default async function ArtistDetailPage(
 
   return (
     <article>
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "MusicGroup",
+          name: artist.name,
+          url: `${SITE_URL}/artists/${artist.slug}`,
+          ...(artist.avatar_url || artist.cover_image_url
+            ? { image: artist.avatar_url ?? artist.cover_image_url }
+            : {}),
+          ...(artist.bio ? { description: artist.bio } : {}),
+          album: releases.map((r) => ({
+            "@type": "MusicAlbum",
+            name: r.title,
+            url: `${SITE_URL}/albums/${r.slug}`,
+          })),
+        }}
+      />
       {/* Cover banner */}
       <div className="relative h-48 w-full overflow-hidden bg-brand-surface sm:h-64">
         <CoverImage

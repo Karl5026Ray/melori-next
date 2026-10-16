@@ -123,7 +123,16 @@ const PUBLIC_EXACT = new Set([
   "/terms",
 ]);
 
+// Album pages (Karl, 2026-10-15): "Open albums publicly". Google could only
+// index the 25 artist pages; 81 releases sat behind the wall. The PAGE is
+// public (cover, title, tracklist, description); LISTENING is not — every
+// play goes through /api/tracks/[id]/stream, which answers 401 to a stranger,
+// and the pages strip storage paths before they reach the browser
+// (src/lib/publicTrack.ts). Prefixes only: the /albums and /music indexes
+// stay members-only.
 const PUBLIC_PREFIXES = [
+  "/albums/",
+  "/music/album/",
   "/artists/",
   "/auth/",
   "/gallery/",

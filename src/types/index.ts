@@ -20,6 +20,8 @@ export interface Artist {
   is_published: boolean;
   is_featured?: boolean;
   featured_order?: number | null;
+  /** Search-result description (migration 098). Not shown on the page. */
+  seo_description?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +41,8 @@ export interface Release {
   created_at: string;
   updated_at: string;
   vps_release_id: number | null;
+  /** Search-result description (migration 098). Not shown on the page. */
+  seo_description?: string | null;
 }
 
 export interface Track {

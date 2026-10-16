@@ -55,6 +55,10 @@ const PUBLIC: [string, string][] = [
   ["/artists", "the artist index"],
   ["/artists/kaiel-r", "an artist profile"],
   ["/artists/gloria-joy-rivers", "an artist profile"],
+  // 2b. Album pages (2026-10-15) so search can index releases. Listening stays
+  //     members-only: the stream routes 401 a stranger (api-signin-wall test).
+  ["/albums/some-release", "a release page"],
+  ["/music/album/some-album", "a studio album page"],
 
   // 3. The way in. Gating any of these locks the front door from the inside.
   ["/platform", "the door itself"],
@@ -114,7 +118,7 @@ const GATED: string[] = [
   // showing it was showing a product they cannot use.
   "/music",
   "/music/123",
-  "/music/album/some-album",
+  "/music/album",
   "/albums",
   "/featured-artist",
   // Surfaces that only redirected AFTER rendering.

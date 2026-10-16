@@ -293,6 +293,8 @@ export interface StudioAlbumDetail {
   title: string;
   slug: string;
   description: string | null;
+  /** Search-result description (migration 098). Not shown on the page. */
+  seoDescription: string | null;
   coverUrl: string | null;
   artist: ArtistRef | null;
   artistName: string;
@@ -310,12 +312,15 @@ export async function getStudioAlbumBySlug(
   const supabase = getSupabaseAdmin();
   const { data: album, error } = await supabase
     .from("studio_albums")
-    .select("id, profile_id, title, slug, description, cover_url")
+    .select("id, profile_id, title, slug, description, seo_description, cover_url")
     .eq("slug", slug)
     .maybeSingle();
 
   if (error || !album) return null;
-  const row = album as StudioAlbumRow & { description: string | null };
+  const row = album as StudioAlbumRow & {
+    description: string | null;
+    seo_description: string | null;
+  };
 
   const { data: trackRows } = await supabase
     .from("studio_tracks")
@@ -339,6 +344,7 @@ export async function getStudioAlbumBySlug(
     title: row.title,
     slug: row.slug,
     description: row.description ?? null,
+    seoDescription: row.seo_description ?? null,
     coverUrl: row.cover_url ?? tracks.find((t) => t.cover_url)?.cover_url ?? null,
     artist: refs.get(row.profile_id) ?? null,
     artistName:

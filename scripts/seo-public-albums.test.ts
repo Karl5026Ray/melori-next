@@ -55,6 +55,21 @@ expect(cleanSeoText('  "Kaiel R makes soul music on MELORI Music."  ') === "Kaie
 expect(cleanSeoText("<script>alert(1)</script> nice music here for everyone") === null, "markup rejected");
 expect(cleanSeoText("**Bold** claims about this artist and their music") === null, "markdown rejected");
 expect(cleanSeoText("Too short.") === null, "too-short output rejected");
+// Real outputs from the first production run, 2026-10-16.
+expect(
+  cleanSeoText("William Salaam on MELORI Music: listen to tracks, explore releases, and discover more from this artist on MELORI Music. Hmm, that repeats the platform name…")
+    === "William Salaam on MELORI Music: listen to tracks, explore releases, and discover more from this artist on MELORI Music.",
+  "the model's trailing aside is cut off",
+);
+expect(cleanSeoText("Hmm, let me write that: Rundown is an artist on MELORI Music.") === null, "output that opens with commentary is rejected");
+expect(
+  cleanSeoText("Chi's artist page on MELORI Music features the title \"We're Here.") === "Chi's artist page on MELORI Music features the title We're Here.",
+  "an unbalanced quote is removed",
+);
+expect(
+  cleanSeoText('KAIEL R\'s single "What Could it be" on MELORI Music.') === 'KAIEL R\'s single "What Could it be" on MELORI Music.',
+  "balanced quotes are kept",
+);
 const long = cleanSeoText("word ".repeat(80));
 expect(long !== null && long.length <= SEO_MAX_CHARS, `long output trimmed to ${SEO_MAX_CHARS} chars`);
 

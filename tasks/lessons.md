@@ -178,3 +178,13 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   "shared link signs me out" was Safari, not the app: the link opened in the
   browser because the app has no universal links yet. The Supabase edge logs
   show it in one query.
+
+## AI-generated text
+
+- **Read the first real batch before trusting the job.** The SEO cron's first
+  run (16 Oct) wrote 29 descriptions; one ended with the model's own aside
+  ("Hmm, that repeats the platform name…") and one turned an admin note in a
+  bio ("Comp/verified test artist account") into public search text. Unit
+  tests on the cleaner had passed. Anything a model writes to a public page
+  gets a validator for the failures you actually saw, and a human-readable
+  sample checked after the first production run.

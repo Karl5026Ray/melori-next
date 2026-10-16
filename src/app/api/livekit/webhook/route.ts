@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { TrackSource, WebhookReceiver } from "livekit-server-sdk";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { promoteHostOnLeave } from "@/lib/roomHost";
+import { departedForGood } from "@/lib/sessionGrace";
 import { deriveRoomName } from "@/lib/endRoom";
 import {
   decidePublishedCameraEnforcement,
@@ -201,45 +202,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ignored: "no-identity" });
     }
 
-    // A planned reconnect (brought on stage / sent back to the audience) opens
-    // the new session before LiveKit reports the old one gone. If this person
-    // is already back under a different session, this event is stale: marking
-    // them left would drop them from the roster and the client would then
-    // disconnect for real.
-    if (await isSupersededSession(roomName, identity, event.participant?.sid)) {
-      return NextResponse.json({ ok: true, ignored: "superseded-session" });
-    }
+    // A planned reconnect (brought on stage / sent back to the audience) drops
+    // the old session BEFORE the new one connects, so "is this person back
+    // under another session?" is asked too early to be trusted. Answer LiveKit
+    // now and decide after a short grace window (src/lib/sessionGrace.ts);
+    // marking a reconnecting guest left is what threw Karl out of a Cinema
+    // room the moment the host brought him up.
+    const departedSid = event.participant?.sid;
+    after(async () => {
+      const gone = await departedForGood(() =>
+        isSupersededSession(roomName, identity, departedSid),
+      );
+      if (!gone) return;
 
-    // Host dropped: let the DB pick a successor (or gracefully end). This also
-    // marks the departing host left inside the promote_next_host RPC.
-    if (identity === space.host_id) {
-      const result = await promoteHostOnLeave(space.id, identity);
-      return NextResponse.json({ ok: true, event: event.event, host: result.outcome });
-    }
+      // Host dropped: let the DB pick a successor (or gracefully end). This also
+      // marks the departing host left inside the promote_next_host RPC.
+      if (identity === space.host_id) {
+        await promoteHostOnLeave(space.id, identity);
+        return;
+      }
 
-    // Non-host guest dropped: record the leave and demote any stage role so the
-    // token route can't re-publish them on rejoin. A host-assigned badge
-    // (mod/cohost) is left intact — those are durable appointments, not a
-    // per-session stage grant — but role is reset to audience and the hand is
-    // lowered.
-    await supabase
-      .from("space_participants")
-      .update({ role: "audience", has_raised_hand: false, left_at: nowIso })
-      .eq("space_id", space.id)
-      .eq("user_id", identity)
-      .is("left_at", null);
+      // Non-host guest dropped: record the leave and demote any stage role so the
+      // token route can't re-publish them on rejoin. A host-assigned badge
+      // (mod/cohost) is left intact — those are durable appointments, not a
+      // per-session stage grant — but role is reset to audience and the hand is
+      // lowered.
+      await supabase
+        .from("space_participants")
+        .update({ role: "audience", has_raised_hand: false, left_at: nowIso })
+        .eq("space_id", space.id)
+        .eq("user_id", identity)
+        .is("left_at", null);
 
-    if (space.room_format === "cinema") {
-      // Guest slots are connection-scoped. Slot zero is intentionally retained
-      // for the current host so a transient reconnect cannot give its visual
-      // seat to a guest.
-      await supabase.rpc("release_cinema_camera_slot", {
-        p_space_id: space.id,
-        p_user_id: identity,
-      });
-    }
+      if (space.room_format === "cinema") {
+        // Guest slots are connection-scoped. Slot zero is intentionally retained
+        // for the current host so a transient reconnect cannot give its visual
+        // seat to a guest.
+        await supabase.rpc("release_cinema_camera_slot", {
+          p_space_id: space.id,
+          p_user_id: identity,
+        });
+      }
+    });
 
-    return NextResponse.json({ ok: true, event: event.event });
+    return NextResponse.json({ ok: true, event: event.event, deferred: true });
   }
 
   return NextResponse.json({ ok: true, ignored: event.event });

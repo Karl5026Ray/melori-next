@@ -30,6 +30,7 @@
 // Nothing here may link into the native app's world — melori.org is not in
 // mobile/capacitor.config.json allowNavigation.
 
+import { safeNextPath } from "@/lib/mediaSetupMarker";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -147,8 +148,11 @@ export default function MeloriDoorPage() {
   // redirect, not a login.
   useEffect(() => {
     let active = true;
+    // Back to the page the wall stopped them on (?next=, set by the proxy),
+    // not always /music: a shared link should still lead where it pointed.
+    const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
     void supabase.auth.getSession().then(({ data }) => {
-      if (active && data.session) router.replace("/music");
+      if (active && data.session) router.replace(next);
     });
     return () => {
       active = false;

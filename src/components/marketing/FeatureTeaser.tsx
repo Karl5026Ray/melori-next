@@ -1,4 +1,27 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import TeaserAuthLinks from "@/components/marketing/TeaserAuthLinks";
+
+// Same two buttons without ?next=, shown for the instant before the client
+// island reads the query string (and to crawlers).
+function TeaserAuthLinksFallback() {
+  return (
+    <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <Link
+        href="/register"
+        className="rounded-full bg-brand-primary px-7 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-brand-primary-dark"
+      >
+        Create your free account
+      </Link>
+      <Link
+        href="/social/auth"
+        className="rounded-full border border-brand-border px-7 py-3 text-center text-sm font-semibold text-text-primary transition-colors hover:border-brand-primary hover:text-brand-primary"
+      >
+        Already a member? Sign in
+      </Link>
+    </div>
+  );
+}
 
 // The public face of a members-only room.
 //
@@ -88,20 +111,12 @@ export default function FeatureTeaser({
             {lede}
           </p>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link
-              href="/register"
-              className="rounded-full bg-brand-primary px-7 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-brand-primary-dark"
-            >
-              Create your free account
-            </Link>
-            <Link
-              href="/social/auth"
-              className="rounded-full border border-brand-border px-7 py-3 text-center text-sm font-semibold text-text-primary transition-colors hover:border-brand-primary hover:text-brand-primary"
-            >
-              Already a member? Sign in
-            </Link>
-          </div>
+          {/* Client island: reads ?next= from the wall, forwards a member
+             whose cookie was evicted, and carries the room through sign-in.
+             The fallback keeps the page static and the buttons visible. */}
+          <Suspense fallback={<TeaserAuthLinksFallback />}>
+            <TeaserAuthLinks />
+          </Suspense>
           <p className="mt-4 text-sm text-text-secondary">
             Free to join. All the music is free to every member.
           </p>

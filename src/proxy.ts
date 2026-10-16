@@ -174,6 +174,25 @@ export function teaserFor(pathname: string): string | null {
 }
 
 /**
+ * Where the wall sends a request that carries no session cookie, WITH the page
+ * it was going to as `?next=`.
+ *
+ * "No cookie" is not "signed out". Safari's ITP deletes script-written cookies
+ * after 7 days while the session lives on in the localStorage mirror, so a
+ * member tapping a shared room link (14 Oct 2026, Karl, a Cinema room opened in
+ * Safari) arrived here holding a perfectly good session. The redirect used to
+ * drop the room: the teaser had no way back to it, so the member signed in
+ * again and still had to go find the room. Carrying the path lets the teaser
+ * forward a live session straight back (it restores the cookie on the way) and
+ * lets a real sign-in return to the room instead of the home screen.
+ */
+export function gateRedirectTarget(pathname: string, search = ""): string {
+  const target = new URL(teaserFor(pathname) ?? DOOR_PATH, "https://gate.invalid");
+  target.searchParams.set("next", `${pathname}${search}`);
+  return `${target.pathname}${target.search}`;
+}
+
+/**
  * Does this request carry a session cookie?
  *
  * READ THE COMMENT IN src/lib/authStorageKey.ts BEFORE CHANGING THIS.
@@ -343,8 +362,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // that a session read in proxy code is not trustworthy on its own.
   if (!isPublicPath(pathname) && !hasSupabaseSession(request)) {
     if (pathname === "/") return rewriteToDoor(request);
-    const teaser = teaserFor(pathname);
-    return NextResponse.redirect(new URL(teaser ?? DOOR_PATH, request.url));
+    return NextResponse.redirect(
+      new URL(gateRedirectTarget(pathname, request.nextUrl.search), request.url),
+    );
   }
 
   // Admin dashboard gate runs first — its redirects should not carry the

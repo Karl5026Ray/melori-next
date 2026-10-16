@@ -156,3 +156,25 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   deploy for ten days ("Missing script: test:smoke") and was misread as a
   merge accident. When removing a spec, grep `.github/workflows` for it and
   delete or update every caller, plus any secrets only it used.
+
+## Rooms (LiveKit)
+
+- **A planned reconnect looks exactly like a leave.** Promotion/demotion
+  reconnects the room screen (disconnect, fetch a new token, connect), so
+  LiveKit's participant_left for the old session lands before the new session
+  exists. Checking "is this identity back?" at that instant says no, and the
+  webhook marked a just-promoted guest left (Karl, 14 Oct, Cinema). Any
+  server-side "they left" decision driven by a disconnect needs a grace window
+  (src/lib/sessionGrace.ts), not a single check.
+
+## Auth wall
+
+- **No cookie is not signed out.** Safari evicts script-written cookies after 7
+  days while the session lives on in the localStorage mirror. Every redirect
+  the wall makes must keep the destination (?next=) and every page it lands on
+  must forward a live session back there. Dropping the path turned a shared
+  room link into "sign in again, then go find the room".
+- **Read the user agent in the logs before guessing the device.** Karl's
+  "shared link signs me out" was Safari, not the app: the link opened in the
+  browser because the app has no universal links yet. The Supabase edge logs
+  show it in one query.

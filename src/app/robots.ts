@@ -21,7 +21,10 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: "/",
+        // /music stays disallowed (the members-only catalog) but its album
+        // pages are public since 2026-10-15; the longer, more specific Allow
+        // wins over the shorter Disallow.
+        allow: ["/", "/music/album/"],
         disallow: [
           "/admin",
           "/admin/",
@@ -36,7 +39,8 @@ export default function robots(): MetadataRoute.Robots {
           // /faces, /spaces, /cinema and /radio.
           "/social/",
           "/music",
-          "/albums",
+          // The /albums index stays members-only; /albums/<slug> is public.
+          "/albums$",
           "/video",
           "/connect",
           "/featured-artist",

@@ -1,3 +1,20 @@
+# AI SEO + public album pages, 15 Oct 2026 (feat/ai-seo-albums-public; migration 098 APPLIED to prod 15 Oct)
+
+Karl: spend the Max plan's $100/mo Claude API credit on the best use.
+Decision: search-result descriptions, because Melori's problem is traffic.
+Karl, 15 Oct: "Open albums publicly" (listening stays members-only).
+
+- [x] Wall: /albums/<slug> and /music/album/<slug> public; indexes stay gated
+- [x] Storage paths stripped from the public album page (audio-files bucket is public)
+- [x] Player: a stranger's 401 says "Sign in free to listen." not "Unable to play"
+- [x] Migration 098: seo_description + seo_generated_at on artists/releases/studio_albums (ledger verified)
+- [x] Hourly cron /api/cron/seo-descriptions (Claude Haiku, facts-only prompt, 30 rows/run)
+- [x] Metadata prefers seo_description; canonicals; MusicGroup/MusicAlbum JSON-LD
+- [x] robots + sitemap list album pages
+- [x] test:unit green (new test:seo-albums); tsc clean. Local build blocked only by Google Fonts fetch in sandbox
+- [ ] Vercel preview build green; signed-out album page renders, no .wav in HTML
+- [ ] After merge: first cron runs fill rows; check spend in Console
+
 # MM Auditions, 11 Oct 2026 (BUILT on feat/mm-auditions; migration 094 APPLIED to prod 11 Oct)
 
 Karl: a room for directors to run table reads and auditions. Three types:

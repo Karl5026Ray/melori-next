@@ -559,6 +559,13 @@ export default function PlayerProvider({
           cache: "no-store",
           headers: await authHeaders(),
         });
+        // A stranger on a public album page (2026-10-15) gets 401 from the
+        // stream route. That is "sign in", not "this track is broken".
+        if (res.status === 401) {
+          const signIn = new Error("sign in required");
+          signIn.name = "SignInRequired";
+          throw signIn;
+        }
         if (!res.ok) throw new Error("stream request failed");
         const data: { url?: string } = await res.json();
         if (!data.url) throw new Error("no stream url");
@@ -582,6 +589,10 @@ export default function PlayerProvider({
         // interacts. Don't scare listeners with an error in that case.
         const name = (err as { name?: string } | null)?.name;
         if (name === "NotAllowedError" || name === "AbortError") {
+          setIsPlaying(false);
+        } else if (name === "SignInRequired") {
+          loadedIdRef.current = null;
+          setError("Sign in free to listen.");
           setIsPlaying(false);
         } else if (radioModeRef.current) {
           // The radio must not die on one bad track — roll past it, unless the

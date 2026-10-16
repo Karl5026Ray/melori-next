@@ -4,7 +4,10 @@ import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import PlayReleaseButton from "@/components/PlayReleaseButton";
 import TrackList from "@/components/TrackList";
+import JsonLd from "@/components/JsonLd";
 import { getReleaseBySlug } from "@/lib/data";
+import { redactMediaPaths } from "@/lib/publicTrack";
+import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +22,10 @@ export async function generateMetadata(
 
   const { release, artist } = data;
   const byline = artist ? ` by ${artist.name}` : "";
+  // The search-result sentence (migration 098) first; the release's own
+  // description is still what the page shows.
   const description =
+    release.seo_description ??
     release.description ??
     `Listen to ${release.title}${byline} on MELORI Music.`;
   const images = release.cover_art_url
@@ -29,6 +35,7 @@ export async function generateMetadata(
   return {
     title: release.title,
     description,
+    alternates: { canonical: `/albums/${release.slug}` },
     openGraph: { title: release.title, description, type: "music.album", images },
     twitter: { title: release.title, description, images },
   };
@@ -43,10 +50,32 @@ export default async function AlbumDetailPage(
   const data = await getReleaseBySlug(params.slug).catch(() => null);
   if (!data) notFound();
 
-  const { release, artist, tracks } = data;
+  // This page is public (2026-10-15); the storage paths are not. See
+  // src/lib/publicTrack.ts — playback streams by id through a signed-in route.
+  const { release, artist } = data;
+  const tracks = redactMediaPaths(data.tracks);
 
   return (
     <article className="max-w-6xl mx-auto px-6 py-12">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "MusicAlbum",
+          name: release.title,
+          url: `${SITE_URL}/albums/${release.slug}`,
+          ...(release.cover_art_url ? { image: release.cover_art_url } : {}),
+          ...(release.release_date ? { datePublished: release.release_date } : {}),
+          ...(artist
+            ? { byArtist: { "@type": "MusicGroup", name: artist.name, url: `${SITE_URL}/artists/${artist.slug}` } }
+            : {}),
+          numTracks: tracks.length,
+          track: tracks.map((t, i) => ({
+            "@type": "MusicRecording",
+            name: t.title,
+            position: t.track_number ?? i + 1,
+          })),
+        }}
+      />
       <div className="flex flex-col gap-8 md:flex-row">
         {/* Cover + meta */}
         <div className="w-full max-w-xs shrink-0">

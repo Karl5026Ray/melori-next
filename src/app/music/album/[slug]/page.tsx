@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
 import { getStudioAlbumBySlug } from "@/lib/catalog";
+import JsonLd from "@/components/JsonLd";
+import { SITE_URL } from "@/lib/site";
 import StudioAlbumTracks from "./StudioAlbumTracks";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +23,15 @@ export async function generateMetadata(props: {
   if (!album) return { title: "Album not found" };
 
   const description =
-    album.description ?? `${album.title} by ${album.artistName} on MELORI Music.`;
+    album.seoDescription ??
+    album.description ??
+    `${album.title} by ${album.artistName} on MELORI Music.`;
   const images = album.coverUrl ? [album.coverUrl] : undefined;
   return {
     title: album.title,
     description,
-    openGraph: { title: album.title, description, images },
+    alternates: { canonical: `/music/album/${album.slug}` },
+    openGraph: { title: album.title, description, type: "music.album", images },
     twitter: { title: album.title, description, images },
   };
 }
@@ -40,6 +45,22 @@ export default async function StudioAlbumPage(props: {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "MusicAlbum",
+          name: album.title,
+          url: `${SITE_URL}/music/album/${album.slug}`,
+          ...(album.coverUrl ? { image: album.coverUrl } : {}),
+          byArtist: {
+            "@type": "MusicGroup",
+            name: album.artistName,
+            ...(album.artist ? { url: `${SITE_URL}/artists/${album.artist.slug}` } : {}),
+          },
+          numTracks: album.tracks.length,
+          track: album.tracks.map((t, i) => ({ "@type": "MusicRecording", name: t.title, position: i + 1 })),
+        }}
+      />
       <Link
         href="/music"
         className="text-sm text-text-secondary hover:text-brand-primary"

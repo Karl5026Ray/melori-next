@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
-import { getArtists } from "@/lib/data";
+import { getStudioAlbumBySlug } from "@/lib/catalog";
+import { getArtists, getReleases } from "@/lib/data";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +9,11 @@ export const dynamic = "force-dynamic";
 // Built from the same published-only data layer the catalog pages use, so the
 // sitemap only ever lists artists who are live on the site.
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const artists = await getArtists().catch(() => []);
+  const [artists, releases, studioAlbums] = await Promise.all([
+    getArtists().catch(() => []),
+    getReleases().catch(() => []),
+    publicStudioAlbumSlugs().catch(() => [] as string[]),
+  ]);
 
   const now = new Date();
 
@@ -45,8 +51,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/terms`,     lastModified: now, changeFrequency: "yearly",  priority: 0.3 },
   ];
 
-  // Release detail pages live under the wall now, so they are not listed.
-  // Artist profiles stay public deliberately: gating them would have hidden
+  // Album pages are public again since 2026-10-15 (see src/proxy.ts), so they
+  // are listed. Artist profiles stay public deliberately: gating them would have hidden
   // Kaiel R and Gloria Joy Rivers from search.
   const artistRoutes: MetadataRoute.Sitemap = artists.map((artist) => ({
     url: `${SITE_URL}/artists/${artist.slug}`,
@@ -55,5 +61,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticRoutes, ...artistRoutes];
+  const releaseRoutes: MetadataRoute.Sitemap = releases.map((release) => ({
+    url: `${SITE_URL}/albums/${release.slug}`,
+    lastModified: release.release_date ? new Date(release.release_date) : now,
+    changeFrequency: "monthly",
+    priority: 0.5,
+  }));
+
+  const studioAlbumRoutes: MetadataRoute.Sitemap = studioAlbums.map((slug) => ({
+    url: `${SITE_URL}/music/album/${slug}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.5,
+  }));
+
+  return [...staticRoutes, ...artistRoutes, ...releaseRoutes, ...studioAlbumRoutes];
+}
+
+// Only albums that actually render: getStudioAlbumBySlug 404s an album with
+// nothing published behind it, and a sitemap must not list a 404.
+async function publicStudioAlbumSlugs(): Promise<string[]> {
+  const { data } = await getSupabaseAdmin()
+    .from("studio_albums")
+    .select("slug")
+    .not("slug", "is", null)
+    .limit(200);
+  const slugs = ((data as { slug: string }[] | null) ?? []).map((r) => r.slug);
+  const live = await Promise.all(
+    slugs.map(async (slug) => ((await getStudioAlbumBySlug(slug).catch(() => null)) ? slug : null)),
+  );
+  return live.filter((s): s is string => s !== null);
 }

@@ -1,8 +1,13 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { endLiveKitRoom, livekitConfigured } from "@/lib/livekitServer";
+import {
+  endLiveKitRoom,
+  getParticipantPresence,
+  livekitConfigured,
+} from "@/lib/livekitServer";
 import { publishSystemSignal } from "@/lib/roomSignalsServer";
 import {
+  decideHostReap,
   deriveRoomName,
   isHostAbandoned,
   HOST_GRACE_PERIOD_SECONDS,
@@ -203,21 +208,33 @@ export interface ReapResult {
 }
 
 // Call from any route that already loaded a live room's id/host_id/
-// host_last_seen_at. Ends + tears down the room if the host has been gone
-// longer than HOST_GRACE_PERIOD_SECONDS. Safe to call unconditionally on
-// every hit to those routes — it is a cheap timestamp comparison, and the
-// actual DB transition (inside endRoomAndTeardown) is guarded/idempotent, so
-// concurrent callers racing this check can never double-end or double-
-// teardown the room.
+// host_last_seen_at (and livekit_room when it has it). Ends + tears down the
+// room only if the host's beat is older than HOST_GRACE_PERIOD_SECONDS AND
+// LiveKit confirms the host is no longer connected (decideHostReap in
+// endRoomPure.ts). A stale beat with the host still in LiveKit is a mobile
+// app in the background, not an abandoned room: we refresh host_last_seen_at
+// instead. A LiveKit API error never reaps. Cheap on the hot path: LiveKit is
+// only consulted once the timestamp is already past grace, and the actual DB
+// transition (inside endRoomAndTeardown) is guarded/idempotent.
 export async function reapIfHostAbandoned(space: {
   id: string;
   status: string;
+  host_id?: string | null;
+  livekit_room?: string | null;
   host_last_seen_at: string | null;
 }): Promise<ReapResult> {
   if (space.status !== "live") return { reaped: false, roomName: null };
   if (!isHostAbandoned(space.host_last_seen_at)) {
     return { reaped: false, roomName: null };
   }
+  const presence = space.host_id
+    ? await getParticipantPresence(deriveRoomName(space), space.host_id)
+    : "unknown";
+  const decision = decideHostReap(space.host_last_seen_at, presence);
+  if (decision === "refresh" && space.host_id) {
+    await recordHostSeen(space.id, space.host_id);
+  }
+  if (decision !== "reap") return { reaped: false, roomName: null };
   const result = await endRoomAndTeardown(space.id, "host-abandoned");
   return { reaped: result.ended, roomName: result.roomName };
 }

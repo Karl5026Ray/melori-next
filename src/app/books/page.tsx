@@ -3,7 +3,7 @@ import BookCover from "@/components/books/BookCover";
 import { BOOK_SERIES, bookUrlFor, coverUrlFor, type Book, type BookSeries } from "@/lib/books";
 
 const description =
-  "The Melori Band picture books, the Without The Blacks history series, the Say It Out Loud teen series, Right Before My Song, Hikari Discovers, and WOE.";
+  "The Melori Band picture books, the Without The Blacks history series, the Say It Out Loud teen series, Right Before My Song, Denny: Never Give Up, Hikari Discovers, and WOE.";
 
 export const metadata: Metadata = {
   title: "Books",

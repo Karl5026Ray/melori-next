@@ -119,6 +119,36 @@ async function main() {
     ((await import("@/app/api/profiles/[id]/gallery/route")).GET as AnyGet)(
       req("/api/profiles/not-an-artist/gallery"), ctx({ id: "not-an-artist" })));
 
+  console.log("\nAndroid beta admin list refuses a stranger:");
+  await expect401("GET /api/admin/android-testers", async () =>
+    ((await import("@/app/api/admin/android-testers/route")).GET as AnyGet)(
+      req("/api/admin/android-testers")));
+  await expect401("POST /api/admin/android-testers", async () =>
+    ((await import("@/app/api/admin/android-testers/route")).POST as AnyGet)(
+      new Request("http://localhost/api/admin/android-testers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "invite", ids: [] }),
+      })));
+
+  // PUBLIC ON PURPOSE: Android beta testers usually have no account. A
+  // signed-out POST must reach validation (400 for a bad body), never 401.
+  console.log("\nAndroid beta signup is public on purpose:");
+  try {
+    const { POST } = await import("@/app/api/android-beta/route");
+    const res = await (POST as AnyGet)(
+      new Request("http://localhost/api/android-beta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "not-an-email", has_android: true }),
+      }),
+    );
+    if (res.status === 400) ok("POST /api/android-beta without auth → 400 (validation, not a sign-in wall)");
+    else bad(`POST /api/android-beta without auth → expected 400, got ${res.status}`);
+  } catch (err) {
+    bad(`POST /api/android-beta threw ${(err as Error).message}`);
+  }
+
   console.log("\nRemoved public superfans surface:");
   const root = path.resolve(__dirname, "..");
   const removed = [

@@ -21,7 +21,9 @@
 // Next only aliases it at webpack/build time). endRoomPure.ts holds exactly
 // the DB/SDK-free pure logic and is re-exported unchanged from endRoom.ts for
 // every real server-side caller. See endRoomPure.ts's top comment.
+import { readFileSync } from "node:fs";
 import {
+  decideHostReap,
   deriveRoomName,
   isHostAbandoned,
   HOST_GRACE_PERIOD_SECONDS,
@@ -293,6 +295,86 @@ group("idempotency guard — only a 'live' room is eligible to be ended/reaped",
     reapWouldFire("ended", longAbandoned),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// decideHostReap — a stale heartbeat is NOT proof the host left. Mobile
+// WebViews (the Android/iOS apps) freeze setInterval in the background while
+// the LiveKit audio session stays up, so a live host stopped beating after a
+// minute and lost the room at 120s. LiveKit presence is the ground truth; a
+// LiveKit error must never end a live room.
+// ---------------------------------------------------------------------------
+group("decideHostReap — LiveKit presence gates the host-abandonment reap", () => {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  const stale = new Date(now.getTime() - (HOST_GRACE_PERIOD_SECONDS + 300) * 1000).toISOString();
+  const fresh = new Date(now.getTime() - 10 * 1000).toISOString();
+
+  assertEq(
+    "host still in LiveKit + stale beat -> refresh, NOT reaped (backgrounded mobile host)",
+    decideHostReap(stale, "present", now),
+    "refresh",
+  );
+  assertEq(
+    "host gone from LiveKit + stale beat -> reaped",
+    decideHostReap(stale, "absent", now),
+    "reap",
+  );
+  assertEq(
+    "LiveKit API error (unknown) + stale beat -> NOT reaped (fail safe)",
+    decideHostReap(stale, "unknown", now),
+    "keep",
+  );
+  assertEq(
+    "fresh beat + host gone from LiveKit -> kept (grace still applies)",
+    decideHostReap(fresh, "absent", now),
+    "keep",
+  );
+  assertEq(
+    "no recorded beat -> kept regardless of LiveKit",
+    decideHostReap(null, "absent", now),
+    "keep",
+  );
+});
+
+// Wiring: the predicate is worthless if the reaper doesn't consult LiveKit
+// (tasks/lessons.md: "When a fix is wiring, assert on the wiring").
+group("reapIfHostAbandoned wiring", () => {
+  const endRoom = readFileSync("src/lib/endRoom.ts", "utf8");
+  const reaper = endRoom.slice(endRoom.indexOf("export async function reapIfHostAbandoned"));
+  const reaperBody = reaper.slice(0, reaper.indexOf("\n}\n"));
+  assertEq(
+    "reaper asks LiveKit whether the host is connected",
+    /getParticipantPresence\(deriveRoomName\(space\), space\.host_id\)/.test(reaperBody),
+    true,
+  );
+  assertEq("reaper decides via decideHostReap", reaperBody.includes("decideHostReap("), true);
+  assertEq(
+    "reaper only ends the room on a 'reap' decision",
+    reaperBody.indexOf('if (decision !== "reap") return') > -1 &&
+      reaperBody.indexOf('if (decision !== "reap") return') < reaperBody.indexOf("endRoomAndTeardown("),
+    true,
+  );
+  assertEq(
+    "a host still in LiveKit gets host_last_seen_at refreshed",
+    /decision === "refresh"[\s\S]*recordHostSeen\(space\.id, space\.host_id\)/.test(reaperBody),
+    true,
+  );
+  const lk = readFileSync("src/lib/livekitServer.ts", "utf8");
+  const presence = lk.slice(lk.indexOf("export async function getParticipantPresence"));
+  const presenceBody = presence.slice(0, presence.indexOf("\n}\n"));
+  assertEq(
+    "getParticipantPresence reports 'unknown' (never 'absent') on an unexpected LiveKit error",
+    /catch[\s\S]*return "unknown";/.test(presenceBody),
+    true,
+  );
+  const heartbeat = readFileSync("src/app/api/social/spaces/[spaceId]/heartbeat/route.ts", "utf8");
+  assertEq(
+    "heartbeat route loads livekit_room so the reaper checks the right LiveKit room",
+    heartbeat.includes('.select("id, host_id, status, livekit_room, host_last_seen_at")'),
+    true,
+  );
+  const faces = readFileSync("src/app/api/social/faces/route.ts", "utf8");
+  assertEq("faces list loads livekit_room for the reaper", /host_last_seen_at, livekit_room/.test(faces), true);
 });
 
 console.log(

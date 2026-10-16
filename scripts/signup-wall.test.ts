@@ -63,6 +63,7 @@ const PUBLIC: [string, string][] = [
   ["/social/auth", "the social sign-in surface"],
   ["/auth/callback", "the email-confirmation landing"],
   ["/forgot-password", "password recovery"],
+  ["/android", "the Android beta-tester signup — testers usually have no account yet"],
   ["/reset-password", "password reset"],
 
   // 4. The obligations. App Review requires these without an account, and a
@@ -195,6 +196,13 @@ if (doorReason("?reason=chat") === "Sign in to see your messages.") {
 for (const search of ["", "?reason=", "?reason=<b>hi</b>", "?reason=toString", "?reason=__proto__"]) {
   if (doorReason(search) === null) ok(`door ignores ${JSON.stringify(search)}`);
   else bad(`door printed something for ${JSON.stringify(search)}`);
+}
+
+// /android is public as an exact path only.
+if (isPublicPath("/android") && !isPublicPath("/android/anything") && !isPublicPath("/androids")) {
+  ok("/android is public without opening anything beneath or beside it");
+} else {
+  bad("/android public status is wrong");
 }
 
 // Everything else falls through to the door rather than guessing.

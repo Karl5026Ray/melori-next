@@ -99,6 +99,9 @@ const PUBLIC_EXACT = new Set([
   // fallback. Exact match only: /account itself stays gated.
   "/account/delete",
   "/admin",
+  // The Android beta-tester signup. Most testers have no account yet, and
+  // the Play Store opt-in flow depends on them reaching this page.
+  "/android",
   "/artists",
   "/books",
   "/catalog",

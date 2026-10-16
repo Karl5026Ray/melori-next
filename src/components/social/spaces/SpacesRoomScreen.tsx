@@ -20,6 +20,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRoomRoster } from "@/lib/rooms/useRoomRoster";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { useCanRequestStage } from "@/components/social/SignInPrompt";
 import { canSpeak, handRaiseAllowed } from "@/lib/spacesStage";
@@ -31,12 +32,14 @@ import {
   setRole as agoraSetRole,
   ensureAudioPlayback as agoraEnsureAudio,
 } from "@/lib/livekitClient";
+import { RoomStatusBanner, useRoomConnection } from "@/components/social/RoomStatusBanner";
 import {
   joinPresence as roomJoin,
   leavePresence as roomLeave,
   publishSignal as roomPublishSignal,
 } from "@/lib/roomSignalsClient";
 import { ROOM_ENDED_MESSAGE } from "@/lib/roomDisconnect";
+import { useRoomBackgroundMode } from "@/lib/native/roomBackground";
 import { Space, SpaceParticipant, getRoomFormatConfig } from "@/types/social";
 import { sortStageQueue } from "@/lib/stageQueue";
 import { useSpaceChat, type SpaceChatMessage } from "@/components/social/spaces/useSpaceChat";
@@ -79,7 +82,14 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   const exitHref = SPACES_HOME;
   const exitHrefRef = useRef(exitHref);
 
-  const [participants, setParticipants] = useState<SpaceParticipant[]>([]);
+  // The live roster: loaded once, then kept current from realtime payloads
+  // (src/lib/rooms/useRoomRoster.ts) instead of a full refetch per change.
+  // `rosterLoaded` tells "not back yet" apart from "came back empty".
+  const {
+    participants,
+    rosterLoaded,
+    hiddenAudienceCount,
+  } = useRoomRoster({ spaceId, selfId: user?.id ?? null });
   // Identity -> 0..1 microphone level, sampled from LiveKit (livekitClient).
   // Drives the speaking rings on the stage.
   const [audioLevels, setAudioLevels] = useState<Record<string, number>>({});
@@ -161,8 +171,8 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   // not come back yet, or the roster came back empty. Everything that decides
   // whether we are in the room has to tell those apart, otherwise a member who
   // IS in the room gets treated as a stranger for the first few hundred ms.
-  // That was the flash of "Join Space" on every entry.
-  const [rosterLoaded, setRosterLoaded] = useState(false);
+  // That was the flash of "Join Space" on every entry. `rosterLoaded` (from
+  // useRoomRoster above) is the signal that tells them apart.
   const [isJoined, setIsJoined] = useState(false);
   // Set when a join attempt actually failed, so the auto-join effect stops
   // retrying into the same error and the room can offer a manual retry rather
@@ -212,7 +222,12 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     emoji: string;
     target: string;
   } | null>(null);
-  const [micDenied, setMicDenied] = useState(false);   const [reconnecting, setReconnecting] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
+  // LiveKit connection state for the in-room banner: connect/token failure
+  // (auto-retry, then Retry), reconnecting, connection lost (Rejoin), removed,
+  // and browser-blocked audio (Tap to enable sound). See roomConnectionStatus.ts.
+  const roomConn = useRoomConnection();
+  const roomConnDispatch = roomConn.dispatch;
   // Set when the room ended out from under us (host ended it, or the lazy
   // abandonment reaper closed it) — either via the LiveKit ROOM_DELETED
   // disconnect reason or the room-signals "space-ended" system signal. Shows a calm
@@ -257,45 +272,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
       setIsLoading(false);
     };
 
-    const fetchParticipants = async () => {
-      const { data } = await supabase
-        .from("space_participants")
-        .select(
-          `
-          *,
-          user:profiles(id, display_name, avatar_url, role, verified)
-        `
-        )
-        .eq("space_id", spaceId)
-        .is("left_at", null)
-        .order("joined_at", { ascending: true });
-
-      if (data) setParticipants(data as SpaceParticipant[]);
-      setRosterLoaded(true);
-    };
-
     fetchSpace();
-    fetchParticipants();
-
-    const channel = supabase
-      .channel(`space:${spaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "space_participants",
-          filter: `space_id=eq.${spaceId}`,
-        },
-        () => {
-          fetchParticipants();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [spaceId]);
 
   // Mirror the roster into local join state. This used to be a one-way latch
@@ -467,6 +444,13 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
   // since those callbacks depend on it.
   const myRole = participants.find((p) => p.user_id === user?.id && !p.left_at)?.role ?? null;
   const canSpeakNow = canSpeak(myRole);
+  // Android app: keep room audio (and an on-stage mic) alive with the screen
+  // locked. No-op on the web and iOS. See src/lib/native/roomBackground.ts.
+  useRoomBackgroundMode({
+    active: isJoined && !roomEnded,
+    publishing: canSpeakNow && !isMuted,
+    onLeave: () => void handleLeave(),
+  });
   const handRaiseMode = space?.hand_raise_mode ?? "everyone";
   const canRaiseHandNow =
     canRequestStage &&
@@ -1106,7 +1090,21 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           onAudioLevels: (levels) => {
             if (!cancelled) setAudioLevels(levels);
           },
-          onReconnecting: () => setReconnecting(true),         onReconnected: () => setReconnecting(false),
+          onReconnecting: () => {
+            if (!cancelled) roomConnDispatch({ type: "reconnecting" });
+          },
+          onReconnected: () => {
+            if (!cancelled) roomConnDispatch({ type: "reconnected" });
+          },
+          onConnectionLost: () => {
+            if (!cancelled) roomConnDispatch({ type: "disconnected" });
+          },
+          onRemoved: () => {
+            if (!cancelled) roomConnDispatch({ type: "removed" });
+          },
+          onAudioPlaybackChanged: (canPlay) => {
+            if (!cancelled) roomConnDispatch({ type: "audio-playback", canPlay });
+          },
           onRoomEnded: () => {
             if (cancelled) return;
             setRoomEnded(true);
@@ -1124,6 +1122,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           },
         });
         if (cancelled) await agoraLeave();
+        else roomConnDispatch({ type: "connected" });
       } catch (err) {
         if (
           /NotAllowedError|Permission|permission denied/i.test(
@@ -1133,6 +1132,9 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
           setMicDenied(true);
         }
         console.warn("agora join failed", err);
+        // Token or connect failure: show it (and auto-retry with backoff)
+        // instead of leaving the user looking joined in silence.
+        if (!cancelled) roomConnDispatch({ type: "join-failed", error: err });
       }
     })();
     return () => {
@@ -1147,6 +1149,8 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
     space?.agora_channel,
     spaceId,
     participants.find((p) => p.user_id === user?.id)?.role,
+    // Retry / Rejoin / auto-retry bump this to re-request a token and reconnect.
+    roomConn.attempt,
   ]);
 
   // React to role changes without a full rejoin when we're already connected.
@@ -1260,7 +1264,15 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
       }).catch(() => undefined);
     ping();
     heartbeatRef.current = setInterval(ping, 60_000);
+    // Mobile WebViews freeze timers in the background, so the interval above
+    // goes quiet while the app is backgrounded. Beat the moment we're visible
+    // again (the server also checks LiveKit before reaping a quiet host).
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     };
@@ -1459,7 +1471,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
             {space.title}
           </h1>
           <p className="truncate text-xs text-melori-muted tabular-nums">
-            {listeners.length} listening · {stage.length} on stage · {hostName} · {format.label}
+            {listeners.length + hiddenAudienceCount} listening · {stage.length} on stage · {hostName} · {format.label}
           </p>
         </div>
         <button
@@ -1624,6 +1636,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
 
         <SpacesListeners
           listeners={listeners}
+          unloadedCount={hiddenAudienceCount}
           onSelect={setPersonTarget}
           onShowAll={() => openSheet("listeners")}
         />
@@ -1784,7 +1797,7 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <h2 id="spaces-sheet-heading" className="text-base font-semibold text-melori-text">
-                      {listeners.length} listening
+                      {listeners.length + hiddenAudienceCount} listening
                     </h2>
                     <p id="spaces-sheet-description" className="mt-0.5 text-xs text-melori-muted">
                       Tap someone to follow them{canModerate ? " or invite them to speak" : ""}.
@@ -2006,11 +2019,18 @@ export default function SpacesRoomScreen({ spaceId }: { spaceId: string }) {
 
       {isJoined && (
         <div className="shrink-0 border-t border-melori-border bg-melori-void pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2">
-          {(reconnecting || micDenied) && (
+          <RoomStatusBanner
+            state={roomConn.state}
+            onRetry={roomConn.retry}
+            onEnableSound={() => {
+              void agoraEnsureAudio().then(() =>
+                roomConnDispatch({ type: "audio-playback", canPlay: true }),
+              );
+            }}
+          />
+          {micDenied && (
             <p role="status" className="mx-auto max-w-2xl px-4 pb-1 text-center text-xs text-melori-warning">
-              {reconnecting
-                ? "Reconnecting to audio…"
-                : "Microphone access was blocked. Allow it in your browser settings to speak."}
+              Microphone access was blocked. Allow it in your browser settings to speak.
             </p>
           )}
           {activity && (

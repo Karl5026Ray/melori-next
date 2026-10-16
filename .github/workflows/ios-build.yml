@@ -247,6 +247,12 @@ jobs:
                   "OAuth callback cannot re-enter the app and sign-in ships broken"
               )
 
+          if "audio" not in (plist.get("UIBackgroundModes") or []):
+              problems.append(
+                  "UIBackgroundModes lacks 'audio' - live room audio stops "
+                  "as soon as the screen locks"
+              )
+
           if problems:
               for problem in problems:
                   print(f"error: {problem}", file=sys.stderr)
@@ -255,7 +261,7 @@ jobs:
                   "after 'npx cap sync ios'?"
               )
 
-          print("Info.plist verified: camera, microphone and OAuth scheme present.")
+          print("Info.plist verified: camera, microphone, OAuth scheme and background audio present.")
           PY
 
       - name: Build & upload with Fastlane

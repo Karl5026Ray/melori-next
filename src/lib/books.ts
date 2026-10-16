@@ -37,7 +37,7 @@ export type BookSeries = {
 
 // Order is Karl's (2026-10-03): The Melori Band is Melori's own band, so its
 // collection leads; then Without The Blacks, Say It Out Loud, Right Before My
-// Song, Hikari Discovers and WOE.
+// Song, Denny, Hikari Discovers and WOE.
 export const BOOK_SERIES: BookSeries[] = [
   {
     id: "melori-band",
@@ -188,6 +188,23 @@ export const BOOK_SERIES: BookSeries[] = [
     ],
   },
   {
+    // Added 2026-10-15 (Karl). Kindle eBook, pre-order until it releases on
+    // October 21, 2026, Denzel's birthday.
+    id: "denny",
+    name: "Denny: Never Give Up",
+    audience: "Memoir · tribute",
+    description:
+      "One day in the life of Denzel Maurice Henderson, from the moment his eyes open until he goes to sleep. His motto: never give up.",
+    books: [
+      {
+        title: "Denny: Never Give Up",
+        blurb: "One Day in the Life of Denzel Maurice Henderson.",
+        asin: "B0HMSBNGRR",
+        coverId: "71Jb+pOxWSL",
+      },
+    ],
+  },
+  {
     id: "hikari-discovers",
     name: "Hikari Discovers",
     audience: "Activity books · ages 3–5",
@@ -196,8 +213,17 @@ export const BOOK_SERIES: BookSeries[] = [
     books: [
       {
         title: "Hikari Discovers",
+        badge: "Workbook",
         asin: "B0HK3CLFHB",
         coverId: "71wl8VtQLlL",
+      },
+      {
+        // Added 2026-10-15 (Karl).
+        title: "How Things Work",
+        badge: "Coloring Book",
+        blurb: "A big coloring book: color Hikari and friends as they find out how things work.",
+        asin: "B0HK539PD5",
+        coverId: "71eXFgUhSTL",
       },
     ],
   },

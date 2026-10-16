@@ -43,7 +43,8 @@ const SYSTEM = [
   "Use ONLY the facts provided. Do not add hometowns, influences, awards, chart positions, follower counts, comparisons, or any detail not in the facts.",
   "No hype words (best, iconic, legendary, chart-topping). No quotes, emoji, hashtags or markdown.",
   "Mention the name, and the artist for an album. Ending with 'on MELORI Music' is good when it fits.",
-  "Reply with the sentence only.",
+  "If their own description is an internal or admin note (test account, comp account, business partner, placeholder), ignore it entirely.",
+  "Reply with the sentence only: no commentary, no second thoughts, no notes.",
 ].join(" ");
 
 function factsToText(f: SeoFacts): string {

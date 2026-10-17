@@ -16,6 +16,9 @@ import { BOOK_SERIES, coverUrlFor } from "@/lib/books";
 
 const BOOKS_URL = "https://www.amazon.com/author/karlraybooks";
 const RELAUNCH_URL = "https://music.amazon.com/albums/B0HKNBB2PQ";
+// Karl's portfolio gallery (106 photos, no password). If it is ever renamed or
+// replaced, update this slug or the button lands on a 404.
+const PHOTOS_URL = "/gallery/karl-ray-photography-477a15ee";
 
 const description =
   "Karl Ray: author, musician and photographer from Chicago. Books for kids, teens and adults, and RELAUNCH, his album.";
@@ -90,7 +93,13 @@ export default function KarlRayLinksPage() {
         />
         <LinkButton href={RELAUNCH_URL} title="Listen to RELAUNCH" sub="Karl Ray's album" />
         <LinkButton href="/books" title="Browse every book" sub="All series, by age" external={false} />
-        <LinkButton href="/gallery" title="Photography" sub="Karl Ray Photography" external={false} />
+        {/* Straight into the photos, not the gallery index of folders (Karl, 2026-10-17). */}
+        <LinkButton
+          href={PHOTOS_URL}
+          title="Photography"
+          sub="Karl Ray Photography"
+          external={false}
+        />
       </div>
     </div>
   );

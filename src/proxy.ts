@@ -102,6 +102,8 @@ const PUBLIC_EXACT = new Set([
   // The Android beta-tester signup. Most testers have no account yet, and
   // the Play Store opt-in flow depends on them reaching this page.
   "/android",
+  // One link for the app on any phone (2026-10-17): flyers and QR codes.
+  "/app",
   "/artists",
   "/books",
   "/catalog",

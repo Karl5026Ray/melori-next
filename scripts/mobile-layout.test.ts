@@ -52,11 +52,12 @@ check(
   ) && !nav.includes('label: "Profile"'),
 );
 check(
-  "Mission replaces More as a direct top-level M Menu item",
-  nav.includes("const missionLink: LaunchItem = {") &&
-    nav.includes('label: "Mission"') &&
-    nav.includes('href: "/mission"') &&
-    nav.includes("{renderTile(missionLink)}") &&
+  "Karl Ray's profile replaces Mission as a direct top-level M Menu item",
+  nav.includes("const karlLink: LaunchItem = {") &&
+    nav.includes('label: "Karl Ray"') &&
+    nav.includes("href: KARL_PROFILE_PATH") &&
+    nav.includes("{renderTile(karlLink)}") &&
+    !nav.includes('href: "/mission"') &&
     !nav.includes('label: "More"') &&
     nav.match(/label: "Artists"/g)?.length === 1,
 );

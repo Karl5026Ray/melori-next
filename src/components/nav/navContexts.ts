@@ -106,7 +106,8 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         // Connect first: it's a destination, not a brand page, and it's the
         // reason someone opens More rather than the footer.
         CONNECT_NAV_ITEM,
-        { label: "Mission", href: "/mission" },
+        // Karl's profile carries the mission since 2026-10-17.
+        { label: "Karl Ray", href: "/karlray" },
         { label: "Support", href: "/support" },
         // /studio, not /register: every account can upload now, so a member
         // lands in the Studio, and a signed-out visitor is sent to the door.
@@ -117,7 +118,7 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
     // matches every /social/* path first, so a member browsing Connect keeps
     // the Community rail (Mirror / Faces / Spaces / Cinema) they arrived with.
     test: (p) =>
-      p.startsWith("/mission") ||
+      p.startsWith("/karlray") ||
       p.startsWith("/support") ||
       p.startsWith("/privacy") ||
       p.startsWith("/terms"),

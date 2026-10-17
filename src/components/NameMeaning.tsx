@@ -5,8 +5,8 @@ import Link from "next/link";
  *
  * Two variants of the same story:
  *   • "compact" — a single band on the homepage, for visitors who will never
- *     click through to /mission.
- *   • "full" — the anchored section on /mission (#the-name) that the homepage
+ *     click through to /karlray.
+ *   • "full" — the anchored section on /karlray (#the-name) that the homepage
  *     band and the footer both link to.
  */
 export default function NameMeaning({
@@ -44,7 +44,7 @@ export default function NameMeaning({
             is the standard we hold this catalog to.
           </p>
           <Link
-            href="/mission#the-name"
+            href="/karlray#the-name"
             className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:underline"
           >
             Read the whole story

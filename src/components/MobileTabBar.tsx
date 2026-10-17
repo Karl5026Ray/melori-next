@@ -27,6 +27,7 @@ import {
 import { CONNECT_NAV_ITEM, MIRROR_NAV_ITEM } from "@/lib/socialNav";
 import { useNativeApp } from "@/hooks/useNativeApp";
 import { isHiddenInNativeApp } from "@/lib/nativeHidden";
+import { KARL_PROFILE_PATH, PORTFOLIO_URL } from "@/lib/karlray";
 
 /**
  * Mobile bottom tab bar (thumb-zone navigation) whose center control is the
@@ -255,16 +256,19 @@ export default function MobileTabBar() {
   // deliberately left public.
   const photographyLink: LaunchItem = {
     label: "Photography",
-    href: "/gallery",
+    // Straight to the photos, not the index of folders (Karl, 2026-10-17).
+    href: PORTFOLIO_URL,
     icon: <Camera className="h-5 w-5" />,
     desc: "Karl Ray Photography",
   };
 
-  const missionLink: LaunchItem = {
-    label: "Mission",
-    href: "/mission",
+  // Karl, 2026-10-17: his profile replaces the Mission tile, and the mission
+  // statement now lives on that page (/karlray#mission).
+  const karlLink: LaunchItem = {
+    label: "Karl Ray",
+    href: KARL_PROFILE_PATH,
     icon: <Target className="h-5 w-5" />,
-    desc: "Why Melori",
+    desc: "Founder · books, music, photos",
   };
 
   function isActive(tab: Tab): boolean {
@@ -485,7 +489,7 @@ export default function MobileTabBar() {
                           {categories.map(renderCatTile)}
                           {renderTile(photographyLink)}
                           {renderTile(signupLink)}
-                          {renderTile(missionLink)}
+                          {renderTile(karlLink)}
                         </div>
                       </>
                     )}

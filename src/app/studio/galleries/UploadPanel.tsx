@@ -31,9 +31,10 @@ interface Props {
 // Phone-first "Add photos" capture flow. A plain <input type=file accept=
 // image/* multiple> surfaces the OS photo picker (and the phone camera roll
 // populated by Canon Camera Connect) — no custom camera code needed. Files
-// upload SEQUENTIALLY (one at a time) so a single request stays small and
-// resilient on spotty mobile connections; failures are retried individually
-// without losing the rest of the batch.
+// upload a few at a time (UPLOAD_CONCURRENCY); each is its own small request,
+// and failures are retried individually without losing the rest of the batch.
+const UPLOAD_CONCURRENCY = 3;
+
 export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
@@ -210,13 +211,20 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
     }
   }
 
+  // Three uploads at a time (2026-10-17). One-at-a-time made a 30-photo
+  // batch crawl; three keeps phones on cellular steady while cutting the wait
+  // to about a third. Each file still fails and retries on its own.
   async function runQueue(items: FileStatus[]) {
     setUploading(true);
     let anySuccess = false;
-    for (const item of items) {
-      const ok = await uploadOne(item);
-      if (ok) anySuccess = true;
-    }
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const item = items[next++]!;
+        if (await uploadOne(item)) anySuccess = true;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, items.length) }, worker));
     setUploading(false);
     if (anySuccess) onUploaded();
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { KARL_PROFILE_PATH, PORTFOLIO_URL } from "@/lib/karlray";
 
 type FooterLink = { label: string; href: string };
 
@@ -11,8 +12,8 @@ type FooterLink = { label: string; href: string };
 const FOOTER_LINKS: FooterLink[] = [
   { label: "Music", href: "/music" },
   { label: "Songs", href: "/catalog" },
-  { label: "Photography", href: "/gallery" },
-  { label: "Mission", href: "/mission" },
+  { label: "Photography", href: PORTFOLIO_URL },
+  { label: "Mission", href: `${KARL_PROFILE_PATH}#mission` },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
   { label: "Support", href: "/support" },

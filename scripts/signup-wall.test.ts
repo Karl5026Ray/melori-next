@@ -41,6 +41,8 @@ const PUBLIC: [string, string][] = [
   ["/photography", "the legacy path clients already hold (redirects to /gallery)"],
   ["/about", "Karl's introduction — the other half of the advertising"],
   ["/books", "Karl's books — links out to Amazon, advertising like the gallery"],
+  ["/karlray", "Karl's link-in-bio page — every social bio points here"],
+  ["/app", "the app link on flyers and QR codes"],
 
   // 1b. The live surfaces, described rather than shown. These pages carry no
   //     member data at all — see src/components/marketing/FeatureTeaser.tsx.

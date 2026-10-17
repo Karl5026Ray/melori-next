@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { galleryCookieName } from "@/lib/gallery-auth";
+import { galleryCookieName, isGalleryUnlocked } from "@/lib/gallery-auth";
 import PasswordGate from "./PasswordGate";
 import GalleryViewer, { type ViewerFolder, type ViewerImage } from "./GalleryViewer";
 import { folderShareKeys, FOLDER_QUERY_PARAM } from "./share";
@@ -137,11 +137,11 @@ export default async function GalleryViewerPage(props: {
   if (!gallery) notFound();
 
   // Real password gate: unlock only when the http-only cookie set by
-  // /api/gallery/verify matches the stored hash.
+  // /api/gallery/verify carries the server-signed token for this gallery.
   if (gallery.password_hash) {
     const cookieStore = await cookies();
     const cookieVal = cookieStore.get(galleryCookieName(slug))?.value;
-    if (cookieVal !== gallery.password_hash) {
+    if (!isGalleryUnlocked(cookieVal, slug, gallery.password_hash)) {
       return (
         <PasswordGate slug={slug} galleryName={gallery.name} />
       );

@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -57,4 +57,33 @@ export async function authenticateApiKey(
 // never unlocks another. Used by the verify route (set) and the viewer (check).
 export function galleryCookieName(slug: string): string {
   return `gallery_pw_${sha256Hex(slug).slice(0, 16)}`;
+}
+
+// The unlock cookie's value. It used to be password_hash itself, and
+// photo_galleries was readable by anyone with the anon key, so anyone could
+// read the hash, set the cookie and skip the password (found 2026-10-17).
+// Now it is an HMAC keyed by a server-only secret, bound to the slug and the
+// current hash: it can't be forged from public data, and changing a gallery's
+// password logs everyone out of it.
+function unlockSecret(): string {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
+  return secret;
+}
+
+export function galleryUnlockToken(slug: string, passwordHash: string): string {
+  return createHmac("sha256", unlockSecret())
+    .update(`gallery-unlock:${slug}:${passwordHash}`)
+    .digest("hex");
+}
+
+export function isGalleryUnlocked(
+  cookieValue: string | undefined,
+  slug: string,
+  passwordHash: string,
+): boolean {
+  if (!cookieValue) return false;
+  const expected = Buffer.from(galleryUnlockToken(slug, passwordHash));
+  const given = Buffer.from(cookieValue);
+  return given.length === expected.length && timingSafeEqual(given, expected);
 }

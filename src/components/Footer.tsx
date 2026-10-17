@@ -81,7 +81,7 @@ export default function Footer() {
           <span className="block sm:inline">
             <span className="text-text-primary/80">Melori</span> — <em className="not-italic">mel</em> from{" "}
             melody, <em className="not-italic">lori</em> from lullaby.{" "}
-            <Link href="/mission#the-name" className="underline decoration-dotted hover:text-brand-primary">
+            <Link href="/karlray#the-name" className="underline decoration-dotted hover:text-brand-primary">
               The story behind the name
             </Link>
           </span>

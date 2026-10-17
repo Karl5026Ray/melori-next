@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { sha256Hex, galleryCookieName } from "@/lib/gallery-auth";
+import { sha256Hex, galleryCookieName, galleryUnlockToken } from "@/lib/gallery-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(galleryCookieName(slug), gallery.password_hash, {
+  res.cookies.set(galleryCookieName(slug), galleryUnlockToken(slug, gallery.password_hash), {
     httpOnly: true,
     sameSite: "lax",
     secure: true,

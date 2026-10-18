@@ -9,9 +9,18 @@ import {
   ChevronRight,
   ChevronDown,
   Share2,
+  Trash2,
+  Plus,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { SITE_URL } from "@/lib/site";
 import { folderShareKeys, FOLDER_QUERY_PARAM } from "./share";
+import {
+  OwnerBar,
+  deletePhoto,
+  downloadOriginal,
+  useGalleryOwner,
+} from "./OwnerTools";
 
 export interface ViewerImage {
   id: string;
@@ -48,6 +57,8 @@ function legacyCopy(text: string): boolean {
 }
 
 export default function GalleryViewer({
+  galleryId,
+  ownerId,
   gallerySlug,
   galleryName,
   clientName,
@@ -56,6 +67,8 @@ export default function GalleryViewer({
   images,
   initialFolder,
 }: {
+  galleryId: string;
+  ownerId: string;
   gallerySlug: string;
   galleryName: string;
   clientName: string | null;
@@ -72,11 +85,65 @@ export default function GalleryViewer({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const shareTimerRef = useRef<number | null>(null);
 
+  const router = useRouter();
+  const isOwner = useGalleryOwner(ownerId);
+  // Owner upload panel: undefined = closed, null = no folder, else folder id.
+  const [uploadTarget, setUploadTarget] = useState<string | null | undefined>(
+    undefined,
+  );
+  const ownerBarRef = useRef<HTMLDivElement | null>(null);
+  // Photos the owner just deleted, hidden at once while the page refreshes.
+  const [removed, setRemoved] = useState<Set<string>>(() => new Set());
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // The owner can always pull originals; visitors only when downloads are on.
+  const canDownload = allowDownloads || isOwner;
+
+  async function handleDownload(imageId: string) {
+    setBusyId(imageId);
+    const err = await downloadOriginal(gallerySlug, imageId);
+    setBusyId(null);
+    if (err) setNotice(err);
+  }
+
+  async function handleDelete(img: ViewerImage) {
+    if (
+      !window.confirm(
+        `Delete ${img.filename ?? "this photo"}? The full-resolution original is removed too. This can't be undone.`,
+      )
+    )
+      return;
+    setBusyId(img.id);
+    const err = await deletePhoto(img.id);
+    setBusyId(null);
+    if (err) {
+      setNotice(err);
+      return;
+    }
+    setActiveIndex(null);
+    setRemoved((prev) => new Set(prev).add(img.id));
+    router.refresh();
+  }
+
+  function addPhotosTo(folderKey: string) {
+    setUploadTarget(folderKey === "unfiled" ? null : folderKey);
+    requestAnimationFrame(() =>
+      ownerBarRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
   // Group images by folder, preserving order. Images without a folder land in
   // an implicit "Gallery" group rendered first.
   const groups = useMemo(() => {
     const byFolder = new Map<string | null, ViewerImage[]>();
     for (const img of images) {
+      if (removed.has(img.id)) continue;
       const key = img.folderId;
       if (!byFolder.has(key)) byFolder.set(key, []);
       byFolder.get(key)!.push(img);
@@ -113,7 +180,7 @@ export default function GalleryViewer({
       ...group,
       shareKey: shareKeys.get(group.key)!,
     }));
-  }, [images, folders]);
+  }, [images, folders, removed]);
 
   // A `?folder=` deep link opens the matching group on load; anything we can't
   // match just falls through to the normal collapsed view.
@@ -244,8 +311,28 @@ export default function GalleryViewer({
               </p>
             </div>
           </div>
+          {isOwner && (
+            <div ref={ownerBarRef} className="scroll-mt-4">
+              <OwnerBar
+                galleryId={galleryId}
+                folders={folders}
+                allowDownloads={allowDownloads}
+                uploadTarget={uploadTarget}
+                setUploadTarget={setUploadTarget}
+              />
+            </div>
+          )}
         </div>
       </header>
+
+      {notice && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-[90] -translate-x-1/2 rounded-full bg-brand-surface px-4 py-2 text-sm font-semibold text-text-primary shadow-lg"
+        >
+          {notice}
+        </div>
+      )}
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {images.length === 0 ? (
@@ -340,7 +427,16 @@ export default function GalleryViewer({
                       <h2 className="text-lg font-semibold text-text-primary">
                         {panelGroup.name}
                       </h2>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {isOwner && (
+                          <button
+                            type="button"
+                            onClick={() => addPhotosTo(panelGroup.key)}
+                            className="flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark"
+                          >
+                            <Plus className="h-3.5 w-3.5" /> Add photos here
+                          </button>
+                        )}
                         {shareState?.key === panelGroup.key && (
                           <span
                             role="status"
@@ -386,11 +482,28 @@ export default function GalleryViewer({
                               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           </button>
-                          {allowDownloads ? (
-                            <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/80 px-2 py-1 text-[10px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
-                              <Download className="h-3 w-3" /> Download
-                            </span>
+                          {canDownload ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDownload(img.id)}
+                              disabled={busyId === img.id}
+                              aria-label={`Download full resolution ${img.filename ?? "photo"}`}
+                              className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-brand-background/85 px-2 py-1 text-[10px] font-semibold text-text-primary transition-opacity hover:bg-brand-background disabled:opacity-50 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                            >
+                              <Download className="h-3 w-3" /> Full res
+                            </button>
                           ) : null}
+                          {isOwner && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(img)}
+                              disabled={busyId === img.id}
+                              aria-label={`Delete ${img.filename ?? "photo"}`}
+                              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-brand-background/85 text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </figure>
                       ))}
                     </div>
@@ -455,9 +568,30 @@ export default function GalleryViewer({
               alt={active.caption ?? active.filename ?? "Gallery photo"}
               className="max-h-[80vh] w-auto rounded-lg object-contain"
             />
-            <div className="mt-4 flex items-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
               {active.caption && (
                 <p className="text-sm text-text-secondary">{active.caption}</p>
+              )}
+              {canDownload && (
+                <button
+                  type="button"
+                  onClick={() => handleDownload(active.id)}
+                  disabled={busyId === active.id}
+                  className="flex items-center gap-1.5 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {busyId === active.id ? "Preparing…" : "Download full resolution"}
+                </button>
+              )}
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(active)}
+                  disabled={busyId === active.id}
+                  className="flex items-center gap-1.5 rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
               )}
             </div>
           </div>

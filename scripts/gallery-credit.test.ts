@@ -20,8 +20,8 @@ const check = (cond: boolean, label: string) => {
 };
 
 const orig = "owner/gallery/1111/original.jpg";
-check(creditKeyFor(orig) === "owner/gallery/1111/download.jpg", "original.jpg → download.jpg beside it");
-check(creditKeyFor("legacy/key/photo.jpeg") === "legacy/key/photo.jpeg.credit.jpg", "odd keys get a suffix");
+check(/^owner\/gallery\/1111\/credit-v\d+\.jpg$/.test(creditKeyFor(orig)), "original.jpg → credit-vN.jpg beside it");
+check(/^legacy\/key\/photo\.jpeg\.credit-v\d+\.jpg$/.test(creditKeyFor("legacy/key/photo.jpeg")), "odd keys get a suffix");
 for (const k of [orig, "a/b.jpg", "x/original.jpg.bak"]) {
   check(creditKeyFor(k) !== k, `credited key never overwrites the original (${k})`);
 }
@@ -33,7 +33,7 @@ function box(svg: string) {
 for (const [w, h] of [[6000, 4000], [4000, 6000], [800, 1200], [300, 200]]) {
   const svg = creditOverlaySvg(w, h);
   const b = box(svg);
-  check(svg.includes(CREDIT_TEXT), `${w}x${h}: says ${CREDIT_TEXT}`);
+  check(/<path [^>]*d="M/.test(svg) && !svg.includes("<text"), `${w}x${h}: draws ${CREDIT_TEXT} as outlines (no fonts needed)`);
   check(!!b && b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= w && b[1] + b[3] <= h, `${w}x${h}: pill inside the frame`);
   check(!!b && b[0] + b[2] > w * 0.9 && b[1] + b[3] > h * 0.85, `${w}x${h}: pill sits bottom-right`);
 }

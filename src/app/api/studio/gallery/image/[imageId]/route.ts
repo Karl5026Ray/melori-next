@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
+import { creditKeyFor } from "@/lib/gallery-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,7 +126,10 @@ export async function DELETE(
 
   await supabase.storage
     .from(ORIGINALS_BUCKET)
-    .remove([image.storage_key as string])
+    .remove([
+      image.storage_key as string,
+      creditKeyFor(image.storage_key as string),
+    ])
     .catch(() => {});
   await supabase.storage
     .from(PREVIEWS_BUCKET)
@@ -141,6 +145,15 @@ export async function DELETE(
     console.error("studio/gallery/image DELETE failed", error.message);
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
+
+  // If this photo was the gallery cover, the cover key now points at a file
+  // we just removed — clear it so the cover falls back to the first photo
+  // instead of rendering a broken image.
+  await supabase
+    .from("photo_galleries")
+    .update({ cover_image_key: null })
+    .eq("id", image.gallery_id as string)
+    .eq("cover_image_key", image.thumbnail_key as string);
 
   return NextResponse.json({ ok: true });
 }

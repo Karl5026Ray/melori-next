@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
+import { creditKeyFor } from "@/lib/gallery-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -154,7 +155,12 @@ export async function DELETE(
     .select("storage_key, preview_key, thumbnail_key")
     .eq("gallery_id", galleryId);
 
-  const originalKeys = (images ?? []).map((i) => i.storage_key as string);
+  // Each original plus its credited download copy (made on first public
+  // download; removing a key that doesn't exist is harmless).
+  const originalKeys = (images ?? []).flatMap((i) => [
+    i.storage_key as string,
+    creditKeyFor(i.storage_key as string),
+  ]);
   const previewKeys = (images ?? []).flatMap((i) => [
     i.preview_key as string,
     i.thumbnail_key as string,

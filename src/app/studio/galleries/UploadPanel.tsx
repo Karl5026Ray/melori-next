@@ -23,6 +23,8 @@ interface FileStatus {
 
 interface Props {
   galleryId: string;
+  // Optional: file every photo in this batch into this folder.
+  folderId?: string | null;
   onUploaded: () => void;
   // Optional: called when the user taps "Done" to close out an upload session.
   onDone?: () => void;
@@ -35,7 +37,7 @@ interface Props {
 // and failures are retried individually without losing the rest of the batch.
 const UPLOAD_CONCURRENCY = 3;
 
-export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
+export default function UploadPanel({ galleryId, folderId = null, onUploaded, onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<FileStatus[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -184,6 +186,7 @@ export default function UploadPanel({ galleryId, onUploaded, onDone }: Props) {
           body: JSON.stringify({
             imageId: signedBody.imageId,
             filename: item.filename,
+            folderId,
           }),
         },
       );

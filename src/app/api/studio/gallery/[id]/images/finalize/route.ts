@@ -85,6 +85,7 @@ export async function POST(
   let body: {
     imageId?: unknown;
     filename?: unknown;
+    folderId?: unknown;
   };
   try {
     body = await req.json();
@@ -94,6 +95,12 @@ export async function POST(
 
   const imageId = String(body?.imageId ?? "").trim();
   const filename = String(body?.filename ?? "photo.jpg").trim() || "photo.jpg";
+  // Optional: file the photo straight into a folder (Weddings, Concerts…).
+  // Without it, new uploads landed in an "unfiled" group above every folder.
+  const folderId =
+    typeof body?.folderId === "string" && body.folderId.trim()
+      ? body.folderId.trim()
+      : null;
   if (!imageId || !/^[0-9a-f-]{36}$/i.test(imageId)) {
     return NextResponse.json(
       { error: "imageId (uuid) is required" },
@@ -115,6 +122,21 @@ export async function POST(
   }
   if (gallery.photographer_id !== userId && !callerIsAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (folderId) {
+    const { data: folder } = await supabase
+      .from("photo_gallery_folders")
+      .select("id")
+      .eq("id", folderId)
+      .eq("gallery_id", galleryId)
+      .maybeSingle();
+    if (!folder) {
+      return NextResponse.json(
+        { error: "That folder isn't in this gallery." },
+        { status: 400 },
+      );
+    }
   }
 
   const photographerId = gallery.photographer_id as string;
@@ -351,6 +373,7 @@ export async function POST(
       thumbnail_key: thumbnailKey,
       filename,
       order_index: orderIndex,
+      folder_id: folderId,
     })
     .select("id")
     .single();

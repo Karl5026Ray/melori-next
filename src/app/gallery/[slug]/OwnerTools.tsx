@@ -210,7 +210,7 @@ export function OwnerBar({
       </div>
       <p className="mt-2 text-xs text-text-secondary">
         {downloadsOn
-          ? "Visitors can download full-resolution, un-watermarked originals."
+          ? "Visitors download full-resolution copies with melorimusic.org in the corner. Yours stay clean."
           : "Visitors see watermarked previews only. You can still download any original."}
       </p>
 

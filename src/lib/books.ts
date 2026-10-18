@@ -24,6 +24,11 @@ export type Book = {
   blurb?: string;
   asin?: string;
   coverId?: string;
+  /**
+   * A cover hosted on Melori itself (a path under /public), used before Amazon
+   * has a cover for the book. Takes priority over `coverId`.
+   */
+  coverSrc?: string;
   live?: boolean;
 };
 
@@ -35,7 +40,8 @@ export type BookSeries = {
   books: Book[];
 };
 
-// Order is Karl's (2026-10-03): The Melori Band is Melori's own band, so its
+// Order is Karl's (2026-10-03; Was It Just Business? added after Without The
+// Blacks 2026-10-17): The Melori Band is Melori's own band, so its
 // collection leads; then Without The Blacks, Say It Out Loud, Right Before My
 // Song, Denny, Hikari Discovers and WOE.
 export const BOOK_SERIES: BookSeries[] = [
@@ -129,6 +135,14 @@ export const BOOK_SERIES: BookSeries[] = [
       "What Black people built, and how it made everyday life easier for everyone. A true history in three volumes. Facts only.",
     books: [
       {
+        // Added 2026-10-17 (Karl). All three volumes in one Kindle eBook.
+        title: "The Complete Edition",
+        badge: "Volumes 1–3",
+        blurb: "All three volumes in one book.",
+        asin: "B0HNDQHMZT",
+        coverId: "81CxMK6G4HL",
+      },
+      {
         title: "The Beginning",
         badge: "Volume 1",
         blurb: "From the forming of the continents and the kingdom of Kush to the Middle Passage.",
@@ -147,6 +161,25 @@ export const BOOK_SERIES: BookSeries[] = [
         badge: "Volume 3",
         asin: "B0HKG52HVD",
         coverId: "61HhavW6U3L",
+      },
+    ],
+  },
+  {
+    // Added 2026-10-17 (Karl). Not on Amazon yet, so the cover is hosted on
+    // Melori and the card shows as "Soon" with no link. When the Kindle edition
+    // goes live: add its `asin`, and delete `live: false`.
+    id: "was-it-just-business",
+    name: "Was It Just Business?",
+    audience: "History · adults",
+    description:
+      "Slavery, the American ledger, and the account that was never settled. Who got paid, and who answered for it.",
+    books: [
+      {
+        title: "Was It Just Business?",
+        badge: "New",
+        blurb: "Slavery, the American ledger, and the account that was never settled.",
+        coverSrc: "/images/books/was-it-just-business.jpg",
+        live: false,
       },
     ],
   },
@@ -243,8 +276,9 @@ export const BOOK_SERIES: BookSeries[] = [
   },
 ];
 
-/** Amazon's cover image for a book, or null when it has none yet. */
+/** The book's cover image (Melori-hosted first, then Amazon's), or null. */
 export function coverUrlFor(book: Book): string | null {
+  if (book.coverSrc) return book.coverSrc;
   return book.coverId
     ? `https://m.media-amazon.com/images/I/${book.coverId}._SY450_.jpg`
     : null;

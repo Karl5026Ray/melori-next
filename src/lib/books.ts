@@ -23,6 +23,11 @@ export type Book = {
   badge?: string;
   blurb?: string;
   asin?: string;
+  /**
+   * A full store link (e.g. Google Play Books) for a book that isn't on
+   * Amazon. Used instead of the Amazon link when set.
+   */
+  url?: string;
   coverId?: string;
   /**
    * A cover hosted on Melori itself (a path under /public), used before Amazon
@@ -135,14 +140,6 @@ export const BOOK_SERIES: BookSeries[] = [
       "What Black people built, and how it made everyday life easier for everyone. A true history in three volumes. Facts only.",
     books: [
       {
-        // Added 2026-10-17 (Karl). All three volumes in one Kindle eBook.
-        title: "The Complete Edition",
-        badge: "Volumes 1–3",
-        blurb: "All three volumes in one book.",
-        asin: "B0HNDQHMZT",
-        coverId: "81CxMK6G4HL",
-      },
-      {
         title: "The Beginning",
         badge: "Volume 1",
         blurb: "From the forming of the continents and the kingdom of Kush to the Middle Passage.",
@@ -162,12 +159,23 @@ export const BOOK_SERIES: BookSeries[] = [
         asin: "B0HKG52HVD",
         coverId: "61HhavW6U3L",
       },
+      {
+        // Added 2026-10-17 (Karl). All three volumes in one Kindle eBook. Sits
+        // AFTER Volumes 1–3 (Karl): placed first, it split the joined cover
+        // spread across the three volumes.
+        title: "The Complete Edition",
+        badge: "Volumes 1–3",
+        blurb: "All three volumes in one book.",
+        asin: "B0HNDQHMZT",
+        coverId: "81CxMK6G4HL",
+      },
     ],
   },
   {
-    // Added 2026-10-17 (Karl). Not on Amazon yet, so the cover is hosted on
-    // Melori and the card shows as "Soon" with no link. When the Kindle edition
-    // goes live: add its `asin`, and delete `live: false`.
+    // Added 2026-10-17 (Karl). Cover hosted on Melori. Shows as "Soon" with
+    // no link until it has one. When it goes live: add its Kindle `asin` OR
+    // its Google Play Books link as `url` (either works), and delete
+    // `live: false`.
     id: "was-it-just-business",
     name: "Was It Just Business?",
     audience: "History · adults",
@@ -284,7 +292,8 @@ export function coverUrlFor(book: Book): string | null {
     : null;
 }
 
-/** Where tapping the cover goes: the book's own Amazon page. */
+/** Where tapping the cover goes: the book's own store page. */
 export function bookUrlFor(book: Book): string | null {
+  if (book.url) return book.url;
   return book.asin ? `https://www.amazon.com/dp/${book.asin}` : null;
 }

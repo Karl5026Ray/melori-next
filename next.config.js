@@ -100,6 +100,11 @@ const SECURITY_HEADERS = [
   },
 ];
 
+const SHARP_NATIVE_FILES = [
+  './node_modules/@img/sharp-linux-x64/**/*',
+  './node_modules/@img/sharp-libvips-linux-x64/**/*',
+];
+
 const nextConfig = {
   // Playwright starts local development coverage at 127.0.0.1. Allow that
   // same-origin dev client to reconnect to Turbopack without weakening any
@@ -124,6 +129,17 @@ const nextConfig = {
   // vercel.json; this only widens the incoming request body ceiling.
   experimental: {
     serverActions: { bodySizeLimit: '25mb' },
+  },
+  // sharp's native image library (libvips) lives in the @img/* optional
+  // packages, which the build's file tracer does not pick up. Without this,
+  // every route that imports sharp crashed on load in production ("Could not
+  // load the sharp module … libvips-cpp.so … No such file") — found 18 Oct
+  // 2026: the gallery upload finalize step 500'd, so no photo uploaded from
+  // the browser could ever finish. Scoped to the gallery routes so the ~18 MB
+  // library isn't copied into every other function.
+  outputFileTracingIncludes: {
+    '/api/studio/gallery/**': SHARP_NATIVE_FILES,
+    '/api/gallery/**': SHARP_NATIVE_FILES,
   },
   // Image optimizer allowlist. Narrow on purpose: only the Supabase public
   // storage host that actually serves Melori cover/artwork URLs. This unblocks

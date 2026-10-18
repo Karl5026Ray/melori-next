@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { creditOverlaySvg } from "./gallery-credit";
 
 // Server-only helper: turns a raw uploaded image buffer into a watermarked
 // preview + thumbnail pair for the studio gallery upload route. Mirrors the
@@ -122,5 +123,23 @@ export async function normalizeOriginalJpeg(sourceBuffer: Buffer): Promise<Buffe
   return sharp(sourceBuffer, { failOn: "none" })
     .rotate()
     .jpeg({ quality: 95, progressive: true, mozjpeg: true })
+    .toBuffer();
+}
+
+// Full-resolution copy of an original with the melorimusic.org credit in the
+// corner — what visitors get when they download from a public gallery. Same
+// pixel size as the original; only the small credit pill is added.
+export async function creditStampedJpeg(originalBuffer: Buffer): Promise<Buffer> {
+  const base = sharp(originalBuffer, { failOn: "none" }).rotate();
+  const meta = await base.metadata();
+  // .rotate() applies EXIF orientation, so a portrait shot's displayed size
+  // is its stored size with width and height swapped.
+  const swapped = (meta.orientation ?? 1) >= 5;
+  const width = (swapped ? meta.height : meta.width) ?? 0;
+  const height = (swapped ? meta.width : meta.height) ?? 0;
+  if (!width || !height) throw new Error("Could not read image size");
+  return base
+    .composite([{ input: Buffer.from(creditOverlaySvg(width, height)), blend: "over" }])
+    .jpeg({ quality: 92, progressive: true, mozjpeg: true })
     .toBuffer();
 }

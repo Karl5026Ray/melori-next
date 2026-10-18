@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isGuardFailure } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
+import { creditKeyFor } from "@/lib/gallery-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,7 +126,10 @@ export async function DELETE(
 
   await supabase.storage
     .from(ORIGINALS_BUCKET)
-    .remove([image.storage_key as string])
+    .remove([
+      image.storage_key as string,
+      creditKeyFor(image.storage_key as string),
+    ])
     .catch(() => {});
   await supabase.storage
     .from(PREVIEWS_BUCKET)

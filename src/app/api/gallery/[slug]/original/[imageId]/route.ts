@@ -3,24 +3,33 @@ import { getRequestMembership } from "@/lib/membership-server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/membership";
 import { galleryCookieName, isGalleryUnlocked } from "@/lib/gallery-auth";
+import { creditKeyFor } from "@/lib/gallery-credit";
+import { creditStampedJpeg } from "@/lib/gallery-watermark";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// First public download of a photo stamps a full-size copy with sharp; see
+// vercel.json > functions for the memory allocation.
+export const maxDuration = 60;
 
 const ORIGINALS_BUCKET = "gallery-originals"; // private
 const LINK_SECONDS = 120;
 
 // GET /api/gallery/[slug]/original/[imageId] → { url }
 //
-// The full-resolution, un-watermarked original for one photo, as a short-lived
-// signed link that downloads instead of opening. Before this, the gallery's
+// A full-resolution download of one photo, as a short-lived signed link that
+// saves instead of opening. Before this, the gallery's
 // "Download" badge was decoration: originals sat in a private bucket with no
 // way out, so neither visitors nor the photographer could get full-res back.
 //
-// Who gets it:
-//   - the gallery's owner (or an admin), always — send the Bearer token;
-//   - everyone else only while the gallery's "allow downloads" switch is on,
-//     and only past the password gate if the gallery has one.
+// Who gets what:
+//   - the gallery's owner (or an admin): the clean original, always — send
+//     the Bearer token;
+//   - everyone else, only while the gallery's "allow downloads" switch is on
+//     and past any password gate: the same full-size photo with
+//     "melorimusic.org" in the corner, so a shared copy says where it came
+//     from. The credited copy is made on first request and cached beside the
+//     original (download.jpg), so later downloads are instant.
 export async function GET(
   req: NextRequest,
   props: { params: Promise<{ slug: string; imageId: string }> },
@@ -81,9 +90,22 @@ export async function GET(
       .replace(/\.[^.]+$/, "")
       .replace(/[^\w.\- ]+/g, "_")
       .trim() || "photo";
+  let objectKey = image.storage_key as string;
+  if (!isOwner) {
+    const creditKey = creditKeyFor(objectKey);
+    const ready = await ensureCreditedCopy(supabase, objectKey, creditKey);
+    if (!ready) {
+      return NextResponse.json(
+        { error: "Couldn't prepare the download. Try again." },
+        { status: 500 },
+      );
+    }
+    objectKey = creditKey;
+  }
+
   const { data, error } = await supabase.storage
     .from(ORIGINALS_BUCKET)
-    .createSignedUrl(image.storage_key as string, LINK_SECONDS, {
+    .createSignedUrl(objectKey, LINK_SECONDS, {
       download: `${base}.jpg`,
     });
   if (error || !data?.signedUrl) {
@@ -98,4 +120,41 @@ export async function GET(
     { url: data.signedUrl },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+/** Make sure the credited copy exists in storage; build it if not. */
+async function ensureCreditedCopy(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  originalKey: string,
+  creditKey: string,
+): Promise<boolean> {
+  const slash = creditKey.lastIndexOf("/");
+  const folder = creditKey.slice(0, slash);
+  const name = creditKey.slice(slash + 1);
+  const { data: existing } = await supabase.storage
+    .from(ORIGINALS_BUCKET)
+    .list(folder, { search: name, limit: 5 });
+  if (existing?.some((o) => o.name === name)) return true;
+
+  const { data: blob, error: dlErr } = await supabase.storage
+    .from(ORIGINALS_BUCKET)
+    .download(originalKey);
+  if (dlErr || !blob) {
+    console.error("credit copy: original download failed", originalKey, dlErr?.message);
+    return false;
+  }
+  try {
+    const stamped = await creditStampedJpeg(Buffer.from(await blob.arrayBuffer()));
+    const { error: upErr } = await supabase.storage
+      .from(ORIGINALS_BUCKET)
+      .upload(creditKey, stamped, { contentType: "image/jpeg", upsert: true });
+    if (upErr) {
+      console.error("credit copy: upload failed", creditKey, upErr.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("credit copy: stamping failed", originalKey, err);
+    return false;
+  }
 }

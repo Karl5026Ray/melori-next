@@ -27,6 +27,7 @@ interface GalleryRow {
   password_hash: string | null;
   allow_downloads: boolean;
   is_active: boolean;
+  photographer_id: string;
 }
 
 async function getGallery(slug: string): Promise<GalleryRow | null> {
@@ -35,7 +36,7 @@ async function getGallery(slug: string): Promise<GalleryRow | null> {
     const { data, error } = await supabase
       .from("photo_galleries")
       .select(
-        "id, slug, name, client_name, password_hash, allow_downloads, is_active",
+        "id, slug, name, client_name, password_hash, allow_downloads, is_active, photographer_id",
       )
       .eq("slug", slug)
       .maybeSingle();
@@ -194,6 +195,8 @@ export default async function GalleryViewerPage(props: {
 
   return (
     <GalleryViewer
+      galleryId={gallery.id}
+      ownerId={gallery.photographer_id}
       gallerySlug={gallery.slug}
       galleryName={gallery.name}
       clientName={gallery.client_name}

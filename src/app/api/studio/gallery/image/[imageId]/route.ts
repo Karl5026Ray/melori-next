@@ -142,5 +142,14 @@ export async function DELETE(
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 
+  // If this photo was the gallery cover, the cover key now points at a file
+  // we just removed — clear it so the cover falls back to the first photo
+  // instead of rendering a broken image.
+  await supabase
+    .from("photo_galleries")
+    .update({ cover_image_key: null })
+    .eq("id", image.gallery_id as string)
+    .eq("cover_image_key", image.thumbnail_key as string);
+
   return NextResponse.json({ ok: true });
 }

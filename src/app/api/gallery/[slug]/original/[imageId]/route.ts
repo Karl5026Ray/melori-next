@@ -29,7 +29,7 @@ const LINK_SECONDS = 120;
 //     and past any password gate: the same full-size photo with
 //     "melorimusic.org" in the corner, so a shared copy says where it came
 //     from. The credited copy is made on first request and cached beside the
-//     original (download.jpg), so later downloads are instant.
+//     original (credit-vN.jpg), so later downloads are instant.
 export async function GET(
   req: NextRequest,
   props: { params: Promise<{ slug: string; imageId: string }> },

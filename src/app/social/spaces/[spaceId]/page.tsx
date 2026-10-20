@@ -1,7 +1,7 @@
 // Audio Spaces room route.
 //
 // Renders Spaces' own room screen (SpacesRoomScreen). Since 2 Oct 2026 Spaces
-// and Cinema share no room code. This route also bounces a Cinema or Concert
+// and Cinema share no room code. This route also bounces a Cinema or audition
 // room to its own URL, so an old link, a share, or a stale tile still lands
 // the viewer in the right product.
 
@@ -9,7 +9,6 @@ import { redirect } from "next/navigation";
 import { auditionRoomHref, isAuditionFormat } from "@/lib/auditions";
 import { supabase } from "@/lib/supabase";
 import { CINEMA_ROOM_FORMAT } from "@/lib/cinema";
-import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 import SpacesRoomScreen from "@/components/social/spaces/SpacesRoomScreen";
 
 // Queries Supabase per request; must not be statically prerendered, and must
@@ -35,9 +34,6 @@ export default async function SpaceRoomPage({
   // guessing here would strand people on the wrong route during a blip.
   if (data?.room_format === CINEMA_ROOM_FORMAT) {
     redirect(`/social/cinema/${spaceId}`);
-  }
-  if (data?.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
-    redirect(`/social/concert/${spaceId}`);
   }
   if (isAuditionFormat(data?.room_format)) {
     redirect(auditionRoomHref(spaceId));

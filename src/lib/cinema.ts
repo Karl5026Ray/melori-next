@@ -7,7 +7,6 @@
 // Cinema is the shared, host-synced video surface on the stage.
 
 import type { Space } from "@/types/social";
-import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 import { AUDITIONS_HOME, auditionRoomHref, isAuditionFormat } from "@/lib/auditions";
 
 export const CINEMA_ROOM_FORMAT = "cinema" as const;
@@ -39,7 +38,6 @@ export function roomExitHref(
   roomFormat: string | null | undefined,
 ): string {
   if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
-  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
   if (isAuditionFormat(roomFormat)) return AUDITIONS_HOME;
   return "/social/spaces";
 }
@@ -49,7 +47,6 @@ export function roomExitLabel(
   roomFormat: string | null | undefined,
 ): string {
   if (roomFormat === CINEMA_ROOM_FORMAT) return "Back to Cinema";
-  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "Back to Concert";
   if (isAuditionFormat(roomFormat)) return "Back to Auditions";
   return "Back to Spaces";
 }
@@ -63,7 +60,6 @@ export function roomScheduledHref(
   roomFormat: string | null | undefined,
 ): string {
   if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema";
-  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert";
   if (isAuditionFormat(roomFormat)) return AUDITIONS_HOME;
   return "/social/spaces?tab=scheduled";
 }
@@ -87,9 +83,6 @@ export function roomHref(
 ): string {
   if (!room?.id) return "/social/spaces";
   if (room.room_format === CINEMA_ROOM_FORMAT) return `/social/cinema/${room.id}`;
-  if (room.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
-    return `/social/concert/${room.id}`;
-  }
   if (isAuditionFormat(room.room_format)) return auditionRoomHref(room.id);
   return `/social/spaces/${room.id}`;
 }
@@ -107,7 +100,6 @@ export function roomCreateHref(
   roomFormat: string | null | undefined,
 ): string {
   if (roomFormat === CINEMA_ROOM_FORMAT) return "/social/cinema/create";
-  if (roomFormat === CONCERT_BATTLE_ROOM_FORMAT) return "/social/concert/create";
   if (isAuditionFormat(roomFormat)) return `${AUDITIONS_HOME}/create`;
   return "/social/spaces/create";
 }

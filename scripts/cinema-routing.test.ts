@@ -14,7 +14,6 @@ import {
   roomHref,
   roomScheduledHref,
 } from "@/lib/cinema";
-import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 let failures = 0;
 
@@ -35,10 +34,12 @@ assertEq(
   roomHref({ id: "abc", room_format: CINEMA_ROOM_FORMAT }),
   "/social/cinema/abc",
 );
+// Concert Battle was removed on 20 Oct 2026. A stray old 'versus_battle'
+// row must fall back to Spaces, never to a /social/concert route.
 assertEq(
-  "concert room -> concert route",
-  roomHref({ id: "abc", room_format: CONCERT_BATTLE_ROOM_FORMAT }),
-  "/social/concert/abc",
+  "removed versus_battle format -> spaces route",
+  roomHref({ id: "abc", room_format: "versus_battle" }),
+  "/social/spaces/abc",
 );
 assertEq(
   "audio space -> spaces route",
@@ -77,11 +78,6 @@ assertEq(
   "/social/cinema/create",
 );
 assertEq(
-  "concert -> its own create route",
-  roomCreateHref(CONCERT_BATTLE_ROOM_FORMAT),
-  "/social/concert/create",
-);
-assertEq(
   "audio space -> Start a Space",
   roomCreateHref("dj_set"),
   "/social/spaces/create",
@@ -97,17 +93,11 @@ assertEq(
 
 console.log("exits and scheduling still route by format");
 assertEq("cinema exit", roomExitHref(CINEMA_ROOM_FORMAT), "/social/cinema");
-assertEq("concert exit", roomExitHref(CONCERT_BATTLE_ROOM_FORMAT), "/social/concert");
 assertEq("space exit", roomExitHref("discussion"), "/social/spaces");
 assertEq(
   "cinema scheduled",
   roomScheduledHref(CINEMA_ROOM_FORMAT),
   "/social/cinema",
-);
-assertEq(
-  "concert scheduled",
-  roomScheduledHref(CONCERT_BATTLE_ROOM_FORMAT),
-  "/social/concert",
 );
 assertEq(
   "space scheduled",
@@ -129,16 +119,11 @@ for (const helper of [roomExitHref, roomScheduledHref, roomCreateHref]) {
   );
 }
 
-console.log("round trip — every helper agrees on what Concert is");
+console.log("no helper routes anywhere under /social/concert");
 for (const helper of [roomExitHref, roomScheduledHref, roomCreateHref]) {
   assertEq(
-    `${helper.name} sends Concert to a /social/concert path`,
-    helper(CONCERT_BATTLE_ROOM_FORMAT).startsWith("/social/concert"),
-    true,
-  );
-  assertEq(
-    `${helper.name} never sends Concert to a /social/spaces path`,
-    helper(CONCERT_BATTLE_ROOM_FORMAT).startsWith("/social/spaces"),
+    `${helper.name} never sends a removed versus_battle room to /social/concert`,
+    helper("versus_battle").startsWith("/social/concert"),
     false,
   );
 }

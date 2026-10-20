@@ -1,9 +1,8 @@
 /**
  * Shared, server-side member visibility rules.
  *
- * Directory and Concert candidate selection intentionally use the same
- * definition so a person hidden from one social picker cannot reappear in the
- * other. Presence is not part of this contract: a recent heartbeat only makes
+ * The member directory uses this one definition so a hidden person never
+ * reappears in a social picker. Presence is not part of this contract: a recent heartbeat only makes
  * a member eligible for the Mirror source, it is not an exact login time.
  */
 

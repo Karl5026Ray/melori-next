@@ -188,3 +188,13 @@ Patterns to not repeat. Each entry is a correction that cost real time.
   tests on the cleaner had passed. Anything a model writes to a public page
   gets a validator for the failures you actually saw, and a human-readable
   sample checked after the first production run.
+
+## Room layout
+
+- **A few pixels on a seat is a layout change.** The triple voice ring (20 Oct)
+  grew the Spaces stage label gap from gap-2.5 to gap-3; the 390x844 e2e budget
+  (chat must end above the dock) failed by 2px. Rings, badges and labels on
+  room seats must fit inside the existing gaps, and the Spaces/Cinema e2e specs
+  must run before calling it done. In the cloud sandbox Playwright's pinned
+  browser download is blocked, but a local Chromium exists: launch with
+  executablePath /opt/pw-browsers/chromium-1194/chrome-linux/chrome.

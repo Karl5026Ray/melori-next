@@ -29,14 +29,14 @@ for (const format of ["live_solo", "live_duo", "live_group"]) {
   assertEq(`${format} routes to Faces`, result?.href, "/social/live/room-1");
 }
 
-const concert = getLiveRoomPresentation({
+// Concert Battle was removed on 20 Oct 2026: a stray versus_battle row is
+// presented as an ordinary Space, never sent to /social/concert.
+const removedConcert = getLiveRoomPresentation({
   id: "room-2",
   status: "live",
   room_format: "versus_battle",
 });
-assertEq("Concert uses teal", concert?.tone, "teal");
-assertEq("Concert is visibly labeled", concert?.label, "Concert");
-assertEq("Concert routes to its dedicated screen", concert?.href, "/social/concert/room-2");
+assertEq("removed Concert format never routes to /social/concert", removedConcert?.href?.startsWith("/social/concert") ?? false, false);
 
 for (const format of ["discussion", "release_party", "dj_set", null, "legacy"]) {
   const result = getLiveRoomPresentation({
@@ -85,9 +85,6 @@ assertEq(
   isMediaRoomRoute("/social/cinema/abc/controls"),
   false,
 );
-assertEq("Concert room suppresses transport", isMediaRoomRoute("/social/concert/abc"), true);
-assertEq("Concert landing keeps transport", isMediaRoomRoute("/social/concert"), false);
-assertEq("Concert create keeps transport", isMediaRoomRoute("/social/concert/create"), false);
 assertEq("Spaces room suppresses transport", isMediaRoomRoute("/social/spaces/abc"), true);
 assertEq("Spaces create keeps transport", isMediaRoomRoute("/social/spaces/create"), false);
 

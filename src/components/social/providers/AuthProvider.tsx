@@ -118,8 +118,8 @@ export function SocialAuthProvider({
       userIdRef.current = browserTestUserId;
       setUser({
         id: browserTestUserId,
-        username: "concert_initiator",
-        display_name: "Concert Initiator",
+        username: "e2e_member",
+        display_name: "E2E Member",
         avatar_url: null,
         role: "superfan",
         bio: null,

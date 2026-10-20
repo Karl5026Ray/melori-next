@@ -9,8 +9,8 @@
 //   room:<spaceId>      members broadcast peer signals (reactions, raise-hand)
 //                       and track presence ("N here").
 //   room-sys:<spaceId>  read-only for members. Only the server (service role)
-//                       writes here: "space-ended", "host-changed", concert
-//                       vote tallies. A participant cannot forge these.
+//                       writes here: "space-ended", "host-changed". A
+//                       participant cannot forge these.
 //
 // Everything here is additive UX. The database stays the source of truth, so a
 // failed subscribe or send must never break the room: errors are reported via
@@ -26,9 +26,9 @@ export interface PresenceState {
 }
 
 // A lightweight signal fanned out to the room. Peer signals (reaction, hand)
-// come from participants; "vote" only ever arrives on the server channel.
+// come from participants.
 export interface SpaceSignal {
-  type: "reaction" | "hand" | "vote";
+  type: "reaction" | "hand";
   emoji?: string;
   // when present, the reaction animates over this participant's avatar
   target?: string;
@@ -37,10 +37,6 @@ export interface SpaceSignal {
   uuid?: string;
   // client timestamp (ms), a de-dupe / ordering hint
   ts?: number;
-  // Concert vote tally: ABSOLUTE for the round, never a delta.
-  round?: number;
-  initiator_votes?: number;
-  opponent_votes?: number;
 }
 
 export interface JoinPresenceOptions {
@@ -91,8 +87,7 @@ export async function joinPresence(opts: JoinPresenceOptions): Promise<void> {
   room
     .on("broadcast", { event: "signal" }, ({ payload }) => {
       const signal = payload as SpaceSignal;
-      // Votes are server-authoritative; a peer cannot announce one.
-      if (!signal || signal.type === "vote") return;
+      if (!signal) return;
       if (signal.uuid && signal.uuid === opts.uuid) return;
       opts.onSignal?.(signal);
     })
@@ -104,11 +99,6 @@ export async function joinPresence(opts: JoinPresenceOptions): Promise<void> {
     .on("broadcast", { event: "system" }, ({ payload }) => {
       if (payload && typeof payload === "object") {
         opts.onSystemSignal?.(payload as Record<string, unknown>);
-      }
-    })
-    .on("broadcast", { event: "vote" }, ({ payload }) => {
-      if (payload && typeof payload === "object") {
-        opts.onSignal?.({ ...(payload as SpaceSignal), type: "vote" });
       }
     });
 
@@ -150,7 +140,6 @@ export async function publishSignal(
   signal: SpaceSignal,
 ): Promise<void> {
   if (!active || active.spaceId !== spaceId) return;
-  if (signal.type === "vote") return;
   try {
     await active.room.send({
       type: "broadcast",

@@ -143,9 +143,25 @@ check(
   "the hero progress bar is seekable, not decoration",
   hero.includes('data-testid="hero-seek"') && hero.includes("seek(value)"),
 );
-// Every hero control must opt out of the page-wide first-interaction unmute, or
-// that handler and the button's own onClick run against different renders of the
-// same state and can disagree — start here, pause there.
+// Sound is opt-in (Karl, 20 Oct 2026: surprise music scared people off). The
+// hero must never unmute, and the join-page theme must never start, from a tap,
+// scroll or key press anywhere on the page — only from their own buttons.
+const signupTheme = read("src/components/signupTheme/SignupTheme.tsx");
+check(
+  "the homepage hero never unmutes from a page-wide gesture",
+  !/window\.addEventListener\(\s*evt/.test(hero) &&
+    !hero.includes('"pointerdown"') &&
+    !hero.includes('"touchstart"') &&
+    !hero.includes('"wheel"'),
+);
+check(
+  "the join-page theme only plays from its own button",
+  !signupTheme.includes("document.addEventListener") &&
+    signupTheme.includes('data-testid="signup-theme-toggle"') &&
+    signupTheme.includes("onClick={toggle}"),
+);
+// Hero controls keep their data-hero-audio-control marker so a page-wide sound
+// handler can never be reintroduced without them opting out of it.
 check(
   "every hero transport control is marked data-hero-audio-control",
   (hero.match(/data-testid="hero-(prev|play|next|seek)"/g) ?? []).length === 4 &&

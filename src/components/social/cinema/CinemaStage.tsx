@@ -84,7 +84,7 @@ function AudioSeat({
       data-seat={isHostSeat ? "host" : `guest-${seatIndex}`}
       data-speaking={ring.active ? "true" : "false"}
       aria-label={`${name}, ${roleLabel}${muted ? ", muted" : ring.active ? ", speaking" : ""}`}
-      className="flex min-w-0 flex-col items-center gap-5 rounded-xl py-1 transition hover:bg-white/[0.03]"
+      className="flex min-w-0 flex-col items-center gap-3 rounded-xl py-1 transition hover:bg-white/[0.03]"
     >
       {/* The ring is absolute inside a `relative block` box, never a centered
           grid: a grid container re-centres the scaled ring off the avatar. */}

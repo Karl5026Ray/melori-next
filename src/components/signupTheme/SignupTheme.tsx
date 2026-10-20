@@ -7,11 +7,10 @@ import { Volume2, VolumeX } from "lucide-react";
 // looping at 30-40% while people sign up. Mounted by the /platform and
 // /register layouts only — the door ("/" signed out) and Create account.
 //
-// WHY IT WAITS FOR A TAP
-// Chrome, Safari and every phone block sound that starts on its own when a
-// page opens. So the song starts on the visitor's first touch anywhere on the
-// page (tapping the email box counts), and the button top-right says so.
-// Nothing is downloaded until then, so a visitor who leaves costs no data.
+// OPT-IN ONLY
+// The song plays only when the visitor taps "Tap for music" top-right (Karl,
+// 20 Oct 2026: surprise music scared people off). Nothing is downloaded until
+// then, so a visitor who never taps costs no data.
 //
 // VOLUME
 // 35%. iPhone Safari ignores a page's volume setting on <audio>, so where the
@@ -111,25 +110,13 @@ export default function SignupTheme() {
     audioRef.current?.pause();
   }, []);
 
-  // First touch anywhere on the page starts the song, unless muted before.
+  // Opt-in only (Karl, 20 Oct 2026: "the music scares people when it comes
+  // on"). The song used to start on the first touch anywhere on the page, so
+  // tapping the email box set it off. Now only the "Tap for music" button plays
+  // it. A visitor who muted it before still sees "Music off".
   useEffect(() => {
-    if (!THEME_SRC) return;
-    if (readMuted()) {
-      setState("muted");
-      return;
-    }
-    const onFirstGesture = (e: Event) => {
-      if (startedRef.current || readMuted()) return;
-      // The music button handles its own tap; starting here too would race it
-      // and could mute the song the instant it began.
-      const target = e.target as Element | null;
-      if (target?.closest?.('[data-testid="signup-theme-toggle"]')) return;
-      void play();
-    };
-    const events: (keyof DocumentEventMap)[] = ["pointerdown", "keydown", "touchstart"];
-    events.forEach((e) => document.addEventListener(e, onFirstGesture, { passive: true }));
-    return () => events.forEach((e) => document.removeEventListener(e, onFirstGesture));
-  }, [play]);
+    if (THEME_SRC && readMuted()) setState("muted");
+  }, []);
 
   // Leaving the join page stops the song and releases the audio.
   useEffect(

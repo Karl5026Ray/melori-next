@@ -9,8 +9,8 @@ import { formatTime } from "@/lib/format";
 // The homepage "instant listening" hero. On load it tunes the SHARED player
 // (same <audio> element and context as the persistent bottom bar, the floating
 // mobile player and the Radio page) into the radio station MUTED — the only
-// form of autoplay browsers permit — then unmutes on the visitor's first
-// interaction anywhere on the page, TikTok-style. Because it's the radio and
+// form of autoplay browsers permit — and only unmutes when the visitor taps
+// play or the "tap for sound" prompt. Because it's the radio and
 // not a one-track queue, playback rolls on through the catalog instead of
 // stopping after the first song.
 export default function HomeHero({ track }: { track: PlayerTrack }) {
@@ -34,9 +34,8 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     seek,
   } = usePlayer();
 
-  // Guard so we only kick off autoplay once, and only auto-unmute once.
+  // Guard so we only tune in (muted) once.
   const startedRef = useRef(false);
-  const unmutedRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   // What the hero shows: whatever the one shared player has on air, falling
@@ -73,41 +72,11 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Unmute — and, on browsers that blocked the muted autoplay, actually START
-  // playback — on the visitor's FIRST interaction anywhere on the page.
-  //
-  // `playAudible()` is called unconditionally and does the whole sequence in the
-  // right order (unlock inside this gesture → real signed src → unmute → play).
-  // It replaces an `unlockPlayback() + setMuted(false) + if (!isPlaying)
-  // togglePlay()` chain whose `isPlaying` test could skip the reload and leave
-  // the silent unlock clip as the audio source, so the hero showed "unmuted"
-  // while nothing audible ever played.
-  useEffect(() => {
-    const events = ["pointerdown", "keydown", "touchstart", "wheel"] as const;
-    const onFirstInteraction = (e: Event) => {
-      if (unmutedRef.current) return;
-      unmutedRef.current = true;
-      // A tap on one of the hero's own controls is handled by that control's
-      // onClick. Acting here too would run against the pre-tap render's state
-      // while the click runs against the post-tap one, so the two could disagree
-      // (start here, then immediately pause there).
-      const el = e.target as HTMLElement | null;
-      if (!el?.closest("[data-hero-audio-control]")) playAudible();
-      cleanup();
-    };
-    const cleanup = () => {
-      for (const evt of events) {
-        window.removeEventListener(evt, onFirstInteraction);
-      }
-    };
-    for (const evt of events) {
-      window.addEventListener(evt, onFirstInteraction, {
-        once: false,
-        passive: true,
-      });
-    }
-    return cleanup;
-  }, [playAudible]);
+  // Sound is opt-in (Karl, 20 Oct 2026: "the music scares people when it
+  // comes on"). The hero used to unmute on the visitor's first tap, scroll or
+  // key press anywhere on the page, so signing in and scrolling set off the
+  // radio. Now the radio stays muted until the visitor taps play or the
+  // "tap for sound" prompt, both of which call playAudible() themselves.
 
   const fraction = duration > 0 ? currentTime / duration : 0;
   const showSoundPrompt = muted && !error;
@@ -116,18 +85,16 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
   // is "give me sound", not a pause control — the visitor has not heard
   // anything yet, so pausing would be answering a question they did not ask.
   const togglePlayback = () => {
-    unmutedRef.current = true;
     if (isPlaying && !muted) pause();
     else playAudible();
   };
 
   // Skipping while muted has to unmute FIRST. next()/prev() load and play the
-  // new track themselves, so the order is: stop the page-wide handler from also
-  // firing, drop the mute (which is all startAudible() does), then move. It
+  // new track themselves, so the order is: drop the mute (which is all
+  // startAudible() does), then move. It
   // deliberately does NOT call playAudible() — that re-resolves the CURRENT
   // track from React state, which is the one we are leaving.
   const skip = (go: () => void) => {
-    unmutedRef.current = true;
     if (muted) setMuted(false);
     go();
   };
@@ -135,7 +102,6 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
   // Scrubbing counts as wanting to hear it. seek() takes a FRACTION, not
   // seconds, and no-ops when the element has no finite duration yet.
   const scrub = (value: number) => {
-    unmutedRef.current = true;
     if (muted) setMuted(false);
     seek(value);
   };
@@ -156,7 +122,6 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             type="button"
             data-hero-audio-control
             onClick={() => {
-              unmutedRef.current = true;
               // While still muted this is "give me sound", not a pause control —
               // the visitor has not heard anything yet.
               if (isPlaying && !muted) pause();
@@ -324,7 +289,6 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             type="button"
             data-hero-audio-control
             onClick={() => {
-              unmutedRef.current = true;
               playAudible();
             }}
             className="absolute -top-3 right-4 flex items-center gap-2 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105 sm:-top-3 sm:right-6"

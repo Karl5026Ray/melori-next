@@ -102,8 +102,8 @@ export default async function HomePage() {
             connect with listeners who are actually there.
           </p>
 
-          {/* Instant-listening centerpiece: autoplays a real catalog track (muted, then
-             unmutes on first interaction) using the shared site player. */}
+          {/* Instant-listening centerpiece: a real catalog track, loaded muted on the
+             shared site player; sound starts only when the visitor taps play. */}
           {featuredTrack && <HomeHero track={featuredTrack} />}
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">

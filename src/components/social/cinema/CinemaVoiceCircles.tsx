@@ -62,15 +62,28 @@ function VoiceCircle({
       {/* The ring is absolute inside a `relative block` box, never a centered
           grid container: a grid re-centres the scaled ring off the avatar. */}
       <span className="relative block h-11 w-11 shrink-0">
-        {/* Volume ring. Scale and opacity follow the live level, so this is one
-            element that breathes rather than a canned keyframe loop; a quiet
+        {/* Three volume rings, inner to outer, each lit by its loudness band
+            (ringBands): they fill outward as the voice gets louder, driven by
+            the live level rather than a canned keyframe loop, and a quiet
             circle is perfectly still. */}
         <span
           aria-hidden
           data-testid="cinema-voice-ring"
           data-ring-active={ring.active ? "true" : "false"}
-          className="pointer-events-none absolute inset-0 rounded-full border-2 border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
-          style={{ transform: `scale(${ring.scale})`, opacity: ring.opacity }}
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -3, borderWidth: 2, opacity: ring.bands[0] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="2"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -6, borderWidth: 1.5, opacity: ring.bands[1] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="3"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -9, borderWidth: 1, opacity: ring.bands[2] }}
         />
         {/* Resting ring, always visible, so an idle listener still reads as a
             present person rather than a floating avatar. */}
@@ -132,7 +145,7 @@ function VoiceCircle({
     </>
   );
 
-  const className = "flex w-full min-w-0 shrink-0 flex-col items-center gap-1 text-center transition";
+  const className = "flex w-full min-w-0 shrink-0 flex-col items-center gap-2.5 text-center transition";
 
   if (!onReactToParticipant) {
     return (
@@ -183,7 +196,7 @@ export function CinemaVoiceCircles({
           scroll indicator. */}
       <ul
         data-testid="cinema-voice-rail"
-        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain pb-1 pr-0.5 pt-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-[3px]"
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain px-1 pb-2.5 pt-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-[3px]"
         style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.25) transparent" }}
       >
         {ordered.map((participant) => {

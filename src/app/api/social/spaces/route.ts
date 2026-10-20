@@ -50,7 +50,6 @@ export async function POST(req: NextRequest) {
     const ALLOWED_FORMATS = new Set([
       "release_party",
       "discussion",
-      "versus_battle",
       "dj_set",
       // MM Cinema watch party (migration 050).
       "cinema",

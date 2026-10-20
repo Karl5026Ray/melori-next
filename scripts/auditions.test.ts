@@ -109,7 +109,7 @@ expect("presence reaper skips auditions", read("src/app/api/cron/mm-presence-rea
 const vercel = JSON.parse(read("vercel.json")) as { crons: { path: string }[] };
 expect("cleanup cron scheduled", vercel.crons.some((c) => c.path === "/api/cron/audition-cleanup"), true);
 const migration = read("supabase/migrations/094_mm_auditions.sql");
-for (const v of ["live_solo", "live_duo", "live_group", "cinema", "versus_battle", "table_read", "audition", "callback"]) {
+for (const v of ["live_solo", "live_duo", "live_group", "cinema", "table_read", "audition", "callback"]) {
   expect(`room_format check keeps ${v}`, migration.includes(`'${v}'`), true);
 }
 

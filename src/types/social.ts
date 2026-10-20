@@ -1,9 +1,3 @@
-import type {
-  ConcertBattleInviteStatus,
-  ConcertBattleRoundStatus,
-  ConcertBattleStatus,
-} from "@/lib/concertBattle";
-
 export type UserRole = "artist" | "superfan" | "admin" | "free";
 
 export interface SocialLink {
@@ -40,7 +34,6 @@ export type SpaceStatus = "scheduled" | "live" | "ended";
 export type RoomFormat =
   | "release_party"
   | "discussion"
-  | "versus_battle"
   | "dj_set"
   // MM Cinema — a shared-screen watch party. Same room engine as the formats
   // above (roles, raise-hand queue, moderation, bans, end-room teardown); what
@@ -56,7 +49,6 @@ export const ROOM_FORMAT_CONFIG: Record<
 > = {
   release_party: { variant: "green", label: "Release Party" },
   discussion: { variant: "purple", label: "Discussion" },
-  versus_battle: { variant: "pink", label: "Versus Battle" },
   dj_set: { variant: "orange", label: "DJ Set" },
   cinema: { variant: "gold", label: "Cinema" },
 };
@@ -126,72 +118,6 @@ export interface SpaceParticipant {
   // Set by the host via force-mute; clients respect this even if the speaker
   // toggles their own is_muted back off.
   host_muted?: boolean;
-}
-
-// Concert Battle is a separate aggregate over a `spaces` room envelope.
-// These API-facing shapes intentionally contain only aggregate/view data; no
-// per-voter or generic-stage authorization information belongs here.
-export interface ConcertBattle {
-  space_id: string;
-  initiator_id: string;
-  opponent_id: string | null;
-  status: ConcertBattleStatus;
-  current_round: number;
-  regulation_rounds: number;
-  round_duration_seconds: number;
-  phase_started_at: string | null;
-  phase_ends_at: string | null;
-  winner_id: string | null;
-  completion_reason: string | null;
-  version: number;
-  created_at: string;
-  updated_at: string;
-  completed_at: string | null;
-}
-
-export interface ConcertBattleRound {
-  id: string;
-  space_id: string;
-  round_number: number;
-  state: ConcertBattleRoundStatus;
-  starts_at: string | null;
-  ends_at: string | null;
-  finalized_at: string | null;
-  winner_id: string | null;
-  initiator_votes: number;
-  opponent_votes: number;
-}
-
-export interface ConcertBattleInvite {
-  id: string;
-  space_id: string;
-  sender_id: string;
-  recipient_id: string;
-  status: ConcertBattleInviteStatus;
-  expires_at: string;
-  created_at: string;
-  responded_at: string | null;
-}
-
-export interface ConcertBattleView {
-  space: Pick<Space, "id" | "title" | "topic" | "status" | "room_format">;
-  battle: ConcertBattle;
-  initiator: Profile;
-  opponent: Profile | null;
-  viewer_slot: 1 | 2 | null;
-  /**
-   * Audience vote tally for the battle's CURRENT round, so a viewer joining
-   * mid-round starts from the real count instead of zero. concert_battle_rounds
-   * remains the authority for finished rounds and the win condition.
-   */
-  scores: {
-    round: number;
-    initiator_votes: number;
-    opponent_votes: number;
-  };
-  /** The performer the viewer voted for in the current round, if any. */
-  viewer_vote: string | null;
-  server_now: string;
 }
 
 export interface Conversation {

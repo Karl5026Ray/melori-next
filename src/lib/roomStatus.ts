@@ -1,7 +1,6 @@
 import { auditionRoomHref, isAuditionFormat } from "@/lib/auditions";
 export type LivePresenceKind =
   | "faces_live"
-  | "concert_live"
   | "spaces_live"
   | "cinema_live";
 
@@ -9,7 +8,7 @@ export type LivePresenceTone = "orange" | "teal" | "purple" | "gold";
 
 export type LiveRoomPresentation = {
   kind: LivePresenceKind;
-  label: "Live" | "Concert" | "Space" | "Cinema";
+  label: "Live" | "Space" | "Cinema";
   ariaLabel: string;
   icon: "video" | "mic" | "radio" | "clapperboard";
   tone: LivePresenceTone;
@@ -42,16 +41,6 @@ export function getLiveRoomPresentation(room: {
     };
   }
 
-  if (room.room_format === "versus_battle") {
-    return {
-      kind: "concert_live",
-      label: "Concert",
-      ariaLabel: "Concert live",
-      icon: "mic",
-      tone: "teal",
-      href: `/social/concert/${room.id}`,
-    };
-  }
 
   // Normally filtered out before it gets here (/api/mirror/live excludes
   // audition rooms), but if one ever arrives it must link to Auditions, not

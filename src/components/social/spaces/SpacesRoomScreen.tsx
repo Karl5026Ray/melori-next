@@ -5,7 +5,7 @@
 // Spaces' own screen. Until 2 Oct 2026 one RoomScreen served both Spaces and
 // Cinema; Karl asked for the two to share no room code, so Cinema now has its
 // own screen and this file only knows about audio Spaces (release_party,
-// discussion, dj_set). The route bounces Cinema and Concert rooms to their own
+// discussion, dj_set). The route bounces Cinema and audition rooms to their own
 // URLs before this renders.
 //
 // What the two products still share is plumbing: the `spaces` /

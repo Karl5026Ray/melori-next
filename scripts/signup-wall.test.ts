@@ -106,7 +106,6 @@ const GATED: string[] = [
   "/social/cinema",
   "/social/cinema/create",
   "/social/cinema/abc123",
-  "/social/concert",
   "/social/live",
   "/social/live/abc123",
   "/social/discover",

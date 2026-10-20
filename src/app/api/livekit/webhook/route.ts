@@ -7,10 +7,8 @@ import { deriveRoomName } from "@/lib/endRoom";
 import {
   decidePublishedCameraEnforcement,
   type CinemaReservation,
-  type ConcertBattleIdentityInput,
   type RoomMediaRole,
 } from "@/lib/roomMediaPolicy";
-import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 import {
   applyStagePermissions,
   isSupersededSession,
@@ -104,12 +102,7 @@ export async function POST(req: NextRequest) {
   // A token is only an initial permission snapshot. This webhook is the
   // fail-closed backstop for a stale/replayed Cinema token or a runtime update
   // that raced a local publish: an unreserved identity loses camera immediately.
-  // Concert is enforced by the same backstop, where "reserved" means the battle's
-  // initiator or its one accepted opponent.
-  if (
-    event.event === "track_published" &&
-    (space.room_format === "cinema" || space.room_format === CONCERT_BATTLE_ROOM_FORMAT)
-  ) {
+  if (event.event === "track_published" && space.room_format === "cinema") {
     const identity = event.participant?.identity ?? "";
     const source = (event as any).track?.source;
     const isCamera =
@@ -145,24 +138,8 @@ export async function POST(req: NextRequest) {
       slot: Number(row.slot),
       userId: String(row.user_id),
     }));
-    let concertBattle: ConcertBattleIdentityInput | null = null;
-    if (space.room_format === CONCERT_BATTLE_ROOM_FORMAT) {
-      const { data: battleRow } = await supabase
-        .from("concert_battles")
-        .select("initiator_id, opponent_id, status")
-        .eq("space_id", space.id)
-        .maybeSingle();
-      concertBattle = battleRow
-        ? {
-            initiatorId: String(battleRow.initiator_id),
-            opponentId: battleRow.opponent_id ? String(battleRow.opponent_id) : null,
-            status: battleRow.status ?? null,
-          }
-        : null;
-    }
     const enforcement = decidePublishedCameraEnforcement({
       roomFormat: space.room_format,
-      concertBattle,
       hostId: space.host_id,
       userId: identity,
       role,

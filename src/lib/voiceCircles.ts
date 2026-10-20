@@ -149,6 +149,32 @@ export function orderVoiceRail<
  * A muted participant is pinned to the resting state no matter what the last
  * sampled level was, which keeps "muted" visually absolute.
  */
+/**
+ * The three concentric voice rings, inner to outer. Each band starts filling
+ * at its threshold and is full one span later, so a soft voice lights only the
+ * inner ring and a loud one lights all three — the rings fill outward from the
+ * avatar as speech gets louder (Karl, 20 Oct 2026). Thresholds sit low because
+ * LiveKit's audioLevel for ordinary speech lives around 0.1–0.5.
+ */
+export const RING_BAND_THRESHOLDS = [0, 0.25, 0.5] as const;
+const RING_BAND_SPAN = 0.25;
+/** Outer rings are fainter than inner ones, so the stack reads as a ripple. */
+const RING_BAND_WEIGHT = [1, 0.8, 0.6] as const;
+
+export type RingBands = readonly [number, number, number];
+export const SILENT_BANDS: RingBands = [0, 0, 0];
+
+/** Opacity of each of the three rings for an effective 0..1 level. */
+export function ringBands(effective: number): RingBands {
+  const e = Number.isFinite(effective) ? Math.max(0, Math.min(1, effective)) : 0;
+  const band = (i: 0 | 1 | 2) => {
+    const fill = Math.max(0, Math.min(1, (e - RING_BAND_THRESHOLDS[i]) / RING_BAND_SPAN));
+    if (fill <= 0 || e <= 0) return 0;
+    return Number(((0.35 + 0.65 * fill) * RING_BAND_WEIGHT[i]).toFixed(3));
+  };
+  return [band(0), band(1), band(2)];
+}
+
 export function voiceRing({
   level,
   speaking,
@@ -157,15 +183,16 @@ export function voiceRing({
   level: number;
   speaking: boolean;
   muted: boolean;
-}): { scale: number; opacity: number; active: boolean } {
-  if (muted) return { scale: 1, opacity: 0, active: false };
+}): { scale: number; opacity: number; active: boolean; bands: RingBands } {
+  if (muted) return { scale: 1, opacity: 0, active: false, bands: SILENT_BANDS };
   const normalized = normalizeAudioLevel(level);
   // ActiveSpeakersChanged is the reliable on/off signal and arrives before a
   // usable level does. Give a confirmed speaker a visible floor so the ring
   // never lags behind the fact that they are talking.
   const effective = speaking ? Math.max(normalized, 0.3) : normalized;
-  if (effective <= 0) return { scale: 1, opacity: 0, active: false };
+  if (effective <= 0) return { scale: 1, opacity: 0, active: false, bands: SILENT_BANDS };
   return {
+    bands: ringBands(effective),
     // 1.00 -> 1.34: large enough to read across a phone screen, small enough
     // that neighbouring circles in a tight grid never collide.
     scale: Number((1 + effective * 0.34).toFixed(3)),

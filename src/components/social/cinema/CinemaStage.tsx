@@ -89,11 +89,28 @@ function AudioSeat({
       {/* The ring is absolute inside a `relative block` box, never a centered
           grid: a grid container re-centres the scaled ring off the avatar. */}
       <span className="relative block h-[88px] w-[88px] shrink-0 sm:h-28 sm:w-28">
+        {/* Three concentric rings, inner to outer, each lit by its own loudness
+            band (src/lib/voiceCircles.ts ringBands): soft speech lights the
+            inner ring, louder speech fills outward. Fixed positions, so a loud
+            seat never grows into its neighbour. */}
         <span
           aria-hidden
           data-testid="cinema-seat-ring"
-          className="pointer-events-none absolute -inset-1.5 rounded-full border-[3px] border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
-          style={{ transform: `scale(${ring.scale})`, opacity: ring.opacity }}
+          data-ring-active={ring.active ? "true" : "false"}
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -4, borderWidth: 3, opacity: ring.bands[0] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="2"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -8, borderWidth: 2, opacity: ring.bands[1] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="3"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -12, borderWidth: 1.5, opacity: ring.bands[2] }}
         />
         <span
           aria-hidden

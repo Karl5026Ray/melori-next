@@ -15,6 +15,7 @@ import {
   partitionVoiceAudience,
   splitVoiceRows,
   voiceRing,
+  ringBands,
 } from "../src/lib/voiceCircles";
 
 let failures = 0;
@@ -165,6 +166,18 @@ check(
   "a confirmed speaker gets a visible ring before a level has arrived",
   confirmedSpeaker.active && confirmedSpeaker.opacity > 0.4,
 );
+
+// --- Triple ring (20 Oct 2026) ---------------------------------------------
+check("silence lights no ring", quiet.bands.every((b) => b === 0));
+check("muted lights no ring, even when loud", muted.bands.every((b) => b === 0));
+const softBands = ringBands(0.15);
+check("a soft voice lights only the inner ring", softBands[0] > 0 && softBands[1] === 0 && softBands[2] === 0);
+const midBands = ringBands(0.4);
+check("a normal voice lights inner and middle", midBands[0] > 0 && midBands[1] > 0 && midBands[2] === 0);
+check("a loud voice lights all three", loud.bands.every((b) => b > 0));
+check("rings fill from the middle outward", loud.bands[0] >= loud.bands[1] && loud.bands[1] >= loud.bands[2]);
+check("a confirmed speaker shows the inner ring before a level arrives", confirmedSpeaker.bands[0] > 0.4);
+check("bands never exceed full opacity", [0, 0.2, 0.5, 0.8, 1, 5].every((l) => ringBands(l).every((b) => b >= 0 && b <= 1)));
 
 // --- Audience rail order -----------------------------------------------------
 const railRoster = [

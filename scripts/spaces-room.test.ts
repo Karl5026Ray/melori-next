@@ -17,6 +17,7 @@ import {
   SPACES_SPEAKER_LIMIT,
   buildSpacesStage,
   spacesRing,
+  spacesRingBands,
   spacesSpeakerCount,
   spacesStageHasRoom,
 } from "@/lib/spacesRoom";
@@ -61,6 +62,9 @@ expect(SPACES_SPEAKER_LIMIT === 8, "eight speakers besides the host");
 
 console.log("\nSpeaking rings");
 expect(!spacesRing({ level: 0.9, speaking: true, muted: true }).active, "muted never rings");
+expect(spacesRing({ level: 0.9, speaking: true, muted: true }).bands.every((b) => b === 0), "muted lights no ring");
+expect(spacesRingBands(0.15)[1] === 0 && spacesRingBands(0.15)[0] > 0, "soft voice: inner ring only");
+expect(spacesRingBands(1).every((b) => b > 0), "loud voice: all three rings");
 expect(!spacesRing({ level: 0, speaking: false, muted: false }).active, "silent is still");
 expect(spacesRing({ level: 0, speaking: true, muted: false }).active, "speaking flag rings before a level arrives");
 expect(

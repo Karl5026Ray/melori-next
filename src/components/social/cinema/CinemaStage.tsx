@@ -18,6 +18,7 @@ import { MicOff, Plus } from "lucide-react";
 import { SpaceParticipant } from "@/types/social";
 import { voiceRing } from "@/lib/voiceCircles";
 import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
+import { isModeratorBadge } from "@/lib/roomBadge";
 
 interface CinemaStageProps {
   /** [host, guest, guest] from buildCinemaAudioSeats; null = open seat. */
@@ -45,7 +46,8 @@ function AudioSeat({
   bursts: string[];
 }) {
   const isHostSeat = seatIndex === 0;
-  const roleLabel = isHostSeat ? "Host" : "Guest";
+  const isMod = !isHostSeat && isModeratorBadge(participant?.badge);
+  const roleLabel = isHostSeat ? "Host" : isMod ? "Moderator" : "Guest";
 
   if (!participant) {
     const hint = isHostSeat ? "Host away" : viewerIsHost ? "Tap to invite" : "Open seat";
@@ -136,7 +138,7 @@ function AudioSeat({
         <span className="max-w-full truncate text-sm font-semibold text-white/90">{name}</span>
         <span
           className={`text-[10px] uppercase tracking-[0.14em] ${
-            isHostSeat ? "text-melori-accent" : "text-white/45"
+            isHostSeat ? "text-melori-accent" : isMod ? "text-melori-teal" : "text-white/45"
           }`}
         >
           {roleLabel}

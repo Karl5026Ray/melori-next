@@ -11,14 +11,16 @@
 // opens the WHOLE log as a bottom sheet. Nothing is lost; the full history is
 // one tap away and the room keeps its height for the seats and the listeners.
 //
-// The composer no longer lives here — it sits in the bottom dock
-// (CinemaRoomScreen), so the stream has no frame around it.
+// The composer sits in the bottom dock (CinemaRoomScreen), so the stream has
+// no frame around it. The sheet covers that dock, so the room also hands the
+// same composer in through `composer` and the sheet renders it at its foot —
+// otherwise opening the chat left nowhere to type (Karl, 20 Oct 2026).
 //
 // Moderation lives in the sheet: the host, a badged moderator or the author can
 // delete a line, and every open room drops it through the realtime DELETE event
 // in useRoomComments.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Flag, Trash2, X } from "lucide-react";
 import { authorName, type ChatComment } from "@/components/social/rooms/useRoomComments";
 import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
@@ -45,6 +47,9 @@ interface CinemaChatProps {
   onDelete?: (commentId: string) => void;
   /** Anyone who is not a moderator can report someone else's line. */
   onReport?: (comment: ChatComment) => void;
+  /** The room's composer, shown at the foot of the open sheet. Omitted for
+   *  viewers who cannot comment (signed out, not joined). */
+  composer?: ReactNode;
 }
 
 function ChatAvatar({ comment, name, size }: { comment: ChatComment; name: string; size: "sm" | "md" }) {
@@ -77,6 +82,7 @@ export function CinemaChat({
   stageIds,
   onDelete,
   onReport,
+  composer,
 }: CinemaChatProps) {
   const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -295,13 +301,24 @@ export function CinemaChat({
             </div>
 
             {unseen > 0 && (
-              <button
-                type="button"
-                onClick={scrollToBottom}
-                className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-full bg-melori-purple px-3 py-1 text-xs font-semibold text-white shadow-lg"
+              <div className="pointer-events-none relative h-0">
+                <button
+                  type="button"
+                  onClick={scrollToBottom}
+                  className="pointer-events-auto absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-melori-purple px-3 py-1 text-xs font-semibold text-white shadow-lg"
+                >
+                  {unseen} new {unseen === 1 ? "message" : "messages"}
+                </button>
+              </div>
+            )}
+
+            {composer && (
+              <div
+                className="flex shrink-0 border-t border-white/[0.06] px-3 py-2"
+                data-testid="cinema-chat-sheet-composer"
               >
-                {unseen} new {unseen === 1 ? "message" : "messages"}
-              </button>
+                {composer}
+              </div>
             )}
           </section>
         </div>

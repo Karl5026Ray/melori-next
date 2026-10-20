@@ -451,6 +451,10 @@ test.describe("Cinema stable room", () => {
     await expect(chatSheet.getByTestId("cinema-chat-line")).toHaveCount(6);
     // A listener cannot delete the host's messages.
     await expect(page.getByTestId("cinema-chat-delete")).toHaveCount(0);
+    // The sheet covers the dock, so it carries the composer: the full log is
+    // where people read the room, and they must be able to reply from it.
+    await expect(chatSheet.getByTestId("cinema-composer")).toBeVisible();
+    await expect(chatSheet.getByRole("textbox", { name: "Write a comment" })).toBeEditable();
     await page.keyboard.press("Escape");
     await expect(chatSheet).toHaveCount(0);
 

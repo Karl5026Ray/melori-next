@@ -2000,6 +2000,7 @@ export default function RoomScreen({ spaceId }: { spaceId: string }) {
                         setReportTarget({ kind: "chat", message });
                         openCinemaSheet("report");
                       }}
+                      composer={isJoined && user ? commentComposer : undefined}
                     />
                   }
                 />

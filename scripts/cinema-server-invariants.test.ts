@@ -221,7 +221,10 @@ check(
   cinemaPage.includes("onAudioLevels: (levels) =>") &&
     cinemaPage.includes("levels={cinemaAudioLevels}") &&
     cinemaVoiceCircles.includes("voiceRing({") &&
-    cinemaVoiceCircles.includes("transform: `scale(${ring.scale})`"),
+    // Since 20 Oct 2026: three concentric rings that fill outward with
+    // loudness, each one's opacity is its band of the live level.
+    cinemaVoiceCircles.includes("opacity: ring.bands[0]") &&
+    cinemaVoiceCircles.includes("opacity: ring.bands[2]"),
 );
 // SUPERSEDED 1 Oct 2026 — was "a left-side five-line transient overlay" that
 // faded each comment after 8 s on top of the film. Karl asked for the empty

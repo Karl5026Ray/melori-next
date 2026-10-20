@@ -59,11 +59,26 @@ function StageCircle({
       className="flex min-w-0 flex-col items-center gap-2.5 rounded-xl py-1 transition hover:bg-white/[0.03]"
     >
       <span className="relative block h-20 w-20 shrink-0 sm:h-24 sm:w-24">
+        {/* Three concentric speaking rings that fill outward with loudness
+            (spacesRingBands in src/lib/spacesRoom.ts). */}
         <span
           aria-hidden
           data-testid="spaces-speaking-ring"
-          className="pointer-events-none absolute -inset-1 rounded-full border-[3px] border-melori-teal transition-[transform,opacity] duration-150 ease-out motion-reduce:transform-none"
-          style={{ transform: `scale(${ring.scale})`, opacity: ring.opacity }}
+          data-ring-active={ring.active ? "true" : "false"}
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -3, borderWidth: 3, opacity: ring.bands[0] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="2"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -6.5, borderWidth: 2, opacity: ring.bands[1] }}
+        />
+        <span
+          aria-hidden
+          data-ring-band="3"
+          className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
+          style={{ inset: -10, borderWidth: 1.5, opacity: ring.bands[2] }}
         />
         <span
           aria-hidden

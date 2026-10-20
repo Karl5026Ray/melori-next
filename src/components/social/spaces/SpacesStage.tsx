@@ -72,13 +72,13 @@ function StageCircle({
           aria-hidden
           data-ring-band="2"
           className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
-          style={{ inset: -9, borderWidth: 2, opacity: ring.bands[1] }}
+          style={{ inset: -8, borderWidth: 2, opacity: ring.bands[1] }}
         />
         <span
           aria-hidden
           data-ring-band="3"
           className="pointer-events-none absolute rounded-full border-solid border-melori-teal transition-opacity duration-150 ease-out"
-          style={{ inset: -14, borderWidth: 1.5, opacity: ring.bands[2] }}
+          style={{ inset: -12, borderWidth: 1.5, opacity: ring.bands[2] }}
         />
         <span
           aria-hidden

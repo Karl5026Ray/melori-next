@@ -4,11 +4,12 @@ name: E2E (Playwright)
 # on pushes to main: transport-scope, Spaces, Cinema, media setup and
 # the signed-out teasers.
 #
-# The floating player and its floating-player.spec.ts were removed on
-# 2026-09-07. The job is still NAMED "Mobile FloatingPlayer @ 390x844" only
-# because that exact name is a required status check in branch protection.
-# Renaming it here without updating protection in the same change blocks every
-# PR forever ("Expected - Waiting for status to be reported").
+# The job is named "Phone tests (390x844)" and that exact name is a required
+# status check in branch protection. Until 20 Oct 2026 it was still called
+# "Mobile FloatingPlayer @ 390x844" after a floating player that was removed on
+# 2026-09-07, which made every PR look blocked by a feature that no longer
+# exists. Renaming it without updating protection in the same change blocks
+# every PR forever ("Expected - Waiting for status to be reported").
 #
 # The suite builds and serves the CHECKED-OUT COMMIT inside the runner.
 #
@@ -48,7 +49,7 @@ concurrency:
 jobs:
   playwright:
     # Name kept for branch protection - see the header note before renaming.
-    name: Mobile FloatingPlayer @ 390x844
+    name: Phone tests (390x844)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

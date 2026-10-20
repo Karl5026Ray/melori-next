@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { safeNextPath } from "@/lib/mediaSetupMarker";
+import { START_PATH } from "@/lib/profileSetup";
 import { startOAuthSignIn } from "@/lib/nativeAuth";
 import { Music, Mail, Lock, ArrowRight } from "lucide-react";
 
@@ -13,11 +15,11 @@ import { Music, Mail, Lock, ArrowRight } from "lucide-react";
 // Account creation lives at /register (email + password, free).
 // Honors ?next= so protected pages (settings/dashboard) return the
 // user where they were headed.
+// Same-origin paths only (one strict checker, safeNextPath). With no real
+// ?next= the member goes to /auth/start, which shows a blank page its owner
+// once and otherwise lands on /music (src/lib/profileSetup.ts).
 function safeNext(next: string | null): string {
-  // Only allow same-origin absolute paths to avoid open-redirects.
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  // Default landing after sign-in is the main music catalog page.
-  return "/music";
+  return safeNextPath(next, START_PATH);
 }
 
 function AuthInner() {

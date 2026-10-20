@@ -3,15 +3,17 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { safeNextPath } from "@/lib/mediaSetupMarker";
+import { START_PATH } from "@/lib/profileSetup";
 import { Music } from "lucide-react";
 
 // OAuth callback. Sessions here are localStorage-based (not cookie/SSR), so the
 // code->session exchange MUST happen client-side for supabase-js to persist it.
+// Same-origin paths only (one strict checker, safeNextPath). With no real
+// ?next= the member goes to /auth/start, which shows a blank page its owner
+// once and otherwise lands on /music (src/lib/profileSetup.ts).
 function safeNext(next: string | null): string {
-  // Only allow same-origin absolute paths to avoid open-redirects.
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  // Default landing after sign-in is the main music catalog page.
-  return "/music";
+  return safeNextPath(next, START_PATH);
 }
 
 function CallbackInner() {

@@ -31,6 +31,7 @@
 // mobile/capacitor.config.json allowNavigation.
 
 import { safeNextPath } from "@/lib/mediaSetupMarker";
+import { START_PATH } from "@/lib/profileSetup";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -84,7 +85,6 @@ const DOOR_CARDS = [
 export const dynamic = "force-dynamic";
 
 const APP_ORIGIN = "https://melorimusic.org";
-const AFTER_SIGNUP = "/social/discover";
 
 // The hero lives in Supabase Storage, not /public.
 //
@@ -119,6 +119,16 @@ function onDoorOnlyHost(): boolean {
 
 export default function MeloriDoorPage() {
   const router = useRouter();
+  // Where a door sign-up goes next: the shared link that brought them here
+  // (?next=, set by the proxy) if there is one, otherwise /auth/start, which
+  // shows a new member their own page first (Karl, 20 Oct 2026). This used to
+  // be a fixed /social/discover that dropped the shared link.
+  const [afterSignup, setAfterSignup] = useState(START_PATH);
+  useEffect(() => {
+    setAfterSignup(
+      safeNextPath(new URLSearchParams(window.location.search).get("next"), START_PATH),
+    );
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // Required "I am 16 or older" attestation (platform minimum age is 16).
@@ -159,7 +169,7 @@ export default function MeloriDoorPage() {
     };
   }, [router]);
 
-  const emailRedirectTo = `${APP_ORIGIN}/auth/callback?next=${encodeURIComponent(AFTER_SIGNUP)}`;
+  const emailRedirectTo = `${APP_ORIGIN}/auth/callback?next=${encodeURIComponent(afterSignup)}`;
 
   const handleResend = async () => {
     setResending(true);
@@ -232,7 +242,7 @@ export default function MeloriDoorPage() {
       // On melorimusic.org the session is already live on this host: go in.
       // On melori.org it cannot carry over, so show the hand-off button.
       if (!onDoorOnlyHost()) {
-        router.replace(AFTER_SIGNUP);
+        router.replace(afterSignup);
         return;
       }
       setPhase("ready");
@@ -327,7 +337,7 @@ export default function MeloriDoorPage() {
 
         {phase === "form" && (
           <div className="mt-8">
-            <SocialSignInButtons next={AFTER_SIGNUP} onError={setError} />
+            <SocialSignInButtons next={afterSignup} onError={setError} />
             <div className="my-5 flex items-center gap-3">
               <span className="h-px flex-1 bg-white/10" />
               <span className="text-xs text-[#888]">or use email</span>

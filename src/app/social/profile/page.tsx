@@ -5,6 +5,7 @@ import { useAuth } from "@/components/social/providers/AuthProvider";
 import Link from "next/link";
 import { Camera, Loader2, MapPin, Users } from "lucide-react";
 import EditProfileModal from "@/components/social/EditProfileModal";
+import WelcomeToPage from "@/components/social/profile/WelcomeToPage";
 import ProfileTabs from "@/components/social/profile/ProfileTabs";
 import SocialMenuButton from "@/components/social/SocialMenuButton";
 import SocialLinks from "@/components/social/profile/SocialLinks";
@@ -134,6 +135,9 @@ export default function ProfilePage() {
 
   return (
     <div className="flex-1 overflow-y-auto animate-fade-in">
+      {/* First sign-in only: "Welcome, Name. This is your page." — brief,
+          translucent, fades on its own (src/lib/profileSetup.ts). */}
+      <WelcomeToPage profile={view} onMakeItYours={() => setEditing(true)} />
       <div className="relative h-40 sm:h-56 md:h-64 bg-gradient-to-br from-brand-primary/25 to-brand-accent/20">
         {bannerUrl && (
           <img

@@ -11,6 +11,7 @@ import AgeAttestation, {
   ageAttestationMetadata,
 } from "@/components/auth/AgeAttestation";
 import { safeNextPath } from "@/lib/mediaSetupMarker";
+import { START_PATH } from "@/lib/profileSetup";
 
 // /register — the canonical signup surface.
 //
@@ -46,7 +47,7 @@ function RegisterInner() {
   // Single source of truth for redirect validation. This page used to carry its
   // own weaker prefix check, which let `/\evil.example` through — the two must
   // not be allowed to drift, so there is only one implementation now.
-  const next = safeNextPath(params.get("next"));
+  const next = safeNextPath(params.get("next"), START_PATH);
   const startParam = params.get("start");
   const autoStart = startParam === "google" || startParam === "apple" ? startParam : null;
 

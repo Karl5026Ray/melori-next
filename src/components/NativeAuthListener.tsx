@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { safeNextPath } from "@/lib/mediaSetupMarker";
+import { START_PATH } from "@/lib/profileSetup";
 import { NATIVE_AUTH_CALLBACK, isNative } from "@/lib/nativeAuth";
 
 // Receives the OAuth deep link in the Capacitor app.
@@ -64,8 +66,7 @@ export default function NativeAuthListener() {
         return;
       }
 
-      const next = params.get("next");
-      router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : "/music");
+      router.replace(safeNextPath(params.get("next"), START_PATH));
     }
 
     (async () => {

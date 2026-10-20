@@ -68,13 +68,6 @@ export function Sidebar() {
           Go Live
         </Link>
 
-        {/* Concert (versus_battle) is NOT in this rail. Concert Battle is
-           still audio-only in production — decideRoomPublish in
-           roomMediaPolicy.ts grants camera to 'cinema' and 'live_*' only — so
-           a top-level button here sells a room that cannot do the one thing it
-           exists to do. /social/concert/create still works for anyone with the
-           link; it comes back to the rail when the camera path ships. */}
-
         <nav className="space-y-1">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href);

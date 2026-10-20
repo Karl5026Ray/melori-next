@@ -1,7 +1,7 @@
 name: E2E (Playwright)
 
 # Runs the Playwright suite in e2e/ (mobile-chromium project) on every PR and
-# on pushes to main: transport-scope, Spaces, Cinema, Concert, media setup and
+# on pushes to main: transport-scope, Spaces, Cinema, media setup and
 # the signed-out teasers.
 #
 # The job is named "Phone tests (390x844)" and that exact name is a required

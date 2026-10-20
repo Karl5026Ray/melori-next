@@ -31,7 +31,7 @@ const SERVER_COMMAND =
 
 // Request-mocked browser specs can run without a real Supabase project. Keep
 // this opt-in so normal local/CI e2e runs retain their configured environment.
-const MOCK_SUPABASE_ENV = process.env.PW_CONCERT_MOCKS === "1";
+const MOCK_SUPABASE_ENV = process.env.PW_SUPABASE_MOCKS === "1";
 
 const LOCAL_SUPABASE_ENV = {
   // Cinema tests route every client request, so deterministic fallback values

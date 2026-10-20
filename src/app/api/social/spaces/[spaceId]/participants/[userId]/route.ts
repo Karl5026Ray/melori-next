@@ -16,7 +16,6 @@ import {
 } from "@/lib/roomMediaPolicy";
 import { cinemaStageHasRoom } from "@/lib/cinemaStage";
 import { SPACES_SPEAKER_LIMIT, spacesStageHasRoom } from "@/lib/spacesRoom";
-import { CONCERT_BATTLE_ROOM_FORMAT } from "@/lib/concertBattle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -117,10 +116,8 @@ export async function PATCH(
     // Checked here, server-side, so two hosts' taps or a stale client can never
     // seat a fourth person.
     // MM Spaces' stage holds the host plus SPACES_SPEAKER_LIMIT speakers
-    // (src/lib/spacesRoom.ts). Each product keeps its own rule; Concert
-    // Battle stages are governed by the battle itself, not a cap here.
-    const capped =
-      body.role === "speaker" && space.room_format !== CONCERT_BATTLE_ROOM_FORMAT;
+    // (src/lib/spacesRoom.ts). Each product keeps its own rule.
+    const capped = body.role === "speaker";
     if (capped) {
       const { data: stageRows, error: stageErr } = await supabase
         .from("space_participants")

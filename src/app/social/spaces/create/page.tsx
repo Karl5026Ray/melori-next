@@ -12,7 +12,6 @@ import {
   ArrowLeft,
   Headphones,
   MessageCircle,
-  Mic,
   Radio,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,8 +28,8 @@ import { roomExitHref, roomHref, roomScheduledHref } from "@/lib/cinema";
 // its own form at /social/cinema/create — see roomCreateHref() in lib/cinema.
 const spaceTypes: {
   id: string;
-  spaceType: "listening" | "discussion" | "creation" | "dj_set";
-  format: "release_party" | "discussion" | "versus_battle" | "dj_set";
+  spaceType: "listening" | "discussion" | "dj_set";
+  format: "release_party" | "discussion" | "dj_set";
   label: string;
   icon: typeof Headphones;
   desc: string;
@@ -52,14 +51,6 @@ const spaceTypes: {
     desc: "Panels, AMAs, and open forums",
   },
   {
-    id: "creation",
-    spaceType: "creation",
-    format: "versus_battle",
-    label: "Versus Battle",
-    icon: Mic,
-    desc: "Head-to-head showdown with live voting",
-  },
-  {
     id: "dj_set",
     spaceType: "dj_set",
     format: "dj_set",
@@ -69,27 +60,20 @@ const spaceTypes: {
   },
 ];
 
-export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean }) {
+export function RoomCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, profileError } = useAuth();
   const canParticipate = useCanParticipate();
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  // Concert uses the existing room form with ?format=versus_battle. Validate
-  // against this form's selectable formats so unknown/dead query values always
-  // land on the honest Release Party default.
-  // Concert is not ready (Karl, 2026-09-10). Versus Battle IS Concert under
-  // another name, so it only shows on /social/concert/create (concertOnly) —
-  // never in the MM Spaces picker, and a ?format=versus_battle link can't
-  // select it here either.
-  const visibleTypes = concertOnly
-    ? spaceTypes
-    : spaceTypes.filter((item) => item.format !== "versus_battle");
+  // Validate ?format= against this form's selectable formats so unknown or
+  // dead values (including the removed Concert 'versus_battle', 20 Oct 2026)
+  // always land on the honest Release Party default.
+  const visibleTypes = spaceTypes;
   const requestedFormat = searchParams.get("format");
-  const requestedType = concertOnly
-    ? "creation"
-    : visibleTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
+  const requestedType =
+    visibleTypes.find((item) => item.format === requestedFormat)?.id ?? "listening";
   const [type, setType] = useState(requestedType);
   useEffect(() => {
     setType(requestedType);
@@ -173,23 +157,23 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
       <div className="max-w-lg mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Link
-            href={concertOnly ? "/social/profile" : roomExitHref(selectedFormat)}
+            href={roomExitHref(selectedFormat)}
             className="p-2 hover:bg-melori-elevated rounded-lg transition"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h2 className="text-2xl font-bold">
-            {concertOnly ? "Start a Concert" : "Start a Space"}
+            Start a Space
           </h2>
         </div>
 
         {user && !canParticipate ? (
-          <SignInPrompt action={concertOnly ? "start a Concert" : "start a Space"} />
+          <SignInPrompt action="start a Space" />
         ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm text-melori-muted mb-2">
-              {concertOnly ? "Concert Title" : "Space Title"}
+              Space Title
             </label>
             <input
               type="text"
@@ -258,21 +242,6 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
             )}
           </div>
 
-          {concertOnly ? (
-            <div className="rounded-xl border border-teal-500/40 bg-teal-500/10 p-4">
-              <div className="flex items-center gap-3">
-                <Mic className="h-5 w-5 shrink-0 text-teal-400" />
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">
-                    Versus Battle
-                  </p>
-                  <p className="mt-1 text-xs text-melori-muted">
-                    Start the Concert room for performers and audience voting.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
             <div>
               <label className="block text-sm text-melori-muted mb-3">Room Format</label>
               <div className="grid grid-cols-2 gap-3">
@@ -303,7 +272,6 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
                 })}
               </div>
             </div>
-          )}
 
           {error && (
             <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-400">
@@ -321,12 +289,8 @@ export function RoomCreatePage({ concertOnly = false }: { concertOnly?: boolean 
                 ? "Scheduling..."
                 : "Going Live..."
               : scheduleFor === "later"
-                ? concertOnly
-                  ? "Schedule Concert"
-                  : "Schedule Space"
-                : concertOnly
-                  ? "Start Concert"
-                  : "Go Live"}
+                ? "Schedule Space"
+                : "Go Live"}
           </button>
         </form>
         )}

@@ -497,12 +497,6 @@ export default function MobileTabBar() {
 
                   {/* Primary actions (shown on the top-level screen only) */}
                   {!activeCat && (
-                    /* Concert (versus_battle) is deliberately NOT offered here.
-                       Concert Battle is still audio-only in production, so a
-                       launcher button would promise a video battle the room
-                       cannot run. /social/concert/create stays reachable by
-                       link; it returns to the launcher when camera publishing
-                       ships for versus_battle. Go Live is on its own now. */
                     <div className="mt-5">
                       <button
                         onClick={() => {

@@ -16,6 +16,7 @@ import { MicOff, Plus } from "lucide-react";
 import type { SpaceParticipant } from "@/types/social";
 import { spacesRing } from "@/lib/spacesRoom";
 import { spacesAvatarColor, spacesInitials } from "@/lib/spacesAvatar";
+import { isModeratorBadge } from "@/lib/roomBadge";
 
 interface SpacesStageProps {
   speakers: readonly SpaceParticipant[];
@@ -45,7 +46,7 @@ function StageCircle({
   const name = user?.display_name || user?.username || (isHost ? "Host" : "Speaker");
   const muted = Boolean(participant.is_muted || participant.host_muted);
   const ring = spacesRing({ level, speaking: Boolean(participant.is_speaking), muted });
-  const role = isHost ? "Host" : participant.badge === "mod" ? "Moderator" : "Speaker";
+  const role = isHost ? "Host" : isModeratorBadge(participant.badge) ? "Moderator" : "Speaker";
 
   return (
     <button

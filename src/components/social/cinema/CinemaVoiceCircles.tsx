@@ -18,9 +18,10 @@
 // a speaker is never silently un-ringed. The math lives in @/lib/voiceCircles.
 
 import { useMemo } from "react";
-import { Hand, MicOff } from "lucide-react";
+import { Hand, MicOff, ShieldCheck } from "lucide-react";
 import { SpaceParticipant } from "@/types/social";
 import { orderVoiceRail, voiceRing } from "@/lib/voiceCircles";
+import { isModeratorBadge } from "@/lib/roomBadge";
 import { cinemaAvatarColor, cinemaInitials } from "@/lib/cinemaAvatar";
 
 interface CinemaVoiceCirclesProps {
@@ -109,6 +110,14 @@ function VoiceCircle({
               aria-label={`${name} is muted`}
             />
           )
+        )}
+
+        {isModeratorBadge(participant.badge) && (
+          <ShieldCheck
+            data-testid="cinema-voice-mod-badge"
+            className="absolute -bottom-0.5 -left-0.5 h-4 w-4 rounded-full bg-cinema-void p-0.5 text-melori-teal"
+            aria-label={`${name} is a moderator`}
+          />
         )}
 
         {bursts.length > 0 && (

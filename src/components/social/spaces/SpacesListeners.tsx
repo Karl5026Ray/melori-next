@@ -10,8 +10,9 @@
 //
 // Spaces' own component (Karl, 2 Oct 2026: no shared room code with Cinema).
 
-import { Hand } from "lucide-react";
+import { Hand, ShieldCheck } from "lucide-react";
 import type { SpaceParticipant } from "@/types/social";
+import { isModeratorBadge } from "@/lib/roomBadge";
 import { spacesAvatarColor, spacesInitials } from "@/lib/spacesAvatar";
 
 /** Five rows of six on a phone; the strip scrolls if the screen is short. */
@@ -84,6 +85,15 @@ export function SpacesListeners({
                       style={{ backgroundColor: spacesAvatarColor(participant.user_id) }}
                     >
                       {spacesInitials(name)}
+                    </span>
+                  )}
+                  {isModeratorBadge(participant.badge) && (
+                    <span
+                      data-testid="spaces-listener-mod-badge"
+                      className="absolute -left-1 -top-1 grid h-5 w-5 place-items-center rounded-full border-2 border-melori-void bg-melori-teal"
+                      aria-label={`${name} is a moderator`}
+                    >
+                      <ShieldCheck className="h-2.5 w-2.5 text-melori-void" aria-hidden />
                     </span>
                   )}
                   {participant.has_raised_hand && (

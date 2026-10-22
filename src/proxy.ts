@@ -112,6 +112,8 @@ const PUBLIC_EXACT = new Set([
   "/forgot-password",
   // Karl's link-in-bio page (2026-10-17): every social bio points here.
   "/karlray",
+  // Karl's channel links (2026-10-22): the one link on his Facebook profile.
+  "/links",
   "/gallery",
   "/listen",
   "/login",

@@ -108,6 +108,7 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
         CONNECT_NAV_ITEM,
         // Karl's profile carries the mission since 2026-10-17.
         { label: "Karl Ray", href: "/karlray" },
+        { label: "Links", href: "/links" },
         { label: "Support", href: "/support" },
         // /studio, not /register: every account can upload now, so a member
         // lands in the Studio, and a signed-out visitor is sent to the door.
@@ -119,6 +120,7 @@ const CONTEXT_TABLE: Array<{ ctx: NavContext; test: (path: string) => boolean }>
     // the Community rail (Mirror / Faces / Spaces / Cinema) they arrived with.
     test: (p) =>
       p.startsWith("/karlray") ||
+      p.startsWith("/links") ||
       p.startsWith("/support") ||
       p.startsWith("/privacy") ||
       p.startsWith("/terms"),

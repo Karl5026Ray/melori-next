@@ -142,8 +142,9 @@ export default function AdminMirrorPage() {
             </h1>
             <p className="text-melori-muted text-sm mt-1">
               Everything currently in the For You feed — member uploads and
-              artist-submitted YouTube links. Posts rotate out on their own after
-              24 hours; delete here to take one down immediately.
+              artist-submitted YouTube links. Member posts stay up for 3 weeks;
+              platform filler rotates every day or so. Delete here to take one
+              down immediately.
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -42,6 +42,7 @@ const PUBLIC: [string, string][] = [
   ["/about", "Karl's introduction — the other half of the advertising"],
   ["/books", "Karl's books — links out to Amazon, advertising like the gallery"],
   ["/karlray", "Karl's link-in-bio page — every social bio points here"],
+  ["/links", "Karl's channel links — the link on his Facebook profile"],
   ["/app", "the app link on flyers and QR codes"],
 
   // 1b. The live surfaces, described rather than shown. These pages carry no

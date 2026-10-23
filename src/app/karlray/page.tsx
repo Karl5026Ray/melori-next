@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { BookOpen, Camera, Headphones, Heart } from "lucide-react";
+import { BookOpen, Camera, Headphones, Heart, Tv } from "lucide-react";
+import ChannelLinks from "@/components/ChannelLinks";
 import CoverImage from "@/components/CoverImage";
 import ShareButton from "@/components/ShareButton";
 import MissionStatement from "@/components/MissionStatement";
@@ -286,6 +287,12 @@ export default async function KarlRayProfilePage() {
               <span className="block text-sm text-text-secondary">Songs and releases</span>
             </Link>
           </div>
+        </section>
+
+        {/* Shows — the same list as /links (src/lib/channels.ts). */}
+        <section className="mt-10 scroll-mt-24" id="shows">
+          <SectionHeading icon={<Tv className="h-5 w-5" />} title="Shows" />
+          <ChannelLinks showGroups={false} />
         </section>
 
         {/* Photography */}

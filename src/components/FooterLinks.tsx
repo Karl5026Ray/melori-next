@@ -13,6 +13,7 @@ const FOOTER_LINKS: FooterLink[] = [
   { label: "Music", href: "/music" },
   { label: "Songs", href: "/catalog" },
   { label: "Photography", href: PORTFOLIO_URL },
+  { label: "Links", href: "/links" },
   { label: "Mission", href: `${KARL_PROFILE_PATH}#mission` },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },

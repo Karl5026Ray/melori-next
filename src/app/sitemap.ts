@@ -36,6 +36,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // URL: /about and /mission redirect to it, and a sitemap
     // entry that redirects tells Google to index a URL that is not the page.
     { url: `${SITE_URL}/karlray`,   lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE_URL}/links`,     lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/books`,     lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/catalog`,   lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/artists`,   lastModified: now, changeFrequency: "weekly",  priority: 0.8 },

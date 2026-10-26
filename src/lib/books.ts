@@ -172,10 +172,9 @@ export const BOOK_SERIES: BookSeries[] = [
     ],
   },
   {
-    // Added 2026-10-17 (Karl). Cover hosted on Melori. Shows as "Soon" with
-    // no link until it has one. When it goes live: add its Kindle `asin` OR
-    // its Google Play Books link as `url` (either works), and delete
-    // `live: false`.
+    // Added 2026-10-17 (Karl). Cover hosted on Melori. 2026-10-26 (Karl): the
+    // cover links to the PAPERBACK (ASIN B0HP8XX7VG, live on KDP), not the
+    // Kindle eBook (B0HP8RQJMR).
     id: "was-it-just-business",
     name: "Was It Just Business?",
     audience: "History · adults",
@@ -186,8 +185,8 @@ export const BOOK_SERIES: BookSeries[] = [
         title: "Was It Just Business?",
         badge: "New",
         blurb: "Slavery, the American ledger, and the account that was never settled.",
+        asin: "B0HP8XX7VG",
         coverSrc: "/images/books/was-it-just-business.jpg",
-        live: false,
       },
     ],
   },

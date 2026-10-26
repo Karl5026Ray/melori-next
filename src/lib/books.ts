@@ -211,6 +211,14 @@ export const BOOK_SERIES: BookSeries[] = [
         asin: "B0HL6NP6VB",
         coverId: "81Q3SCxPEDL",
       },
+      {
+        // Added 2026-10-26: Kindle eBook, live since 2026-10-21 (no paperback yet).
+        title: "The Difference",
+        badge: "Book 3",
+        blurb: "Dre and Imani, and what money was doing to them.",
+        asin: "B0HNRBTP7W",
+        coverId: "81jRAgwbtLL",
+      },
     ],
   },
   {

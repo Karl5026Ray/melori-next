@@ -219,6 +219,37 @@ export const BOOK_SERIES: BookSeries[] = [
         asin: "B0HNRBTP7W",
         coverId: "81jRAgwbtLL",
       },
+      // Books 4–7 added 2026-11-08 (Karl): Kindle eBooks, live Nov 7–8. Covers
+      // hosted on Melori (from Karl's Kindle cover files) until Amazon has
+      // its own cover images to point at.
+      {
+        title: "Read Receipts",
+        badge: "Book 4",
+        blurb: "Zion and Jas, and what's happening in their messages.",
+        asin: "B0HQTV5VDS",
+        coverSrc: "/images/books/read-receipts.jpg",
+      },
+      {
+        title: "The Post",
+        badge: "Book 5",
+        blurb: "Rome and Nia, and a fight that went public.",
+        asin: "B0HQV21PPR",
+        coverSrc: "/images/books/the-post.jpg",
+      },
+      {
+        title: "The Break",
+        badge: "Book 6",
+        blurb: "Kai and Sol, and what happened while they were apart.",
+        asin: "B0HQY3JDFB",
+        coverSrc: "/images/books/the-break.jpg",
+      },
+      {
+        title: "First Try",
+        badge: "Book 7",
+        blurb: "Tobi and Dae are back.",
+        asin: "B0HQY6GYQT",
+        coverSrc: "/images/books/first-try.jpg",
+      },
     ],
   },
   {
@@ -272,6 +303,15 @@ export const BOOK_SERIES: BookSeries[] = [
         blurb: "A big coloring book: color Hikari and friends as they find out how things work.",
         asin: "B0HK539PD5",
         coverId: "71eXFgUhSTL",
+      },
+      {
+        // Added 2026-11-08 (Karl). Hardcover, live since 2026-10-27. Cover is
+        // the front panel of Karl's hardcover wrap, hosted on Melori.
+        title: "The Hikari Advanced Coloring Book",
+        badge: "Hardcover",
+        blurb: "50 detailed designs and mystery challenges.",
+        asin: "B0HPFDL9C4",
+        coverSrc: "/images/books/hikari-advanced-coloring-book.jpg",
       },
     ],
   },

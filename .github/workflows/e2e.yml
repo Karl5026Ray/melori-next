@@ -122,10 +122,11 @@ jobs:
         run: npm ci
 
       # Chromium only — the mobile-chromium project pins browserName=chromium,
-      # so we skip the ~1GB WebKit / Firefox downloads.
+      # so we skip the ~1GB WebKit / Firefox downloads. The hosted runner already
+      # has Chromium's runtime libraries; avoid apt installs for optional fonts.
       - name: Install Playwright browsers
         if: steps.scope.outputs.relevant == 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # Skipped when a deployed URL was supplied via workflow_dispatch.
       - name: Build the app under test

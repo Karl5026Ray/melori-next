@@ -7,6 +7,7 @@ import { authFetch } from "@/lib/authClient";
 import { youtubeEmbedUrl } from "@/lib/youtube";
 import { shouldLoopVideoCardMedia } from "@/lib/mirrorFeedNavigation";
 import { stageClassName } from "@/lib/videoOrientation";
+import { descriptionSegments } from "@/lib/descriptionLinks";
 import CommentSheet from "./CommentSheet";
 import PostActionsMenu from "./PostActionsMenu";
 import {
@@ -650,7 +651,31 @@ function VideoCardBase({
         </div>
         <h3 className="font-bold text-lg mb-1">{video.title}</h3>
         <p className="text-sm text-white/80 line-clamp-2">
-          {video.description}
+          {descriptionSegments(video.description).map((seg, i) =>
+            seg.kind === "text" ? (
+              <span key={i}>{seg.text}</span>
+            ) : seg.internal ? (
+              <Link
+                key={i}
+                href={seg.href}
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-brand-primary underline underline-offset-2"
+              >
+                {seg.text}
+              </Link>
+            ) : (
+              <a
+                key={i}
+                href={seg.href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-brand-primary underline underline-offset-2"
+              >
+                {seg.text}
+              </a>
+            ),
+          )}
         </p>
         <div className="flex items-center gap-2 mt-3 text-xs text-white/70">
           <Music className="w-4 h-4" />

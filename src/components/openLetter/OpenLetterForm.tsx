@@ -87,7 +87,7 @@ export default function OpenLetterForm() {
         setError(data?.error || "Something went wrong. Please try again.");
         return;
       }
-      if (data?.isNew) setCount((c) => (c === null ? c : c + 1));
+      loadCount();
       setDone(true);
     } catch {
       setError("Something went wrong. Please try again.");

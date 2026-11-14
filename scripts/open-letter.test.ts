@@ -94,6 +94,8 @@ check("route never calls requireAuth (public form)", !route.includes("requireAut
 check("GET is head-only count", /count:\s*"exact",\s*head:\s*true/.test(route));
 check("route has a honeypot", route.includes("body.company"));
 check("route is rate limited", route.includes("rateLimit("));
+check("response never reveals prior signing (no isNew in JSON)", !/json\(\{\s*ok:\s*true,\s*isNew/.test(route));
+check("anonymous repeat cannot overwrite a signature", route.includes("prior.user_id !== userId"));
 
 const page = read("src/app/open-letter/page.tsx");
 check("page is static (no force-dynamic)", !page.includes("force-dynamic"));

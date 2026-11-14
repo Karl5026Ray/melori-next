@@ -79,12 +79,18 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
       if (readErr) return { error: readErr };
 
-      const row = mergeSignature((existing as ExistingSignature | null) ?? null, input, userId);
-      if (!existing) {
+      const prior = (existing as ExistingSignature | null) ?? null;
+      if (!prior) {
         isNew = true;
+        const row = mergeSignature(null, input, userId);
         const { error } = await supabase.from("open_letter_signatures").insert(row);
         return { error };
       }
+      // Already signed. Knowing an email proves nothing, so an anonymous repeat
+      // must not overwrite someone's name, city or private story: it is a
+      // silent no-op. Only the signed-in owner of the row can update it.
+      if (!userId || prior.user_id !== userId) return { error: null };
+      const row = mergeSignature(prior, input, userId);
       const { error } = await supabase
         .from("open_letter_signatures")
         .update(row)
@@ -112,7 +118,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (isNew) await sendConfirmation(input.email, input.first_name);
-  return NextResponse.json({ ok: true, isNew });
+  // Same answer whether or not this email had signed before: the response must
+  // not reveal who has signed (count-only privacy promise).
+  return NextResponse.json({ ok: true });
 }
 
 // Best effort: a Resend failure is logged, never returned to the signer.

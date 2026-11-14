@@ -118,6 +118,9 @@ const PUBLIC_EXACT = new Set([
   "/listen",
   "/login",
   "/mission",
+  // Karl's open letter to Congress (2026-11-14): shared on Facebook to people
+  // with no Melori account. Signing is public too (/api/open-letter).
+  "/open-letter",
   "/photography",
   "/platform",
   "/privacy",

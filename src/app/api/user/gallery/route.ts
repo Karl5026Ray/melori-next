@@ -206,11 +206,13 @@ export async function PATCH(req: Request) {
   }
 
   // --- Content moderation -------------------------------------------------
-  // Photos are screened by OpenAI image moderation before they go public.
+  // Photos are screened by the Cloudflare vision model before they go public.
   //   * Pornography / nudity  -> REFUSED outright + storage object deleted
   //     (owner policy: not permitted, never public).
   //   * Explicit / borderline -> inserted but moderation_status='flagged'
   //     (stays visible; queued for admin review).
+  //   * Screening failed      -> inserted as 'pending_review' (hidden from the
+  //     public gallery; queued for admin review). Never published unchecked.
   // Videos can't be frame-inspected in the serverless runtime, so they enter
   // as 'pending_review' (visible but always eyed by an admin).
   let moderationStatus = "clean";
@@ -270,8 +272,10 @@ export async function PATCH(req: Request) {
       contentType: mediaType === "video" ? "video" : "gallery",
       contentId: data.id,
       authorId: userId,
+      // Both statuses need admin eyes, so both are queued. (Passing "clean"
+      // for pending_review made recordModeration skip the row entirely.)
       result: {
-        decision: moderationStatus === "flagged" ? "flag" : "clean",
+        decision: "flag",
         reason: moderationReason,
         categories: null,
         degraded: false,

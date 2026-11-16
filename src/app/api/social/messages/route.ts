@@ -5,7 +5,12 @@ import { rateLimit } from "@/lib/rate-limit";
 import { checkDurableSendLimit } from "@/lib/messagingLimits";
 import { validateAttachments, MESSAGE_MEDIA_BUCKET } from "@/lib/messageMedia";
 import { isUuid } from "@/lib/validators";
-import { moderateText, moderateImage, statusForDecision } from "@/lib/moderation";
+import {
+  DECISION_RANK,
+  moderateText,
+  moderateImage,
+  statusForDecision,
+} from "@/lib/moderation";
 import { recordModeration } from "@/lib/moderation-record";
 
 export const runtime = "nodejs";
@@ -148,12 +153,23 @@ export async function POST(req: NextRequest) {
       content ? moderateText(content) : Promise.resolve(null),
       ...imageUrls.map((u) => moderateImage(u)),
     ]);
-    const rank = { clean: 0, flag: 1, quarantine: 2 } as const;
     const mod =
       results
         .filter((r): r is NonNullable<typeof r> => r != null)
-        .sort((x, y) => rank[y.decision] - rank[x.decision])[0] ??
+        .sort((x, y) => DECISION_RANK[y.decision] - DECISION_RANK[x.decision])[0] ??
       ({ decision: "clean", reason: null, categories: null, degraded: false } as const);
+    if (mod.decision === "review") {
+      // A photo couldn't be screened (model outage). Messages are delivered
+      // straight to the recipient, so there is nowhere to hold one: refuse the
+      // send and let the sender retry, rather than deliver an unchecked photo.
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't check your photo just now. Please try sending it again in a moment.",
+        },
+        { status: 503 },
+      );
+    }
     if (mod.decision === "quarantine") {
       // Refused photos are not kept.
       if (attachments.length) {

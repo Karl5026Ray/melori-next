@@ -23,6 +23,11 @@ Adding them to Vercel was IN PROGRESS when we paused.
    - IMAGE: `@cf/llava-hf/llava-1.5-7b-hf` vision model asked EXPLICIT/SUGGESTIVE/CLEAN.
      EXPLICIT -> quarantine, SUGGESTIVE -> flag. (Cloudflare has NO dedicated NSFW
      classifier — this is best-effort; report+admin is the backstop.)
+     **Update 2026-11-16:** LLaVA retires 2026-11-20; images now use
+     `@cf/moondream/moondream3.1-9B-A2B` (task "query"). Image screening now FAILS
+     CLOSED: any error/timeout/unparseable answer -> decision "review"
+     (gallery: hidden as 'pending_review' + queued; DMs/avatars/banners: refused
+     with a retry message). Text still fails open. See scripts/image-moderation.test.ts.
    - Reads env: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_TOKEN`. Fail-safe: missing/err/
      timeout(8s) -> {decision:"clean", degraded:true} (never blocks on misconfig).
    - Same exported interface (moderateText/moderateImage/moderateTextAndImage/

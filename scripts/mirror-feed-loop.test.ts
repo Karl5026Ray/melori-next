@@ -358,4 +358,24 @@ assert(
   youtubeBlock.includes("object-contain"),
 );
 
+// Karl, 16 Nov 2026: "mute won't play songs on Melori Mirror." YouTube posts
+// had no Melori sound button, and YouTube's own unmute sat under overlays.
+console.log("\nMirror sound toggle\n");
+const soundButton = videoCard.slice(videoCard.indexOf('data-testid="card-sound-toggle"') - 400);
+assert(
+  "every non-audio card, YouTube included, renders the sound button",
+  /\{!isAudio && \(\s*<button/.test(soundButton) && !/!isAudio && !youtubeId/.test(videoCard),
+);
+assert("the YouTube player always accepts API commands", /enableJsApi: true/.test(videoCard));
+const toggle = videoCard.slice(videoCard.indexOf("const toggleMute"), videoCard.indexOf("const handleLike"));
+assert(
+  "the sound button unmutes YouTube through the iframe API",
+  /youtubeCommand\(frame, next \? "mute" : "unMute"\)/.test(toggle) && /"playVideo"/.test(toggle),
+);
+assert("turning sound on is remembered for the next cards", /feedSoundOn = !next/.test(toggle));
+assert(
+  "a newly active YouTube card re-applies remembered sound",
+  /setIsMuted\(!feedSoundOn\)[\s\S]{0,200}"unMute"/.test(videoCard),
+);
+
 process.exit(failures === 0 ? 0 : 1);

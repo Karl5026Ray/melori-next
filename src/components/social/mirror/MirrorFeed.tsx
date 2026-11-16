@@ -364,9 +364,11 @@ export default function MirrorFeed({
           onPointerDown={(event) => {
             if (!event.isPrimary) return;
             pointerStartYRef.current = event.clientY;
-            // Keep the release/cancel lifecycle on this scroll container even
-            // when a swipe leaves its bounds, so pointerActive cannot latch.
-            event.currentTarget.setPointerCapture(event.pointerId);
+            // No pointer capture here. Capturing on pointerdown retargets the
+            // whole gesture to this scroller, so a plain tap's click lands on
+            // the scroller instead of the button under the finger: the card's
+            // sound, like, comment and share buttons never fired (Karl, 16 Nov
+            // 2026: "the button on the Melori Band songs" did nothing).
           }}
           onPointerMove={(event) => {
             const startY = pointerStartYRef.current;
@@ -375,6 +377,12 @@ export default function MirrorFeed({
               startY !== null &&
               Math.abs(event.clientY - startY) > 8
             ) {
+              // Only a real swipe takes capture, so the release/cancel
+              // lifecycle stays on this container when the swipe leaves its
+              // bounds and pointerActive cannot latch. A tap never gets here.
+              if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
               markManualNavigationIntent(true);
             }
           }}

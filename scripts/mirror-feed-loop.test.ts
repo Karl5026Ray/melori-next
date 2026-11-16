@@ -383,4 +383,23 @@ assert(
   /if \(feedSoundOn\) youtubeCommand\(youtubeFrameRef\.current, "unMute"\)/.test(videoCard),
 );
 
+// Karl, 16 Nov 2026: the sound button on the Melori Band videos did nothing.
+// Pointer capture taken on pointerdown retargets a tap's click to the scroller,
+// so no button inside a card could fire. Capture belongs to swipes only.
+console.log("\nMirror taps reach card buttons\n");
+const downHandler = mirrorFeed.slice(
+  mirrorFeed.indexOf("onPointerDown={(event) => {"),
+  mirrorFeed.indexOf("onPointerMove={(event) => {"),
+);
+const moveHandler = mirrorFeed.slice(
+  mirrorFeed.indexOf("onPointerMove={(event) => {"),
+  mirrorFeed.indexOf("onPointerUp={(event) => {"),
+);
+assert("a tap does not take pointer capture on pointerdown", !/setPointerCapture\(/.test(downHandler));
+assert(
+  "capture is taken only once the pointer has moved like a swipe",
+  /Math\.abs\(event\.clientY - startY\) > 8/.test(moveHandler) &&
+    moveHandler.indexOf("setPointerCapture(event.pointerId)") > moveHandler.indexOf("> 8"),
+);
+
 process.exit(failures === 0 ? 0 : 1);

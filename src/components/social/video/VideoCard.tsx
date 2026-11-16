@@ -55,6 +55,20 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   return `${base}/storage/v1/object/public/audio-files/${path}`;
 }
 
+// Karl, 16 Nov 2026: "mute won't play songs on Melori Mirror." Once a viewer
+// turns sound on, it stays on as they scroll, for native clips and YouTube
+// posts alike, until they turn it off again. Kept for the page session only.
+let feedSoundOn = false;
+
+// Commands for YouTube's iframe player (enablejsapi=1). A command sent before
+// the player is ready is dropped silently, so callers repeat it shortly after.
+function youtubeCommand(frame: HTMLIFrameElement | null, func: string) {
+  frame?.contentWindow?.postMessage(
+    JSON.stringify({ event: "command", func, args: [] }),
+    "https://www.youtube-nocookie.com",
+  );
+}
+
 function VideoCardBase({
   video,
   isActive,
@@ -88,7 +102,7 @@ function VideoCardBase({
   // autoplay-with-sound). Audio-only posts default UNMUTED: a muted audio post
   // is pointless, and the native <audio controls> bar is the manual fallback
   // if the browser blocks unmuted autoplay.
-  const [isMuted, setIsMuted] = useState(!isAudio);
+  const [isMuted, setIsMuted] = useState(!isAudio && !feedSoundOn);
   // For audio posts: true when the browser BLOCKED unmuted autoplay so we fell
   // back to muted (or paused). Drives a "tap to play with sound" affordance.
   const [needsUnmuteTap, setNeedsUnmuteTap] = useState(false);
@@ -176,8 +190,25 @@ function VideoCardBase({
     }
 
     if (!isAudio) {
-      // Video: always starts muted (handled by state), just play.
+      // Video: starts muted unless the viewer already turned sound on in this
+      // feed. If the browser refuses audible autoplay, fall back to muted.
+      let cancelled = false;
+      const wantSound = feedSoundOn;
+      el.muted = !wantSound;
+      setIsMuted(!wantSound);
       const p = el.play();
+      if (wantSound && p && typeof p.catch === "function") {
+        p.catch(() => {
+          if (cancelled) return;
+          el.muted = true;
+          setIsMuted(true);
+          const p2 = el.play();
+          if (p2 && typeof p2.catch === "function") p2.catch(() => {});
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
       if (p && typeof p.catch === "function") p.catch(() => {});
       return;
     }
@@ -299,6 +330,27 @@ function VideoCardBase({
     };
   }, [youtubeId, isActive, onPlaybackEnded, video.id]);
 
+  // A YouTube card starts muted (the only autoplay browsers allow). If the
+  // viewer already turned sound on in this feed, unmute once the player is up.
+  // Commands sent before the player is ready are dropped, so retry briefly.
+  useEffect(() => {
+    if (!youtubeId || !isActive) return;
+    setIsMuted(!feedSoundOn);
+    if (!feedSoundOn) return;
+    const frame = youtubeFrameRef.current;
+    // Re-checked on every retry: a viewer who mutes during the retry window
+    // must stay muted.
+    const unmute = () => {
+      if (feedSoundOn) youtubeCommand(youtubeFrameRef.current, "unMute");
+    };
+    frame?.addEventListener("load", unmute);
+    const timers = [300, 1000, 2500].map((ms) => window.setTimeout(unmute, ms));
+    return () => {
+      frame?.removeEventListener("load", unmute);
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [youtubeId, isActive, video.id]);
+
   // Keep the imperative `muted` property in sync with React state for BOTH
   // media elements. The <video muted={...}> attribute is unreliable after
   // hydration in React, so we set the DOM property directly here.
@@ -313,6 +365,13 @@ function VideoCardBase({
   const toggleMute = () => {
     setIsMuted((prev) => {
       const next = !prev;
+      if (!isAudio) feedSoundOn = !next;
+      if (youtubeId) {
+        const frame = youtubeFrameRef.current;
+        youtubeCommand(frame, next ? "mute" : "unMute");
+        if (!next) youtubeCommand(frame, "playVideo");
+        return next;
+      }
       const el = isAudio ? audioRef.current : videoRef.current;
       if (el) {
         el.muted = next;
@@ -507,12 +566,13 @@ function VideoCardBase({
                   autoplay: true,
                   muted: true,
                   loop: loopInPlace,
-                  enableJsApi: Boolean(onPlaybackEnded),
+                  // Always on: the Melori sound button drives the player.
+                  enableJsApi: true,
                 })}
                 title={video.title}
-                // Autoplay is only granted to a muted player; the viewer unmutes
-                // with YouTube's own controls, which is why this card has no
-                // Melori mute toggle.
+                // Autoplay is only granted to a muted player. The Melori sound
+                // button (top right) unmutes it through the iframe API; YouTube's
+                // own control is partly covered by the card's overlays.
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 className="absolute inset-0 h-full w-full border-0"
@@ -602,10 +662,13 @@ function VideoCardBase({
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 pointer-events-none" />
 
-      {!isAudio && !youtubeId && (
+      {!isAudio && (
         <button
+          type="button"
           onClick={toggleMute}
-          className="absolute top-4 right-4 p-2 bg-black/30 backdrop-blur rounded-full text-white"
+          aria-label={isMuted ? "Turn sound on" : "Turn sound off"}
+          data-testid="card-sound-toggle"
+          className="absolute top-4 right-4 z-30 p-2 bg-black/30 backdrop-blur rounded-full text-white"
         >
           {isMuted ? (
             <VolumeX className="w-5 h-5" />

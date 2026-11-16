@@ -43,6 +43,10 @@ export type BookSeries = {
   audience: string;
   description: string;
   books: Book[];
+  /** Music that goes with the series, playing on Melori itself. */
+  listen?: { line: string; href: string };
+  /** A seasonal note shown on the shelf until `until` (ISO date, exclusive). */
+  seasonal?: { line: string; until: string };
 };
 
 // Order is Karl's (2026-10-03; Was It Just Business? added after Without The
@@ -56,6 +60,17 @@ export const BOOK_SERIES: BookSeries[] = [
     audience: "Picture books · ages 4–8",
     description:
       "Ten young musicians, one school band. Every book is a story about kindness, respect, and why school matters.",
+    // 16 Nov 2026 (review): the band has its own album on Melori. Stated as
+    // what it is (ten learning songs), not as one song per book — that pairing
+    // doesn't exist and the page won't claim it.
+    listen: {
+      line: "Hear the band: School Day Jams, ten learning songs from The Melori Band, free on Melori.",
+      href: "/music/album/school-day-jams",
+    },
+    seasonal: {
+      line: "Christmas idea: give all ten. One book for every member of the band.",
+      until: "2026-12-26",
+    },
     books: [
       {
         title: "Pip Speaks Up",
@@ -272,8 +287,11 @@ export const BOOK_SERIES: BookSeries[] = [
     id: "denny",
     name: "Denny: Never Give Up",
     audience: "Memoir · tribute",
+    // 16 Nov 2026: the review called this "the most moving pitch you own" and
+    // the page never said it. Denzel's own book was never finished; his uncle,
+    // Karl, finished it from Denzel's own words.
     description:
-      "One day in the life of Denzel Maurice Henderson, from the moment his eyes open until he goes to sleep. His motto: never give up.",
+      "Denzel Maurice Henderson started telling his story and never got to finish it. His uncle, Karl Ray, finished it for him, from Denzel's own words: one day in his life, from the moment his eyes open until he goes to sleep. His motto: never give up.",
     books: [
       {
         title: "Denny: Never Give Up",
@@ -319,7 +337,8 @@ export const BOOK_SERIES: BookSeries[] = [
     id: "woe",
     name: "WOE",
     audience: "Fiction",
-    description: "Some of it's joy and some of it's woe.",
+    description:
+      "Carter Wilson is a Chicago photographer, six months clean, who finds out someone has been watching him. Every woman in his life could be a friend or a foe. Some of it's joy and some of it's woe.",
     books: [
       {
         title: "WOE",

@@ -54,7 +54,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Album pages are public again since 2026-10-15 (see src/proxy.ts), so they
   // are listed. Artist profiles stay public deliberately: gating them would have hidden
-  // Kaiel R and Gloria Joy Rivers from search.
+  // KAIEL R and Gloria Joy Rivers from search.
   const artistRoutes: MetadataRoute.Sitemap = artists.map((artist) => ({
     url: `${SITE_URL}/artists/${artist.slug}`,
     lastModified: artist.updated_at ? new Date(artist.updated_at) : now,

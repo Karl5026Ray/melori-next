@@ -41,6 +41,7 @@ import AgeAttestation, {
   ageAttestationMetadata,
 } from "@/components/auth/AgeAttestation";
 import { doorReason } from "@/lib/doorReason";
+import DoorListenStrip from "@/components/auth/DoorListenStrip";
 import { BookOpen, ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
 
 // What a stranger can look at before joining (outside review, 2 Oct 2026: the
@@ -78,7 +79,7 @@ const DOOR_CARDS = [
     href: "/artists",
     icon: Mic2,
     title: "The artists",
-    line: "Kaiel R, Gloria Joy Rivers, Karl Ray and the creators on Melori.",
+    line: "KAIEL R, Gloria Joy Rivers, Karl Ray and the creators on Melori.",
   },
 ] as const;
 
@@ -315,6 +316,17 @@ export default function MeloriDoorPage() {
       </div>
 
       <div className="mx-auto max-w-md px-4 pb-16 pt-8">
+        {/* Music before the form (Karl, 16 Nov 2026): a stranger hears a
+            30-second preview first, then gets asked for an email. */}
+        {phase === "form" && (
+          <DoorListenStrip
+            onWantsFullSong={() => {
+              const el = document.getElementById("door-email");
+              el?.scrollIntoView({ behavior: "smooth", block: "center" });
+              (el as HTMLInputElement | null)?.focus({ preventScroll: true });
+            }}
+          />
+        )}
         <div className="relative text-center">
           {reason && (
             <p
@@ -349,6 +361,7 @@ export default function MeloriDoorPage() {
         {phase === "form" && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <input
+              id="door-email"
               type="email"
               required
               autoComplete="email"

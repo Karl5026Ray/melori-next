@@ -80,7 +80,7 @@ const DOOR_PATH = "/platform";
 //      plus a page for each live room describing what happens inside it. This
 //      is the surface that has to be findable by a stranger.
 //   2. The artists      — read-only profile pages. Gating these would hide
-//      Kaiel R and Gloria Joy Rivers from Google, which is the opposite of what
+//      KAIEL R and Gloria Joy Rivers from Google, which is the opposite of what
 //      a platform short on traffic needs.
 //   3. The way in       — the door itself, sign-in, registration and password
 //      recovery. Gating the signup page behind signup is the classic own goal.

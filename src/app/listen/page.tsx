@@ -30,7 +30,7 @@ export default function ListenTeaserPage() {
       self="/listen"
       eyebrow="Melori Music"
       title="All the music, free to members"
-      lede="Melori's catalog is independent music you won't hear everywhere else — R&B, soul, gospel and hip-hop from artists like Karl Ray, Kaiel R and Gloria Joy Rivers, and new releases from the creators on the platform. Make a free account and the whole catalog opens."
+      lede="Melori's catalog is independent music you won't hear everywhere else — R&B, soul, gospel and hip-hop from artists like Karl Ray, KAIEL R and Gloria Joy Rivers, and new releases from the creators on the platform. Make a free account and the whole catalog opens."
       points={[
         {
           title: "Free with an account",

@@ -232,6 +232,14 @@ export async function PATCH(req: NextRequest) {
         { status: 422 },
       );
     }
+    if (mod.decision === "review") {
+      // Screening failed (model outage). Avatars and banners have no held
+      // state, so don't save an unchecked image; ask the user to retry.
+      return NextResponse.json(
+        { error: `We couldn't check your ${field === "avatar_url" ? "profile photo" : "banner"} just now. Please try again in a moment.` },
+        { status: 503 },
+      );
+    }
     if (mod.decision === "flag") {
       await recordModeration({ contentType: field === "avatar_url" ? "avatar" : "banner", authorId: userId, result: mod, mediaUrl: url });
     }

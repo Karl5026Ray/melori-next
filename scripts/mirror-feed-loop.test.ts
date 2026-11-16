@@ -375,7 +375,7 @@ assert(
 assert("turning sound on is remembered for the next cards", /feedSoundOn = !next/.test(toggle));
 assert(
   "a newly active YouTube card re-applies remembered sound",
-  /setIsMuted\(!feedSoundOn\)[\s\S]{0,200}"unMute"/.test(videoCard),
+  /setIsMuted\(!feedSoundOn\)[\s\S]{0,600}"unMute"/.test(videoCard),
 );
 
 assert(

@@ -50,6 +50,10 @@ async function main() {
   check(!/audio_url/.test(route), "preview route never reads audio_url (the master)");
   check(/preview_url/.test(route), "preview route serves preview_url");
   check(/isDoorPreviewTrack\(id\)/.test(route), "preview route checks the allowlist");
+  check(
+    /releases!inner\(is_published\)/.test(route) && /\.eq\("release\.is_published",\s*true\)/.test(route),
+    "preview route requires the release to be published (hiding a release stops its previews)",
+  );
 
   const list = strip(read("src/app/api/door-previews/route.ts"));
   check(!/preview_url:\s*row|audio_url/.test(list), "door-previews never returns a storage path");
@@ -57,6 +61,12 @@ async function main() {
   const comp = strip(read("src/components/auth/DoorListenStrip.tsx"));
   check(!/autoPlay|autoplay/.test(comp), "strip has no autoplay");
   check(/onClick=\{\(\) => play\(p\)\}/.test(comp), "playback starts only from a tap");
+  const afterJson = comp.slice(comp.indexOf("await res.json()"));
+  check(
+    /if \(stale\(\)\) return;/.test(afterJson) && afterJson.indexOf("stale()") < afterJson.indexOf("audio.src = url"),
+    "a stale or post-unmount preview response never starts audio",
+  );
+  check(/mountedRef\.current = false/.test(comp), "unmount marks the strip gone");
 
   const door = read("src/app/platform/page.tsx");
   check(/<DoorListenStrip/.test(strip(door)), "the door renders <DoorListenStrip>");

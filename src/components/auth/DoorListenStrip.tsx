@@ -24,8 +24,13 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
   const [finishedTitle, setFinishedTitle] = useState<string | null>(null);
   const [failed, setFailed] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Each tap gets a number. A slow response for an older tap, or one that
+  // lands after the strip is gone, must not start audio.
+  const requestRef = useRef(0);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     let cancelled = false;
     fetch("/api/door-previews")
       .then((r) => (r.ok ? r.json() : { previews: [] }))
@@ -35,6 +40,8 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
       .catch(() => {});
     return () => {
       cancelled = true;
+      mountedRef.current = false;
+      requestRef.current += 1;
       audioRef.current?.pause();
     };
   }, []);
@@ -42,6 +49,7 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
   if (previews.length === 0) return null;
 
   const stop = () => {
+    requestRef.current += 1;
     audioRef.current?.pause();
     setPlayingId(null);
   };
@@ -52,6 +60,8 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
       return;
     }
     stop();
+    const ticket = ++requestRef.current;
+    const stale = () => !mountedRef.current || ticket !== requestRef.current;
     setFailed(null);
     setFinishedTitle(null);
     setLoadingId(p.id);
@@ -59,6 +69,7 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
       const res = await fetch(`/api/tracks/${p.id}/preview`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       const { url } = (await res.json()) as { url: string };
+      if (stale()) return;
       const audio = audioRef.current ?? new Audio();
       audioRef.current = audio;
       audio.src = url;
@@ -72,11 +83,15 @@ export default function DoorListenStrip({ onWantsFullSong }: { onWantsFullSong?:
         }
       };
       await audio.play();
+      if (stale()) {
+        audio.pause();
+        return;
+      }
       setPlayingId(p.id);
     } catch {
-      setFailed(p.id);
+      if (!stale()) setFailed(p.id);
     } finally {
-      setLoadingId(null);
+      if (!stale()) setLoadingId(null);
     }
   };
 

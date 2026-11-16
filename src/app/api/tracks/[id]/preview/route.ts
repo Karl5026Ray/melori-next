@@ -18,6 +18,7 @@ export const revalidate = 0;
 //   • only ids in DOOR_PREVIEW_TRACK_IDS (anything else: 401, as /stream does)
 //   • only the preview clip (tracks.preview_url) — it never falls back to the
 //     master in audio_url, unlike /stream
+//   • only while both the track and its release are published
 //   • a signed URL that lives five minutes
 export async function GET(_request: Request, props: { params: Promise<{ id: string }> }) {
   const { id: raw } = await props.params;
@@ -36,10 +37,13 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
     const supabaseAdmin = getSupabaseAdmin();
     const { data: track, error } = await supabaseAdmin
       .from("tracks")
-      .select("id, preview_url")
+      // The release must be published too: hiding a release has to stop its
+      // previews, not just its page.
+      .select("id, preview_url, release:releases!inner(is_published)")
       .eq("id", id)
       .eq("is_published", true)
       .eq("moderation_status", "clean")
+      .eq("release.is_published", true)
       .maybeSingle();
     if (error) throw error;
     if (!track?.preview_url) {

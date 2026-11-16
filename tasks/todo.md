@@ -1,3 +1,79 @@
+# Front-door + artist page + books polish, 16 Nov 2026 (BUILT on feat/door-previews-artist-books)
+
+Source: outside review Karl pasted 16 Nov (homepage, artist page, books, signup).
+
+## Facts checked before planning (live DB + main 8f06957)
+- Door (/platform) is a signup form first; "Inside Melori" cards sit BELOW it.
+  Stream route answers 401 to signed-out visitors (PR #353, by design).
+- 30-second preview files already exist for most catalog tracks
+  (tracks.preview_url, e.g. karl-ray/krp-steppers/10-117-preview.mp3).
+- Karl Ray's artist page = 60 curated releases + 9 studio items. The real
+  duplicates: release #49 "Iceman Ball Out" vs studio single "ICEMAN Ball Out"
+  (artist BINO). "Peace over EGO" (#72, single) sits beside the album
+  "BINO - Peace Over Ego" (#24). "SHADAI - Ride The Wave" (#27) is already hidden.
+- Bio is one line: "Founder of Melori Music. Independent artist, filmmaker, and curator."
+- Review item "Superfan/Artist tiers exist" is STALE: Karl removed all paid
+  tiers and money from Melori on 8 Sep 2026 (rows deleted). Not re-adding them.
+- Books page: every book already has a blurb in src/lib/books.ts, but the page
+  never renders blurbs, and "More Titles" drops the series descriptions —
+  that's why Denny/WOE/WIJB/Right Before My Song look bare.
+- Review claim "every Melori Band book pairs with a song" is NOT true. What is
+  true: School Day Jams (10 learning songs) is on Melori. Copy says that instead.
+- "Kaiel R" appears in 4 places in code; DB artist name is "KAIEL R".
+- "Karl Ray Relaunch" is a studio album title; stores carry it as "RELAUNCH".
+
+## 1. Door: listen before signup
+- [x] New GET /api/tracks/[id]/preview: PUBLIC, but only for a hand-picked
+      allowlist of track ids, and only the 30-sec preview file (never the master),
+      short-lived signed URL. Everything else stays 401.
+- [x] "Listen now" strip at the top of /platform (above "Create your account"):
+      4-5 tracks, tap to play 30 sec, then "Make a free account for the full song."
+- [x] Verify preview files are actually ~30 sec before listing them.
+- [x] Proxy allowlist + test that a non-listed id still returns 401.
+
+## 2. Artist page front door (Karl Ray)
+- [x] Hide duplicates (is_published=false — reversible, nothing deleted).
+- [x] "Start here" row above the grid: pinned releases, Christmas with KRP first
+      through December (auto-drops off Jan 1).
+- [x] Bio rewrite with exits: Books, RELAUNCH on Amazon Music, YouTube, Photography.
+- [x] "Support Karl" line → outside link (no payments on Melori itself).
+
+## 3. Books page
+- [x] Render blurbs; single-book series get a wide card with description + blurb.
+- [x] Denny copy adds the uncle-finishing-his-nephew's-book line (true per Karl).
+- [x] Melori Band shelf: School Day Jams line + link; holiday "all ten" callout.
+
+## 4. Polish
+- [x] One spelling for KAIEL R everywhere.
+- [x] Title-case release titles (keep deliberate all-caps: DANCE, WOE, REMADE,
+      MILK & HONEY, LUSH LIFE, WOMEN ONLY, KRP).
+- [x] Rename studio album "Karl Ray Relaunch" → "RELAUNCH".
+
+## Verify
+- [x] npm run test:unit (all suites) + tsc
+- [ ] Vercel preview: signed out — door plays a preview, a non-listed track 401s,
+      no master paths in HTML; artist page and books render on phone width.
+- [x] Review section below when done.
+## Karl's answers (16 Nov)
+- Previews on the door: YES (30-sec, hand-picked). Picks are mine, editable in
+  src/lib/doorPreviews.ts: Angels in the Snow, Velvet Ropes, Ready for a
+  Blessing, Blessed Be Your Name, Nice to Meet You.
+- Duplicates: hide ONLY the catalog "Iceman Ball Out" (#49). "Peace Over EGO"
+  single stays next to the BINO album.
+- Support: RELAUNCH on Amazon Music (amazon.com/dp/B0HKNJ43KR).
+- Spelling: KAIEL R everywhere.
+
+## Review
+- Data changes applied to prod 16 Nov, all reversible. Old values saved in
+  public._backup_review_polish_20261116 (RLS on, no anon/authenticated access):
+  release #49 hidden; 14 release titles title-cased; track 103 title; studio
+  album "Karl Ray Relaunch" -> "RELAUNCH" (+14 tracks' album field, slug
+  unchanged so links still work); 4 studio tracks' artist -> "KAIEL R";
+  Karl Ray bio rewritten.
+- Not done, on purpose: no paid tiers (removed 8 Sep). No "every book pairs
+  with a song" claim (false). No bulk-order offer on /books (not asked).
+- test:unit green incl. new test:door-previews + test:front-door; tsc clean.
+
 # AI SEO + public album pages, 15 Oct 2026 (feat/ai-seo-albums-public; migration 098 APPLIED to prod 15 Oct)
 
 Karl: spend the Max plan's $100/mo Claude API credit on the best use.

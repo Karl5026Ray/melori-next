@@ -13,6 +13,8 @@ import {
   getStudioCatalogForProfile,
   type CatalogItem,
 } from "@/lib/catalog";
+import CatalogCard from "@/components/CatalogCard";
+import { ARTIST_FRONT_DOORS, activePins } from "@/lib/artistFrontDoor";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +84,16 @@ export default async function ArtistDetailPage(
     })),
     ...studioItems,
   ];
+
+  // Start here + links out + support (src/lib/artistFrontDoor.ts). Only
+  // artists with an entry get these; everyone else renders as before.
+  const frontDoor = ARTIST_FRONT_DOORS[artist.slug] ?? null;
+  const byKey = new Map(catalogItems.map((i) => [i.key, i]));
+  const startHere = frontDoor
+    ? activePins(frontDoor)
+        .map((pin) => ({ pin, item: byKey.get(pin.key) }))
+        .filter((x): x is { pin: typeof x.pin; item: CatalogItem } => Boolean(x.item))
+    : [];
 
   return (
     <article>
@@ -168,9 +180,61 @@ export default async function ArtistDetailPage(
           <p className="mt-6 max-w-3xl text-text-secondary">{artist.bio}</p>
         )}
 
+        {/* Ways out of the page (review, 16 Nov 2026: "Anyone who falls for
+            the music has nowhere to go"). */}
+        {frontDoor && frontDoor.links.length > 0 && (
+          <nav aria-label={`More from ${artist.name}`} className="mt-4 flex flex-wrap gap-2" data-testid="artist-links">
+            {frontDoor.links.map((l) => {
+              const external = /^https?:\/\//.test(l.href);
+              return (
+                <a
+                  key={l.href}
+                  href={l.href}
+                  {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                  className="rounded-full border border-brand-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:border-brand-primary hover:text-brand-primary"
+                >
+                  {l.label}
+                </a>
+              );
+            })}
+          </nav>
+        )}
+
+        {frontDoor?.support && (
+          <a
+            href={frontDoor.support.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="artist-support"
+            className="mt-4 flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-brand-primary/40 bg-brand-primary/10 px-4 py-3 transition-colors hover:bg-brand-primary/20"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-brand-primary">{frontDoor.support.label}</span>
+              <span className="block text-sm text-text-secondary">{frontDoor.support.line}</span>
+            </span>
+            <span aria-hidden className="text-brand-primary">&rarr;</span>
+          </a>
+        )}
+
+        {/* Start here — a path through a big catalog. */}
+        {startHere.length > 0 && (
+          <section className="pt-10" data-testid="artist-start-here">
+            <h2 className="mb-1 text-2xl font-bold">Start here</h2>
+            <p className="mb-5 text-sm text-text-secondary">New to {artist.name}? Begin with one of these.</p>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {startHere.map(({ pin, item }) => (
+                <div key={pin.key}>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-brand-primary">{pin.label}</p>
+                  <CatalogCard item={item} />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Discography */}
         <section className="py-12">
-          <h2 className="mb-6 text-2xl font-bold">Discography</h2>
+          <h2 className="mb-6 text-2xl font-bold">{startHere.length > 0 ? "Everything" : "Discography"}</h2>
           <ArtistDiscography items={catalogItems} />
         </section>
       </div>

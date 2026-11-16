@@ -338,7 +338,11 @@ function VideoCardBase({
     setIsMuted(!feedSoundOn);
     if (!feedSoundOn) return;
     const frame = youtubeFrameRef.current;
-    const unmute = () => youtubeCommand(youtubeFrameRef.current, "unMute");
+    // Re-checked on every retry: a viewer who mutes during the retry window
+    // must stay muted.
+    const unmute = () => {
+      if (feedSoundOn) youtubeCommand(youtubeFrameRef.current, "unMute");
+    };
     frame?.addEventListener("load", unmute);
     const timers = [300, 1000, 2500].map((ms) => window.setTimeout(unmute, ms));
     return () => {

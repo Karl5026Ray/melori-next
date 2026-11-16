@@ -378,4 +378,9 @@ assert(
   /setIsMuted\(!feedSoundOn\)[\s\S]{0,200}"unMute"/.test(videoCard),
 );
 
+assert(
+  "muting during the unmute retry window sticks (each retry re-checks the preference)",
+  /if \(feedSoundOn\) youtubeCommand\(youtubeFrameRef\.current, "unMute"\)/.test(videoCard),
+);
+
 process.exit(failures === 0 ? 0 : 1);

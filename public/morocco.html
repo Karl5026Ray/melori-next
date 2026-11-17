@@ -396,7 +396,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <!-- PAYMENT LINK: when Karl chooses the payment route, point this button's href at that link. Until then it leads to the message form below, which works today. -->
   <div style="margin-top:20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center">
     <a class="btn btn-terra" id="supportPayBtn" href="#pledge">Support Karl &amp; Blessing — $20+ gets RELAUNCH</a>
-    <span style="color:var(--muted); font-size:.93rem">Under $20? Welcome too — use the form below and give any amount.</span>
+    <span style="color:var(--muted); font-size:.93rem">Pick a tier above, then tap to pay securely with Stripe. Your album link appears the moment payment goes through.</span>
   </div>
   <p style="margin-top:14px; color:var(--muted); font-size:.95rem">Any other amount is welcome too — use the form below and write it in. At $20 or more, the album delivery is automatic; below that, your gift is pure support, and it matters just as much to getting Blessing on that plane.</p>
 </div>
@@ -712,6 +712,33 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },400);
     status.textContent="✓ Downloaded — send the note to Karl however you normally reach him.";
   });
+})();
+</script>
+<script>
+// Stripe payment links (wired 2026-11-17). The button pays for whichever
+// tier is selected above. $20+ links show the RELAUNCH download link on
+// Stripe's confirmation page; $50 and $100 also collect a shipping address.
+(function(){
+  var LINKS={
+    "10":"https://buy.stripe.com/fZu9ANe3Cbqz1gBdtE7Zu0g",
+    "20":"https://buy.stripe.com/dRm00d9Nm52b6AV9do7Zu0d",
+    "50":"https://buy.stripe.com/fZuaER8Ji2U36AV3T47Zu0f",
+    "100":"https://buy.stripe.com/28EbIV3oYbqzbVfahs7Zu0e"
+  };
+  var LABELS={"10":"Give $10 — Friend of the Trip","20":"Pay $20 — get RELAUNCH","50":"Pay $50 — Print Collector","100":"Pay $100 — Collector, signed book"};
+  var btn=document.getElementById("supportPayBtn");
+  if(!btn) return;
+  function sync(){
+    var sel=document.querySelector('.tier[aria-pressed="true"]');
+    var amt=sel?sel.getAttribute("data-amt"):"20";
+    if(!LINKS[amt]) amt="20";
+    btn.href=LINKS[amt];
+    btn.textContent=LABELS[amt]+" ↗";
+    btn.setAttribute("rel","noopener");
+  }
+  document.querySelectorAll(".tier").forEach(function(t){ t.addEventListener("click",function(){ setTimeout(sync,0); }); });
+  var ts=document.getElementById("fTier"); if(ts) ts.addEventListener("change",function(){ setTimeout(sync,0); });
+  sync();
 })();
 </script>
 </body>

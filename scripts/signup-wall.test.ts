@@ -42,6 +42,7 @@ const PUBLIC: [string, string][] = [
   ["/about", "Karl's introduction — the other half of the advertising"],
   ["/books", "Karl's books — links out to Amazon, advertising like the gallery"],
   ["/karlray", "Karl's link-in-bio page — every social bio points here"],
+  ["/karlray/morocco", "Karl's Morocco trip updates — linked from his trip support page"],
   ["/links", "Karl's channel links — the link on his Facebook profile"],
   ["/app", "the app link on flyers and QR codes"],
 

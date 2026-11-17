@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Heart, MapPin } from "lucide-react";
 import ShareButton from "@/components/ShareButton";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseCatalogReader } from "@/lib/supabase/admin";
 import { SITE_URL } from "@/lib/site";
 import {
   KARL_PROFILE_ID,
@@ -42,7 +42,10 @@ export const metadata: Metadata = {
 
 async function getTrip(): Promise<{ galleryId: string | null; posts: TripPost[] }> {
   try {
-    const supabase = getSupabaseAdmin();
+    // Cached reader, not getSupabaseAdmin(): its no-store reads would make
+    // this route dynamic despite `revalidate`, and in-app browsers discard
+    // no-store pages. The feed is public and the same for every visitor.
+    const supabase = getSupabaseCatalogReader();
     const { data: gallery } = await supabase
       .from("photo_galleries")
       .select("id")

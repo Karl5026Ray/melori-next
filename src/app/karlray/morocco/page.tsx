@@ -101,14 +101,12 @@ export default async function MoroccoTripPage() {
           <h1 className="mt-2 text-3xl font-bold sm:text-4xl">Christmas in Morocco</h1>
           <p className="mt-1 text-text-secondary">December 16, 2026 – January 6, 2027</p>
           <p className="mt-4 text-lg leading-relaxed text-text-secondary">
-            Karl and his fiancée Blessing are meeting halfway for Christmas. Photos,
+            Karl and his fiancée Blessing are spending Christmas in Marrakech. Photos,
             updates and first listens to the songs Karl writes there go up here first.
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <a
               href={MOROCCO_SUPPORT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-2.5 font-semibold text-white hover:bg-brand-primary-dark"
             >
               <Heart className="h-4 w-4" aria-hidden /> Support the trip

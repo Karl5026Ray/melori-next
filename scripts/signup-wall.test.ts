@@ -43,6 +43,7 @@ const PUBLIC: [string, string][] = [
   ["/books", "Karl's books — links out to Amazon, advertising like the gallery"],
   ["/karlray", "Karl's link-in-bio page — every social bio points here"],
   ["/karlray/morocco", "Karl's Morocco trip updates — linked from his trip support page"],
+  ["/morocco", "the Morocco trip support page — shared with people who have no account"],
   ["/links", "Karl's channel links — the link on his Facebook profile"],
   ["/app", "the app link on flyers and QR codes"],
 

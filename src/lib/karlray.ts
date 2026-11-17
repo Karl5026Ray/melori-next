@@ -34,5 +34,5 @@ export const KARL_ARTIST_PATH = "/artists/karl-ray";
 export const MOROCCO_GALLERY_SLUG = "morocco-trip-2026";
 export const MOROCCO_PATH = "/karlray/morocco";
 
-/** The trip's support page (story, budget, album tiers). */
-export const MOROCCO_SUPPORT_URL = "https://claude.ai/artifact/D8EaBNEC4Sg847ECyorwBL";
+/** The trip's support page (story, budget, album tiers): public/morocco.html. */
+export const MOROCCO_SUPPORT_URL = "/morocco";

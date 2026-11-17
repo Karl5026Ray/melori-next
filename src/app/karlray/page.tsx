@@ -15,6 +15,7 @@ import {
   KARL_ARTIST_PATH,
   KARL_PROFILE_ID,
   KARL_PROFILE_PATH,
+  MOROCCO_PATH,
   PORTFOLIO_GALLERY_SLUG,
   PORTFOLIO_URL,
   RELAUNCH_URL,
@@ -202,6 +203,14 @@ export default async function KarlRayProfilePage() {
             </span>
           </p>
         </div>
+
+        {/* Morocco trip (2026-11-17) — remove after the trip. */}
+        <Link
+          href={MOROCCO_PATH}
+          className="mt-4 block rounded-2xl border border-brand-border bg-brand-surface px-5 py-3 text-center font-semibold hover:border-brand-primary"
+        >
+          Follow my Christmas trip to Morocco →
+        </Link>
 
         {/* Main actions */}
         <div className="mt-5 grid gap-3 sm:grid-cols-3">

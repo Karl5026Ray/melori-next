@@ -112,6 +112,12 @@ const PUBLIC_EXACT = new Set([
   "/forgot-password",
   // Karl's link-in-bio page (2026-10-17): every social bio points here.
   "/karlray",
+  // Karl's Morocco trip updates (2026-11-17): linked from his trip support
+  // page, which is shared with people who have no Melori account.
+  "/karlray/morocco",
+  // The Morocco trip support page itself (static public/morocco.html, served
+  // at /morocco by a rewrite in next.config.js). Shared in K-1 visa groups.
+  "/morocco",
   // Karl's channel links (2026-10-22): the one link on his Facebook profile.
   "/links",
   "/gallery",

@@ -189,6 +189,13 @@ const nextConfig = {
   },
   // Friendly-URL redirects for well-known aliases users type in the address bar.
   // Site-evaluation P1 fix (2026-07-04): these previously 404'd.
+  // The Morocco trip support page (2026-11-17) is one self-contained HTML file
+  // built outside this repo and supplied by Karl; it lives at
+  // public/morocco.html and is served at /morocco. Local file only, never
+  // another server (see the note at the top of this file).
+  async rewrites() {
+    return [{ source: "/morocco", destination: "/morocco.html" }];
+  },
   async redirects() {
     return [
       // ── Canonical origin: force www.melorimusic.org → melorimusic.org (apex).

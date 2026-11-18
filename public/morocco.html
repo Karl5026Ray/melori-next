@@ -38,8 +38,8 @@ a{color:var(--teal)}
 button,[role="button"],select,summary,input:not([type="checkbox"],[type="radio"]){min-height:44px}
 h1,h2,h3{font-family:"DM Serif Display",Georgia,serif; font-weight:400; line-height:1.08; margin:0}
 p{margin:0}
-.wrap{max-width:1060px; margin:0 auto; padding:0 20px}
-.section{padding:52px 0 8px}
+.wrap{max-width:1100px; margin:0 auto; padding-left:clamp(20px,5vw,48px); padding-right:clamp(20px,5vw,48px)}
+.section{padding-top:52px; padding-bottom:8px}
 .kicker{font-size:.78rem; font-weight:900; letter-spacing:.14em; text-transform:uppercase; color:var(--terra); margin-bottom:10px}
 .section h2{font-size:clamp(1.9rem,5vw,2.7rem); margin-bottom:12px}
 .lede{color:var(--muted); font-size:1.06rem; max-width:680px}
@@ -55,7 +55,7 @@ p{margin:0}
 :focus-visible{outline:3px solid var(--gold); outline-offset:2px}
 
 /* HERO */
-.hero{padding:26px 0 0}
+.hero{padding-top:26px}
 .hero-img{border-radius:22px; overflow:hidden; box-shadow:var(--shadow); border:1px solid var(--line)}
 .hero-img img{width:100%; height:auto; aspect-ratio:3/2; object-fit:cover}
 .hero-img figcaption{font-size:.82rem; color:var(--muted); padding:9px 14px; background:var(--surface)}
@@ -95,6 +95,8 @@ p{margin:0}
 .ch-photo figcaption{padding:9px 14px; font-size:.88rem; color:var(--muted)}
 .chapter{display:grid; gap:18px; margin-top:34px; align-items:center}
 @media(min-width:760px){.chapter{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:32px} .chapter.flip > :first-child{order:2}}
+@media(min-width:760px){.chapter.ch-big{grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr)}}
+.ch-big .ch-photo img{aspect-ratio:3/4}
 .ch-pair{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .ch-trio{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .ch-trio .ch-wide{grid-column:1/-1}
@@ -275,9 +277,6 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
       <span class="chip gold"><span class="dot"></span> Together since Feb 28, 2025</span>
       <span class="chip"><span class="dot"></span> Engaged in Lagos · Nov 2, 2026</span>
     </div>
-    <div class="hero-ctas">
-      <a class="btn btn-terra" href="#support">Support the trip ↓</a>
-    </div>
   </div>
 
   <div class="countdown" role="timer" aria-label="Countdown to departure">
@@ -297,15 +296,16 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <h2>Karl &amp; Blessing, so far</h2>
   <p class="lede">Real photos from Karl's trip to Nigeria in October and November 2026.</p>
 
-  <div class="chapter">
+  <div class="chapter ch-big">
     <div class="ch-pair">
-      <figure class="ch-photo"><img src="/morocco-photos/smiles.jpg" alt="Selfie of Karl and Blessing, Blessing smiling" loading="lazy" style="object-position:left 40%"><figcaption>Lagos, 2026. Finally, the same selfie.</figcaption></figure>
+      <figure class="ch-photo"><img src="/morocco-photos/smiles.jpg" alt="Selfie of Karl and Blessing, Blessing smiling" loading="lazy" style="object-position:left 40%"><figcaption>Lagos, 2026. Finally a selfie!</figcaption></figure>
       <figure class="ch-photo"><img src="/morocco-photos/hallway.jpg" alt="Karl and Blessing standing together in a hotel hallway" loading="lazy"><figcaption>Together at last</figcaption></figure>
     </div>
     <div class="ch-text">
       <p class="ch-label">Chapter 1 · Feb 28, 2025 → October 2026</p>
       <h3>From a screen to the same room</h3>
-      <p>Karl and Blessing have been together since February 28, 2025, with Karl in Chicago and Blessing in Nigeria. In October 2026 Karl flew to Lagos, and for the first time they were in the same room.</p>
+      <p>Karl and Blessing have been together since February 28, 2025, with Karl in Chicago and Blessing in Nigeria. For twenty months, their relationship lived in messages and video calls across an ocean.</p>
+      <p>In October 2026 Karl flew to Lagos. At the airport, through a crowd of people, there she was: standing out, more beautiful than he remembered. For the first time they were in the same room.</p>
     </div>
   </div>
 
@@ -319,6 +319,14 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
       <p class="ch-label">Chapter 2 · November 2, 2026</p>
       <h3>The question</h3>
       <p>On November 2, 2026, in Lagos, Karl asked Blessing to marry him. She said yes.</p>
+      <p>After twenty months apart and a few days side by side, it wasn't a hard question. Karl puts it simply: they are one.</p>
+      <p>Karl went to her family's village home, met her parents, her sisters and her brother, and was welcomed.</p>
+      <p>The ring was on her hand, and the plan was to spend Christmas together in Chicago.</p>
+      <p>Two years earlier, the K-1 fiancé visa route had been blocked for them, so they chose a B-2 visitor visa, just to get Blessing to America. Karl made sure to visit her in person before her interview, and he did.</p>
+      <p>Her interview was set for November 10, 2026. She was dressed and ready, and Karl had booked her a hotel near the embassy, because it is too far from her home to make it there on time. That is when they first heard about the ban.</p>
+      <p>They had been so focused on the excitement of seeing each other and finally being together that the terrible news slipped right past them.</p>
+      <p>Presidential Proclamation 10998 had quietly taken effect on January 1, 2026. Nigeria is one of 19 countries under a partial U.S. visa suspension: no new B-1/B-2 visitor visas, no new student or exchange visas, and immigrant visas suspended except in narrow cases. Nigerians can still apply and sit for the interview, but the visa can't be issued.</p>
+      <p>Three weeks later, on January 21, 2026, the U.S. paused immigrant visa processing for Nigeria and about 74 other countries.</p>
     </div>
   </div>
 
@@ -327,7 +335,8 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     <div class="ch-text">
       <p class="ch-label">Chapter 3 · The wall</p>
       <h3>Then came the goodbye</h3>
-      <p>Under Proclamation 10998, Nigerian immigrant and visitor visas are suspended. Blessing can't come to the U.S. right now, and their K-1 fiancé visa is blocked while the ban stands. When the trip ended, Karl flew home to Chicago and Blessing stayed in Lagos.</p>
+      <p>Karl was already back in Chicago when the news hit, and Blessing was in Lagos. Disappointed, he told her not to spend the day traveling to the embassy for a visa the ban wouldn't let them issue.</p>
+      <p>Under the ban, Blessing can't visit Chicago, not even for Christmas.</p>
       <p><strong>They aren't waiting on the ban to be together again.</strong> That's where Morocco comes in.</p>
     </div>
   </div>
@@ -367,8 +376,8 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <!-- SUPPORT -->
 <div class="wrap section" id="support">
   <p class="kicker">Support the trip</p>
-  <h2>Pick an amount and pay. That's it.</h2>
-  <p class="lede">Each amount below is a pay button. It opens a secure Stripe checkout, and your confirmation shows right after you pay. Give <strong>$20 or more</strong> and <strong>RELAUNCH, Karl Ray's R&amp;B album</strong>, is yours: the download link is on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
+  <h2>Pick an amount to show support.</h2>
+  <p class="lede">Each amount below is a donation button. It opens a secure Stripe checkout, and your confirmation shows right after you donate. Give <strong>$20 or more</strong> and <strong>RELAUNCH, Karl Ray's R&amp;B album</strong>, is yours: the download link is on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
 
   <div class="ask-photo">
     <figure class="ch-photo"><img src="/morocco-photos/matching-sofa.jpg" alt="Karl and Blessing in matching brown and black print outfits on a sofa" loading="lazy"></figure>
@@ -483,7 +492,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <h2>Questions people ask</h2>
 
   <details>
-    <summary>How do I actually pay, and how do I get RELAUNCH, Karl Ray's R&amp;B album?</summary>
+    <summary>How do I donate, and how do I get RELAUNCH, Karl Ray's R&amp;B album?</summary>
     <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and your RELAUNCH download link appears on the confirmation screen</strong> right after you pay. Save that link.</p></div>
   </details>
   <details>

@@ -27,11 +27,9 @@ export const RELAUNCH_URL = "https://music.amazon.com/albums/B0HKNBB2PQ";
 export const KARL_ARTIST_PATH = "/artists/karl-ray";
 
 /**
- * Morocco trip updates (2026-11-17): a no-password gallery Karl posts trip
- * photos into from his phone; each photo's caption is the update text.
- * Downloads are off — these are personal photos, not a delivered shoot.
+ * Old Morocco trip-updates path (feed removed 2026-11-17). It only redirects
+ * to the trip page below; kept so shared links and the /karlray button work.
  */
-export const MOROCCO_GALLERY_SLUG = "morocco-trip-2026";
 export const MOROCCO_PATH = "/karlray/morocco";
 
 /** The trip's support page (story, budget, album tiers): public/morocco.html. */

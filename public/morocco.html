@@ -95,6 +95,8 @@ p{margin:0}
 .ch-photo figcaption{padding:9px 14px; font-size:.88rem; color:var(--muted)}
 .chapter{display:grid; gap:18px; margin-top:34px; align-items:center}
 @media(min-width:760px){.chapter{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:32px} .chapter.flip > :first-child{order:2}}
+@media(min-width:760px){.chapter.ch-big{grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr)}}
+.ch-big .ch-photo img{aspect-ratio:3/4}
 .ch-pair{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .ch-trio{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .ch-trio .ch-wide{grid-column:1/-1}
@@ -297,7 +299,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <h2>Karl &amp; Blessing, so far</h2>
   <p class="lede">Real photos from Karl's trip to Nigeria in October and November 2026.</p>
 
-  <div class="chapter">
+  <div class="chapter ch-big">
     <div class="ch-pair">
       <figure class="ch-photo"><img src="/morocco-photos/smiles.jpg" alt="Selfie of Karl and Blessing, Blessing smiling" loading="lazy" style="object-position:left 40%"><figcaption>Lagos, 2026. Finally, the same selfie.</figcaption></figure>
       <figure class="ch-photo"><img src="/morocco-photos/hallway.jpg" alt="Karl and Blessing standing together in a hotel hallway" loading="lazy"><figcaption>Together at last</figcaption></figure>

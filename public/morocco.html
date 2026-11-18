@@ -136,6 +136,7 @@ p{margin:0}
 .give b{font-size:1.05rem}
 .give-what{color:var(--muted); font-size:.93rem; flex:1}
 .give-ship{font-size:.82rem; font-weight:800; color:var(--gold)}
+.give-cover{width:100%; aspect-ratio:1/1; object-fit:cover; object-position:center top; border-radius:10px; margin-bottom:6px; display:block}
 .give-go{margin-top:8px; display:inline-flex; align-items:center; justify-content:center; min-height:44px; border-radius:999px; background:var(--terra); color:#FFF7EE; font-weight:800}
 .give.featured .give-go{background:var(--gold); color:#231A05}
 /* WAYS */
@@ -367,7 +368,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <div class="wrap section" id="support">
   <p class="kicker">Support the trip</p>
   <h2>Pick an amount and pay. That's it.</h2>
-  <p class="lede">Each amount below is a pay button. It opens a secure Stripe checkout, and your confirmation shows right after you pay. Give <strong>$20 or more</strong> and Karl's album <strong>RELAUNCH</strong> is yours: the download link is on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
+  <p class="lede">Each amount below is a pay button. It opens a secure Stripe checkout, and your confirmation shows right after you pay. Give <strong>$20 or more</strong> and <strong>RELAUNCH, Karl Ray's R&amp;B album</strong>, is yours: the download link is on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
 
   <div class="ask-photo">
     <figure class="ch-photo"><img src="/morocco-photos/matching-sofa.jpg" alt="Karl and Blessing in matching brown and black print outfits on a sofa" loading="lazy"></figure>
@@ -385,19 +386,20 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
       <span class="give-go">Support $10 ↗</span>
     </a>
     <a class="give featured" href="https://buy.stripe.com/dRm00d9Nm52b6AV9do7Zu0d" rel="noopener">
-      <span class="give-amt">$20</span><b>RELAUNCH Album</b>
-      <span class="give-what">The album, delivered the moment you pay, plus your name in the thank-you post.</span>
+      <img class="give-cover" src="https://ouvovhwizsuhjxxmccex.supabase.co/storage/v1/object/public/covers/studio/ad930dea-5192-48ed-b4ae-cfeefd43e01f/1790144398017_karl-ray-relaunch-cover.png" alt="RELAUNCH album cover: Karl Ray in a navy suit" width="2000" height="2000" loading="lazy">
+      <span class="give-amt">$20</span><b>RELAUNCH: Karl Ray's R&amp;B Album</b>
+      <span class="give-what">Karl Ray's R&amp;B album RELAUNCH, delivered the moment you pay, plus your name in the thank-you post.</span>
       <span class="give-go">Support $20 ↗</span>
     </a>
     <a class="give" href="https://buy.stripe.com/fZuaER8Ji2U36AV3T47Zu0f" rel="noopener">
       <span class="give-amt">$50</span><b>Print Collector</b>
-      <span class="give-what">The album, a postcard from Marrakech and a signed Morocco print.</span>
+      <span class="give-what">The RELAUNCH R&amp;B album, a postcard from Marrakech and a signed Morocco print.</span>
       <span class="give-ship">Print ships in January</span>
       <span class="give-go">Support $50 ↗</span>
     </a>
     <a class="give" href="https://buy.stripe.com/28EbIV3oYbqzbVfahs7Zu0e" rel="noopener">
       <span class="give-amt">$100</span><b>Collector</b>
-      <span class="give-what">A signed <em>Without The Blacks</em> hardcover, the album, a postcard and a signed print.</span>
+      <span class="give-what">A signed <em>Without The Blacks</em> hardcover, the RELAUNCH R&amp;B album, a postcard and a signed print.</span>
       <span class="give-ship">Book and print ship in January</span>
       <span class="give-go">Support $100 ↗</span>
     </a>
@@ -481,7 +483,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <h2>Questions people ask</h2>
 
   <details>
-    <summary>How do I actually pay, and how do I get RELAUNCH?</summary>
+    <summary>How do I actually pay, and how do I get RELAUNCH, Karl Ray's R&amp;B album?</summary>
     <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and your RELAUNCH download link appears on the confirmation screen</strong> right after you pay. Save that link.</p></div>
   </details>
   <details>
@@ -530,7 +532,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <footer>
   <div class="wrap">
     <span><strong style="color:var(--ink)">Karl Ray &amp; Blessing Igwe</strong> · Marrakech · Dec 16, 2026 – Jan 6, 2027</span>
-    <span>Support → RELAUNCH album · Follow the journey free on <a href="https://melorimusic.org/register" target="_blank" rel="noopener">Melori</a></span>
+    <span>Support → Karl Ray's R&amp;B album RELAUNCH · Follow the journey free on <a href="https://melorimusic.org/register" target="_blank" rel="noopener">Melori</a></span>
   </div>
 </footer>
 
@@ -569,7 +571,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     amt.textContent="$"+v;
     var msg;
     if(v<20) msg="<strong>$"+v+"</strong> is welcome support that puts real miles behind Blessing's flight. The album starts at $20; this gift is pure heart, and it counts.";
-    else if(v<50) msg="<strong>$"+v+"</strong> clears the album threshold: <strong>RELAUNCH is yours, delivered automatically</strong>, and it covers a solid stretch of her e-visa too.";
+    else if(v<50) msg="<strong>$"+v+"</strong> clears the album threshold: <strong>Karl Ray's R&amp;B album RELAUNCH is yours, delivered automatically</strong>, and it covers a solid stretch of her e-visa too.";
     else if(v<100) msg="<strong>$"+v+"</strong> is serious flight money, and RELAUNCH is yours.";
     else if(v<140) msg="<strong>$"+v+"</strong> nearly clears her entire $140 e-visa on its own, and RELAUNCH is yours.";
     else if(v<250) msg="<strong>$"+v+"</strong> covers the e-visa outright and takes a real bite out of her $837 flight. RELAUNCH is yours, and Karl will know your name.";

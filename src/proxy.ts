@@ -118,6 +118,8 @@ const PUBLIC_EXACT = new Set([
   // The Morocco trip support page itself (static public/morocco.html, served
   // at /morocco by a rewrite in next.config.js). Shared in K-1 visa groups.
   "/morocco",
+  // Where Stripe sends Morocco supporters after paying (optional gift address).
+  "/morocco/thank-you",
   // Karl's channel links (2026-10-22): the one link on his Facebook profile.
   "/links",
   "/gallery",

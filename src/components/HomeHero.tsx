@@ -120,6 +120,7 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
             src={shown.coverUrl}
             alt={shown.title}
             className="h-40 w-40 shadow-2xl sm:h-44 sm:w-44"
+            explicit={shown.explicit}
             rounded="rounded-2xl"
           />
           <button

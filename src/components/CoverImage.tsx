@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ExplicitCoverBadge from "@/components/ExplicitCoverBadge";
 
 interface CoverImageProps {
   src: string | null | undefined;
@@ -11,6 +12,8 @@ interface CoverImageProps {
   // derived from this name (e.g. an artist/profile name) instead of the
   // generic music-note glyph.
   name?: string;
+  // Explicit track/release: overlays the Melori explicit seal on the cover.
+  explicit?: boolean | null;
 }
 
 // First letter of the name, or the first letters of the first two words.
@@ -31,6 +34,7 @@ export default function CoverImage({
   className = "",
   rounded = "rounded-lg",
   name,
+  explicit = false,
 }: CoverImageProps) {
   const [failed, setFailed] = useState(false);
   const showPlaceholder = !src || failed;
@@ -39,7 +43,7 @@ export default function CoverImage({
     const initials = name ? getInitials(name) : "";
     return (
       <div
-        className={`flex items-center justify-center bg-gradient-to-br from-brand-accent/30 to-brand-primary/40 ${rounded} ${className}`}
+        className={`${explicit ? "relative " : ""}flex items-center justify-center bg-gradient-to-br from-brand-accent/30 to-brand-primary/40 ${rounded} ${className}`}
         aria-label={alt}
         role="img"
       >
@@ -92,6 +96,27 @@ export default function CoverImage({
             />
           </svg>
         )}
+        <ExplicitCoverBadge explicit={explicit} />
+      </div>
+    );
+  }
+
+  // Explicit covers need a positioned box for the seal. The caller's sizing
+  // classes move to the wrapper and the image fills it; clean covers keep the
+  // bare <img> exactly as before, so nothing else on the site shifts.
+  if (explicit) {
+    return (
+      <div className={`relative overflow-hidden ${rounded} ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-cover"
+        />
+        <ExplicitCoverBadge explicit />
       </div>
     );
   }

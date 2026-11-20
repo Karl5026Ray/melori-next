@@ -74,6 +74,7 @@ export default async function StudioAlbumPage(props: {
           alt={`${album.title} cover art`}
           className="h-48 w-48 shrink-0"
           rounded="rounded-2xl"
+          explicit={album.tracks.some((t) => t.explicit)}
         />
 
         <div className="min-w-0 flex-1">

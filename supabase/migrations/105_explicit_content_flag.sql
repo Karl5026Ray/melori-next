@@ -1,8 +1,8 @@
 -- 105: Explicit-content flag on songs.
--- NOT YET APPLIED to production when this file was written (2026-11-20).
--- Apply as migration `105_explicit_content_flag` on project ouvovhwizsuhjxxmccex
--- BEFORE the code that selects `explicit` is deployed, otherwise the radio pool
--- and track queries will error on the missing column.
+-- Applied to production 2026-11-20 as migration `105_explicit_content_flag`
+-- (project ouvovhwizsuhjxxmccex), before the code that selects `explicit` was
+-- merged. That order matters: the radio pool and track queries error without
+-- the column.
 --
 -- Artists mark explicit tracks in Studio; admins can flip it too. The site shows
 -- an "E" badge on those tracks, and the homepage radio (which autoplays muted on

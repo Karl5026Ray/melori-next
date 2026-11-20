@@ -68,7 +68,7 @@ export default function AdminMirrorPage() {
         { cache: "no-store" },
       );
       if (res.status === 401 || res.status === 403) {
-        setError("Not signed in as admin. Please log in at /admin.");
+        setError("This page needs your Melori member login on an admin account, not just the admin password. Sign in at /login, then reload this page.");
         setPosts([]);
         return;
       }

@@ -60,6 +60,13 @@ export default function AdminModerationPage() {
       const data = await res.json();
       setModeration(data.moderation ?? []);
       setReports(data.reports ?? []);
+      // The API returns 200 even if one of the two lists failed; don't let a
+      // broken list look like an empty "all clear" queue.
+      const partial = [
+        data.moderationError ? `auto-flagged items (${data.moderationError})` : null,
+        data.reportsError ? `user reports (${data.reportsError})` : null,
+      ].filter(Boolean);
+      if (partial.length) setError(`Couldn't load ${partial.join(" and ")}.`);
     } catch {
       setError("Failed to load the moderation queue.");
     } finally {

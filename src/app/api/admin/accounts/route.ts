@@ -53,6 +53,22 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabaseAdmin();
 
+  // Emails live in auth.users, not profiles, so build the auth map first and
+  // turn an email match into a list of profile ids for the SQL filter below.
+  // (Previously the SQL filtered on name columns only, so an email search
+  // could never match anything.)
+  const authMap = await buildAuthMap(supabase);
+  const emailNeedle = rawQ.toLowerCase().slice(0, 120);
+  const emailMatchIds: string[] = [];
+  if (emailNeedle) {
+    for (const [id, auth] of authMap) {
+      if ((auth.email ?? "").toLowerCase().includes(emailNeedle)) {
+        emailMatchIds.push(id);
+        if (emailMatchIds.length >= 200) break;
+      }
+    }
+  }
+
   let query = supabase
     .from("profiles")
     .select(
@@ -70,10 +86,25 @@ export async function GET(req: NextRequest) {
     query = query.neq("status", "deleted");
   }
 
-  if (q) {
-    query = query.or(
-      `username.ilike.%${q}%,display_name.ilike.%${q}%,full_name.ilike.%${q}%`,
-    );
+  if (q || emailMatchIds.length) {
+    const clauses: string[] = [];
+    if (q) {
+      clauses.push(
+        `username.ilike.%${q}%`,
+        `display_name.ilike.%${q}%`,
+        `full_name.ilike.%${q}%`,
+      );
+    }
+    // ids come from auth.users (uuids), never from the caller, so they are
+    // safe to splice into the filter string.
+    if (emailMatchIds.length) clauses.push(`id.in.(${emailMatchIds.join(",")})`);
+    query = query.or(clauses.join(","));
+  } else if (rawQ) {
+    // Search had only punctuation and no email hit: nothing can match.
+    return NextResponse.json({
+      users: [],
+      stats: await accountStats(supabase),
+    });
   }
 
   const { data: profiles, error } = await query;
@@ -83,7 +114,6 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = profiles ?? [];
-  const authMap = await buildAuthMap(supabase);
 
   // Link artist rows so the UI can show artist slug / verified state.
   const ids = rows.map((r) => r.id);
@@ -115,36 +145,23 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Email is only known after the auth map is built, so apply the search term
-  // to email here (name columns were already filtered in SQL).
-  if (q) {
-    const needle = q.toLowerCase();
-    users = users.filter(
-      (u) =>
-        (u.email ?? "").toLowerCase().includes(needle) ||
-        (u.username ?? "").toLowerCase().includes(needle) ||
-        (u.display_name ?? "").toLowerCase().includes(needle) ||
-        (u.full_name ?? "").toLowerCase().includes(needle),
-    );
-  }
+  return NextResponse.json({ users, stats: await accountStats(supabase) });
+}
 
-  // Stats cards (counts across all profiles, independent of current filter).
+// Stats cards (counts across all profiles, independent of current filter).
+async function accountStats(supabase: ReturnType<typeof getSupabaseAdmin>) {
   const [totalRes, artistRes, activeRes, suspendedRes] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }).neq("status", "deleted"),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "artist").neq("status", "deleted"),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("status", "suspended"),
   ]);
-
-  return NextResponse.json({
-    users,
-    stats: {
-      total: totalRes.count ?? 0,
-      artists: artistRes.count ?? 0,
-      active: activeRes.count ?? 0,
-      suspended: suspendedRes.count ?? 0,
-    },
-  });
+  return {
+    total: totalRes.count ?? 0,
+    artists: artistRes.count ?? 0,
+    active: activeRes.count ?? 0,
+    suspended: suspendedRes.count ?? 0,
+  };
 }
 
 // POST /api/admin/accounts — create a new account.

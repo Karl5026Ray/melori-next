@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
+import { PROFILE_ROLES, type ProfileRole } from "@/lib/profile-roles";
 
-type Role = "free" | "superfan" | "artist" | "admin";
+type Role = ProfileRole;
 type Status = "active" | "suspended" | "deleted";
 
 interface AccountRow {
@@ -43,7 +44,7 @@ interface ActivityRow {
   created_at: string;
 }
 
-const ROLES: Role[] = ["free", "superfan", "artist", "admin"];
+const ROLES: readonly Role[] = PROFILE_ROLES;
 
 function fmtDate(v: string | null): string {
   if (!v) return "—";
@@ -173,13 +174,14 @@ export default function AdminAccountsPage() {
       <main className="mx-auto max-w-lg px-4 py-20 text-center">
         <h1 className="mb-3 text-2xl font-bold text-text-primary">Not authorized</h1>
         <p className="mb-6 text-text-secondary">
-          This area is for MELORI administrators only.
+          This area is for MELORI administrators only. It needs your Melori
+          member login on an admin account, not just the admin password.
         </p>
         <Link
-          href="/"
+          href="/login?next=/admin/accounts"
           className="inline-block rounded-md bg-melori-purple px-4 py-2 font-semibold text-white hover:opacity-90"
         >
-          Back to home
+          Sign in
         </Link>
       </main>
     );

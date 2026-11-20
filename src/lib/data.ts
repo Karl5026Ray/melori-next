@@ -149,7 +149,10 @@ export async function getFeaturedArtists(): Promise<Artist[]> {
 
 export async function getArtistBySlug(
   slug: string,
-): Promise<{ artist: Artist; releases: Release[] } | null> {
+): Promise<{
+  artist: Artist;
+  releases: (Release & { explicit?: boolean })[];
+} | null> {
   const supabase = getSupabaseAdmin();
   const { data: artist, error } = await supabase
     .from("artists")
@@ -170,9 +173,30 @@ export async function getArtistBySlug(
 
   if (relError) throw relError;
 
+  const list = (releases as Release[] | null) ?? [];
+
+  // Releases holding a published explicit track carry the explicit seal and
+  // E on the artist page's tiles. Non-fatal: a failure here only leaves the
+  // tiles undecorated, never blanks the artist page.
+  const explicitIds = new Set<number>();
+  if (list.length > 0) {
+    const { data: explicitTracks } = await supabase
+      .from("tracks")
+      .select("release_id")
+      .in(
+        "release_id",
+        list.map((r) => r.id),
+      )
+      .eq("is_published", true)
+      .eq("explicit", true);
+    for (const row of (explicitTracks as { release_id: number | null }[] | null) ?? []) {
+      if (row.release_id !== null) explicitIds.add(row.release_id);
+    }
+  }
+
   return {
     artist: artist as Artist,
-    releases: (releases as Release[] | null) ?? [],
+    releases: list.map((r) => ({ ...r, explicit: explicitIds.has(r.id) })),
   };
 }
 

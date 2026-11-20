@@ -81,6 +81,7 @@ export default async function ArtistDetailPage(
       release_date: r.release_date,
       artist: { name: artist.name, slug: artist.slug },
       genre: null,
+      explicit: r.explicit === true,
     })),
     ...studioItems,
   ];

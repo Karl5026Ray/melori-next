@@ -288,6 +288,9 @@ export interface RadioTrack {
   // Lifetime audible plays. Legacy tracks only — `studio_tracks` has no
   // equivalent column yet, so those report null and render no badge.
   playCount: number | null;
+  // Artist- or admin-declared explicit content. Shown as an "E" badge, and the
+  // homepage radio (mode=clean) leaves these tracks out.
+  explicit: boolean;
   // Owning artist's profile id, when known. Used to match against the
   // listener's follow graph for the "For You" station.
   ownerProfileId?: string | null;
@@ -304,7 +307,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
   const legacyPromise = supabase
     .from("tracks")
     .select(
-      "id, title, duration_seconds, is_published, moderation_status, play_count, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
+      "id, title, duration_seconds, is_published, moderation_status, play_count, explicit, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
     )
     .eq("is_published", true)
     .or("moderation_status.is.null,moderation_status.eq.clean");
@@ -313,7 +316,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
   const studioPromise = supabase
     .from("studio_tracks")
     .select(
-      "id, title, artist, album, genre, cover_url, duration, status, profile_id",
+      "id, title, artist, album, genre, cover_url, duration, status, profile_id, explicit",
     )
     .eq("status", "published")
     .eq("moderation_status", "clean");
@@ -342,6 +345,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
         genre: genre?.name ?? null,
         ownerProfileId: artist?.profile_id ?? null,
         playCount: typeof row.play_count === "number" ? row.play_count : 0,
+        explicit: row.explicit === true,
         durationSeconds:
           typeof row.duration_seconds === "number"
             ? row.duration_seconds
@@ -364,6 +368,7 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
         genre: row.genre ?? null,
         ownerProfileId: row.profile_id ?? null,
         playCount: null,
+        explicit: row.explicit === true,
         durationSeconds:
           typeof row.duration === "number" ? row.duration : null,
       });
@@ -393,7 +398,7 @@ export async function getRadioTracksByIds(refs: {
     ? supabase
         .from("tracks")
         .select(
-          "id, title, duration_seconds, is_published, moderation_status, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
+          "id, title, duration_seconds, is_published, moderation_status, explicit, release:releases!inner(title, cover_art_url, is_published, artist:artists(name, profile_id, genre:genres(name)))",
         )
         .in("id", legacyIds)
         .eq("is_published", true)
@@ -404,7 +409,7 @@ export async function getRadioTracksByIds(refs: {
     ? supabase
         .from("studio_tracks")
         .select(
-          "id, title, artist, album, genre, cover_url, duration, status, profile_id",
+          "id, title, artist, album, genre, cover_url, duration, status, profile_id, explicit",
         )
         .in("id", studioIds)
         .eq("status", "published")
@@ -434,6 +439,7 @@ export async function getRadioTracksByIds(refs: {
         genre: genre?.name ?? null,
         ownerProfileId: artist?.profile_id ?? null,
         playCount: typeof row.play_count === "number" ? row.play_count : 0,
+        explicit: row.explicit === true,
         durationSeconds:
           typeof row.duration_seconds === "number"
             ? row.duration_seconds
@@ -456,6 +462,7 @@ export async function getRadioTracksByIds(refs: {
         genre: row.genre ?? null,
         ownerProfileId: row.profile_id ?? null,
         playCount: null,
+        explicit: row.explicit === true,
         durationSeconds:
           typeof row.duration === "number" ? row.duration : null,
       });
@@ -598,6 +605,8 @@ export async function getFeaturedTrack(): Promise<FeaturedTrack | null> {
       "id, title, audio_url, preview_url, play_count, release:releases!inner(title, cover_art_url, is_published, release_date, artist:artists(name))",
     )
     .eq("is_published", true)
+    // The featured track headlines the homepage, so explicit tracks sit out.
+    .eq("explicit", false)
     .or("moderation_status.is.null,moderation_status.eq.clean")
     .limit(200);
 
@@ -671,7 +680,7 @@ export async function getReleaseBySlug(slug: string): Promise<{
   const { data: tracks, error: tracksError } = await supabase
     .from("tracks")
     .select(
-      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, is_published, play_count, created_at, vps_track_id",
+      "id, title, release_id, track_number, duration_seconds, audio_url, preview_url, is_published, play_count, created_at, vps_track_id, explicit",
     )
     .eq("release_id", (release as Release).id)
     .eq("is_published", true)

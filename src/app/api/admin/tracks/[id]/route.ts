@@ -52,6 +52,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
     if (typeof body.is_published === "boolean")
       update.is_published = body.is_published;
+    if (typeof body.explicit === "boolean") update.explicit = body.explicit;
     if (typeof body.preview_url === "string") {
       const p = body.preview_url.trim();
       if (p.length > 2048) {

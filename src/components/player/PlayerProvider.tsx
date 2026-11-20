@@ -33,6 +33,8 @@ export interface PlayerTrack {
   // Server-fetched lifetime play total. Legacy tracks only — studio uploads
   // have no play_count column, so they leave it undefined and render no count.
   playCount?: number | null;
+  // Explicit content flag (migration 105). Drives the "E" badge.
+  explicit?: boolean;
 }
 
 // Stable string key used for internal equality checks (e.g. "is this track
@@ -131,7 +133,8 @@ interface PlayerContextValue {
   radioStationKey: string | null;
   startRadio: (
     mode?: "all" | "foryou",
-    options?: { muted?: boolean },
+    // `clean` leaves explicit tracks out of the rotation (the homepage).
+    options?: { muted?: boolean; clean?: boolean },
   ) => void;
   // Put an explicit track list on air (the Radio page's stations and saved
   // playlists). `preserveOrder` keeps a curated playlist in its saved order.
@@ -780,7 +783,7 @@ export default function PlayerProvider({
   const startRadio = useCallback(
     async (
       mode: "all" | "foryou" = "all",
-      options: { muted?: boolean } = {},
+      options: { muted?: boolean; clean?: boolean } = {},
     ) => {
       if (options.muted) {
         // Homepage autoplay — NOT a user gesture, so deliberately do not spend
@@ -802,7 +805,8 @@ export default function PlayerProvider({
       setRadioLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/radio/pool?mode=${mode}`, {
+        const cleanParam = options.clean ? "&clean=1" : "";
+        const res = await fetch(`/api/radio/pool?mode=${mode}${cleanParam}`, {
           cache: "no-store",
           headers: await authHeaders(),
         });

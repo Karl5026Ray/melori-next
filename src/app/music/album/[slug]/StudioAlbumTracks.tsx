@@ -2,12 +2,14 @@
 
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatDuration } from "@/lib/format";
+import ExplicitBadge from "@/components/ExplicitBadge";
 
 interface AlbumTrack {
   id: string;
   title: string;
   duration: number | null;
   coverUrl: string | null;
+  explicit?: boolean;
 }
 
 // Track list for a studio album. Clicking any row plays the whole album from
@@ -28,6 +30,7 @@ export default function StudioAlbumTracks({
     artistName,
     coverUrl: t.coverUrl,
     sourceType: "studio",
+    explicit: t.explicit === true,
   }));
 
   return (
@@ -55,6 +58,7 @@ export default function StudioAlbumTracks({
               >
                 {track.title}
               </span>
+              <ExplicitBadge explicit={track.explicit} />
             </button>
             {duration && (
               <span className="shrink-0 text-xs text-text-secondary">

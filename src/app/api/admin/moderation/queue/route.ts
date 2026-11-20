@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
+import { EXPLICIT_REPORT_TYPE } from "@/lib/explicit-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,9 @@ export async function GET(req: NextRequest) {
       .from("content_reports")
       .select("*")
       .eq("status", "open")
+      // Explicit-content flags have their own grouped queue
+      // (/admin/explicit-reports); keep them out of this list.
+      .neq("content_type", EXPLICIT_REPORT_TYPE)
       .order("created_at", { ascending: false })
       .limit(200),
   ]);

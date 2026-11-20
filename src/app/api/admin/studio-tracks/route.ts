@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("studio_tracks")
     .select(
-      "id, title, artist, album, genre, status, cover_url, duration, sort_order, profile_id, owner_id, created_at",
+      "id, title, artist, album, genre, explicit, status, cover_url, duration, sort_order, profile_id, owner_id, created_at",
     )
     .limit(1000);
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/authClient";
+import ExplicitChoice from "@/app/studio/components/ExplicitChoice";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_COVER_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -23,6 +24,8 @@ export default function UploadPage() {
   const [artistName, setArtistName] = useState("");
   const [releaseType, setReleaseType] = useState<"single" | "ep" | "album">("single");
   const [genre, setGenre] = useState("R&B");
+  // Required, no default: see ExplicitChoice.
+  const [explicit, setExplicit] = useState<boolean | null>(null);
   const [description, setDescription] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -56,7 +59,11 @@ export default function UploadPage() {
   }, [router]);
 
   const canSubmit =
-    !uploading && title.trim().length > 0 && audioFile !== null && !gateError;
+    !uploading &&
+    title.trim().length > 0 &&
+    audioFile !== null &&
+    explicit !== null &&
+    !gateError;
 
   // Audio uploads go into the private `audio-files` bucket under the caller's
   // own `studio/<uid>/` folder; the stream endpoint signs the path on demand.
@@ -98,6 +105,10 @@ export default function UploadPage() {
     e.preventDefault();
     setError(null);
     if (!audioFile) return;
+    if (explicit === null) {
+      setError("Please choose whether this track has explicit content.");
+      return;
+    }
     if (audioFile.size > MAX_AUDIO_BYTES) {
       setError("Audio file exceeds the 100 MB limit.");
       return;
@@ -126,6 +137,7 @@ export default function UploadPage() {
           artist: artistName.trim() || null,
           album: null,
           genre,
+          explicit,
           type: releaseType,
           file_path: audio.path,
           file_url: audio.publicUrl,
@@ -253,6 +265,8 @@ export default function UploadPage() {
             </select>
           </Field>
         </div>
+
+        <ExplicitChoice value={explicit} onChange={setExplicit} tone="site" />
 
         <Field label="Description (optional)">
           <textarea

@@ -6,7 +6,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// GET /api/radio/pool?mode=foryou|all
+// GET /api/radio/pool?mode=foryou|all[&clean=1]
+//
+// `clean=1` drops tracks marked explicit (the homepage hero asks for this,
+// because it autoplays for everyone who lands on the front page).
 //
 // Returns the Melori Radio track pool. `all` is every published track in the
 // catalog (metadata only — audio is fetched per-track via the signed-URL
@@ -48,14 +51,21 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode") === "foryou" ? "foryou" : "all";
+    const clean = url.searchParams.get("clean") === "1";
+    const keep = (t: { explicit?: boolean }) => !clean || !t.explicit;
 
     if (mode === "all") {
-      const tracks = await getRadioPool();
-      return NextResponse.json({ tracks, personalized: false, mode });
+      const tracks = (await getRadioPool()).filter(keep);
+      return NextResponse.json({ tracks, personalized: false, mode, clean });
     }
 
     const { tracks, personalized } = await getPersonalizedRadioPool(userId);
-    return NextResponse.json({ tracks, personalized, mode });
+    return NextResponse.json({
+      tracks: tracks.filter(keep),
+      personalized,
+      mode,
+      clean,
+    });
   } catch (err) {
     console.error("GET /api/radio/pool failed:", err);
     return NextResponse.json(

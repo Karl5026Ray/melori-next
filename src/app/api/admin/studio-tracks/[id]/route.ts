@@ -83,6 +83,7 @@ export async function PATCH(
     update.album = body.album.trim() || null;
   if (typeof body.genre === "string")
     update.genre = body.genre.trim() || null;
+  if (typeof body.explicit === "boolean") update.explicit = body.explicit;
   if (body.sort_order != null) {
     const n = Number(body.sort_order);
     if (Number.isFinite(n)) update.sort_order = Math.trunc(n);

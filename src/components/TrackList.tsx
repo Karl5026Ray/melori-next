@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatCount, formatDuration } from "@/lib/format";
+import ExplicitBadge from "@/components/ExplicitBadge";
 import type { Track } from "@/types";
 
 interface TrackListProps {
@@ -26,6 +27,7 @@ export default function TrackList({
         title: t.title,
         artistName,
         coverUrl,
+        explicit: t.explicit === true,
       })),
     [tracks, artistName, coverUrl],
   );
@@ -78,11 +80,12 @@ export default function TrackList({
             </span>
 
             <span
-              className={`min-w-0 flex-1 truncate ${
+              className={`flex min-w-0 flex-1 items-center gap-2 ${
                 isCurrent ? "text-brand-primary" : "text-text-primary"
               }`}
             >
-              {track.title}
+              <span className="truncate">{track.title}</span>
+              <ExplicitBadge explicit={track.explicit} />
             </span>
 
             <span

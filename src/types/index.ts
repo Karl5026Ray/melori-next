@@ -57,5 +57,7 @@ export interface Track {
   play_count: number;
   created_at: string;
   vps_track_id: number | null;
+  // Explicit content (migration 105). Optional so older selects still type-check.
+  explicit?: boolean;
 }
 

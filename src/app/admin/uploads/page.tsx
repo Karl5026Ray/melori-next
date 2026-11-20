@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import CoverReplaceButton from "@/components/CoverReplaceButton";
+import ExplicitBadge from "@/components/ExplicitBadge";
 
 // Admin management surface for the public uploads collection (studio_tracks).
 // Artists' uploads auto-publish into this collection alphabetically; here the
@@ -17,6 +18,7 @@ type StudioTrack = {
   artist: string | null;
   album: string | null;
   genre: string | null;
+  explicit?: boolean;
   status: string | null;
   cover_url: string | null;
   duration: number | null;
@@ -102,6 +104,27 @@ export default function AdminUploadsPage() {
       if (!res.ok) throw new Error(data.error ?? "Update failed");
       setTracks((prev) =>
         prev.map((x) => (x.id === t.id ? { ...x, status: next } : x)),
+      );
+    } catch (err: any) {
+      alert(err?.message ?? "Update failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleExplicit = async (t: StudioTrack) => {
+    const next = !t.explicit;
+    setBusy(t.id);
+    try {
+      const res = await fetch(`/api/admin/studio-tracks/${t.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ explicit: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Update failed");
+      setTracks((prev) =>
+        prev.map((x) => (x.id === t.id ? { ...x, explicit: next } : x)),
       );
     } catch (err: any) {
       alert(err?.message ?? "Update failed");
@@ -244,6 +267,7 @@ export default function AdminUploadsPage() {
                     >
                       {t.status ?? "draft"}
                     </span>
+                    <ExplicitBadge explicit={t.explicit} />
                     {t.genre && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-[#ccc]">
                         {t.genre}
@@ -281,6 +305,13 @@ export default function AdminUploadsPage() {
                     }`}
                   >
                     {t.status === "published" ? "Unpublish" : "Publish"}
+                  </button>
+                  <button
+                    onClick={() => toggleExplicit(t)}
+                    disabled={busy === t.id}
+                    className="px-3 py-1.5 rounded-lg bg-white/5 text-[#ccc] text-xs font-medium hover:bg-white/10 disabled:opacity-50"
+                  >
+                    {t.explicit ? "Mark clean" : "Mark explicit"}
                   </button>
                   <button
                     onClick={() => remove(t)}

@@ -48,8 +48,12 @@ export default function ExplicitCoverBadge({
         <circle cx="50" cy="50" r="29" fill="#0e0e12" />
         <text
           fill="#ffffff"
-          fontSize="13.5"
+          fontSize="14"
           fontWeight="900"
+          // Tracking that fills the ring by itself; textLength below then
+          // trims it exactly in browsers that support it, so the two
+          // EXPLICITs meet evenly with no gap at the seam either way.
+          letterSpacing="4.2"
           style={{ fontFamily: "inherit" }}
         >
           {/* dy drops the baseline inward so the caps sit centred in the band

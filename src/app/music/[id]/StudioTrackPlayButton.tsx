@@ -14,6 +14,7 @@ export default function StudioTrackPlayButton({
     title: string;
     displayArtist: string;
     coverUrl: string | null;
+    explicit?: boolean;
   };
 }) {
   const { current, isPlaying, playQueue } = usePlayer();
@@ -24,6 +25,7 @@ export default function StudioTrackPlayButton({
     artistName: track.displayArtist,
     coverUrl: track.coverUrl,
     sourceType: "studio",
+    explicit: track.explicit === true,
   };
 
   const isActive =

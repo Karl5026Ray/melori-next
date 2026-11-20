@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CoverImage from "@/components/CoverImage";
+import ExplicitBadge from "@/components/ExplicitBadge";
+import ReportExplicitButton from "@/components/ReportExplicitButton";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
 import { isMediaRoomRoute } from "@/lib/mediaRoomRoute";
@@ -162,14 +164,18 @@ function DesktopBar() {
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 truncate text-sm font-medium text-text-primary">
                     <span className="truncate">{current.title}</span>
+                    <ExplicitBadge explicit={current.explicit} />
                     {radioMode && (
                       <span className="shrink-0 rounded-full bg-brand-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
                         Radio
                       </span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-text-secondary">
-                    {error ?? current.artistName ?? "MELORI MUSIC"}
+                  <p className="flex items-center gap-2 truncate text-xs text-text-secondary">
+                    <span className="truncate">
+                      {error ?? current.artistName ?? "MELORI MUSIC"}
+                    </span>
+                    <ReportExplicitButton track={current} className="shrink-0" />
                   </p>
                 </div>
               </>

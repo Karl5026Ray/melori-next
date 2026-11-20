@@ -1,6 +1,7 @@
 import Link from "next/link";
 import CoverImage from "@/components/CoverImage";
 import PlayCount from "@/components/PlayCount";
+import ExplicitBadge from "@/components/ExplicitBadge";
 import type { CatalogItem } from "@/lib/catalog";
 
 // One card for every kind of catalog item — legacy releases and artist
@@ -28,8 +29,9 @@ export default function CatalogCard({ item }: { item: CatalogItem }) {
       </Link>
       <div className="mt-3 flex flex-col gap-1">
         <Link href={item.href} className="min-w-0">
-          <p className="truncate font-semibold text-text-primary group-hover:text-brand-primary">
-            {item.title}
+          <p className="flex items-center gap-1.5 font-semibold text-text-primary group-hover:text-brand-primary">
+            <span className="truncate">{item.title}</span>
+            <ExplicitBadge explicit={item.explicit} />
           </p>
         </Link>
 

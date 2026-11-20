@@ -39,6 +39,8 @@ export interface CatalogItem {
   artist: ArtistRef | null;
   genre: string | null;
   trackPlayCounts?: Record<number, number>;
+  /** Single tracks only: marked explicit (migration 105). Drives the E badge. */
+  explicit?: boolean;
 }
 
 export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
@@ -110,6 +112,7 @@ interface StudioTrackRow {
   genre: string | null;
   cover_url: string | null;
   created_at: string;
+  explicit?: boolean | null;
 }
 
 function normalizeAlbumTitle(album: string | null | undefined): string {
@@ -134,7 +137,7 @@ async function loadStudioCatalog(limit: number): Promise<{
     supabase
       .from("studio_tracks")
       .select(
-        "id, profile_id, title, artist, album, genre, cover_url, created_at",
+        "id, profile_id, title, artist, album, genre, cover_url, created_at, explicit",
       )
       .eq("status", "published")
       .eq("moderation_status", "clean")
@@ -202,6 +205,7 @@ export function studioTrackToCatalogItem(
     release_date: track.created_at,
     artist: artist ?? (fallbackName ? { name: fallbackName, slug: "" } : null),
     genre: track.genre,
+    explicit: track.explicit === true,
   };
 }
 
@@ -303,6 +307,7 @@ export interface StudioAlbumDetail {
     title: string;
     duration: number | null;
     coverUrl: string | null;
+    explicit: boolean;
   }>;
 }
 
@@ -324,7 +329,7 @@ export async function getStudioAlbumBySlug(
 
   const { data: trackRows } = await supabase
     .from("studio_tracks")
-    .select("id, title, duration, cover_url, artist, sort_order, created_at")
+    .select("id, title, duration, cover_url, artist, sort_order, created_at, explicit")
     .eq("profile_id", row.profile_id)
     .eq("album", row.title)
     .eq("status", "published")
@@ -356,6 +361,7 @@ export async function getStudioAlbumBySlug(
       title: (t.title as string) ?? "Untitled",
       duration: typeof t.duration === "number" ? t.duration : null,
       coverUrl: (t.cover_url as string | null) ?? null,
+      explicit: t.explicit === true,
     })),
   };
 }
@@ -373,7 +379,7 @@ export async function getStudioCatalogForProfile(
     supabase
       .from("studio_tracks")
       .select(
-        "id, profile_id, title, artist, album, genre, cover_url, created_at",
+        "id, profile_id, title, artist, album, genre, cover_url, created_at, explicit",
       )
       .eq("profile_id", profileId)
       .eq("status", "published")

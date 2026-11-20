@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getArtistRefsByProfileId } from "@/lib/catalog";
 import StudioTrackPlayButton from "./StudioTrackPlayButton";
+import ExplicitBadge from "@/components/ExplicitBadge";
+import ReportExplicitButton from "@/components/ReportExplicitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ interface StudioTrackDetail {
   preview_url: string | null;
   duration: number | null;
   status: string;
+  explicit: boolean;
   created_at: string;
   profile_id: string | null;
   profile: {
@@ -45,7 +48,7 @@ async function getPublishedStudioTrack(
   const { data, error } = await supabase
     .from("studio_tracks")
     .select(
-      "id, title, artist, album, genre, cover_url, preview_url, duration, status, created_at, profile_id, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
+      "id, title, artist, album, genre, cover_url, preview_url, duration, status, explicit, created_at, profile_id, profile:profiles!studio_tracks_profile_id_fkey(display_name, avatar_url)",
     )
     .eq("id", id)
     .eq("status", "published")
@@ -114,7 +117,10 @@ export default async function StudioTrackPage(
           <p className="text-xs uppercase tracking-wide text-text-secondary">
             {track.genre ?? "Single"}
           </p>
-          <h1 className="mt-1 text-3xl font-bold sm:text-4xl">{track.title}</h1>
+          <h1 className="mt-1 flex items-center gap-3 text-3xl font-bold sm:text-4xl">
+            <span>{track.title}</span>
+            <ExplicitBadge explicit={track.explicit} className="h-5 min-w-5 text-xs" />
+          </h1>
           {artistRef ? (
             <Link
               href={`/artists/${artistRef.slug}`}
@@ -141,8 +147,14 @@ export default async function StudioTrackPage(
               title: track.title,
               displayArtist,
               coverUrl: track.cover_url,
+              explicit: track.explicit === true,
             }}
           />
+          <div className="mt-3">
+            <ReportExplicitButton
+              track={{ id: track.id, sourceType: "studio", explicit: track.explicit }}
+            />
+          </div>
 
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CoverImage from "@/components/CoverImage";
 import PlayCount from "@/components/PlayCount";
+import ExplicitBadge from "@/components/ExplicitBadge";
 import { usePlayer, type PlayerTrack } from "@/components/player/PlayerProvider";
 import { formatTime } from "@/lib/format";
 
@@ -66,7 +67,10 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
     if (startedRef.current) return;
     startedRef.current = true;
     if (isPlaying || radioMode) return;
-    startRadio("all", { muted: true });
+    // `clean`: the front page autoplays for anyone who lands on it, so
+    // tracks marked explicit stay out of this rotation. The Radio page and the
+    // player's radio button still play the full catalog.
+    startRadio("all", { muted: true, clean: true });
     // Intentionally mount-only: `isPlaying` / `radioMode` are read once as the
     // "is something already on air?" snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,8 +154,9 @@ export default function HomeHero({ track }: { track: PlayerTrack }) {
           <span className="text-xs font-semibold uppercase tracking-widest text-brand-primary">
             {isPlaying ? (radioMode ? "Melori Radio" : "Now playing") : "Featured"}
           </span>
-          <h2 className="mt-1 max-w-full truncate text-2xl font-bold text-text-primary">
-            {shown.title}
+          <h2 className="mt-1 flex max-w-full items-center gap-2 truncate text-2xl font-bold text-text-primary">
+            <span className="truncate">{shown.title}</span>
+            <ExplicitBadge explicit={shown.explicit} />
           </h2>
           {/* The count shares the artist's existing line so it can appear
               mid-listen without nudging the layout. */}

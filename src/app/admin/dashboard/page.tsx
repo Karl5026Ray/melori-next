@@ -210,6 +210,14 @@ export default function AdminDashboardPage() {
               Uploads Collection
             </Link>
             <Link
+              href="/admin/explicit-reports"
+              onClick={() => setSidebarOpen(false)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>🅴</span>
+              Explicit Reports
+            </Link>
+            <Link
               href="/admin/releases"
               onClick={() => setSidebarOpen(false)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"

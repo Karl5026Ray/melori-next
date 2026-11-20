@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const { data: tracks, error } = await supabase
       .from("studio_tracks")
       .select(
-        "id, title, artist, album, genre, status, preview_url, cover_url, created_at, duration, sort_order"
+        "id, title, artist, album, genre, explicit, status, preview_url, cover_url, created_at, duration, sort_order"
       )
       .eq(OWNER_COLUMN, guard.membership.userId)
       .order("album", { ascending: true, nullsFirst: false })
@@ -58,6 +58,17 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient();
     const body = await req.json();
     const userId = guard.membership.userId;
+
+    // The uploader must say whether the track is explicit; there is no
+    // default. Melori doesn't pre-review uploads, so this self-label (plus
+    // listener reports) is what keeps explicit tracks badged and off the
+    // homepage radio.
+    if (typeof body.explicit !== "boolean") {
+      return NextResponse.json(
+        { error: "Please choose whether this track has explicit content." },
+        { status: 400 },
+      );
+    }
 
     // file_path is the field the GET route signs — it MUST be caller-scoped.
     if (
@@ -116,6 +127,7 @@ export async function POST(req: NextRequest) {
         artist: body.artist,
         album: body.album,
         genre: body.genre,
+        explicit: body.explicit,
         release_date: body.release_date,
         file_url: body.file_url,
         file_path: body.file_path,

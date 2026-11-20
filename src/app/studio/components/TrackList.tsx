@@ -7,6 +7,7 @@ import TrackReplacePanel from "./TrackReplacePanel";
 import TrackEditModal, { type EditableTrack } from "./TrackEditModal";
 import CoverReplaceButton from "@/components/CoverReplaceButton";
 import { putWithProgress } from "./uploadHelpers";
+import ExplicitBadge from "@/components/ExplicitBadge";
 
 interface Track {
   id: string;
@@ -14,6 +15,7 @@ interface Track {
   artist: string;
   album: string | null;
   genre: string | null;
+  explicit?: boolean;
   status: "draft" | "scheduled" | "published" | "archived";
   preview_url: string | null;
   cover_url: string | null;
@@ -362,6 +364,7 @@ export default function TrackList() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
                             <h3 className="font-semibold truncate">{track.title}</h3>
+                            <ExplicitBadge explicit={track.explicit} />
                             <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColors[track.status]}`}>
                               {statusLabels[track.status]}
                             </span>
@@ -387,10 +390,11 @@ export default function TrackList() {
                               artist: track.artist,
                               album: track.album,
                               genre: track.genre,
+                              explicit: track.explicit === true,
                             })
                           }
                           className="px-3 sm:px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-medium hover:border-[#c9a96e]/40 transition-all"
-                          title="Edit title, artist, album, and genre"
+                          title="Edit title, artist, album, genre, and explicit label"
                         >
                           ✏️ Edit
                         </button>

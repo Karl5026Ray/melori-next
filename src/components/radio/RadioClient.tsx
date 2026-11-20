@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { authHeaders } from "@/lib/authClient";
 import { formatCount } from "@/lib/format";
+import ExplicitBadge from "@/components/ExplicitBadge";
+import ReportExplicitButton from "@/components/ReportExplicitButton";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { usePlayer } from "@/components/player/PlayerProvider";
 import { usePlaylists } from "@/components/radio/usePlaylists";
@@ -354,8 +356,9 @@ export default function RadioClient() {
 
                 {/* Track meta */}
                 <div className="mt-3 text-center">
-                  <p className="truncate text-lg font-bold text-text-primary">
-                    {display?.title ?? "—"}
+                  <p className="flex items-center justify-center gap-2 truncate text-lg font-bold text-text-primary">
+                    <span className="truncate">{display?.title ?? "—"}</span>
+                    <ExplicitBadge explicit={display?.explicit} />
                   </p>
                   <p className="truncate text-sm text-text-secondary">
                     {display?.artistName ?? "Unknown artist"}
@@ -368,6 +371,7 @@ export default function RadioClient() {
                       {displayPlays === 1 ? "play" : "plays"}
                     </p>
                   )}
+                  {tuned && <ReportExplicitButton track={display ?? null} className="mt-1" />}
                 </div>
 
                 {/* Progress */}
@@ -480,8 +484,9 @@ export default function RadioClient() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-text-primary">
-                        {next.title}
+                      <p className="flex items-center gap-1.5 truncate text-sm font-medium text-text-primary">
+                        <span className="truncate">{next.title}</span>
+                        <ExplicitBadge explicit={next.explicit} />
                       </p>
                       <p className="truncate text-xs text-text-secondary">
                         {next.artistName ?? "Unknown artist"}

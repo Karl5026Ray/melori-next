@@ -173,6 +173,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (typeof body.artist === "string") update.artist = body.artist.trim();
     if (typeof body.album === "string") update.album = body.album.trim() || null;
     if (typeof body.genre === "string") update.genre = body.genre.trim() || null;
+    if (typeof body.explicit === "boolean") update.explicit = body.explicit;
 
     // If album is changing, the track's existing sort_order refers to the OLD
     // album's ordering and would now collide with (or leave a gap in) the

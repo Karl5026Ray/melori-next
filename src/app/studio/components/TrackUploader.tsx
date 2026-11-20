@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { authFetch } from "@/lib/authClient";
 import { putWithProgress, validateAudioFile } from "./uploadHelpers";
+import ExplicitChoice from "./ExplicitChoice";
 
 interface UploadState {
   file: File | null;
@@ -10,6 +11,9 @@ interface UploadState {
   artist: string;
   album: string;
   genre: string;
+  // null until the artist answers. Required: there is no default, because a
+  // silent "no" would let explicit tracks reach the homepage unlabeled.
+  explicit: boolean | null;
   releaseDate: string;
   coverArt: File | null;
   uploading: boolean;
@@ -23,6 +27,7 @@ export default function TrackUploader() {
     artist: "",
     album: "",
     genre: "",
+    explicit: null,
     releaseDate: "",
     coverArt: null,
     uploading: false,
@@ -73,6 +78,10 @@ export default function TrackUploader() {
   const handleUpload = async () => {
     if (!state.file || !state.title) {
       setError("Please select an audio file and enter a title.");
+      return;
+    }
+    if (state.explicit === null) {
+      setError("Please choose whether this track has explicit content.");
       return;
     }
 
@@ -132,6 +141,7 @@ export default function TrackUploader() {
           artist: state.artist || "Karl Ray",
           album: state.album || null,
           genre: state.genre || null,
+          explicit: state.explicit,
           release_date: state.releaseDate || null,
           file_url: audioPublicUrl,
           file_path: audioPath,
@@ -290,6 +300,10 @@ export default function TrackUploader() {
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
                 />
               </div>
+              <ExplicitChoice
+                value={state.explicit}
+                onChange={(v) => setState((p) => ({ ...p, explicit: v }))}
+              />
             </div>
 
             {/* Cover Art Upload */}
@@ -310,7 +324,7 @@ export default function TrackUploader() {
           {/* Upload Button */}
           <button
             onClick={handleUpload}
-            disabled={state.uploading || !state.file || !state.title}
+            disabled={state.uploading || !state.file || !state.title || state.explicit === null}
             className="w-full py-4 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold text-lg rounded-xl transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(201,169,110,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {state.uploading ? (

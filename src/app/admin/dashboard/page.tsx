@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import CoverImage from "@/components/CoverImage";
 import { authFetch } from "@/lib/authClient";
+import { PROFILE_ROLES } from "@/lib/profile-roles";
 
 type Section =
   | "overview"
@@ -26,6 +27,9 @@ interface DashboardStats {
   totalArtists?: number;
   totalSpaces?: number;
   pendingSubmissions?: number;
+  // Names of counts that failed to load (shown as a warning, not as 0).
+  failed?: string[];
+  error?: string;
 }
 
 // Only expose Supabase-served http(s) URLs in the moderation preview link.
@@ -77,12 +81,15 @@ export default function AdminDashboardPage() {
 
     // Load stats
     fetch("/api/admin/stats")
-      .then((r) => r.json())
-      .then((data) => {
-        setStats(data);
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        setStats(r.ok ? data : { totalMembers: 0, totalTracks: 0, totalReleases: 0, error: data.error ?? "Could not load stats" });
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setStats({ totalMembers: 0, totalTracks: 0, totalReleases: 0, error: "Could not load stats" });
+        setLoading(false);
+      });
   }, [router]);
 
   const handleLogout = async () => {
@@ -273,6 +280,14 @@ export default function AdminDashboardPage() {
               <span>🤖</span>
               Android testers
             </Link>
+            <Link
+              href="/admin/accounts"
+              onClick={() => setSidebarOpen(false)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#888] hover:bg-white/5 hover:text-white transition-all"
+            >
+              <span>🔑</span>
+              Accounts
+            </Link>
           </div>
         </nav>
 
@@ -363,7 +378,7 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Seed failed");
       setSeedMsg(
-        `Seeded: ${data.spacesCreated ?? 0} new spaces, ${data.postsCreated ?? 0} new posts.`,
+        `Seeded: ${data.spacesInserted?.length ?? 0} new spaces, ${data.postsInserted?.length ?? 0} new posts.`,
       );
     } catch (err: any) {
       setSeedMsg(err.message ?? "Seed failed");
@@ -372,8 +387,19 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
     }
   };
 
+  const statsWarning = stats?.error
+    ? `${stats.error}. The numbers below are not real.`
+    : stats?.failed?.length
+      ? `Couldn't count: ${stats.failed.join(", ")}. Those tiles show 0 but may not be.`
+      : null;
+
   return (
     <div className="space-y-6">
+      {statsWarning && (
+        <div className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+          {statsWarning}
+        </div>
+      )}
       <div className="grid md:grid-cols-3 gap-4">
         {cards.map((card) => (
           <div key={card.label} className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
@@ -390,7 +416,7 @@ function OverviewSection({ stats }: { stats: DashboardStats | null }) {
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="flex gap-3 flex-wrap">
           <Link
-            href="/admin/releases"
+            href="/admin/tracks"
             className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium hover:bg-[#c9a96e]/25 transition-all cursor-pointer"
           >
             + New Track
@@ -461,17 +487,30 @@ function UsersSection() {
   const [q, setQ] = useState("");
   const [role, setRole] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (role) params.set("role", role);
     params.set("limit", "100");
-    const res = await fetch(`/api/admin/users?${params.toString()}`);
-    const data = await res.json().catch(() => ({}));
-    setUsers(data.users ?? []);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/admin/users?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoadError(data.error ?? `Could not load users (error ${res.status}).`);
+        setUsers([]);
+      } else {
+        setUsers(data.users ?? []);
+      }
+    } catch {
+      setLoadError("Could not load users. Check your connection and try again.");
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -508,7 +547,7 @@ function UsersSection() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load()}
-            placeholder="Search email / username…"
+            placeholder="Search name / username…"
             className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs w-56"
           />
           <select
@@ -517,9 +556,11 @@ function UsersSection() {
             className="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
           >
             <option value="">All roles</option>
-            <option value="user">User</option>
-            <option value="artist">Artist</option>
-            <option value="admin">Admin</option>
+            {PROFILE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r.charAt(0).toUpperCase() + r.slice(1)}
+              </option>
+            ))}
           </select>
           <button
             onClick={load}
@@ -532,6 +573,8 @@ function UsersSection() {
 
       {loading ? (
         <p className="text-[#888] text-sm">Loading…</p>
+      ) : loadError ? (
+        <p className="text-red-400 text-sm">{loadError}</p>
       ) : users.length === 0 ? (
         <p className="text-[#888] text-sm">No users found.</p>
       ) : (
@@ -554,14 +597,16 @@ function UsersSection() {
                   </td>
                   <td className="py-2 px-2">
                     <select
-                      value={u.role ?? "user"}
+                      value={u.role ?? "free"}
                       onChange={(e) => patch(u.id, { role: e.target.value })}
                       disabled={busy === u.id}
                       className="bg-black/60 border border-white/10 rounded px-2 py-1 text-xs"
                     >
-                      <option value="user">user</option>
-                      <option value="artist">artist</option>
-                      <option value="admin">admin</option>
+                      {PROFILE_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
                     </select>
                   </td>
                   <td className="py-2 px-2">
@@ -616,13 +661,28 @@ function SubmissionsSection() {
   const [status, setStatus] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch(`/api/admin/submissions?status=${status}`);
-    const data = await res.json().catch(() => ({}));
-    setItems(data.submissions ?? []);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/submissions?status=${encodeURIComponent(status || "all")}`,
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoadError(data.error ?? `Could not load the queue (error ${res.status}).`);
+        setItems([]);
+      } else {
+        setItems(data.submissions ?? []);
+      }
+    } catch {
+      setLoadError("Could not load the queue. Check your connection and try again.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -640,7 +700,7 @@ function SubmissionsSection() {
       const res = await fetch(`/api/admin/submissions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, note }),
+        body: JSON.stringify({ action, notes: note }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -676,6 +736,8 @@ function SubmissionsSection() {
 
       {loading ? (
         <p className="text-[#888] text-sm">Loading…</p>
+      ) : loadError ? (
+        <p className="text-red-400 text-sm">{loadError}</p>
       ) : items.length === 0 ? (
         <p className="text-[#888] text-sm">No submissions in this state.</p>
       ) : (
@@ -905,7 +967,7 @@ function TracksSection() {
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold">All Tracks</h3>
         <Link
-          href="/admin/releases"
+          href="/admin/tracks"
           className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer hover:bg-[#c9a96e]/25"
         >
           Open Music Manager →
@@ -930,9 +992,7 @@ function VideosSection() {
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold">All Videos</h3>
-        <button className="px-4 py-2 bg-[#c9a96e]/15 text-[#c9a96e] rounded-lg text-sm font-medium cursor-pointer">
-          + New Video
-        </button>
+        <span className="px-3 py-1 rounded-full bg-white/5 text-[#888] text-xs">Coming soon</span>
       </div>
       <p className="text-[#888]">Video management with YouTube embeds and hosted videos.</p>
     </div>
@@ -968,7 +1028,7 @@ function ArtistsSection() {
 function DonorsSection() {
   return (
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">Donors</h3>
+      <h3 className="font-semibold mb-4">Donors <span className="ml-2 px-2 py-0.5 rounded-full bg-white/5 text-[#888] text-xs font-normal">Coming soon</span></h3>
       <p className="text-[#888]">Donation history with donor details and export.</p>
     </div>
   );
@@ -1191,7 +1251,7 @@ function SettingsSection() {
 
       {/* Site Settings — placeholder sub-panel */}
       <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-        <h3 className="font-semibold mb-4">Site Settings</h3>
+        <h3 className="font-semibold mb-4">Site Settings <span className="ml-2 px-2 py-0.5 rounded-full bg-white/5 text-[#888] text-xs font-normal">Coming soon</span></h3>
         <p className="text-[#888]">Homepage management, legal pages, password change.</p>
       </div>
     </div>
@@ -1201,7 +1261,7 @@ function SettingsSection() {
 function HealthSection() {
   return (
     <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-      <h3 className="font-semibold mb-4">System Health</h3>
+      <h3 className="font-semibold mb-4">System Health <span className="ml-2 px-2 py-0.5 rounded-full bg-white/5 text-[#888] text-xs font-normal">Coming soon</span></h3>
       <p className="text-[#888]">Real-time status of Supabase, Resend, DNS, storage.</p>
     </div>
   );

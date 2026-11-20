@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
+import { PROFILE_ROLES } from "@/lib/profile-roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ async function verifyAdmin(req: NextRequest) {
   }
 }
 
-// GET /api/admin/users?q=&role=all|superfan|artist|admin&limit=100
+// GET /api/admin/users?q=&role=all|<PROFILE_ROLES>&limit=100
 // Paginated user list for the Users & Artists admin tab.
 export async function GET(req: NextRequest) {
   const ADMIN_SECRET = getAdminSecret();
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
   // pattern into a new filter clause. Strip anything but plain characters
   // and cap length before splicing it into the query.
   const q = rawQ.replace(/[,()\\%_"']/g, "").slice(0, 60);
-  const validRoles = new Set(["all", "user", "superfan", "artist", "admin"]);
+  const validRoles = new Set<string>(["all", ...PROFILE_ROLES]);
   const roleFilter = validRoles.has(role) ? role : "all";
 
   const supabase = getSupabaseAdmin();

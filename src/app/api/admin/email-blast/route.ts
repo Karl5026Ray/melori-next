@@ -5,6 +5,9 @@ import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Blasts send to every recipient in one request; give it the same 60s
+// ceiling the other long-running routes use instead of the 10s-15s default.
+export const maxDuration = 60;
 
 // Same verified sender the app already uses for its Resend emails
 // (see /api/donate/verify). Domain melorimusic.org is verified in Resend.

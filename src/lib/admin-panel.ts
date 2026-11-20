@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRequestMembership } from "@/lib/membership-server";
 import { isAdmin } from "@/lib/membership";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { PROFILE_ROLES } from "@/lib/profile-roles";
 
 // Server-only helpers for the User/Artist management admin panel.
 //
@@ -30,6 +31,16 @@ export async function requireAdmin(
   // membership-server resolves profiles.role onto MembershipProfile.role, which
   // is what isAdmin() reads.
   if (!isAdmin(membership.profile)) {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  }
+  // Role alone isn't enough: a suspended or soft-deleted admin keeps
+  // role='admin' on their profile, so also require status='active'.
+  const { data: statusRow, error: statusErr } = await getSupabaseAdmin()
+    .from("profiles")
+    .select("status")
+    .eq("id", membership.userId)
+    .maybeSingle();
+  if (statusErr || statusRow?.status !== "active") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
   return { userId: membership.userId, email: membership.email };
@@ -111,7 +122,7 @@ export function generateTempPassword(length = 14): string {
   return out;
 }
 
-export const ADMIN_ROLES = ["free", "superfan", "artist", "admin"] as const;
+export const ADMIN_ROLES = PROFILE_ROLES;
 export const ADMIN_STATUSES = ["active", "suspended", "deleted"] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 export type AdminStatus = (typeof ADMIN_STATUSES)[number];

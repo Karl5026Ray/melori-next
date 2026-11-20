@@ -37,14 +37,7 @@ export async function GET(req: NextRequest) {
   try {
     const supabase = createServiceClient();
 
-    const [
-      { count: tracksCount },
-      { count: releasesCount },
-      { count: profilesCount },
-      { count: artistsCount },
-      { count: spacesCount },
-      { count: pendingSubs },
-    ] = await Promise.all([
+    const results = await Promise.all([
       supabase.from("tracks").select("*", { count: "exact", head: true }),
       supabase.from("releases").select("*", { count: "exact", head: true }),
       supabase.from("profiles").select("*", { count: "exact", head: true }),
@@ -55,24 +48,26 @@ export async function GET(req: NextRequest) {
         .select("*", { count: "exact", head: true })
         .eq("status", "pending"),
     ]);
+    const [tracks, releases, profiles, artists, spaces, pendingSubs] = results;
+    // Surface failed counts instead of silently showing 0, so a broken table
+    // can't masquerade as "nothing here".
+    const labels = ["tracks", "releases", "members", "artists", "spaces", "submissions"];
+    const failed = results
+      .map((r, i) => (r.error ? labels[i] : null))
+      .filter((x): x is string => x !== null);
+    if (failed.length) console.error("Admin stats: some counts failed:", failed);
 
     return NextResponse.json({
-      totalMembers: profilesCount || 0,
-      totalArtists: artistsCount || 0,
-      totalTracks: tracksCount || 0,
-      totalReleases: releasesCount || 0,
-      totalSpaces: spacesCount || 0,
-      pendingSubmissions: pendingSubs || 0,
+      totalMembers: profiles.count ?? 0,
+      totalArtists: artists.count ?? 0,
+      totalTracks: tracks.count ?? 0,
+      totalReleases: releases.count ?? 0,
+      totalSpaces: spaces.count ?? 0,
+      pendingSubmissions: pendingSubs.count ?? 0,
+      failed,
     });
   } catch (err: any) {
     console.error("Admin stats error:", err);
-    return NextResponse.json({
-      totalMembers: 0,
-      totalArtists: 0,
-      totalTracks: 0,
-      totalReleases: 0,
-      totalSpaces: 0,
-      pendingSubmissions: 0,
-    });
+    return NextResponse.json({ error: "Could not load stats" }, { status: 500 });
   }
 }

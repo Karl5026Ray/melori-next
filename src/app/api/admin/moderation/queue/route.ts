@@ -109,7 +109,12 @@ export async function POST(req: NextRequest) {
         .eq("id", contentId);
       if (rowErr) {
         console.error("Moderation row update error:", rowErr);
-        // Continue: still close the queue item so it doesn't get stuck.
+        // Don't close the queue item: the content didn't change, so marking it
+        // approved/removed would be a lie. Dismiss stays available.
+        return NextResponse.json(
+          { error: `Couldn't update the content itself: ${rowErr.message}` },
+          { status: 500 },
+        );
       }
     } else if (contentType === "bio" || contentType === "avatar" || contentType === "banner") {
       // Profile-level: on remove, blank the offending field.

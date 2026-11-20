@@ -113,6 +113,42 @@ export default function AdminReleasesPage() {
     }
   };
 
+  // Flip a single track between Live and Draft via the tracks PATCH endpoint.
+  // (This used to call patchRelease(r.id, {}) first, which always returned a
+  // Promise — so the track PATCH never ran and the empty release PATCH 400'd.)
+  const toggleTrackPublished = async (releaseId: number, track: AdminReleaseTrack) => {
+    const next = !track.is_published;
+    setBusy(track.id);
+    try {
+      const res = await fetch(`/api/admin/tracks/${track.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_published: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}) as Record<string, unknown>);
+        throw new Error(typeof d?.error === "string" ? d.error : "Request failed");
+      }
+      setReleases((prev) =>
+        prev.map((r) =>
+          r.id === releaseId
+            ? {
+                ...r,
+                tracks: r.tracks.map((t) =>
+                  t.id === track.id ? { ...t, is_published: next } : t,
+                ),
+              }
+            : r,
+        ),
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Request failed";
+      alert(`Could not update track.\n\n${msg}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // Rename a single track via the tracks PATCH endpoint.
   const saveTrackTitle = async (releaseId: number, trackId: number) => {
     const title = trackDraft.trim();
@@ -573,51 +609,8 @@ export default function AdminReleasesPage() {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() =>
-                                      patchRelease(r.id, {}) ||
-                                      fetch(`/api/admin/tracks/${t.id}`, {
-                                        method: "PATCH",
-                                        headers: {
-                                          "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({
-                                          is_published: !t.is_published,
-                                        }),
-                                      })
-                                        .then(async (res) => {
-                                          if (!res.ok) {
-                                            const d = await res
-                                              .json()
-                                              .catch(() => ({}));
-                                            throw new Error(
-                                              d?.error ?? "Request failed",
-                                            );
-                                          }
-                                          setReleases((prev) =>
-                                            prev.map((rr) =>
-                                              rr.id === r.id
-                                                ? {
-                                                    ...rr,
-                                                    tracks: rr.tracks.map((tt) =>
-                                                      tt.id === t.id
-                                                        ? {
-                                                            ...tt,
-                                                            is_published:
-                                                              !tt.is_published,
-                                                          }
-                                                        : tt,
-                                                    ),
-                                                  }
-                                                : rr,
-                                            ),
-                                          );
-                                        })
-                                        .catch((err) =>
-                                          alert(
-                                            `Could not update track.\n\n${err.message}`,
-                                          ),
-                                        )
-                                    }
+                                    onClick={() => toggleTrackPublished(r.id, t)}
+                                    disabled={busy === t.id}
                                     className={`shrink-0 text-[10px] uppercase px-2 py-1 rounded ${
                                       t.is_published
                                         ? "text-green-400"

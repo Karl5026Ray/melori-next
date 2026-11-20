@@ -34,7 +34,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const status = req.nextUrl.searchParams.get("status") ?? "pending";
+  // Empty or missing status falls back sensibly: "" means "all" (older
+  // dashboards sent status= for the All tab), missing means "pending".
+  const rawStatus = req.nextUrl.searchParams.get("status");
+  const status = rawStatus === null ? "pending" : rawStatus.trim() || "all";
   const supabase = getSupabaseAdmin();
 
   let query = supabase

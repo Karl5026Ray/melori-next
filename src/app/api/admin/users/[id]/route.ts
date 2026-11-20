@@ -3,6 +3,8 @@ import { jwtVerify } from "jose";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAdminSecret } from "@/lib/admin-secret";
 import { isUuid } from "@/lib/validators";
+import { isProfileRole } from "@/lib/profile-roles";
+import { countActiveAdmins } from "@/lib/admin-panel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +24,7 @@ async function verifyAdmin(req: NextRequest) {
 
 // PATCH /api/admin/users/[id]
 // Whitelist of moderator-safe field updates:
-//   role: 'user' | 'superfan' | 'artist' | 'admin'
+//   role: one of PROFILE_ROLES (free | superfan | artist | snappd | admin)
 //   verified: boolean
 //   link_artist_id: number | null  (associates this profile with an artist row)
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -47,11 +49,30 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   const supabase = getSupabaseAdmin();
 
   const updates: Record<string, unknown> = {};
-  if (typeof body.role === "string" && ["user", "superfan", "artist", "admin"].includes(body.role)) {
+  if (isProfileRole(body.role)) {
     updates.role = body.role;
   }
   if (typeof body.verified === "boolean") {
     updates.verified = body.verified;
+  }
+
+  // Never demote the last active admin — that would lock everyone out of the
+  // Bearer-gated admin pages (accounts, spaces, mirror, testers).
+  if (typeof updates.role === "string" && updates.role !== "admin") {
+    const { data: target } = await supabase
+      .from("profiles")
+      .select("role, status")
+      .eq("id", params.id)
+      .maybeSingle();
+    if (target?.role === "admin" && target?.status === "active") {
+      const admins = await countActiveAdmins(supabase);
+      if (admins <= 1) {
+        return NextResponse.json(
+          { error: "This is the last active admin. Make someone else an admin first." },
+          { status: 409 },
+        );
+      }
+    }
   }
 
   if (Object.keys(updates).length) {

@@ -5,6 +5,9 @@ import { getAdminSecret } from "@/lib/admin-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Blasts send to every recipient in one request; give it the same 60s
+// ceiling the other long-running routes use instead of the 10s-15s default.
+export const maxDuration = 60;
 
 // SMS body cap. A single SMS segment is 160 GSM-7 chars; longer messages are
 // split into multiple segments by the carrier. Twilio accepts up to 1600 chars.

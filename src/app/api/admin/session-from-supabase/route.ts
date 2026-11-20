@@ -59,11 +59,13 @@ export async function POST(req: NextRequest) {
     const admin = getSupabaseAdmin();
     const { data: profile } = await admin
       .from("profiles")
-      .select("role")
+      .select("role, status")
       .eq("id", userId)
       .maybeSingle();
 
-    const roleOk = (profile as { role?: string } | null)?.role === "admin";
+    // A suspended or deleted admin must not be able to mint a panel session.
+    const p = profile as { role?: string; status?: string } | null;
+    const roleOk = p?.role === "admin" && p?.status === "active";
     const allowed = parseAllowedEmails();
     const emailOk =
       allowed.length === 0

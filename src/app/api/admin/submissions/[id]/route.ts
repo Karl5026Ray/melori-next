@@ -40,7 +40,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { action, notes } = await req.json().catch(() => (({}) as any));
+  const body = await req.json().catch(() => (({}) as any));
+  const action = body?.action;
+  // Accept both `notes` and `note` — the dashboard historically sent `note`,
+  // which meant every rejection reason was silently dropped.
+  const notes = body?.notes ?? body?.note;
   if (action !== "approve" && action !== "reject") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
@@ -82,11 +86,31 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 
   // action === "approve" → create release + track shell.
-  // If the submitter isn't linked to an artist yet, we skip release creation
-  // and just mark approved; admin can attach the artist later.
+  // Resolve the artist: the submission's own artist_id, else the artist row
+  // linked to the submitter's profile. If neither exists, refuse instead of
+  // marking it approved with nothing created (it could never be redone).
   let approvedTrackId: number | null = null;
+  let artistId: number | null = sub.artist_id ?? null;
+  if (!artistId && sub.profile_id) {
+    const { data: linked } = await supabase
+      .from("artists")
+      .select("id")
+      .eq("profile_id", sub.profile_id)
+      .limit(1)
+      .maybeSingle();
+    artistId = linked?.id ?? null;
+  }
+  if (!artistId) {
+    return NextResponse.json(
+      {
+        error:
+          "This submitter isn't linked to an artist yet, so there's nowhere to put the track. Create or link their artist page first, then approve.",
+      },
+      { status: 409 },
+    );
+  }
 
-  if (sub.artist_id) {
+  {
     // Build a URL-safe slug.
     const baseSlug =
       String(sub.title)
@@ -101,7 +125,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .insert({
         title: sub.title,
         slug,
-        artist_id: sub.artist_id,
+        artist_id: artistId,
         release_type: sub.release_type,
         description: sub.description,
         cover_art_url: sub.cover_url,

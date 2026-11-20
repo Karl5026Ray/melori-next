@@ -24,6 +24,7 @@ import {
 import { authHeaders } from "@/lib/authClient";
 import { formatCount } from "@/lib/format";
 import ExplicitBadge from "@/components/ExplicitBadge";
+import ExplicitCoverBadge from "@/components/ExplicitCoverBadge";
 import ReportExplicitButton from "@/components/ReportExplicitButton";
 import { useAuth } from "@/components/social/providers/AuthProvider";
 import { usePlayer } from "@/components/player/PlayerProvider";
@@ -336,6 +337,7 @@ export default function RadioClient() {
                       <Music2 className="h-16 w-16" />
                     </div>
                   )}
+                  <ExplicitCoverBadge explicit={display?.explicit} />
                   {tuned && isPlaying && (
                     <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
                       <span className="h-2 w-2 animate-pulse rounded-full bg-brand-primary" />

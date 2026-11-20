@@ -25,6 +25,7 @@ export default function CatalogCard({ item }: { item: CatalogItem }) {
           src={item.cover_art_url}
           alt={item.title}
           className="aspect-square w-full"
+          explicit={item.explicit}
         />
       </Link>
       <div className="mt-3 flex flex-col gap-1">

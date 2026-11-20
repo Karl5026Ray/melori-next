@@ -27,6 +27,8 @@ export interface ReleaseListItem {
   // live total for any track heard in the current session. Optional because
   // some callers adapt rows that never loaded tracks; those render no count.
   trackPlayCounts?: Record<number, number>;
+  // True when any published track on the release is marked explicit.
+  explicit?: boolean;
 }
 
 interface ReleaseRow {
@@ -51,33 +53,44 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
 
 // Play totals for every published track, grouped by the release they belong
 // to. `releases` has no aggregate column, so the cards sum their own tracks.
-// Deliberately non-fatal: play counts are decoration, and a failure here must
-// never blank the release grid it decorates.
+// The same pass notes which releases hold an explicit track, so a release card
+// can carry the explicit seal. Deliberately non-fatal: both are decoration,
+// and a failure here must never blank the release grid it decorates.
 async function getPlayCountsByRelease(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-): Promise<Map<number, Record<number, number>>> {
+): Promise<{
+  counts: Map<number, Record<number, number>>;
+  explicitReleases: Set<number>;
+}> {
   const byRelease = new Map<number, Record<number, number>>();
+  const explicitReleases = new Set<number>();
   const { data, error } = await supabase
     .from("tracks")
-    .select("id, release_id, play_count")
+    .select("id, release_id, play_count, explicit")
     .eq("is_published", true);
 
-  if (error) return byRelease;
+  if (error) return { counts: byRelease, explicitReleases };
 
   for (const row of (data as
-    | { id: number; release_id: number | null; play_count: number | null }[]
+    | {
+        id: number;
+        release_id: number | null;
+        play_count: number | null;
+        explicit: boolean | null;
+      }[]
     | null) ?? []) {
     if (row.release_id === null) continue;
     const counts = byRelease.get(row.release_id) ?? {};
     counts[row.id] = typeof row.play_count === "number" ? row.play_count : 0;
     byRelease.set(row.release_id, counts);
+    if (row.explicit === true) explicitReleases.add(row.release_id);
   }
-  return byRelease;
+  return { counts: byRelease, explicitReleases };
 }
 
 export async function getReleases(): Promise<ReleaseListItem[]> {
   const supabase = getSupabaseCatalogReader();
-  const [{ data, error }, playCountsByRelease] = await Promise.all([
+  const [{ data, error }, { counts: playCountsByRelease, explicitReleases }] = await Promise.all([
     supabase
       .from("releases")
       .select(
@@ -103,6 +116,7 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
       artist: artist ? { name: artist.name, slug: artist.slug } : null,
       genre: genre?.name ?? null,
       trackPlayCounts: playCountsByRelease.get(row.id) ?? {},
+      explicit: explicitReleases.has(row.id),
     };
   });
 }

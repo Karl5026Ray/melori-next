@@ -539,3 +539,25 @@ select {
     bottom: 0;
   }
 }
+
+/* Explicit cover seal (src/components/ExplicitCoverBadge.tsx).
+   The ring text is only legible once the seal is ~80px wide, so it shows the
+   full seal from 80px up and the plain ring with the M below that. Without
+   container-query support the plain ring is the default. */
+.explicit-seal {
+  container-type: inline-size;
+}
+.explicit-seal__full {
+  display: none;
+}
+.explicit-seal__compact {
+  display: block;
+}
+@container (min-width: 80px) {
+  .explicit-seal__full {
+    display: block;
+  }
+  .explicit-seal__compact {
+    display: none;
+  }
+}

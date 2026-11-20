@@ -83,6 +83,8 @@ export default async function AlbumDetailPage(
             src={release.cover_art_url}
             alt={release.title}
             className="aspect-square w-full"
+            // Any explicit track marks the release, as on other music apps.
+            explicit={tracks.some((t) => t.explicit)}
           />
           <h1 className="mt-4 text-2xl font-bold">{release.title}</h1>
           {artist && (

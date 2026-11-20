@@ -39,7 +39,8 @@ export interface CatalogItem {
   artist: ArtistRef | null;
   genre: string | null;
   trackPlayCounts?: Record<number, number>;
-  /** Single tracks only: marked explicit (migration 105). Drives the E badge. */
+  /** Marked explicit (migration 105): a single track, or a release with any
+   *  explicit track. Drives the E badge and the cover seal. */
   explicit?: boolean;
 }
 
@@ -56,6 +57,7 @@ export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
     artist: release.artist,
     genre: release.genre,
     trackPlayCounts: release.trackPlayCounts,
+    explicit: release.explicit === true,
   };
 }
 

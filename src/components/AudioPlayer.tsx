@@ -159,6 +159,7 @@ function DesktopBar() {
                   src={current.coverUrl}
                   alt={current.title}
                   className="h-11 w-11 shrink-0"
+                  explicit={current.explicit}
                   rounded="rounded"
                 />
                 <div className="min-w-0">

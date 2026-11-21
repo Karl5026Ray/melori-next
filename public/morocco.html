@@ -152,7 +152,10 @@ p{margin:0}
 /* LISTEN (Spotify player, 2026-11-21) */
 .listen{display:grid; gap:18px; align-items:center; margin-top:22px}
 @media(min-width:760px){.listen{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:28px}}
-.listen iframe{display:block; width:100%; height:152px; border:0; border-radius:12px}
+.melori-player{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px}
+.melori-player .mp-title{display:flex; flex-direction:column; gap:2px; margin:0 0 10px} .melori-player .mp-title span{color:var(--muted); font-size:.9rem}
+.melori-player audio{display:block; width:100%}
+.melori-player .mp-note{margin:10px 0 0; font-size:.85rem; color:var(--muted)}
 .listen .ch-text p{color:var(--muted)}
 /* WAYS */
 .ways{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:24px}
@@ -392,9 +395,13 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <div class="card listen">
     <div class="ch-text">
       <p>A single by Karl Ray. Press play while you read the rest of the story.</p>
-      <p style="margin-top:10px">Give $20 or more and you take home three full albums from Karl's label.</p>
+      <p style="margin-top:10px">Give $10 and RELAUNCH is yours. Give $20 or more and you take home three full albums from Karl's label.</p>
     </div>
-    <iframe title="Spotify player: Right Love, Right Life by Karl Ray" src="https://open.spotify.com/embed/album/28Bes9iTYGH9vtFCBsgE0U?utm_source=generator" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+    <div class="melori-player">
+      <p class="mp-title"><b>Right Love, Right Life</b><span>Karl Ray · Single · 3:37</span></p>
+      <audio controls preload="none" src="/api/morocco/listen">Your browser can't play this here. <a href="/music/d383138f-730f-45f3-b063-f4e06aac4d77">Listen on Melori</a>.</audio>
+      <p class="mp-note">The full song, streaming from <a href="/music/d383138f-730f-45f3-b063-f4e06aac4d77">Melori</a>.</p>
+    </div>
   </div>
 </div>
 
@@ -402,7 +409,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <div class="wrap section" id="support">
   <p class="kicker">Support the trip</p>
   <h2>Pick an amount to show support.</h2>
-  <p class="lede">Each amount below is a donation button. It opens a secure Stripe checkout, and your confirmation shows right after you donate. Give <strong>$20 or more</strong> and <strong>three albums from Karl's label</strong> are yours: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. The download links are on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
+  <p class="lede">Each amount below is a donation button. It opens a secure Stripe checkout, and your confirmation shows right after you donate. Give <strong>$10</strong> and Karl's album <em>RELAUNCH</em> is yours. Give <strong>$20 or more</strong> and <strong>three albums from Karl's label</strong> are yours: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. The download links are on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
 
   <div class="ask-photo">
     <figure class="ch-photo"><img src="/morocco-photos/matching-sofa.jpg" alt="Karl and Blessing in matching brown and black print outfits on a sofa" loading="lazy"></figure>
@@ -416,7 +423,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <div class="give-grid">
     <a class="give" href="https://buy.stripe.com/fZu9ANe3Cbqz1gBdtE7Zu0g" rel="noopener">
       <span class="give-amt">$10</span><b>Friend of the Trip</b>
-      <span class="give-what">Your name in the trip thank-you post on Melori.</span>
+      <span class="give-what">Karl's album <em>RELAUNCH</em>, delivered the moment you pay, plus your name in the thank-you post on Melori.</span>
       <span class="give-go">Support $10 ↗</span>
     </a>
     <a class="give featured" href="https://buy.stripe.com/dRm00d9Nm52b6AV9do7Zu0d" rel="noopener">
@@ -515,7 +522,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 
   <details>
     <summary>How do I donate, and how do I get the 3 albums?</summary>
-    <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and the download links for all three albums appear on the confirmation screen</strong> right after you pay: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. Save those links.</p></div>
+    <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and the download links for all three albums appear on the confirmation screen</strong> right after you pay: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. A $10 gift gets the <em>RELAUNCH</em> download link. Save those links.</p></div>
   </details>
   <details>
     <summary>Do I have to donate to follow the trip?</summary>
@@ -601,7 +608,8 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     var v=parseInt(range.value,10);
     amt.textContent="$"+v;
     var msg;
-    if(v<20) msg="<strong>$"+v+"</strong> is welcome support that puts real miles behind Blessing's flight. The albums start at $20; this gift is pure heart, and it counts.";
+    if(v<10) msg="<strong>$"+v+"</strong> is welcome support that puts real miles behind Blessing's flight. This gift is pure heart, and it counts.";
+    else if(v<20) msg="<strong>$"+v+"</strong> puts real miles behind Blessing's flight, and Karl's album <strong>RELAUNCH</strong> is yours. At $20, all 3 albums are.";
     else if(v<50) msg="<strong>$"+v+"</strong> clears the album line: <strong>all 3 albums are yours, delivered automatically</strong>, and it covers a solid stretch of her e-visa too.";
     else if(v<100) msg="<strong>$"+v+"</strong> is serious flight money, and all 3 albums are yours.";
     else if(v<140) msg="<strong>$"+v+"</strong> nearly clears her entire $140 e-visa on its own, and all 3 albums are yours.";

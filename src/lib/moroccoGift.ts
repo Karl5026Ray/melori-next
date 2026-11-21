@@ -1,7 +1,7 @@
 // Shared rules for the optional Morocco gift-address form (/morocco/thank-you).
 // Used by the client form and POST /api/morocco/gift-address. See migration 104.
 
-// The $20+ gift: three albums from Karl's label. Each link is an
+// The album gift: $10 gets RELAUNCH, $20+ gets all three albums from Karl's label. Each link is an
 // anyone-with-the-link Google Drive folder Karl owns (checked Nov 21, 2026).
 export type MoroccoAlbum = {
   title: string;
@@ -41,7 +41,9 @@ export function parseTier(raw: unknown): MoroccoTier | null {
 /** What the supporter is owed, by tier. "custom" = the slider link (any amount). */
 export function tierGifts(tier: MoroccoTier | null) {
   return {
-    album: tier !== "10",
+    album: true,
+    // $10 gets RELAUNCH only; every other tier gets all three albums.
+    albums: tier === "10" ? MOROCCO_ALBUMS.slice(0, 1) : MOROCCO_ALBUMS,
     mailed: tier === "50" || tier === "100" || tier === "custom",
     hardcover: tier === "100",
   };

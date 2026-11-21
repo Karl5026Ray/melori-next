@@ -139,6 +139,13 @@ p{margin:0}
 .give-what{color:var(--muted); font-size:.93rem; flex:1}
 .give-ship{font-size:.82rem; font-weight:800; color:var(--gold)}
 .give-cover{width:100%; height:auto; aspect-ratio:1/1; object-fit:cover; object-position:center top; border-radius:10px; margin-bottom:6px; display:block}
+.give-fan{position:relative; width:100%; aspect-ratio:100/72; margin-bottom:8px}
+.give-fan img{position:absolute; top:8%; width:56%; height:auto; aspect-ratio:1/1; object-fit:cover; border-radius:8px; border:3px solid var(--surface); box-shadow:0 6px 16px rgba(0,0,0,.28)}
+.give-fan img:nth-child(1){left:0; transform:rotate(-7deg); z-index:3}
+.give-fan img:nth-child(2){left:22%; top:2%; z-index:2}
+.give-fan img:nth-child(3){left:44%; transform:rotate(7deg); z-index:1}
+.give-albums{list-style:none; margin:2px 0 0; padding:0; font-size:.88rem; color:var(--muted)}
+.give-albums li{margin:1px 0} .give-albums b{color:var(--ink); font-size:.9rem}
 .give-go{margin-top:8px; display:inline-flex; align-items:center; justify-content:center; min-height:44px; border-radius:999px; background:var(--terra); color:#FFF7EE; font-weight:800}
 .give.featured .give-go{background:var(--gold); color:#231A05}
 /* WAYS */
@@ -378,7 +385,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <div class="wrap section" id="support">
   <p class="kicker">Support the trip</p>
   <h2>Pick an amount to show support.</h2>
-  <p class="lede">Each amount below is a donation button. It opens a secure Stripe checkout, and your confirmation shows right after you donate. Give <strong>$20 or more</strong> and <strong>RELAUNCH, Karl Ray's R&amp;B album</strong>, is yours: the download link is on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
+  <p class="lede">Each amount below is a donation button. It opens a secure Stripe checkout, and your confirmation shows right after you donate. Give <strong>$20 or more</strong> and <strong>three albums from Karl's label</strong> are yours: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. The download links are on that confirmation screen. Higher tiers add a postcard and a signed print from Marrakech. Every dollar goes to the $977 goal.</p>
 
   <div class="ask-photo">
     <figure class="ch-photo"><img src="/morocco-photos/matching-sofa.jpg" alt="Karl and Blessing in matching brown and black print outfits on a sofa" loading="lazy"></figure>
@@ -396,27 +403,36 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
       <span class="give-go">Support $10 ↗</span>
     </a>
     <a class="give featured" href="https://buy.stripe.com/dRm00d9Nm52b6AV9do7Zu0d" rel="noopener">
-      <img class="give-cover" src="https://ouvovhwizsuhjxxmccex.supabase.co/storage/v1/object/public/covers/studio/ad930dea-5192-48ed-b4ae-cfeefd43e01f/1790144398017_karl-ray-relaunch-cover.png" alt="RELAUNCH album cover: Karl Ray in a navy suit" width="2000" height="2000" loading="lazy">
-      <span class="give-amt">$20</span><b>RELAUNCH: Karl Ray's R&amp;B Album</b>
-      <span class="give-what">Karl Ray's R&amp;B album RELAUNCH, delivered the moment you pay, plus your name in the thank-you post.</span>
+      <div class="give-fan">
+        <img src="/morocco-photos/cover-relaunch.webp" alt="RELAUNCH album cover: Karl Ray in a navy suit" width="600" height="600" loading="lazy">
+        <img src="/morocco-photos/cover-milk-and-honey.webp" alt="Milk &amp; Honey album cover by Kaiel R" width="600" height="600" loading="lazy">
+        <img src="/morocco-photos/cover-walls-come-down.webp" alt="Walls Come Down album cover: Gloria Joy Rivers by a concrete wall" width="600" height="600" loading="lazy">
+      </div>
+      <span class="give-amt">$20</span><b>3 Albums from Karl's Label</b>
+      <ul class="give-albums">
+        <li><b>RELAUNCH</b> · Karl Ray</li>
+        <li><b>Milk &amp; Honey</b> · Kaiel R</li>
+        <li><b>Walls Come Down</b> · Gloria Joy Rivers</li>
+      </ul>
+      <span class="give-what">All three delivered the moment you pay, plus your name in the thank-you post.</span>
       <span class="give-go">Support $20 ↗</span>
     </a>
     <a class="give" href="https://buy.stripe.com/fZuaER8Ji2U36AV3T47Zu0f" rel="noopener">
       <span class="give-amt">$50</span><b>Print Collector</b>
-      <span class="give-what">The RELAUNCH R&amp;B album, a postcard from Marrakech and a signed Morocco print.</span>
+      <span class="give-what">All 3 albums, a postcard from Marrakech and a signed Morocco print.</span>
       <span class="give-ship">Print ships in January</span>
       <span class="give-go">Support $50 ↗</span>
     </a>
     <a class="give" href="https://buy.stripe.com/28EbIV3oYbqzbVfahs7Zu0e" rel="noopener">
       <span class="give-amt">$100</span><b>Collector</b>
-      <span class="give-what">A signed <em>Without The Blacks</em> hardcover, the RELAUNCH R&amp;B album, a postcard and a signed print.</span>
+      <span class="give-what">A signed <em>Without The Blacks</em> hardcover, all 3 albums, a postcard and a signed print.</span>
       <span class="give-ship">Book and print ship in January</span>
       <span class="give-go">Support $100 ↗</span>
     </a>
   </div>
   <div class="card slider-card" id="any-amount">
     <h3>What your support actually does</h3>
-    <p style="color:var(--muted)">Slide to an amount and see what it covers. There's no “wrong” amount, but remember the line: <strong style="color:var(--ink)">$20 or more brings the album</strong>.</p>
+    <p style="color:var(--muted)">Slide to an amount and see what it covers. There's no “wrong” amount, but remember the line: <strong style="color:var(--ink)">$20 or more brings all 3 albums</strong>.</p>
     <div class="slider-row">
       <input type="range" id="impactRange" min="5" max="250" step="5" value="25" aria-label="Support amount in dollars" />
       <div class="slider-amt" id="impactAmt">$25</div>
@@ -475,12 +491,12 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   <h2>Questions people ask</h2>
 
   <details>
-    <summary>How do I donate, and how do I get RELAUNCH, Karl Ray's R&amp;B album?</summary>
-    <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and your RELAUNCH download link appears on the confirmation screen</strong> right after you pay. Save that link.</p></div>
+    <summary>How do I donate, and how do I get the 3 albums?</summary>
+    <div class="ans"><p>Tap one of the four amounts in <a href="#support">Support the trip</a>. Each one opens Stripe's secure checkout. <strong>Give $20 or more and the download links for all three albums appear on the confirmation screen</strong> right after you pay: <em>RELAUNCH</em> by Karl Ray, <em>Milk &amp; Honey</em> by Kaiel R and <em>Walls Come Down</em> by Gloria Joy Rivers. Save those links.</p></div>
   </details>
   <details>
     <summary>Do I have to donate to follow the trip?</summary>
-    <div class="ans"><p><strong>No.</strong> Following is free for everyone. Create a free account at <a href="https://melorimusic.org/register" target="_blank" rel="noopener">melorimusic.org/register</a> and you'll see the photos, updates, and first listens Karl posts from Morocco. Support and the album are a separate, optional exchange.</p></div>
+    <div class="ans"><p><strong>No.</strong> Following is free for everyone. Create a free account at <a href="https://melorimusic.org/register" target="_blank" rel="noopener">melorimusic.org/register</a> and you'll see the photos, updates, and first listens Karl posts from Morocco. Support and the albums are a separate, optional exchange.</p></div>
   </details>
   <details>
     <summary>Why is the goal only $977 when the trip costs about $3,568?</summary>
@@ -492,7 +508,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
   </details>
   <details>
     <summary>When do postcards and prints arrive?</summary>
-    <div class="ans"><p>Postcards are written and mailed <strong>from Marrakech during the trip</strong> (international post takes its own sweet time). Signed prints are photographed in Morocco, then printed and signed by Karl <strong>after he returns to Chicago on Jan 6</strong>. Signed copies of <em>Without The Blacks: The Complete Edition</em> for Collector-tier supporters are likewise <strong>signed and shipped in January, after the trip</strong>. And if your support was $20 or more, RELAUNCH is delivered to you automatically as a digital album as soon as your support lands.</p></div>
+    <div class="ans"><p>Postcards are written and mailed <strong>from Marrakech during the trip</strong> (international post takes its own sweet time). Signed prints are photographed in Morocco, then printed and signed by Karl <strong>after he returns to Chicago on Jan 6</strong>. Signed copies of <em>Without The Blacks: The Complete Edition</em> for Collector-tier supporters are likewise <strong>signed and shipped in January, after the trip</strong>. And if your support was $20 or more, all three albums are delivered to you automatically as digital downloads as soon as your support lands.</p></div>
   </details>
   <details>
     <summary>What if the trip falls short?</summary>
@@ -506,7 +522,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     <p class="kicker">Free for everyone · No donation required</p>
     <h2>Follow our trip <em>on Melori</em></h2>
     <p>Karl built <strong>Melori</strong> — a free platform for independent artists, home to 265+ tracks — so artists keep their audience and their work in one place. That's where this trip will live. Karl will post the coverage there as it happens: <strong>the photos, the updates, and the first listens</strong> to the songs he writes in Marrakech.</p>
-    <p>Give $20 or more and RELAUNCH is yours, delivered automatically. <strong>Following gets you the journey — and following is free.</strong> No donation, no paywall, no catch. If you can't give a dollar, give us a follow and be there with us.</p>
+    <p>Give $20 or more and three albums from Karl's label are yours, delivered automatically. <strong>Following gets you the journey — and following is free.</strong> No donation, no paywall, no catch. If you can't give a dollar, give us a follow and be there with us.</p>
 
     <div class="melori-grid">
       <div class="melori-item"><b>📸 &nbsp;Trip photos</b><span>Marrakech through Karl's lens — the medina, the rooftops, Christmas and New Year in the Red City, posted from the trip.</span></div>
@@ -524,7 +540,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
 <footer>
   <div class="wrap">
     <span><strong style="color:var(--ink)">Karl Ray &amp; Blessing Igwe</strong> · Marrakech · Dec 16, 2026 – Jan 6, 2027</span>
-    <span>Support → Karl Ray's R&amp;B album RELAUNCH · Follow the journey free on <a href="https://melorimusic.org/register" target="_blank" rel="noopener">Melori</a></span>
+    <span>Support → 3 albums: RELAUNCH, Milk &amp; Honey, Walls Come Down · Follow the journey free on <a href="https://melorimusic.org/register" target="_blank" rel="noopener">Melori</a></span>
   </div>
 </footer>
 
@@ -562,11 +578,11 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-betwe
     var v=parseInt(range.value,10);
     amt.textContent="$"+v;
     var msg;
-    if(v<20) msg="<strong>$"+v+"</strong> is welcome support that puts real miles behind Blessing's flight. The album starts at $20; this gift is pure heart, and it counts.";
-    else if(v<50) msg="<strong>$"+v+"</strong> clears the album threshold: <strong>Karl Ray's R&amp;B album RELAUNCH is yours, delivered automatically</strong>, and it covers a solid stretch of her e-visa too.";
-    else if(v<100) msg="<strong>$"+v+"</strong> is serious flight money, and RELAUNCH is yours.";
-    else if(v<140) msg="<strong>$"+v+"</strong> nearly clears her entire $140 e-visa on its own, and RELAUNCH is yours.";
-    else if(v<250) msg="<strong>$"+v+"</strong> covers the e-visa outright and takes a real bite out of her $837 flight. RELAUNCH is yours, and Karl will know your name.";
+    if(v<20) msg="<strong>$"+v+"</strong> is welcome support that puts real miles behind Blessing's flight. The albums start at $20; this gift is pure heart, and it counts.";
+    else if(v<50) msg="<strong>$"+v+"</strong> clears the album line: <strong>all 3 albums are yours, delivered automatically</strong>, and it covers a solid stretch of her e-visa too.";
+    else if(v<100) msg="<strong>$"+v+"</strong> is serious flight money, and all 3 albums are yours.";
+    else if(v<140) msg="<strong>$"+v+"</strong> nearly clears her entire $140 e-visa on its own, and all 3 albums are yours.";
+    else if(v<250) msg="<strong>$"+v+"</strong> covers the e-visa outright and takes a real bite out of her $837 flight. All 3 albums are yours, and Karl will know your name.";
     else msg="<strong>$"+v+"</strong> covers the e-visa and a solid share of Blessing's flight in one gift. That's the trip, materially closer.";
     txt.innerHTML=msg;
     pay.href=CUSTOM_LINK+"?prefilled_amount="+(v*100);

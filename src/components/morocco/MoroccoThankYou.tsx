@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  MOROCCO_ALBUMS,
   isSessionId,
   parseTier,
   tierGifts,
@@ -87,13 +86,19 @@ export default function MoroccoThankYou() {
       {gifts.album && (
         <section className={card}>
           <h2 className="font-semibold mb-1">
-            {tier === "custom" ? "Gave $20 or more? Your 3 albums are ready" : "Your 3 albums are ready"}
+            {tier === "custom"
+              ? "Gave $20 or more? Your 3 albums are ready"
+              : gifts.albums.length === 1
+                ? "Your album is ready"
+                : "Your 3 albums are ready"}
           </h2>
           <p className="text-sm text-text-secondary mb-4">
-            Three albums from Karl&apos;s label. Save this page or the links.
+            {gifts.albums.length === 1
+              ? "RELAUNCH by Karl Ray. Save this page or the link."
+              : "Three albums from Karl's label. Save this page or the links."}
           </p>
           <ul className="space-y-3">
-            {MOROCCO_ALBUMS.map((a) => (
+            {gifts.albums.map((a) => (
               <li key={a.title} className="flex items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img

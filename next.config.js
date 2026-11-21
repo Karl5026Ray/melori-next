@@ -46,8 +46,9 @@ const CSP_ENFORCED = [
   "media-src 'self' data: blob: https:",
   // Google OAuth renders in an iframe, and both /video and the Melori Mirror
   // feed embed YouTube players (artist-submitted links; we never re-host the
-  // media). Nothing else may embed us.
-  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
+  // media). open.spotify.com is the Spotify player on the /morocco support page
+  // (Karl's single "Right Love, Right Life"). Nothing else may embed us.
+  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com",
   // Was 'none'. Loosened to 'self' so wrapper browsers on iOS (Comet, Chrome iOS,
   // Perplexity, in-app WebViews) that render the top-level page inside their own
   // frame chrome don't get a hard "This page couldn't load" bounce. Safari native

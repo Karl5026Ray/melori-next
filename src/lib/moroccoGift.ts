@@ -1,8 +1,35 @@
 // Shared rules for the optional Morocco gift-address form (/morocco/thank-you).
 // Used by the client form and POST /api/morocco/gift-address. See migration 104.
 
-export const MOROCCO_ALBUM_URL =
-  "https://drive.google.com/drive/folders/15aI4u3YMsilRGhdcg6ED4EwPP448_FJY?usp=sharing";
+// The $20+ gift: three albums from Karl's label. Each link is an
+// anyone-with-the-link Google Drive folder Karl owns (checked Nov 21, 2026).
+export type MoroccoAlbum = {
+  title: string;
+  artist: string;
+  cover: string;
+  url: string;
+};
+
+export const MOROCCO_ALBUMS: MoroccoAlbum[] = [
+  {
+    title: "RELAUNCH",
+    artist: "Karl Ray",
+    cover: "/morocco-photos/cover-relaunch.webp",
+    url: "https://drive.google.com/drive/folders/15aI4u3YMsilRGhdcg6ED4EwPP448_FJY?usp=sharing",
+  },
+  {
+    title: "Milk & Honey",
+    artist: "Kaiel R",
+    cover: "/morocco-photos/cover-milk-and-honey.webp",
+    url: "https://drive.google.com/drive/folders/1WlGqKYlN6YigoaDz74zpzxfPu_N2TFZm?usp=sharing",
+  },
+  {
+    title: "Walls Come Down",
+    artist: "Gloria Joy Rivers",
+    cover: "/morocco-photos/cover-walls-come-down.webp",
+    url: "https://drive.google.com/drive/folders/1l69WqeApeaNw_CRm2C0-u7mr5JUWJP4I?usp=sharing",
+  },
+];
 
 export type MoroccoTier = "10" | "20" | "50" | "100" | "custom";
 const TIERS: MoroccoTier[] = ["10", "20", "50", "100", "custom"];

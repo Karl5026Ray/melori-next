@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  MOROCCO_ALBUM_URL,
+  MOROCCO_ALBUMS,
   isSessionId,
   parseTier,
   tierGifts,
@@ -87,14 +87,37 @@ export default function MoroccoThankYou() {
       {gifts.album && (
         <section className={card}>
           <h2 className="font-semibold mb-1">
-            {tier === "custom" ? "Gave $20 or more? Your album is ready" : "Your album is ready"}
+            {tier === "custom" ? "Gave $20 or more? Your 3 albums are ready" : "Your 3 albums are ready"}
           </h2>
-          <p className="text-sm text-text-secondary mb-3">
-            RELAUNCH, Karl Ray&apos;s R&B album. Save this link.
+          <p className="text-sm text-text-secondary mb-4">
+            Three albums from Karl&apos;s label. Save this page or the links.
           </p>
-          <a href={MOROCCO_ALBUM_URL} target="_blank" rel="noopener noreferrer" className={primaryBtn + " block text-center"}>
-            Get RELAUNCH
-          </a>
+          <ul className="space-y-3">
+            {MOROCCO_ALBUMS.map((a) => (
+              <li key={a.title} className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.cover}
+                  alt={`${a.title} album cover`}
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 flex-none rounded-md object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold leading-tight">{a.title}</p>
+                  <p className="text-sm text-text-secondary">{a.artist}</p>
+                </div>
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-none rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Get it
+                </a>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

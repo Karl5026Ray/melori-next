@@ -139,11 +139,12 @@ p{margin:0}
 .give-what{color:var(--muted); font-size:.93rem; flex:1}
 .give-ship{font-size:.82rem; font-weight:800; color:var(--gold)}
 .give-cover{width:100%; height:auto; aspect-ratio:1/1; object-fit:cover; object-position:center top; border-radius:10px; margin-bottom:6px; display:block}
-.give-fan{position:relative; width:100%; aspect-ratio:100/72; margin-bottom:8px}
-.give-fan img{position:absolute; top:8%; width:56%; height:auto; aspect-ratio:1/1; object-fit:cover; border-radius:8px; border:3px solid var(--surface); box-shadow:0 6px 16px rgba(0,0,0,.28)}
-.give-fan img:nth-child(1){left:0; transform:rotate(-7deg); z-index:3}
-.give-fan img:nth-child(2){left:22%; top:2%; z-index:2}
-.give-fan img:nth-child(3){left:44%; transform:rotate(7deg); z-index:1}
+/* Left cover sits on top so each cover's right side (where the faces are) stays in view */
+.give-fan{position:relative; width:100%; aspect-ratio:100/60; margin-bottom:8px}
+.give-fan img{position:absolute; top:12%; width:44%; height:auto; aspect-ratio:1/1; object-fit:cover; border-radius:8px; border:3px solid var(--surface); box-shadow:0 6px 16px rgba(0,0,0,.28)}
+.give-fan img:nth-child(1){left:1%; transform:rotate(-7deg); z-index:3}
+.give-fan img:nth-child(2){left:28%; top:5%; z-index:2}
+.give-fan img:nth-child(3){left:55%; transform:rotate(7deg); z-index:1}
 .give-albums{list-style:none; margin:2px 0 0; padding:0; font-size:.88rem; color:var(--muted)}
 .give-albums li{margin:1px 0} .give-albums b{color:var(--ink); font-size:.9rem}
 .give-go{margin-top:8px; display:inline-flex; align-items:center; justify-content:center; min-height:44px; border-radius:999px; background:var(--terra); color:#FFF7EE; font-weight:800}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { matchesCatalogQuery } from "@/lib/catalogSearch";
 import CatalogCard from "@/components/CatalogCard";
 import type { CatalogItem } from "@/lib/catalog";
 import {
@@ -108,10 +109,7 @@ export default function MusicCatalog({
     return items.filter((r) => {
       const matchesType = typeFilter === "all" || r.release_type === typeFilter;
       const matchesGenre = genre === "all" || r.genre === genre;
-      const matchesQuery =
-        q === "" ||
-        r.title.toLowerCase().includes(q) ||
-        (r.artist?.name.toLowerCase().includes(q) ?? false);
+      const matchesQuery = q === "" || matchesCatalogQuery(r, q);
       return matchesType && matchesGenre && matchesQuery;
     });
   }, [items, query, genre, typeFilter]);

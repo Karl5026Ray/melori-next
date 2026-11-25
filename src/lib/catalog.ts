@@ -42,6 +42,8 @@ export interface CatalogItem {
   /** Marked explicit (migration 105): a single track, or a release with any
    *  explicit track. Drives the E badge and the cover seal. */
   explicit?: boolean;
+  /** Song titles inside this item, searched by the catalog search box. */
+  trackTitles?: string[];
 }
 
 export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
@@ -58,6 +60,7 @@ export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
     genre: release.genre,
     trackPlayCounts: release.trackPlayCounts,
     explicit: release.explicit === true,
+    trackTitles: release.trackTitles ?? [],
   };
 }
 
@@ -176,6 +179,7 @@ export function studioAlbumToCatalogItem(
   artist: ArtistRef | null,
   fallbackArtistName: string | null,
   genre: string | null,
+  trackTitles: string[] = [],
 ): CatalogItem {
   return {
     key: `studio_album:${album.id}`,
@@ -188,6 +192,7 @@ export function studioAlbumToCatalogItem(
     release_date: album.created_at,
     artist: artist ?? (fallbackArtistName ? { name: fallbackArtistName, slug: "" } : null),
     genre,
+    trackTitles,
   };
 }
 
@@ -208,6 +213,7 @@ export function studioTrackToCatalogItem(
     artist: artist ?? (fallbackName ? { name: fallbackName, slug: "" } : null),
     genre: track.genre,
     explicit: track.explicit === true,
+    trackTitles: [track.title],
   };
 }
 
@@ -226,11 +232,15 @@ export async function getStudioCatalogItems(
   // a leftover row would render an empty album card in the public catalog.
   const publishedAlbumKeys = new Set<string>();
   const albumMeta = new Map<string, { artistName: string | null; genre: string | null }>();
+  const albumTrackTitles = new Map<string, string[]>();
   for (const t of tracks) {
     const title = normalizeAlbumTitle(t.album);
     if (!title || !t.profile_id) continue;
     const key = albumKey(t.profile_id, title);
     publishedAlbumKeys.add(key);
+    const albumTitles = albumTrackTitles.get(key) ?? [];
+    albumTitles.push(t.title);
+    albumTrackTitles.set(key, albumTitles);
     if (!albumMeta.has(key)) {
       albumMeta.set(key, {
         artistName: t.artist?.trim() || null,
@@ -253,6 +263,7 @@ export async function getStudioCatalogItems(
         artistRefs.get(album.profile_id) ?? null,
         meta?.artistName ?? null,
         meta?.genre ?? null,
+        albumTrackTitles.get(key) ?? [],
       ),
     );
   }

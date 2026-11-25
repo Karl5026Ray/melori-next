@@ -29,6 +29,9 @@ export interface ReleaseListItem {
   trackPlayCounts?: Record<number, number>;
   // True when any published track on the release is marked explicit.
   explicit?: boolean;
+  // Titles of the release's published tracks, so catalog search can find a
+  // song that lives inside an album.
+  trackTitles?: string[];
 }
 
 interface ReleaseRow {
@@ -61,15 +64,17 @@ async function getPlayCountsByRelease(
 ): Promise<{
   counts: Map<number, Record<number, number>>;
   explicitReleases: Set<number>;
+  titles: Map<number, string[]>;
 }> {
   const byRelease = new Map<number, Record<number, number>>();
   const explicitReleases = new Set<number>();
+  const titles = new Map<number, string[]>();
   const { data, error } = await supabase
     .from("tracks")
-    .select("id, release_id, play_count, explicit")
+    .select("id, release_id, play_count, explicit, title")
     .eq("is_published", true);
 
-  if (error) return { counts: byRelease, explicitReleases };
+  if (error) return { counts: byRelease, explicitReleases, titles };
 
   for (const row of (data as
     | {
@@ -77,20 +82,26 @@ async function getPlayCountsByRelease(
         release_id: number | null;
         play_count: number | null;
         explicit: boolean | null;
+        title: string | null;
       }[]
     | null) ?? []) {
     if (row.release_id === null) continue;
+    if (row.title) {
+      const list = titles.get(row.release_id) ?? [];
+      list.push(row.title);
+      titles.set(row.release_id, list);
+    }
     const counts = byRelease.get(row.release_id) ?? {};
     counts[row.id] = typeof row.play_count === "number" ? row.play_count : 0;
     byRelease.set(row.release_id, counts);
     if (row.explicit === true) explicitReleases.add(row.release_id);
   }
-  return { counts: byRelease, explicitReleases };
+  return { counts: byRelease, explicitReleases, titles };
 }
 
 export async function getReleases(): Promise<ReleaseListItem[]> {
   const supabase = getSupabaseCatalogReader();
-  const [{ data, error }, { counts: playCountsByRelease, explicitReleases }] = await Promise.all([
+  const [{ data, error }, { counts: playCountsByRelease, explicitReleases, titles: trackTitlesByRelease }] = await Promise.all([
     supabase
       .from("releases")
       .select(
@@ -117,6 +128,7 @@ export async function getReleases(): Promise<ReleaseListItem[]> {
       genre: genre?.name ?? null,
       trackPlayCounts: playCountsByRelease.get(row.id) ?? {},
       explicit: explicitReleases.has(row.id),
+      trackTitles: trackTitlesByRelease.get(row.id) ?? [],
     };
   });
 }

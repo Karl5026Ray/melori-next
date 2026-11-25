@@ -9,6 +9,7 @@
 
 import {
   matchesCatalogQuery,
+  scoreCatalogQuery,
   normalizeSearchText,
 } from "@/lib/catalogSearch";
 
@@ -53,6 +54,29 @@ check("no false match", matchesCatalogQuery(bino, "gospel"), false);
 check("all words must match", matchesCatalogQuery(bino, "karl gospel"), false);
 check("item without tracks still works", matchesCatalogQuery(beyonca, "nights"), true);
 check("normalize punctuation", normalizeSearchText("  Don't-Stop   ME!! "), "dont stop me");
+
+console.log("typos and near-misses");
+const relaunch = { title: "RELAUNCH", artist: { name: "Karl Ray" }, genre: "R&B", trackTitles: ["Right Love, Right Life"] };
+check("one typo in a song", matchesCatalogQuery(bino, "champian"), true);
+check("missing letter in artist", matchesCatalogQuery(gloria, "glria"), true);
+check("missing letter in title", matchesCatalogQuery(relaunch, "relanch"), true);
+check("swapped letters", matchesCatalogQuery(gloria, "rviers"), true);
+check("two typos in a long word", matchesCatalogQuery(bino, "champyun"), true);
+check("half-typed word with a typo", matchesCatalogQuery(bino, "chanpi"), true);
+check("near-miss across words", matchesCatalogQuery(relaunch, "rihgt lvoe"), true);
+check("short words stay strict", matchesCatalogQuery(bino, "zzz"), false);
+check("too far off is no match", matchesCatalogQuery(bino, "gospel"), false);
+check("unrelated word with typo budget", matchesCatalogQuery(gloria, "champion"), false);
+check(
+  "exact beats typo",
+  scoreCatalogQuery(bino, "champion") > scoreCatalogQuery(bino, "champian"),
+  true,
+);
+check(
+  "title hit beats track hit",
+  scoreCatalogQuery(relaunch, "relaunch") > scoreCatalogQuery(bino, "champion"),
+  true,
+);
 
 if (failures > 0) {
   console.error(`\n${failures} failing`);

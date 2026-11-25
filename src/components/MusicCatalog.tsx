@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { matchesCatalogQuery } from "@/lib/catalogSearch";
+import { scoreCatalogQuery } from "@/lib/catalogSearch";
 import CatalogCard from "@/components/CatalogCard";
 import type { CatalogItem } from "@/lib/catalog";
 import {
@@ -104,17 +104,32 @@ export default function MusicCatalog({
     [items],
   );
 
+  // Relevance per item for the current query (0 = no match). Typos count, so
+  // "champian" still finds Champion; exact hits score higher than near-misses.
+  const scores = useMemo(() => {
+    const q = query.trim();
+    const map = new Map<string, number>();
+    for (const r of items) map.set(r.key, q === "" ? 1 : scoreCatalogQuery(r, q));
+    return map;
+  }, [items, query]);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return items.filter((r) => {
       const matchesType = typeFilter === "all" || r.release_type === typeFilter;
       const matchesGenre = genre === "all" || r.genre === genre;
-      const matchesQuery = q === "" || matchesCatalogQuery(r, q);
-      return matchesType && matchesGenre && matchesQuery;
+      return matchesType && matchesGenre && (scores.get(r.key) ?? 0) > 0;
     });
-  }, [items, query, genre, typeFilter]);
+  }, [items, scores, genre, typeFilter]);
 
-  const sorted = useMemo(() => sortReleases(filtered, sort), [filtered, sort]);
+  // While searching, closest matches come first; the chosen sort breaks ties.
+  const sorted = useMemo(() => {
+    const base = sortReleases(filtered, sort);
+    if (query.trim() === "") return base;
+    return base
+      .map((r, i) => ({ r, i }))
+      .sort((a, b) => (scores.get(b.r.key) ?? 0) - (scores.get(a.r.key) ?? 0) || a.i - b.i)
+      .map(({ r }) => r);
+  }, [filtered, sort, query, scores]);
 
   const tabs: { key: TypeFilter; label: string; count: number }[] = [
     { key: "all", label: "All Releases", count: items.length },

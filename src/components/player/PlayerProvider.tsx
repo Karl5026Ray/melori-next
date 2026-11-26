@@ -298,12 +298,28 @@ export default function PlayerProvider({
   const hostsRef = useRef<HostsManifest | null>(null);
   const hostsOnRef = useRef(false);
   const hostIdOffsetRef = useRef(0);
+  const indexRef = useRef(0);
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
   useEffect(() => {
     let cancelled = false;
     fetch("/radio/hosts.json")
       .then((r) => (r.ok ? r.json() : null))
       .then((raw) => {
-        if (!cancelled) hostsRef.current = parseManifest(raw);
+        if (cancelled) return;
+        const manifest = parseManifest(raw);
+        hostsRef.current = manifest;
+        // The homepage station can go on air before this file arrives. If a
+        // talking station is already playing without hosts, slip them into
+        // everything after the current song — the song on air is untouched.
+        if (!manifest) return;
+        setQueue((q) => {
+          if (!hostsOnRef.current || !radioModeRef.current) return q;
+          if (q.some((t) => isVoice(t))) return q;
+          const at = indexRef.current;
+          return [...q.slice(0, at + 1), ...withHosts(q.slice(at + 1), manifest, 0)];
+        });
       })
       .catch(() => undefined);
     return () => {

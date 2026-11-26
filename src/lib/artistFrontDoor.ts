@@ -29,7 +29,21 @@ export type ArtistFrontDoor = {
   support?: { label: string; line: string; href: string };
 };
 
+// The WOE cast (Karl, 26 Nov 2026): every artist who plays a WOE character
+// links to the novel. Points at the KDP edition, the one live on Amazon.
+const WOE_NOVEL: ArtistLink = {
+  label: "Read WOE, the novel",
+  href: "https://www.amazon.com/dp/B0HK7M9M97",
+};
+const woeCast = (): ArtistFrontDoor => ({ startHere: [], links: [WOE_NOVEL] });
+
 export const ARTIST_FRONT_DOORS: Record<string, ArtistFrontDoor> = {
+  // WOE cast: RAH (Jennifer), Kaiel R (Carter), Gloria Joy Rivers (Trinity),
+  // SHADAI (Patrice).
+  rah: woeCast(),
+  "kaiel-r": woeCast(),
+  "gloria-joy-rivers": woeCast(),
+  shadai: woeCast(),
   "karl-ray": {
     startHere: [
       // Through December (Karl's ask in the review: "Christmas with KRP should

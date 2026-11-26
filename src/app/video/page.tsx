@@ -54,6 +54,8 @@ async function getVideos(): Promise<VideoRow[]> {
       "id, youtube_id, title, description, thumbnail_url, published_at, views, sort_order, series, is_vertical"
     )
     .eq("is_active", true)
+    // Native uploads (no YouTube id) play on artist pages, not as embeds here.
+    .not("youtube_id", "is", null)
     .order("sort_order", { ascending: true });
   if (error) {
     console.error("getVideos error", error);

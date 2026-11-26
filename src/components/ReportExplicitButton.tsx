@@ -16,7 +16,8 @@ export default function ReportExplicitButton({
 }: {
   track: {
     id: number | string;
-    sourceType?: "legacy" | "studio";
+    // "voice" = a Melori Radio host clip, which is not a track to report.
+    sourceType?: "legacy" | "studio" | "voice";
     explicit?: boolean | null;
   } | null;
   className?: string;
@@ -31,7 +32,7 @@ export default function ReportExplicitButton({
     setState("idle");
   }, [key]);
 
-  if (!track || track.explicit) return null;
+  if (!track || track.explicit || track.sourceType === "voice") return null;
 
   const report = async () => {
     if (state === "sending" || state === "done") return;

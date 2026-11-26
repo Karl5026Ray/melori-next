@@ -20,6 +20,7 @@ import {
   Trash2,
   Pencil,
   ListPlus,
+  Mic2,
 } from "lucide-react";
 import { authHeaders } from "@/lib/authClient";
 import { formatCount } from "@/lib/format";
@@ -31,8 +32,9 @@ import { usePlayer } from "@/components/player/PlayerProvider";
 import { usePlaylists } from "@/components/radio/usePlaylists";
 import AddToPlaylistSheet from "@/components/radio/AddToPlaylistSheet";
 import type { RadioTrack } from "@/lib/data";
+import { nextSong, stripVoice } from "@/lib/radioHosts";
 
-type Mode = "foryou" | "all" | "playlists";
+type Mode = "foryou" | "all" | "playlists" | "shows";
 
 function fmt(sec: number): string {
   if (!sec || !Number.isFinite(sec)) return "0:00";
@@ -74,6 +76,7 @@ export default function RadioClient() {
     radioMode,
     radioStationKey,
     playRadio,
+    playQueue,
     reshuffleRadio,
     togglePlay,
     unlockPlayback,
@@ -99,7 +102,13 @@ export default function RadioClient() {
     // Tuning in is a user gesture — bless the shared element before playRadio's
     // async signed-URL fetch so the first track is allowed to play on iOS.
     unlockPlayback();
-    playRadio(pool, { key: poolKey, preserveOrder: mode === "playlists" });
+    // The shuffled stations talk (Karl Ray + Jade intros and station IDs); a
+    // listener's own playlist plays exactly what they saved, nothing between.
+    playRadio(pool, {
+      key: poolKey,
+      preserveOrder: mode === "playlists",
+      hosts: mode === "foryou" || mode === "all",
+    });
   }, [pool, poolKey, mode, playRadio, unlockPlayback]);
 
   // Load the shared/for-you pool for the current mode.
@@ -150,6 +159,10 @@ export default function RadioClient() {
     if (mode === "foryou" || mode === "all") {
       setActivePlaylistId(null);
       void loadPool(mode);
+    } else if (mode === "shows") {
+      setActivePlaylistId(null);
+      setPool([]);
+      setLoadingPool(false);
     } else {
       // Playlists mode: show the picker (no pool until one is chosen).
       setActivePlaylistId(null);
@@ -174,7 +187,8 @@ export default function RadioClient() {
   }, [loadingPool, ready, tuned, tuneIn]);
 
   // Up next in the rotation (wraps back to the top at the end of the queue).
-  const next = tuned ? (queue[index + 1] ?? queue[0] ?? null) : null;
+  // Station IDs and intros are skipped here — "Next" always names a song.
+  const next = tuned ? nextSong(queue, index) : null;
   // Before tuning in, preview the first track of the loaded pool.
   const display = (tuned ? current : null) ?? pool[0] ?? null;
   const audible = !muted && volume > 0;
@@ -184,6 +198,7 @@ export default function RadioClient() {
   const total = tuned ? duration : 0;
   const progress = total > 0 ? Math.min(1, elapsed / total) : 0;
   const showPicker = mode === "playlists" && !activePlaylistId;
+  const showShows = mode === "shows";
   // The add-to-playlist sheet needs the full RadioTrack row, not the trimmed
   // queue entry, so resolve the shown track back through the loaded pool.
   const displayRadioTrack =
@@ -220,18 +235,19 @@ export default function RadioClient() {
       </div>
 
       {/* Station toggle */}
-      <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-brand-border bg-white/[0.03] p-1">
+      <div className="mb-4 grid grid-cols-4 gap-1 rounded-2xl border border-brand-border bg-white/[0.03] p-1">
         {(
           [
             { m: "foryou", label: "For You", icon: Sparkles },
             { m: "all", label: "All Tracks", icon: Music2 },
             { m: "playlists", label: "Playlists", icon: ListMusic },
+            { m: "shows", label: "Shows", icon: Mic2 },
           ] as { m: Mode; label: string; icon: typeof Sparkles }[]
         ).map(({ m, label, icon: Icon }) => (
           <button
             key={m}
             onClick={() => setMode(m)}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[13px] font-semibold transition-colors ${
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-2 text-[12px] font-semibold leading-tight transition-colors sm:flex-row sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[13px] ${
               mode === m
                 ? "bg-brand-primary text-white"
                 : "text-text-secondary hover:text-text-primary"
@@ -264,8 +280,19 @@ export default function RadioClient() {
         </div>
       )}
 
-      {/* PLAYLISTS PICKER */}
-      {showPicker ? (
+      {/* SHOWS (recorded Melori Radio shows) / PLAYLISTS PICKER */}
+      {showShows ? (
+        <ShowsList
+          user={Boolean(user)}
+          onPlay={(parts, start) => playQueue(parts, start)}
+          playingKey={
+            !radioMode && current
+              ? `${current.sourceType ?? "legacy"}:${current.id}`
+              : null
+          }
+          isPlaying={isPlaying}
+        />
+      ) : showPicker ? (
         <PlaylistPicker
           pl={pl}
           user={Boolean(user)}
@@ -509,7 +536,7 @@ export default function RadioClient() {
                 )}
 
                 <p className="mt-3 text-center text-[11px] text-text-secondary">
-                  {(tuned ? queue.length : pool.length)} tracks in rotation ·
+                  {(tuned ? stripVoice(queue).length : pool.length)} tracks in rotation ·
                   non-stop
                 </p>
               </>
@@ -725,6 +752,167 @@ function PlaylistPicker({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Recorded Melori Radio shows (Karl, 26 Nov 2026). Each show is one album of
+// studio uploads marked type 'show'; each hour is a part that plays in order.
+// Shows already have the hosts and breaks baked in, so they play straight
+// through as a queue instead of going on the shuffling radio.
+// -------------------------------------------------------------------------
+function ShowsList({
+  user,
+  onPlay,
+  playingKey,
+  isPlaying,
+}: {
+  user: boolean;
+  onPlay: (parts: RadioTrack[], start: number) => void;
+  playingKey: string | null;
+  isPlaying: boolean;
+}) {
+  const [shows, setShows] = useState<RadioTrack[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/radio/shows", {
+          cache: "no-store",
+          headers: await authHeaders(),
+        });
+        if (!res.ok) throw new Error("shows request failed");
+        const data: { shows?: RadioTrack[] } = await res.json();
+        if (!cancelled) setShows(data.shows ?? []);
+      } catch {
+        if (!cancelled) setError("Couldn't load the shows right now.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  if (!user) {
+    return (
+      <div className="rounded-3xl border border-brand-border bg-brand-surface p-8 text-center">
+        <Mic2 className="mx-auto mb-3 h-10 w-10 text-brand-primary" />
+        <p className="text-sm text-text-secondary">
+          <Link href="/social/auth" className="text-brand-primary underline">
+            Sign in
+          </Link>{" "}
+          to play the Melori Radio shows with Karl Ray and Jade.
+        </p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rounded-3xl border border-brand-border bg-brand-surface p-8 text-center text-sm text-text-secondary">
+        {error}
+      </div>
+    );
+  }
+  if (!shows) {
+    return (
+      <div className="flex h-48 items-center justify-center text-text-secondary">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+  if (!shows.length) {
+    return (
+      <div className="rounded-3xl border border-brand-border bg-brand-surface p-8 text-center text-sm text-text-secondary">
+        The first Melori Radio show is coming soon.
+      </div>
+    );
+  }
+
+  // Group the parts into shows by album (a part without one is its own show).
+  const groups: { name: string; parts: RadioTrack[] }[] = [];
+  for (const t of shows) {
+    const name = t.album || t.title;
+    const g = groups.find((x) => x.name === name);
+    if (g) g.parts.push(t);
+    else groups.push({ name, parts: [t] });
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => {
+        const total = g.parts.reduce((n, p) => n + (p.durationSeconds ?? 0), 0);
+        const cover = g.parts.find((p) => p.coverUrl)?.coverUrl ?? null;
+        return (
+          <div
+            key={g.name}
+            className="rounded-3xl border border-brand-border bg-brand-surface p-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-brand-muted">
+                {cover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={cover} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-brand-primary">
+                    <Mic2 className="h-8 w-8" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-bold text-text-primary">{g.name}</p>
+                <p className="truncate text-xs text-text-secondary">
+                  with Karl Ray &amp; Jade
+                  {total > 0 ? ` · ${Math.round(total / 60)} min` : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => onPlay(g.parts, 0)}
+                aria-label={`Play ${g.name}`}
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+              >
+                <Play className="ml-0.5 h-6 w-6" />
+              </button>
+            </div>
+            {g.parts.length > 1 && (
+              <ul className="mt-3 divide-y divide-brand-border">
+                {g.parts.map((p, i) => {
+                  const on = playingKey === `studio:${p.id}`;
+                  return (
+                    <li key={String(p.id)}>
+                      <button
+                        onClick={() => onPlay(g.parts, i)}
+                        className="flex w-full items-center gap-3 py-2.5 text-left"
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center text-brand-primary">
+                          {on && isPlaying ? (
+                            <Pause className="h-4 w-4" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </span>
+                        <span
+                          className={`min-w-0 flex-1 truncate text-sm ${
+                            on ? "font-semibold text-brand-primary" : "text-text-primary"
+                          }`}
+                        >
+                          {p.title}
+                        </span>
+                        <span className="text-xs text-text-secondary">
+                          {fmt(p.durationSeconds ?? 0)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

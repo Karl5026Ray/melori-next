@@ -41,7 +41,7 @@ import AgeAttestation, {
   ageAttestationMetadata,
 } from "@/components/auth/AgeAttestation";
 import { doorReason } from "@/lib/doorReason";
-import DoorListenStrip from "@/components/auth/DoorListenStrip";
+import DoorShowsStrip from "@/components/auth/DoorShowsStrip";
 import { BookOpen, ChevronRight, Clapperboard, Mic2, RadioTower } from "lucide-react";
 
 // What a stranger can look at before joining (outside review, 2 Oct 2026: the
@@ -344,10 +344,11 @@ export default function MeloriDoorPage() {
       )}
 
       <div className="mx-auto max-w-md px-4 pb-16 pt-8">
-        {/* Music before the form (Karl, 16 Nov 2026): a stranger hears a
-            30-second preview first, then gets asked for an email. */}
+        {/* Music before the form (Karl, 16 Nov 2026). Since 26 Nov 2026 it is
+            the Melori Radio shows, free and full length, instead of 30-second
+            song previews — the show is the ad for the catalog. */}
         {phase === "form" && (
-          <DoorListenStrip
+          <DoorShowsStrip
             onWantsFullSong={() => {
               const el = document.getElementById("door-email");
               el?.scrollIntoView({ behavior: "smooth", block: "center" });

@@ -58,19 +58,33 @@ async function main() {
   const list = strip(read("src/app/api/door-previews/route.ts"));
   check(!/preview_url:\s*row|audio_url/.test(list), "door-previews never returns a storage path");
 
-  const comp = strip(read("src/components/auth/DoorListenStrip.tsx"));
-  check(!/autoPlay|autoplay/.test(comp), "strip has no autoplay");
-  check(/onClick=\{\(\) => play\(p\)\}/.test(comp), "playback starts only from a tap");
-  const afterJson = comp.slice(comp.indexOf("await res.json()"));
-  check(
-    /if \(stale\(\)\) return;/.test(afterJson) && afterJson.indexOf("stale()") < afterJson.indexOf("audio.src = url"),
-    "a stale or post-unmount preview response never starts audio",
-  );
-  check(/mountedRef\.current = false/.test(comp), "unmount marks the strip gone");
+  // Since 26 Nov 2026 the door plays Melori Radio shows, not song previews.
+  const doorStrip = strip(read("src/components/auth/DoorShowsStrip.tsx"));
+  const player = strip(read("src/components/shows/ShowPlayer.tsx"));
+  check(!/autoPlay|autoplay/.test(doorStrip + player), "show strip and player have no autoplay");
+  check(/onClick=\{toggle\}/.test(player), "a show starts only from a tap");
+  check(/t !== ticket\.current\) return;/.test(player), "a stale stream response never starts audio");
+  check(/player\.pause\(\)/.test(player), "a show hushes the site-wide player first");
 
   const door = read("src/app/platform/page.tsx");
-  check(/<DoorListenStrip/.test(strip(door)), "the door renders <DoorListenStrip>");
-  check(door.indexOf("<DoorListenStrip") < door.indexOf("Create your account</h1>"), "the strip sits above the signup form");
+  check(/<DoorShowsStrip/.test(strip(door)), "the door renders <DoorShowsStrip>");
+  check(!/DoorListenStrip/.test(strip(door)), "the door no longer offers single-song previews");
+  check(door.indexOf("<DoorShowsStrip") < door.indexOf("Create your account</h1>"), "the strip sits above the signup form");
+
+  // A show plays with no account — but only a show.
+  const showStream = strip(read("src/app/api/shows/[id]/stream/route.ts"));
+  check(/\.eq\("type", "show"\)/.test(showStream) && /\.eq\("status", "published"\)/.test(showStream) && /\.eq\("moderation_status", "clean"\)/.test(showStream),
+    "public show stream signs only a published, clean type='show' row");
+  check(!/getRequestMembership/.test(showStream), "public show stream needs no account");
+  const { GET: showGET } = await import("../src/app/api/shows/[id]/stream/route");
+  for (const id of ["abc", "1", "../x"]) {
+    const res = await showGET(new Request(`http://localhost/api/shows/${id}/stream`), { params: Promise.resolve({ id }) });
+    check(res.status === 404, `show stream with bad id "${id}" → 404 (got ${res.status})`);
+  }
+  const { isPublicPath } = await import("../src/proxy");
+  check(isPublicPath("/shows") && isPublicPath("/shows/melori-radio-show-2"), "show pages are public");
+  const { showSlug } = await import("../src/lib/showsShared");
+  check(showSlug("Melori Radio Show 2") === "melori-radio-show-2", "show slug is the show name, lowercased");
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

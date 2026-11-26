@@ -65,6 +65,8 @@ async function main() {
   check(/onClick=\{toggle\}/.test(player), "a show starts only from a tap");
   check(/t !== ticket\.current\) return;/.test(player), "a stale stream response never starts audio");
   check(/player\.pause\(\)/.test(player), "a show hushes the site-wide player first");
+  check(/SHOW_PLAY_EVENT/.test(player) && /removeEventListener\(SHOW_PLAY_EVENT/.test(player), "starting one show stops any other show on the page");
+  check(/loadedPartRef\.current === part/.test(player), "resume only resumes the hour actually loaded");
 
   const door = read("src/app/platform/page.tsx");
   check(/<DoorShowsStrip/.test(strip(door)), "the door renders <DoorShowsStrip>");

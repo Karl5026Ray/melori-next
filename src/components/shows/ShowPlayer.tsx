@@ -7,12 +7,16 @@
 //
 // `compact` is the front-door card; the full layout is the show's own page.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, Pause, Play, Share2 } from "lucide-react";
 import type { PublicShow } from "@/lib/showsShared";
 import { formatShowLength } from "@/lib/showsShared";
 import { usePlayer } from "@/components/player/PlayerProvider";
+
+// Several players can sit on one page (the door, /shows). Starting one tells
+// the others to stop, so two recordings never overlap.
+const SHOW_PLAY_EVENT = "melori:show-play";
 
 function clock(sec: number): string {
   if (!sec || !Number.isFinite(sec)) return "0:00";
@@ -42,15 +46,32 @@ export default function ShowPlayer({
   const [length, setLength] = useState(0);
   const [copied, setCopied] = useState(false);
   const ticket = useRef(0);
+  // Which hour the audio element actually holds. A failed switch leaves the
+  // old hour loaded, so resume must check this rather than "is there a src".
+  const loadedPartRef = useRef<number | null>(null);
+  const selfId = useId();
   const href = `/shows/${show.slug}`;
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const onOtherPlay = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === selfId) return;
       ticket.current += 1;
       audioRef.current?.pause();
-    },
-    [],
-  );
+      setLoading(false);
+    };
+    window.addEventListener(SHOW_PLAY_EVENT, onOtherPlay);
+    return () => {
+      window.removeEventListener(SHOW_PLAY_EVENT, onOtherPlay);
+      ticket.current += 1;
+      audioRef.current?.pause();
+    };
+  }, [selfId]);
+
+  const claimSpeaker = () => {
+    // One sound at a time: hush the site-wide player and any other show.
+    player.pause();
+    window.dispatchEvent(new CustomEvent(SHOW_PLAY_EVENT, { detail: selfId }));
+  };
 
   const start = async (i: number) => {
     const t = ++ticket.current;
@@ -59,8 +80,8 @@ export default function ShowPlayer({
     setPart(i);
     setTime(0);
     setLength(show.parts[i]?.durationSeconds ?? 0);
-    // One sound at a time: hush the site-wide player (radio, songs) first.
-    player.pause();
+    claimSpeaker();
+    audioRef.current?.pause();
     try {
       const res = await fetch(`/api/shows/${show.parts[i].id}/stream`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
@@ -76,6 +97,7 @@ export default function ShowPlayer({
         if (i + 1 < show.parts.length) void start(i + 1);
       };
       a.src = url;
+      loadedPartRef.current = i;
       await a.play();
     } catch {
       if (t === ticket.current) setFailed(true);
@@ -86,9 +108,9 @@ export default function ShowPlayer({
 
   const toggle = () => {
     const a = audioRef.current;
-    if (a && a.src && !a.ended) {
+    if (a && a.src && !a.ended && loadedPartRef.current === part) {
       if (a.paused) {
-        player.pause();
+        claimSpeaker();
         void a.play().catch(() => setFailed(true));
       } else a.pause();
       return;
@@ -194,7 +216,7 @@ export default function ShowPlayer({
               <li key={p.id}>
                 <button
                   type="button"
-                  onClick={() => (i === part && audioRef.current?.src ? toggle() : void start(i))}
+                  onClick={() => (i === part ? toggle() : void start(i))}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03]"
                 >
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center text-[#c9a96e]">

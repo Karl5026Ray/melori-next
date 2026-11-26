@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 import { authFetch } from "@/lib/authClient";
 import { putWithProgress, validateAudioFile } from "./uploadHelpers";
 import ExplicitChoice from "./ExplicitChoice";
-import { useAuth } from "@/components/social/providers/AuthProvider";
 
 interface UploadState {
   file: File | null;
@@ -46,9 +45,13 @@ function measureDuration(file: File): Promise<number | null> {
   });
 }
 
-export default function TrackUploader() {
-  const { user } = useAuth();
-  const canUploadShows = user?.role === "admin";
+// `canUploadShows` comes from the Studio page (admins only). The server checks
+// the role again before it will file a show, so this only decides what is shown.
+export default function TrackUploader({
+  canUploadShows = false,
+}: {
+  canUploadShows?: boolean;
+}) {
   const [state, setState] = useState<UploadState>({
     file: null,
     title: "",

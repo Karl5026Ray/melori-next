@@ -47,6 +47,9 @@ export default function StudioPage() {
   // signed-in user's own row, so no dedicated API route is needed just to
   // read this one flag.
   const [canForensic, setCanForensic] = useState(false);
+  // Admins can file Melori Radio shows from the uploader. /studio has no
+  // SocialAuthProvider, so the role is read here like the rest of the profile.
+  const [isAdminUser, setIsAdminUser] = useState(false);
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(async ({ data }) => {
@@ -56,10 +59,11 @@ export default function StudioPage() {
       if (!uid) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("display_name, full_name")
+        .select("display_name, full_name, role")
         .eq("id", uid)
         .maybeSingle();
       if (cancelled) return;
+      setIsAdminUser(profile?.role === "admin");
       const resolved =
         profile?.display_name?.trim() ||
         profile?.full_name?.trim() ||
@@ -238,7 +242,7 @@ export default function StudioPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === "upload" && <TrackUploader />}
+        {activeTab === "upload" && <TrackUploader canUploadShows={isAdminUser} />}
         {activeTab === "video" && (
           <>
             <VideoUploader />

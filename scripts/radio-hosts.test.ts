@@ -63,6 +63,25 @@ async function main() {
   const pool = data.slice(data.indexOf("export async function getRadioPool"), data.indexOf("export async function getRadioShows"));
   check(/type\.is\.null,type\.neq\.show/.test(pool), "getRadioPool leaves recorded shows out of the shuffle");
 
+  // Who may file a show (src/lib/studio-track-type.ts).
+  const { resolveStudioTrackType } = await import("../src/lib/studio-track-type");
+  const artistShow = resolveStudioTrackType({ type: "show", album: "Show 3" }, false);
+  check(!artistShow.ok && artistShow.status === 403, "a non-admin cannot file a show");
+  const noName = resolveStudioTrackType({ type: "show", album: "  " }, true);
+  check(!noName.ok && noName.status === 400, "a show needs a show name");
+  const show = resolveStudioTrackType({ type: "show", album: "Show 3", duration: "2944.4" }, true);
+  check(show.ok && show.type === "show" && show.duration === 2944, "admin show is filed with its duration");
+  const single = resolveStudioTrackType({ type: "whatever" }, false);
+  check(single.ok && single.type === "single" && single.duration === null, "unknown type falls back to single");
+  const albumTrack = resolveStudioTrackType({ album: "RELAUNCH", duration: -5 }, false);
+  check(albumTrack.ok && albumTrack.type === "album_track" && albumTrack.duration === null, "album → album_track, bad duration dropped");
+  const route = fs.readFileSync(path.join(root, "src/app/api/studio/tracks/route.ts"), "utf8");
+  check(!/type:\s*body\.type/.test(route), "the tracks route no longer writes body.type straight through");
+
+  // The Music catalog keeps shows on their own tab.
+  const catalog = fs.readFileSync(path.join(root, "src/lib/catalog.ts"), "utf8");
+  check(/isShow: track\.type === "show"/.test(catalog) && /isShow: showAlbumKeys\.has\(key\)/.test(catalog), "catalog marks show tracks and show albums");
+
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);
 }

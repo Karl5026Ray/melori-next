@@ -666,3 +666,18 @@ the live radio talking between records.
       an intro before a mapped song (e.g. Before I React), Next names a song.
 - [ ] Next phase: generate an intro automatically when a new song is
       published (voice model + storage upload server-side).
+
+# Studio "Show" upload + Music Shows tab (branch `feat/studio-show-upload`)
+
+Karl, 2026-11-26: Show 2 went up as drafts under "Multi" / "Karl Ray an Jade"
+and had to be fixed by hand. "Fix it so we don't create an issue."
+
+- [x] Studio uploader: admin-only "This is a Melori Radio show" box — show
+      name required, artist defaults to "Karl Ray & Jade", publishes straight
+      to the Shows tabs; duration measured in the browser for every upload.
+- [x] `/api/studio/tracks` POST: `type` decided by `resolveStudioTrackType`
+      (show = admin + show name only; was written straight from the body, so
+      any artist could have posted into Shows).
+- [x] Music catalog: Music / Shows tabs; show albums and show tracks are
+      marked `isShow` and kept off the Music grid.
+- [x] Tests in `scripts/radio-hosts.test.ts`; full `test:unit` green; tsc clean.

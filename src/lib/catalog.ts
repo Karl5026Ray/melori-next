@@ -44,6 +44,9 @@ export interface CatalogItem {
   explicit?: boolean;
   /** Song titles inside this item, searched by the catalog search box. */
   trackTitles?: string[];
+  /** A recorded Melori Radio show (studio_tracks.type = 'show'), listed under
+   *  the catalog's Shows tab instead of with the music. */
+  isShow?: boolean;
 }
 
 export function releaseToCatalogItem(release: ReleaseListItem): CatalogItem {
@@ -118,6 +121,7 @@ interface StudioTrackRow {
   cover_url: string | null;
   created_at: string;
   explicit?: boolean | null;
+  type?: string | null;
 }
 
 function normalizeAlbumTitle(album: string | null | undefined): string {
@@ -142,7 +146,7 @@ async function loadStudioCatalog(limit: number): Promise<{
     supabase
       .from("studio_tracks")
       .select(
-        "id, profile_id, title, artist, album, genre, cover_url, created_at, explicit",
+        "id, profile_id, title, artist, album, genre, cover_url, created_at, explicit, type",
       )
       .eq("status", "published")
       .eq("moderation_status", "clean")
@@ -214,6 +218,7 @@ export function studioTrackToCatalogItem(
     genre: track.genre,
     explicit: track.explicit === true,
     trackTitles: [track.title],
+    isShow: track.type === "show",
   };
 }
 
@@ -233,11 +238,13 @@ export async function getStudioCatalogItems(
   const publishedAlbumKeys = new Set<string>();
   const albumMeta = new Map<string, { artistName: string | null; genre: string | null }>();
   const albumTrackTitles = new Map<string, string[]>();
+  const showAlbumKeys = new Set<string>();
   for (const t of tracks) {
     const title = normalizeAlbumTitle(t.album);
     if (!title || !t.profile_id) continue;
     const key = albumKey(t.profile_id, title);
     publishedAlbumKeys.add(key);
+    if (t.type === "show") showAlbumKeys.add(key);
     const albumTitles = albumTrackTitles.get(key) ?? [];
     albumTitles.push(t.title);
     albumTrackTitles.set(key, albumTitles);
@@ -257,15 +264,16 @@ export async function getStudioCatalogItems(
     if (!publishedAlbumKeys.has(key)) continue;
     coveredAlbumKeys.add(key);
     const meta = albumMeta.get(key);
-    items.push(
-      studioAlbumToCatalogItem(
+    items.push({
+      ...studioAlbumToCatalogItem(
         album,
         artistRefs.get(album.profile_id) ?? null,
         meta?.artistName ?? null,
         meta?.genre ?? null,
         albumTrackTitles.get(key) ?? [],
       ),
-    );
+      isShow: showAlbumKeys.has(key),
+    });
   }
 
   for (const track of tracks) {

@@ -14,6 +14,8 @@ import {
   type CatalogItem,
 } from "@/lib/catalog";
 import CatalogCard from "@/components/CatalogCard";
+import NativeVideoPlayer from "@/components/NativeVideoPlayer";
+import { getSupabaseCatalogReader } from "@/lib/supabase/admin";
 import { ARTIST_FRONT_DOORS, activePins } from "@/lib/artistFrontDoor";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,32 @@ export async function generateMetadata(
   };
 }
 
+type ArtistVideo = {
+  id: number;
+  title: string;
+  description: string | null;
+  thumbnail_url: string | null;
+};
+
+// Native (uploaded) videos attached to this artist. YouTube rows stay on
+// /video; only files Melori hosts play here, through NativeVideoPlayer.
+async function getArtistVideos(artistId: number): Promise<ArtistVideo[]> {
+  const { data, error } = await getSupabaseCatalogReader()
+    .from("videos")
+    .select("id, title, description, thumbnail_url")
+    .eq("artist_id", artistId)
+    .eq("source", "native")
+    .eq("status", "published")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getArtistVideos error", error);
+    return [];
+  }
+  return (data as ArtistVideo[]) ?? [];
+}
+
 export default async function ArtistDetailPage(
   props: {
     params: Promise<{ slug: string }>;
@@ -60,6 +88,7 @@ export default async function ArtistDetailPage(
   if (!data) notFound();
 
   const { artist, releases } = data;
+  const videos = await getArtistVideos(artist.id).catch(() => []);
 
   // The artist's whole body of work in one grid: curated releases plus
   // everything they uploaded through the Artist Studio. Before this, a
@@ -178,7 +207,7 @@ export default async function ArtistDetailPage(
 
         {/* Bio */}
         {artist.bio && (
-          <p className="mt-6 max-w-3xl text-text-secondary">{artist.bio}</p>
+          <p className="mt-6 max-w-3xl whitespace-pre-line text-text-secondary">{artist.bio}</p>
         )}
 
         {/* Ways out of the page (review, 16 Nov 2026: "Anyone who falls for
@@ -215,6 +244,24 @@ export default async function ArtistDetailPage(
             </span>
             <span aria-hidden className="text-brand-primary">&rarr;</span>
           </a>
+        )}
+
+        {/* Watch — native video clips attached to this artist. */}
+        {videos.length > 0 && (
+          <section className="pt-10" data-testid="artist-videos">
+            <h2 className="mb-5 text-2xl font-bold">Watch</h2>
+            <div className="grid gap-6 sm:grid-cols-2">
+              {videos.map((v) => (
+                <div key={v.id}>
+                  <NativeVideoPlayer videoId={v.id} poster={v.thumbnail_url} title={v.title} />
+                  <p className="mt-2 font-semibold">{v.title}</p>
+                  {v.description && (
+                    <p className="text-sm text-text-secondary">{v.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* Start here — a path through a big catalog. */}

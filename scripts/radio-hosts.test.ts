@@ -82,6 +82,10 @@ async function main() {
   const catalog = fs.readFileSync(path.join(root, "src/lib/catalog.ts"), "utf8");
   check(/isShow: track\.type === "show"/.test(catalog) && /isShow: showAlbumKeys\.has\(key\)/.test(catalog), "catalog marks show tracks and show albums");
 
+  const grid = fs.readFileSync(path.join(root, "src/components/MusicCatalog.tsx"), "utf8");
+  check(/key: "show" as const, label: "Shows"/.test(grid), "Music catalog has a Shows pill beside Albums / Singles");
+  check(/!r\.isShow && \(typeFilter === "all"/.test(grid), "shows stay out of All Releases / Albums / Singles");
+
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);
 }

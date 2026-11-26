@@ -10,41 +10,11 @@ import type { CatalogItem } from "@/lib/catalog";
 // This page used to render two lists: a "Latest from Artists" strip of studio
 // uploads above the release catalog. That split is gone — artist uploads are
 // ordinary catalog items now, so there is one list, one search, one sort.
-//
-// Shows (Karl, 26 Nov 2026): recorded Melori Radio shows have their own tab so
-// an hour-long show never sits in the grid as if it were a song. The tab only
-// appears once at least one show is published.
 export default function MusicPageClient({ items }: { items: CatalogItem[] }) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"music" | "shows">("music");
-  const shows = items.filter((i) => i.isShow);
-  const music = items.filter((i) => !i.isShow);
-  const showing = tab === "shows" && shows.length ? shows : music;
 
   return (
     <div>
-      {shows.length > 0 && (
-        <div className="mb-4 inline-flex rounded-full border border-brand-border bg-brand-surface p-1">
-          {(
-            [
-              { t: "music", label: "Music" },
-              { t: "shows", label: `Shows (${shows.length})` },
-            ] as const
-          ).map(({ t, label }) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
-                tab === t
-                  ? "bg-brand-primary text-white"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="mb-8">
         <input
           type="search"
@@ -56,7 +26,7 @@ export default function MusicPageClient({ items }: { items: CatalogItem[] }) {
         />
       </div>
 
-      <MusicCatalog items={showing} externalQuery={query} />
+      <MusicCatalog items={items} externalQuery={query} />
     </div>
   );
 }

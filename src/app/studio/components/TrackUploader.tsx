@@ -18,9 +18,40 @@ interface UploadState {
   coverArt: File | null;
   uploading: boolean;
   progress: number;
+  // Melori Radio show (admin only): files the upload as type 'show', which
+  // lists it in the Radio and Music Shows tabs instead of with the songs.
+  isShow: boolean;
 }
 
-export default function TrackUploader() {
+const SHOW_ARTIST = "Karl Ray & Jade";
+
+// Read the file's length in the browser before upload, so the row has a real
+// duration (show cards add the parts up). Resolves null if the browser can't
+// tell — the upload still goes ahead.
+function measureDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const a = new Audio();
+    const done = (v: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(v);
+    };
+    a.preload = "metadata";
+    a.onloadedmetadata = () =>
+      done(Number.isFinite(a.duration) && a.duration > 0 ? a.duration : null);
+    a.onerror = () => done(null);
+    setTimeout(() => done(null), 15000);
+    a.src = url;
+  });
+}
+
+// `canUploadShows` comes from the Studio page (admins only). The server checks
+// the role again before it will file a show, so this only decides what is shown.
+export default function TrackUploader({
+  canUploadShows = false,
+}: {
+  canUploadShows?: boolean;
+}) {
   const [state, setState] = useState<UploadState>({
     file: null,
     title: "",
@@ -32,9 +63,14 @@ export default function TrackUploader() {
     coverArt: null,
     uploading: false,
     progress: 0,
+    isShow: false,
   });
   const [dragActive, setDragActive] = useState(false);
-  const [uploadedTrack, setUploadedTrack] = useState<{ id: string; title: string } | null>(null);
+  const [uploadedTrack, setUploadedTrack] = useState<{
+    id: string;
+    title: string;
+    isShow: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -66,7 +102,7 @@ export default function TrackUploader() {
     }
 
     // Auto-fill title from filename
-    const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+    const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").replace(/\s+/g, " ").trim();
     setError(null);
     setState((prev) => ({
       ...prev,
@@ -84,11 +120,16 @@ export default function TrackUploader() {
       setError("Please choose whether this track has explicit content.");
       return;
     }
+    if (state.isShow && !state.album.trim()) {
+      setError("Give the show a name, e.g. Melori Radio Show 3.");
+      return;
+    }
 
     setError(null);
     setState((prev) => ({ ...prev, uploading: true, progress: 0 }));
 
     try {
+      const duration = await measureDuration(state.file);
       // 1. Get signed URL for audio upload
       const audioRes = await authFetch("/api/studio/upload-url", {
         method: "POST",
@@ -138,16 +179,18 @@ export default function TrackUploader() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: state.title,
-          artist: state.artist || "Karl Ray",
+          artist: state.artist || (state.isShow ? SHOW_ARTIST : "Karl Ray"),
           album: state.album || null,
+          duration,
           genre: state.genre || null,
           explicit: state.explicit,
           release_date: state.releaseDate || null,
           file_url: audioPublicUrl,
           file_path: audioPath,
           cover_url: coverPublicUrl,
-          type: state.album ? "album_track" : "single",
-          status: "draft",
+          // A show goes straight to the Shows tab; a song starts as a draft.
+          type: state.isShow ? "show" : state.album ? "album_track" : "single",
+          status: state.isShow ? "published" : "draft",
         }),
       });
       if (!trackRes.ok) {
@@ -157,7 +200,7 @@ export default function TrackUploader() {
 
       const trackData = await trackRes.json();
       setState((prev) => ({ ...prev, progress: 100, uploading: false }));
-      setUploadedTrack({ id: trackData.id, title: state.title });
+      setUploadedTrack({ id: trackData.id, title: state.title, isShow: state.isShow });
 
     } catch (err: any) {
       console.error("Upload failed:", err);
@@ -177,7 +220,9 @@ export default function TrackUploader() {
           <div className="text-4xl mb-3">🎉</div>
           <h3 className="text-xl font-bold text-green-400 mb-2">Upload Complete!</h3>
           <p className="text-[#ccc] mb-4">
-            "{uploadedTrack.title}" has been uploaded as a draft.
+            {uploadedTrack.isShow
+              ? `"${uploadedTrack.title}" is live in the Radio and Music Shows tabs.`
+              : `"${uploadedTrack.title}" has been uploaded as a draft.`}
           </p>
           <div className="flex gap-3 justify-center">
             <button
@@ -186,12 +231,21 @@ export default function TrackUploader() {
             >
               Upload Another
             </button>
+            {uploadedTrack.isShow ? (
+              <a
+                href="/social/radio"
+                className="px-6 py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl"
+              >
+                Open Radio →
+              </a>
+            ) : (
             <a
               href={`/studio?tab=waveform&track=${uploadedTrack.id}`}
               className="px-6 py-3 bg-gradient-to-r from-[#c9a96e] to-[#a08050] text-[#0a0a0a] font-bold rounded-xl"
             >
               Create Preview →
             </a>
+            )}
           </div>
         </div>
       ) : (
@@ -239,7 +293,34 @@ export default function TrackUploader() {
 
           {/* Metadata Form */}
           <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6 space-y-4">
-            <h3 className="font-semibold text-[#c9a96e]">Track Details</h3>
+            <h3 className="font-semibold text-[#c9a96e]">
+              {state.isShow ? "Show Details" : "Track Details"}
+            </h3>
+
+            {canUploadShows && (
+              <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={state.isShow}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setState((p) => ({
+                      ...p,
+                      isShow: on,
+                      artist: on && !p.artist ? SHOW_ARTIST : p.artist,
+                    }));
+                  }}
+                  className="mt-1 h-4 w-4 accent-[#c9a96e]"
+                />
+                <span className="text-sm">
+                  <span className="font-semibold text-white">This is a Melori Radio show</span>
+                  <span className="block text-[#888]">
+                    Goes live in the Radio and Music Shows tabs, not the song shuffle.
+                    Use the same show name for every hour so they play together.
+                  </span>
+                </span>
+              </label>
+            )}
 
             <div>
               <div>
@@ -266,13 +347,15 @@ export default function TrackUploader() {
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm text-[#888] block mb-1">Album (optional)</label>
+                <label className="text-sm text-[#888] block mb-1">
+                  {state.isShow ? "Show name *" : "Album (optional)"}
+                </label>
                 <input
                   type="text"
                   value={state.album}
                   onChange={(e) => setState((p) => ({ ...p, album: e.target.value }))}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#c9a96e]/50"
-                  placeholder="Album name"
+                  placeholder={state.isShow ? "Melori Radio Show 3" : "Album name"}
                 />
               </div>
               <div>
@@ -333,7 +416,7 @@ export default function TrackUploader() {
                 Uploading... {state.progress}%
               </span>
             ) : (
-              "Upload Track"
+              state.isShow ? "Upload Show" : "Upload Track"
             )}
           </button>
         </div>

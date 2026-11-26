@@ -8,6 +8,8 @@ import {
   isOwnedStudioFileUrl,
 } from "@/lib/studio-ownership";
 import { ensureStudioAlbum } from "@/lib/studio-albums";
+import { isAdmin } from "@/lib/membership";
+import { resolveStudioTrackType } from "@/lib/studio-track-type";
 
 // GET /api/studio/tracks — List all studio tracks
 export async function GET(req: NextRequest) {
@@ -58,6 +60,14 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient();
     const body = await req.json();
     const userId = guard.membership.userId;
+
+    // `type` used to be written straight from the request, so any artist could
+    // post a row as type 'show' and land in the Melori Radio Shows tab. Only an
+    // admin may file a show, and a show needs an album (the show's name).
+    const typed = resolveStudioTrackType(body, isAdmin(guard.membership.profile));
+    if (!typed.ok) {
+      return NextResponse.json({ error: typed.error }, { status: typed.status });
+    }
 
     // The uploader must say whether the track is explicit; there is no
     // default. Melori doesn't pre-review uploads, so this self-label (plus
@@ -132,7 +142,8 @@ export async function POST(req: NextRequest) {
         file_url: body.file_url,
         file_path: body.file_path,
         cover_url: body.cover_url,
-        type: body.type,
+        type: typed.type,
+        duration: typed.duration,
         sort_order: nextSortOrder,
         status: body.status || "draft",
         // Both ownership columns must be the caller's uid: profile_id

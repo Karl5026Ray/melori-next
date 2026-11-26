@@ -109,6 +109,15 @@ const HEADER_IMAGE_MOBILE = hasSupabaseUrl
   : "";
 const LOGO = "/logo/logo.png";
 
+/** The people in the header photo, left to right. Update when the photo changes. */
+const HEADER_CAST: { name: string; href?: string; note?: string }[] = [
+  { name: "SHADAI", href: "/artists/shadai" },
+  { name: "Gloria Joy Rivers", href: "/artists/gloria-joy-rivers" },
+  { name: "Kaiel R", href: "/artists/kaiel-r" },
+  { name: "Jade", note: "YARN" },
+  { name: "Missy", href: "/books#woe", note: "WOE" },
+];
+
 type Phase = "form" | "confirm" | "ready";
 
 /** True on melori.org, where a session made here cannot carry over. */
@@ -314,6 +323,25 @@ export default function MeloriDoorPage() {
           </span>
         </div>
       </div>
+
+      {/* Who's in the header photo, left to right, so a stranger who likes a
+          face can find them (Karl, 25 Nov 2026). Hidden if the photo fails. */}
+      {HEADER_IMAGE && !heroFailed && (
+        <p className="mx-auto max-w-md px-4 pt-3 text-center text-xs text-white/60" data-testid="door-header-cast">
+          In the photo:{" "}
+          {HEADER_CAST.map((c, i) => (
+            <span key={c.name}>
+              {i > 0 && " · "}
+              {c.href ? (
+                <a href={c.href} className="text-[#c9a96e] hover:underline">{c.name}</a>
+              ) : (
+                <span className="text-white/80">{c.name}</span>
+              )}
+              {c.note && <span className="text-white/50"> ({c.note})</span>}
+            </span>
+          ))}
+        </p>
+      )}
 
       <div className="mx-auto max-w-md px-4 pb-16 pt-8">
         {/* Music before the form (Karl, 16 Nov 2026): a stranger hears a

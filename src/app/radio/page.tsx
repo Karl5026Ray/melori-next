@@ -26,8 +26,8 @@ export default function RadioTeaserPage() {
           body: "There is no paid tier for listening. An account is the whole price.",
         },
         {
-          title: "No ads",
-          body: "Nothing is read out between records and nothing is sold to you mid-song.",
+          title: "Hosts, not ads",
+          body: "Karl Ray and Jade introduce the artists between records. Nothing is sold to you mid-song.",
         },
         {
           title: "Independent only",
@@ -38,6 +38,7 @@ export default function RadioTeaserPage() {
         "Create a free account with an email and a password.",
         "Open Radio and it starts playing.",
         "Keep listening while you move around the rest of Melori.",
+        "Open Shows for the full hour-long Melori Radio shows.",
         "Follow anything you like straight from the player.",
       ]}
       closing={{

@@ -10,13 +10,23 @@ import {
 } from "react";
 import { authHeaders } from "@/lib/authClient";
 import { supabase } from "@/lib/supabase";
+import {
+  isVoice,
+  parseManifest,
+  stripVoice,
+  withHosts,
+  type HostsManifest,
+} from "@/lib/radioHosts";
 
 // A PlayerTrack refers to either a row in the legacy `tracks` table (integer
 // PK) or a row in `studio_tracks` (UUID PK). We keep `id` typed as the union
 // so callers don't have to coerce, and use `sourceType` to route to the
 // correct signed-URL endpoint. Legacy is the default because the majority of
 // existing callers still use the old table.
-export type TrackSource = "legacy" | "studio";
+// "voice" is a Melori Radio host clip (a station ID or an artist intro) slipped
+// into the radio rotation — see src/lib/radioHosts.ts. It plays a static file
+// from /public/radio/voice and never touches the stream routes or play counts.
+export type TrackSource = "legacy" | "studio" | "voice";
 
 export interface PlayerTrack {
   id: number | string;
@@ -35,6 +45,8 @@ export interface PlayerTrack {
   playCount?: number | null;
   // Explicit content flag (migration 105). Drives the "E" badge.
   explicit?: boolean;
+  // Voice entries only: the static clip to play (e.g. /radio/voice/id_01.mp3).
+  src?: string;
 }
 
 // Stable string key used for internal equality checks (e.g. "is this track
@@ -73,6 +85,8 @@ function buildRotation(
   pool: PlayerTrack[],
   preserveOrder: boolean,
 ): PlayerTrack[] {
+  // Host clips are re-inserted by the caller after every shuffle, never shuffled.
+  pool = stripVoice(pool);
   if (preserveOrder) return [...pool];
   const hasScores = pool.some((t) => typeof t.score === "number" && t.score > 0);
   let arr: PlayerTrack[];
@@ -140,7 +154,13 @@ interface PlayerContextValue {
   // playlists). `preserveOrder` keeps a curated playlist in its saved order.
   playRadio: (
     tracks: PlayerTrack[],
-    options?: { key?: string; preserveOrder?: boolean; keepMuted?: boolean },
+    options?: {
+      key?: string;
+      preserveOrder?: boolean;
+      keepMuted?: boolean;
+      // Let Karl Ray and Jade talk between records (intros + station IDs).
+      hosts?: boolean;
+    },
   ) => void;
   reshuffleRadio: () => void;
   stopRadio: () => void;
@@ -273,6 +293,30 @@ export default function PlayerProvider({
   }, [radioMode]);
   // Whether the station on air plays in its saved order (playlists) or shuffles.
   const preserveOrderRef = useRef(false);
+  // Melori Radio hosts. The manifest is a small static file; it is fetched once
+  // and a station only talks when it was put on air with `hosts: true`.
+  const hostsRef = useRef<HostsManifest | null>(null);
+  const hostsOnRef = useRef(false);
+  const hostIdOffsetRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/radio/hosts.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((raw) => {
+        if (!cancelled) hostsRef.current = parseManifest(raw);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Shuffle (or keep) the station's songs, then slip the hosts back in.
+  const rotate = useCallback((tracks: PlayerTrack[]): PlayerTrack[] => {
+    const songs = buildRotation(tracks, preserveOrderRef.current);
+    if (!hostsOnRef.current) return songs;
+    hostIdOffsetRef.current += 1;
+    return withHosts(songs, hostsRef.current, hostIdOffsetRef.current);
+  }, []);
   useEffect(() => {
     queueLengthRef.current = queue.length;
   }, [queue]);
@@ -529,6 +573,8 @@ export default function PlayerProvider({
   // --- persist last track / queue / index ---
   useEffect(() => {
     if (typeof window === "undefined" || !current) return;
+    // A host clip is not something to resume on the next visit.
+    if (isVoice(current)) return;
     try {
       // A radio rotation is the whole catalog; persisting it on every track
       // change would bloat (and can blow) the localStorage quota. Remember only
@@ -558,6 +604,21 @@ export default function PlayerProvider({
       // bookkeeping is spent — replaying a track later counts again.
       countedRef.current.clear();
       try {
+        if (isVoice(track)) {
+          // A host clip is a static file of our own — no signed URL to fetch.
+          if (!track.src) throw new Error("voice clip has no src");
+          audio.src = track.src;
+          realSrcRef.current = audio.src;
+          audio.volume = volume;
+          audio.muted = mutedRef.current;
+          loadedIdRef.current = trackKey(track);
+          if (shouldPlay) {
+            userPausedRef.current = false;
+            await audio.play();
+          }
+          deadSkipsRef.current = 0;
+          return;
+        }
         const res = await fetch(streamUrlFor(track), {
           cache: "no-store",
           headers: await authHeaders(),
@@ -764,10 +825,16 @@ export default function PlayerProvider({
         key?: string;
         preserveOrder?: boolean;
         keepMuted?: boolean;
+        hosts?: boolean;
       } = {},
     ) => {
       if (!tracks.length) return;
-      const { key = null, preserveOrder = false, keepMuted = false } = options;
+      const {
+        key = null,
+        preserveOrder = false,
+        keepMuted = false,
+        hosts = false,
+      } = options;
       // Only the homepage's muted autoplay wants to stay silent; every other
       // caller is a user gesture asking to hear something.
       if (!keepMuted) startAudible();
@@ -775,9 +842,10 @@ export default function PlayerProvider({
       setRadioMode(true);
       radioModeRef.current = true;
       setRadioStationKey(key);
-      activateIndex(buildRotation(tracks, preserveOrder), 0, true);
+      hostsOnRef.current = hosts;
+      activateIndex(rotate(tracks), 0, true);
     },
-    [activateIndex, startAudible],
+    [activateIndex, startAudible, rotate],
   );
 
   const startRadio = useCallback(
@@ -820,7 +888,7 @@ export default function PlayerProvider({
           setError("No tracks available for radio right now.");
           return;
         }
-        playRadio(pool, { key: mode, keepMuted: options.muted });
+        playRadio(pool, { key: mode, keepMuted: options.muted, hosts: true });
       } catch {
         setError("Couldn't start radio.");
       } finally {
@@ -834,8 +902,8 @@ export default function PlayerProvider({
     // Always a user gesture (the Radio page's shuffle control).
     unlockPlayback();
     if (!queue.length) return;
-    activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
-  }, [queue, activateIndex, unlockPlayback]);
+    activateIndex(rotate(queue), 0, true);
+  }, [queue, activateIndex, unlockPlayback, rotate]);
 
   const pause = useCallback(() => {
     const audio = audioRef.current;
@@ -860,8 +928,8 @@ export default function PlayerProvider({
     unlockPlayback();
     if (index + 1 < queue.length) activateIndex(queue, index + 1, true);
     else if (radioModeRef.current && queue.length)
-      activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
-  }, [index, queue, activateIndex, unlockPlayback]);
+      activateIndex(rotate(queue), 0, true);
+  }, [index, queue, activateIndex, unlockPlayback, rotate]);
 
   const seek = useCallback((fraction: number) => {
     const audio = audioRef.current;
@@ -893,14 +961,14 @@ export default function PlayerProvider({
         activateIndex(queue, index + 1, true);
       } else if (radioModeRef.current && queue.length) {
         // Radio mode never ends: rebuild the rotation and keep going.
-        activateIndex(buildRotation(queue, preserveOrderRef.current), 0, true);
+        activateIndex(rotate(queue), 0, true);
       } else {
         // Last track finished: stop cleanly but keep it shown, paused at its
         // end. Do NOT reset progress or clear `current` (no placeholder wipe).
         setIsPlaying(false);
       }
     };
-  }, [index, queue, activateIndex]);
+  }, [index, queue, activateIndex, rotate]);
 
   // --- OS media session -----------------------------------------------------
   // Publishes the playing track to the OS so Bluetooth head units (AVRCP),

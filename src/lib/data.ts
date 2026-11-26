@@ -369,7 +369,10 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
       "id, title, artist, album, genre, cover_url, duration, status, profile_id, explicit",
     )
     .eq("status", "published")
-    .eq("moderation_status", "clean");
+    .eq("moderation_status", "clean")
+    // Recorded hour-long shows (type 'show') have their own row on the Radio
+    // page and must not land in the song shuffle.
+    .or("type.is.null,type.neq.show");
 
   const [legacyRes, studioRes] = await Promise.all([
     legacyPromise,
@@ -428,6 +431,45 @@ export async function getRadioPool(): Promise<RadioTrack[]> {
   }
 
   return pool;
+}
+
+// Recorded Melori Radio shows — studio uploads marked type 'show' (Karl,
+// 26 Nov 2026). Each part of a show is its own row; parts sort by title, so
+// "Melori Radio Show 2 - Hour 1/2/3" play in order. Same publish + moderation
+// gate as the song pool.
+export async function getRadioShows(): Promise<RadioTrack[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("studio_tracks")
+    .select(
+      "id, title, artist, album, genre, cover_url, duration, profile_id, explicit, created_at",
+    )
+    .eq("type", "show")
+    .eq("status", "published")
+    .eq("moderation_status", "clean")
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getRadioShows error", error.message);
+    return [];
+  }
+  return (data as any[])
+    .map<RadioTrack>((row) => ({
+      id: row.id as string,
+      sourceType: "studio",
+      title: row.title ?? "Untitled show",
+      artistName: row.artist ?? "Melori Radio",
+      coverUrl: row.cover_url ?? null,
+      album: row.album ?? null,
+      genre: row.genre ?? null,
+      ownerProfileId: row.profile_id ?? null,
+      playCount: null,
+      explicit: row.explicit === true,
+      durationSeconds: typeof row.duration === "number" ? row.duration : null,
+    }))
+    .sort((a, b) =>
+      (a.album ?? a.title).localeCompare(b.album ?? b.title) ||
+      a.title.localeCompare(b.title, undefined, { numeric: true }),
+    );
 }
 
 // Resolve a specific set of track refs (used by saved playlists) to full

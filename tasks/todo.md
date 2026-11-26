@@ -641,3 +641,28 @@ Messages (Karl, 2026-10-06).
 - [ ] After merge, on the Vercel preview/prod: two accounts in one DM — typing
       dots show, a call connects, delete clears text, inbox loads.
 - [ ] Baseline doc of the live messaging schema (090 has landed).
+
+# Melori Radio — Shows row + talking live radio (branch `feat/radio-shows-and-hosts`)
+
+Karl, 2026-11-26: "Both" — a Shows row for the recorded hour-long shows, and
+the live radio talking between records.
+
+- [x] `studio_tracks.type = 'show'` = a recorded show part (no CHECK on type;
+      no migration). `getRadioPool` leaves shows out of the shuffle.
+- [x] `getRadioShows()` + `GET /api/radio/shows` (sign-in, like the pool).
+- [x] Radio page: fourth tab "Shows" — one card per show (grouped by album),
+      parts play in order through `playQueue` (not the shuffling radio).
+- [x] Hosts: `src/lib/radioHosts.ts` slips voice entries into the rotation —
+      artist intro before any song that has one, station ID every 3 songs.
+      Clips in `public/radio/voice`, mapping in `public/radio/hosts.json`
+      (39 intros → 53 track keys, 8 station IDs).
+- [x] PlayerProvider: `sourceType: "voice"` plays its static `src`, never
+      counts a play, never persists; For You / All Tracks / homepage talk,
+      saved playlists and shows don't.
+- [x] `scripts/radio-hosts.test.ts` in `test:unit`; tsc clean.
+- [ ] Karl uploads Show 2 Hour 1–3 in Studio, album "Melori Radio Show 2";
+      then `update studio_tracks set type='show' where album='Melori Radio Show 2'`.
+- [ ] After merge: on prod, tune All Tracks — a station ID within 3 songs,
+      an intro before a mapped song (e.g. Before I React), Next names a song.
+- [ ] Next phase: generate an intro automatically when a new song is
+      published (voice model + storage upload server-side).

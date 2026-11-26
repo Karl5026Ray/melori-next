@@ -50,9 +50,10 @@ function resolveMediaUrl(url: string, isAudioType: boolean): string {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url; // already a full URL
   if (!isAudioType) return url; // don't guess a bucket for non-audio
-  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  // audio-files is private (26 Nov 2026), so a bare key is played through a
+  // route that redirects to a short-lived signed URL.
   const path = url.replace(/^\/+/, "");
-  return `${base}/storage/v1/object/public/audio-files/${path}`;
+  return `/api/mirror/audio?path=${encodeURIComponent(path)}`;
 }
 
 // Karl, 16 Nov 2026: "mute won't play songs on Melori Mirror." Once a viewer

@@ -190,6 +190,9 @@ const TEASER_FOR: [prefix: string, teaser: string][] = [
   ["/social/radio", "/radio"],
   ["/social/messages", `${DOOR_PATH}?reason=chat`],
   ["/music", "/listen"],
+  // Sitewide search (2026-11-27) lists the catalog, so it shares /music's
+  // wall and its teaser.
+  ["/search", "/listen"],
 ];
 
 export function teaserFor(pathname: string): string | null {

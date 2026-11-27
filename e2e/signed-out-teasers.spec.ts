@@ -28,6 +28,13 @@ test("signed-out /music lands on the public Music page", async ({ page }) => {
   await expect(page.getByText(/on camera/i)).toHaveCount(0);
 });
 
+test("signed-out /search (the tab bar's Explore) lands on the public Music page", async ({ page }) => {
+  // Explore opens sitewide search since 27 Nov 2026. Search lists the catalog,
+  // so a stranger gets the same teaser /music sends them to.
+  await page.goto("/search");
+  await expect(page).toHaveURL(/\/listen\?next=%2Fsearch$/);
+});
+
 test("signed-out /social/messages explains itself on the door", async ({ page }) => {
   await page.goto("/social/messages");
   await expect(page).toHaveURL(/\/platform\?reason=chat&next=%2Fsocial%2Fmessages$/);

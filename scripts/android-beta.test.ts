@@ -160,6 +160,10 @@ for (const [label, body] of [["html", invite.html], ["text", invite.text]] as co
   check(`${label} contains the exact install link`, body.includes("https://play.google.com/store/apps/details?id=org.melorimusic.app"));
   check(`${label} says use the same Google account`, body.includes("same Google account as your Play Store"));
   check(`${label} says wait 15 minutes`, body.includes("wait 15 minutes"));
+  // 27 Nov 2026: Karl himself read the closed test's "not found" as the app
+  // being gone. Say why it happens and that Play Store search won't find it.
+  check(`${label} sends a not-found back to step 1`, body.includes("do step 1 first"));
+  check(`${label} warns that Play Store search won't find it`, body.includes("won't show up if you search the Play Store"));
 }
 check("text has exactly two numbered steps", /1\) Become a tester/.test(invite.text) && /2\) Install/.test(invite.text) && !/3\)/.test(invite.text));
 check("step 1 comes before step 2", invite.text.indexOf(PLAY_TESTING_URL) < invite.text.indexOf(PLAY_INSTALL_URL));

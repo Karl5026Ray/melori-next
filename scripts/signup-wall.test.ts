@@ -174,6 +174,8 @@ const TEASERS: [string, string][] = [
   ["/music", "/listen"],
   ["/music/123", "/listen"],
   ["/music/album/some-album", "/listen"],
+  // 27 Nov 2026: Explore opens sitewide search, which lists the catalog.
+  ["/search", "/listen"],
   ["/social/messages", "/platform?reason=chat"],
   ["/social/messages/abc123", "/platform?reason=chat"],
 ];

@@ -159,7 +159,9 @@ export default function MobileTabBar() {
 
   const tabs: Tab[] = [
     { label: "Home", href: "/", icon: <HomeIcon /> },
-    { label: "Explore", href: "/music", icon: <ExploreIcon />, matchPrefix: "/music" },
+    // Explore is a magnifying glass, so it opens search (2026-11-27); the full
+    // catalog is one tap away from there and in the M menu.
+    { label: "Explore", href: "/search", icon: <ExploreIcon />, matchPrefix: "/search" },
     // center M-logo launcher sits here
     { label: "Chat", href: "/social/messages", icon: <ChatIcon />, matchPrefix: "/social/messages" },
     {

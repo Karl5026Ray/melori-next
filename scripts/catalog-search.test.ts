@@ -52,6 +52,16 @@ check("accents optional", matchesCatalogQuery(beyonca, "beyonce cafe"), true);
 check("no false match", matchesCatalogQuery(bino, "gospel"), false);
 check("all words must match", matchesCatalogQuery(bino, "karl gospel"), false);
 check("item without tracks still works", matchesCatalogQuery(beyonca, "nights"), true);
+const kaiel = { title: "KAEL - REMADE", artist: { name: "Kaiel R" }, genre: "R&B", trackTitles: ["Summer Days", "Impossibly"] };
+check("one typo in a name", matchesCatalogQuery(kaiel, "kiel"), true);
+check("dropped letter", matchesCatalogQuery(gloria, "glora"), true);
+check("swapped letters", matchesCatalogQuery(gloria, "gloira"), true);
+check("typo in a song title", matchesCatalogQuery(kaiel, "imposibly"), true);
+check("two typos in a long word", matchesCatalogQuery(bino, "champoinn"), true);
+check("half-typed word with a typo", matchesCatalogQuery(gloria, "glroi"), true);
+check("short words get no typo pass", matchesCatalogQuery(gloria, "rap"), false);
+check("typo tolerance has limits", matchesCatalogQuery(bino, "gospel"), false);
+check("unrelated word still misses", matchesCatalogQuery(kaiel, "winter"), false);
 check("normalize punctuation", normalizeSearchText("  Don't-Stop   ME!! "), "dont stop me");
 
 if (failures > 0) {

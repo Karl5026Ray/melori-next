@@ -681,3 +681,17 @@ and had to be fixed by hand. "Fix it so we don't create an issue."
 - [x] Music catalog: Music / Shows tabs; show albums and show tracks are
       marked `isShow` and kept off the Music grid.
 - [x] Tests in `scripts/radio-hosts.test.ts`; full `test:unit` green; tsc clean.
+
+# Shows free on the door + one link per show (branch `feat/public-shows`)
+
+Karl, 2026-11-26: "have the shows on the sign in page for free... remove the
+individual songs from there and add the shows... separate links for the shows."
+
+- [x] `/api/shows` (public list) + `/api/shows/[id]/stream` (public, signs only
+      a published clean type='show' row). Songs keep the 401.
+- [x] `/shows` and `/shows/<slug>` public pages (OG cover for sharing,
+      `?hour=N`), added to the proxy's public paths.
+- [x] Door: `DoorShowsStrip` replaces the 30-second song previews
+      (`DoorListenStrip` removed). Nothing autoplays.
+- [x] Radio Shows tab links each show to its page.
+- [ ] Watch Supabase egress: a full hour is ~45–62 MB per listener.

@@ -135,6 +135,10 @@ const PUBLIC_EXACT = new Set([
   "/radio",
   "/register",
   "/reset-password",
+  // Melori Radio shows (2026-11-26): free to everyone, shared as links and
+  // played on the door as advertising. Playing goes through
+  // /api/shows/[id]/stream, which only ever signs a type='show' row.
+  "/shows",
   "/spaces",
   "/support",
   "/terms",
@@ -154,6 +158,7 @@ const PUBLIC_PREFIXES = [
   "/auth/",
   "/gallery/",
   "/reset-password/",
+  "/shows/",
   "/social/auth",
 ];
 

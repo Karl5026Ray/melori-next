@@ -33,6 +33,7 @@ import { usePlaylists } from "@/components/radio/usePlaylists";
 import AddToPlaylistSheet from "@/components/radio/AddToPlaylistSheet";
 import type { RadioTrack } from "@/lib/data";
 import { nextSong, stripVoice } from "@/lib/radioHosts";
+import { showSlug } from "@/lib/showsShared";
 
 type Mode = "foryou" | "all" | "playlists" | "shows";
 
@@ -863,7 +864,12 @@ function ShowsList({
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-bold text-text-primary">{g.name}</p>
+                <Link
+                  href={`/shows/${showSlug(g.name)}`}
+                  className="block truncate font-bold text-text-primary hover:underline"
+                >
+                  {g.name}
+                </Link>
                 <p className="truncate text-xs text-text-secondary">
                   with Karl Ray &amp; Jade
                   {total > 0 ? ` · ${Math.round(total / 60)} min` : ""}

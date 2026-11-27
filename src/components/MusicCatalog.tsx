@@ -12,13 +12,16 @@ import {
   type ReleaseSort,
 } from "@/lib/releaseSort";
 
-type TypeFilter = "all" | "album" | "single";
+// "show" = recorded Melori Radio shows (CatalogItem.isShow). Shows live only
+// under their own pill (Karl, 26 Nov 2026): never counted or listed with the
+// music in All Releases / Albums / Singles.
+type TypeFilter = "all" | "album" | "single" | "show";
 
 // The nav's Albums/Singles tabs link to /music?type=album|single. Normalize the
 // raw query value to a valid TypeFilter so an unexpected/absent param falls back
 // to "all".
 function normalizeType(raw: string | null | undefined): TypeFilter {
-  return raw === "album" || raw === "single" ? raw : "all";
+  return raw === "album" || raw === "single" || raw === "show" ? raw : "all";
 }
 
 // Common music genres always offered in the filter, even when no published
@@ -95,19 +98,24 @@ export default function MusicCatalog({
 
   // "EP" counts as an album for the tab filter — it always did, since the tab
   // compared release_type directly and EPs simply matched neither pill.
+  const music = useMemo(() => items.filter((r) => !r.isShow), [items]);
+  const showCount = items.length - music.length;
   const albumCount = useMemo(
-    () => items.filter((r) => r.release_type === "album").length,
-    [items],
+    () => music.filter((r) => r.release_type === "album").length,
+    [music],
   );
   const singleCount = useMemo(
-    () => items.filter((r) => r.release_type === "single").length,
-    [items],
+    () => music.filter((r) => r.release_type === "single").length,
+    [music],
   );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((r) => {
-      const matchesType = typeFilter === "all" || r.release_type === typeFilter;
+      const matchesType =
+        typeFilter === "show"
+          ? r.isShow === true
+          : !r.isShow && (typeFilter === "all" || r.release_type === typeFilter);
       const matchesGenre = genre === "all" || r.genre === genre;
       const matchesQuery = q === "" || matchesCatalogQuery(r, q);
       return matchesType && matchesGenre && matchesQuery;
@@ -117,9 +125,12 @@ export default function MusicCatalog({
   const sorted = useMemo(() => sortReleases(filtered, sort), [filtered, sort]);
 
   const tabs: { key: TypeFilter; label: string; count: number }[] = [
-    { key: "all", label: "All Releases", count: items.length },
+    { key: "all", label: "All Releases", count: music.length },
     { key: "album", label: "Albums", count: albumCount },
     { key: "single", label: "Singles", count: singleCount },
+    ...(showCount > 0
+      ? [{ key: "show" as const, label: "Shows", count: showCount }]
+      : []),
   ];
 
   return (

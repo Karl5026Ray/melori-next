@@ -50,7 +50,7 @@ export default function MusicPageClient({ items }: { items: CatalogItem[] }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search all music by title or artist…"
+          placeholder="Search by title, artist, song or genre…"
           aria-label="Search all music"
           className="w-full rounded-md border border-input-border bg-brand-surface px-4 py-2 text-text-primary placeholder:text-text-secondary focus:border-brand-primary focus:outline-none sm:max-w-md"
         />

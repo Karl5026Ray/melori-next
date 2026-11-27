@@ -274,6 +274,20 @@ export default function Header() {
             />
           </Link>
 
+          {/* Sitewide search (2026-11-27): the desktop twin of the tab bar's
+             Explore magnifying glass. */}
+          <Link
+            href="/search"
+            aria-label="Search Melori"
+            title="Search"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-brand-primary"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5" aria-hidden strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </Link>
+
           {user ? (
             <div className="relative">
               <button

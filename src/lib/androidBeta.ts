@@ -265,7 +265,8 @@ export function inviteEmail(opts: { name: string | null; email: string }): Email
     `2) Install: ${PLAY_INSTALL_URL}`,
     "",
     `Use the same Google account as your Play Store (${opts.email}).`,
-    "If Install says not found, wait 15 minutes and try again.",
+    "If Install says not found, do step 1 first while signed in to that same account, then wait 15 minutes and try again.",
+    "Melori won't show up if you search the Play Store yet. Use the links above.",
     "",
     "Please keep the app installed for 14 days and open it a few times a week.",
     "Need help? Just reply to this email.",
@@ -278,7 +279,8 @@ export function inviteEmail(opts: { name: string | null; email: string }): Email
     <p ${P}>You're in. Two steps:</p>
     <p ${P}><strong>1) Become a tester</strong><br/>${btn(PLAY_TESTING_URL, "Become a tester")}<br/><span style="font-size:13px;color:#666;word-break:break-all;">${PLAY_TESTING_URL}</span></p>
     <p ${P}><strong>2) Install</strong><br/>${btn(PLAY_INSTALL_URL, "Install Melori")}<br/><span style="font-size:13px;color:#666;word-break:break-all;">${PLAY_INSTALL_URL}</span></p>
-    <p ${P}>Use the same Google account as your Play Store (<strong>${escapeHtml(opts.email)}</strong>). If Install says not found, wait 15 minutes and try again.</p>
+    <p ${P}>Use the same Google account as your Play Store (<strong>${escapeHtml(opts.email)}</strong>). If Install says not found, do step 1 first while signed in to that same account, then wait 15 minutes and try again.</p>
+    <p ${P}>Melori won't show up if you search the Play Store yet. Use the buttons above.</p>
     <p ${SMALL}>Please keep the app installed for 14 days and open it a few times a week.</p>
     <p ${SMALL}>Need help? Just reply to this email.</p>
     <p ${SMALL}>— Melori</p>

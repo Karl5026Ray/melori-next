@@ -83,7 +83,11 @@ export default function TrackUploader({
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  // Not memoized: it must call the current handleAudioFile, which reads
+  // canUploadShows. That prop starts false and turns true once the Studio page
+  // finds the admin role, so a handler frozen at first render would still
+  // apply the 100MB song cap to a show dropped in by an admin.
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -92,7 +96,7 @@ export default function TrackUploader({
     if (files?.[0]) {
       handleAudioFile(files[0]);
     }
-  }, []);
+  };
 
   const handleAudioFile = (file: File) => {
     // Show uploaders may pick a long file before ticking "show"; the song

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { matchesCatalogQuery } from "@/lib/catalogSearch";
 import CatalogCard from "@/components/CatalogCard";
 import type { CatalogItem } from "@/lib/catalog";
+import { isChildrensGenre, isChildrensItem } from "@/lib/childrensMusic";
 import {
   DEFAULT_RELEASE_SORT,
   RELEASE_SORT_OPTIONS,
@@ -15,13 +16,17 @@ import {
 // "show" = recorded Melori Radio shows (CatalogItem.isShow). Shows live only
 // under their own pill (Karl, 26 Nov 2026): never counted or listed with the
 // music in All Releases / Albums / Singles.
-type TypeFilter = "all" | "album" | "single" | "show";
+// "children" = children's music (genre Children's, never explicit). Same rule
+// as Shows: listed only under its own pill (Karl, 28 Nov 2026).
+type TypeFilter = "all" | "album" | "single" | "show" | "children";
 
 // The nav's Albums/Singles tabs link to /music?type=album|single. Normalize the
 // raw query value to a valid TypeFilter so an unexpected/absent param falls back
 // to "all".
 function normalizeType(raw: string | null | undefined): TypeFilter {
-  return raw === "album" || raw === "single" || raw === "show" ? raw : "all";
+  return raw === "album" || raw === "single" || raw === "show" || raw === "children"
+    ? raw
+    : "all";
 }
 
 // Common music genres always offered in the filter, even when no published
@@ -89,7 +94,9 @@ export default function MusicCatalog({
     // deduped case-insensitively (first spelling wins), then sorted.
     const byKey = new Map<string, string>();
     for (const g of [...CANONICAL_GENRES, ...items.map((r) => r.genre)]) {
-      if (!g) continue;
+      // Children's has its own pill; listing it as a genre here would only
+      // ever return nothing, since kids' releases are kept out of the music.
+      if (!g || isChildrensGenre(g)) continue;
       const key = g.toLowerCase();
       if (!byKey.has(key)) byKey.set(key, g);
     }
@@ -98,8 +105,15 @@ export default function MusicCatalog({
 
   // "EP" counts as an album for the tab filter — it always did, since the tab
   // compared release_type directly and EPs simply matched neither pill.
-  const music = useMemo(() => items.filter((r) => !r.isShow), [items]);
-  const showCount = items.length - music.length;
+  const music = useMemo(
+    () => items.filter((r) => !r.isShow && !isChildrensItem(r)),
+    [items],
+  );
+  const showCount = useMemo(() => items.filter((r) => r.isShow).length, [items]);
+  const childrenCount = useMemo(
+    () => items.filter((r) => isChildrensItem(r)).length,
+    [items],
+  );
   const albumCount = useMemo(
     () => music.filter((r) => r.release_type === "album").length,
     [music],
@@ -112,10 +126,15 @@ export default function MusicCatalog({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((r) => {
+      const kids = isChildrensItem(r);
       const matchesType =
         typeFilter === "show"
           ? r.isShow === true
-          : !r.isShow && (typeFilter === "all" || r.release_type === typeFilter);
+          : typeFilter === "children"
+            ? kids
+            : !r.isShow &&
+              !kids &&
+              (typeFilter === "all" || r.release_type === typeFilter);
       const matchesGenre = genre === "all" || r.genre === genre;
       const matchesQuery = q === "" || matchesCatalogQuery(r, q);
       return matchesType && matchesGenre && matchesQuery;
@@ -131,6 +150,9 @@ export default function MusicCatalog({
     ...(showCount > 0
       ? [{ key: "show" as const, label: "Shows", count: showCount }]
       : []),
+    // Always shown, even before any children's music is published, so the
+    // section is discoverable; an empty pill gets its own empty-state line.
+    { key: "children", label: "Children's", count: childrenCount },
   ];
 
   return (
@@ -196,7 +218,11 @@ export default function MusicCatalog({
         </label>
       </div>
       {sorted.length === 0 ? (
-        <p className="text-text-secondary">No releases match your search.</p>
+        <p className="text-text-secondary">
+          {typeFilter === "children" && childrenCount === 0
+            ? "Children's music is coming soon."
+            : "No releases match your search."}
+        </p>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {sorted.map((item) => (

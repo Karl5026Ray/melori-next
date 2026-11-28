@@ -65,7 +65,8 @@
     "test:description-links": "tsx scripts/description-links.test.ts",
     "test:catalog-search": "tsx scripts/catalog-search.test.ts",
     "test:site-search": "tsx scripts/site-search.test.ts",
-    "test:radio-hosts": "tsx scripts/radio-hosts.test.ts"
+    "test:radio-hosts": "tsx scripts/radio-hosts.test.ts",
+    "test:childrens-music": "tsx scripts/childrens-music.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

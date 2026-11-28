@@ -220,7 +220,7 @@ export default function TrackUploader({
   };
 
   const genres = [
-    "Gospel", "R&B", "Hip-Hop", "Electronic", "Soul", "Jazz", "Pop", "Rock", "Classical", "Other"
+    "Gospel", "R&B", "Hip-Hop", "Electronic", "Soul", "Jazz", "Pop", "Rock", "Classical", "Children's", "Other"
   ];
 
   return (

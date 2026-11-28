@@ -10,7 +10,7 @@ import ExplicitChoice from "@/app/studio/components/ExplicitChoice";
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_COVER_BYTES = 8 * 1024 * 1024; // 8 MB
 
-const GENRES = ["R&B", "Hip-Hop", "Gospel", "Afrobeat", "Pop", "Electronic", "Jazz", "Other"];
+const GENRES = ["R&B", "Hip-Hop", "Gospel", "Afrobeat", "Pop", "Electronic", "Jazz", "Children's", "Other"];
 
 export default function UploadPage() {
   const router = useRouter();

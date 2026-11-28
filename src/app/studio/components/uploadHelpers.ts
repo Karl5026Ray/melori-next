@@ -17,13 +17,25 @@ export const AUDIO_TYPES = [
 
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 
+// Melori Radio shows run two to three hours, so they get a larger cap. It
+// matches the audio-files bucket limit (500 MB); the signed-URL PUT goes
+// straight to Supabase Storage, so Vercel's body limit doesn't apply.
+export const MAX_SHOW_AUDIO_BYTES = 500 * 1024 * 1024;
+
 // Returns an error message if the file is not an acceptable master, else null.
-export function validateAudioFile(f: File): string | null {
+// Pass { isShow: true } to allow the larger show cap.
+export function validateAudioFile(
+  f: File,
+  opts: { isShow?: boolean } = {},
+): string | null {
   if (!AUDIO_TYPES.includes(f.type) && !f.name.match(/\.(mp3|wav|flac)$/i)) {
     return "Please choose an MP3, WAV, or FLAC file.";
   }
-  if (f.size > MAX_AUDIO_BYTES) {
-    return "File exceeds the 100MB limit.";
+  const max = opts.isShow ? MAX_SHOW_AUDIO_BYTES : MAX_AUDIO_BYTES;
+  if (f.size > max) {
+    return opts.isShow
+      ? "Show file exceeds the 500MB limit."
+      : "File exceeds the 100MB limit.";
   }
   return null;
 }

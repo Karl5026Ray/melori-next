@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { authFetch } from "@/lib/authClient";
-import { putWithProgress, validateAudioFile } from "./uploadHelpers";
+import { MAX_AUDIO_BYTES, putWithProgress, validateAudioFile } from "./uploadHelpers";
 import ExplicitChoice from "./ExplicitChoice";
 
 interface UploadState {
@@ -95,7 +95,9 @@ export default function TrackUploader({
   }, []);
 
   const handleAudioFile = (file: File) => {
-    const msg = validateAudioFile(file);
+    // Show uploaders may pick a long file before ticking "show"; the song
+    // cap is enforced again at upload time if the box stays unticked.
+    const msg = validateAudioFile(file, { isShow: canUploadShows });
     if (msg) {
       setError(msg);
       return;
@@ -118,6 +120,14 @@ export default function TrackUploader({
     }
     if (state.explicit === null) {
       setError("Please choose whether this track has explicit content.");
+      return;
+    }
+    if (!state.isShow && state.file.size > MAX_AUDIO_BYTES) {
+      setError(
+        canUploadShows
+          ? "Songs must be 100MB or under. For a Melori Radio show, tick the show box (shows can be up to 500MB)."
+          : "File exceeds the 100MB limit.",
+      );
       return;
     }
     if (state.isShow && !state.album.trim()) {
@@ -285,7 +295,9 @@ export default function TrackUploader({
               <p className="text-sm text-[#888]">
                 {state.file
                   ? `${(state.file.size / 1024 / 1024).toFixed(1)} MB`
-                  : "MP3, WAV, or FLAC up to 100MB"
+                  : canUploadShows
+                    ? "MP3, WAV, or FLAC up to 100MB (shows up to 500MB)"
+                    : "MP3, WAV, or FLAC up to 100MB"
                 }
               </p>
             </label>
